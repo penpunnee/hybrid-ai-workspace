@@ -1,10 +1,24 @@
 import os
+import socket
 from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
 
-CHROMA_HOST = os.getenv("CHROMA_HOST", "localhost")
+def _detect_chroma_host() -> str:
+    """Auto-detect CHROMA_HOST: env > chromadb container (NAS) > NAS LAN IP"""
+    if os.getenv("CHROMA_HOST"):
+        return os.getenv("CHROMA_HOST")
+    for host in ["chromadb", "192.168.51.49", "localhost"]:
+        try:
+            s = socket.create_connection((host, int(os.getenv("CHROMA_PORT", "8000"))), timeout=1)
+            s.close()
+            return host
+        except Exception:
+            continue
+    return "localhost"
+
+CHROMA_HOST = _detect_chroma_host()
 CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
 
 _client = None
