@@ -1,6 +1,7 @@
 import os
 from openai import OpenAI
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -16,10 +17,9 @@ ollama_client = OpenAI(
 
 # --- Gemini (Cloud LLM) ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 
 def stream_response(messages: list[dict], provider: str = "ollama"):
@@ -70,8 +70,8 @@ def _stream_ollama(messages: list[dict]):
 
 
 def _stream_gemini(messages: list[dict]):
-    """Stream จาก Gemini Cloud — แปลง messages format ก่อนส่ง พร้อม error handling"""
-    if not GEMINI_API_KEY:
+    """Stream จาก Gemini Cloud ด้วย google-genai SDK ใหม่"""
+    if not gemini_client:
         yield (
             "⚠️ ยังไม่ได้ตั้งค่า GEMINI_API_KEY\n\n"
             "เปิดไฟล์ `.env` แล้วใส่:\n```\nGEMINI_API_KEY=your_key_here\n```\n"
@@ -80,26 +80,22 @@ def _stream_gemini(messages: list[dict]):
         return
 
     try:
-        model = genai.GenerativeModel(
-            model_name=GEMINI_MODEL,
-            system_instruction=next(
-                (m["content"] for m in messages if m["role"] == "system"), None
-            ),
-        )
-
-        # แปลง messages เป็น Gemini format (ไม่รวม system)
+        system_prompt = next((m["content"] for m in messages if m["role"] == "system"), None)
         history = []
         for m in messages:
             if m["role"] == "system":
                 continue
             role = "user" if m["role"] == "user" else "model"
-            history.append({"role": role, "parts": [m["content"]]})
+            history.append(types.Content(role=role, parts=[types.Part(text=m["content"])]))
 
-        last_user = history[-1]["parts"][0] if history else ""
-        chat_history = history[:-1] if len(history) > 1 else []
-
-        chat = model.start_chat(history=chat_history)
-        response = chat.send_message(last_user, stream=True)
+        config = types.GenerateContentConfig(
+            system_instruction=system_prompt,
+        )
+        response = gemini_client.models.generate_content_stream(
+            model=GEMINI_MODEL,
+            contents=history,
+            config=config,
+        )
         for chunk in response:
             if chunk.text:
                 yield chunk.text
