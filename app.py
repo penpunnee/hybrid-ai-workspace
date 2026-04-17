@@ -320,7 +320,7 @@ def render_assistant_chat(name: str, tab_obj):
 tab_names = list(ASSISTANTS.keys())
 tabs = st.tabs([
     "🩵 ฟ้า (Frontend)",
-    "🧡 หมี (Backend)",
+    "🧡 ขวัญ (Backend)",
     "💙 ขิม (Planning)",
 ])
 
