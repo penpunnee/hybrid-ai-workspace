@@ -23,8 +23,8 @@ st.set_page_config(
 st.markdown("""
 <style>
 [data-testid="column"] {
-    padding-left: 0.5rem !important;
-    padding-right: 0.5rem !important;
+    padding-left: 0.15rem !important;
+    padding-right: 0.15rem !important;
 }
 [data-testid="column"]:first-child {
     padding-left: 0 !important;
