@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  streamlit:
+    build: .
+    container_name: hybrid-ai-workspace
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./chat_history.db:/app/chat_history.db
+      - ./identity.json:/app/identity.json
+    env_file:
+      - .env
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: chromadb
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+
+volumes:
+  chroma_data:
