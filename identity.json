@@ -1,0 +1,37 @@
+{
+  "name": "Pawin",
+  "role": "Senior Developer / Project Owner",
+  "organization": "พมจ. (สำนักงานพัฒนาสังคมและความมั่นคงของมนุษย์)",
+  "expertise": [
+    "Full-stack development",
+    "Python",
+    "Next.js",
+    "Streamlit",
+    "AI/LLM integration",
+    "System architecture"
+  ],
+  "current_projects": [
+    {
+      "name": "Hybrid AI Workspace",
+      "description": "Personal AI Developer Portal ที่รวม Local LLM (Llama via Ollama) และ Cloud LLM (Gemini) เข้าด้วยกัน พร้อม RAG system",
+      "stack": ["Streamlit", "Python", "Ollama", "Gemini API", "Next.js (planned)"]
+    }
+  ],
+  "architecture": {
+    "type": "Hybrid LLM + RAG + Decoupled",
+    "local_llm": "Llama 3 via Ollama (localhost:11434)",
+    "cloud_llm": "Google Gemini 1.5 Flash",
+    "frontend_plan": "Next.js (Liquid Glass + Bento Grid)",
+    "backend_dashboard": "Streamlit (Admin & AI Chat)"
+  },
+  "ai_assistants": {
+    "fa": "ผู้ช่วย Frontend/UI — React, Tailwind, Figma, Streamlit",
+    "mee": "ผู้ช่วย Backend/Logic — Python, FastAPI, SQL, System Design",
+    "khim": "ผู้ช่วย Planning/Docs — Project planning, Technical writing, Roadmap"
+  },
+  "preferences": {
+    "language": "ภาษาไทยเป็นหลัก",
+    "data_sensitivity": "งาน พมจ. เป็นความลับ ใช้ Local LLM เท่านั้น",
+    "style": "ตรงประเด็น มีตัวอย่างโค้ดเสมอ"
+  }
+}
