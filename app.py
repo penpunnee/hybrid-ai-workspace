@@ -5,6 +5,8 @@ from utils.llm import stream_response, OLLAMA_MODEL, GEMINI_MODEL, check_ollama_
 from utils.rag import build_rag_context, inject_context_to_system
 from utils.history import save_message, load_history, clear_history, export_history_md
 from utils.tokens import count_tokens_approx, get_context_limit, get_token_status
+from utils.memory import save_memory, search_memory, is_memory_available
+from utils.skills import get_all_skills, auto_extract_skills, get_skill_count
 
 # --- 1. ตั้งค่าหน้าจอ ---
 st.set_page_config(
@@ -110,6 +112,14 @@ with st.sidebar:
         st.warning("🟡 Gemini key ยังไม่ได้ตั้งค่า")
 
     st.divider()
+    memory_ok = is_memory_available()
+    skill_count = get_skill_count()
+    if memory_ok:
+        st.success("🧠 Long-term Memory พร้อม")
+    else:
+        st.warning("🟡 Memory offline (ChromaDB)")
+    st.caption(f"📚 Skills สะสม: {skill_count} topics")
+    st.divider()
     st.caption(f"📁 {st.session_state.session_name}\n\n🏗️ Hybrid LLM\n📚 RAG\n🔀 Decoupled")
 
 
@@ -193,7 +203,21 @@ def render_assistant_chat(name: str, tab_obj):
                 uploaded_files=list(st.session_state.uploaded_files),
                 skills_folder=st.session_state.skills_folder,
             )
-            system_prompt = inject_context_to_system(base_system_prompt, rag_context)
+            # ค้นหา long-term memory ที่เกี่ยวข้อง
+            memory_context = search_memory(name, prompt)
+            # ดึง skills ที่สะสมไว้
+            skills_context = get_all_skills()
+            # รวม context ทั้งหมด
+            full_context = "\n\n".join(filter(None, [rag_context, memory_context, skills_context]))
+            system_prompt = inject_context_to_system(base_system_prompt, full_context)
+            # auto-extract skills จากไฟล์ที่ upload
+            for f in st.session_state.uploaded_files:
+                try:
+                    content = f.read().decode("utf-8", errors="ignore")
+                    auto_extract_skills(content, name)
+                    f.seek(0)
+                except Exception:
+                    pass
 
             # บันทึกและแสดงข้อความ user
             st.session_state.chat_history[name].append({"role": "user", "content": prompt})
@@ -219,6 +243,8 @@ def render_assistant_chat(name: str, tab_obj):
                 {"role": "assistant", "content": response_text}
             )
             save_message(name, "assistant", response_text, st.session_state.provider)
+            # บันทึกลง long-term memory
+            save_memory(name, prompt, response_text)
 
 # --- 5. สร้าง Tabs ---
 tab_names = list(ASSISTANTS.keys())
