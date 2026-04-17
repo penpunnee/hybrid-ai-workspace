@@ -20,6 +20,25 @@ st.set_page_config(
     layout="wide",
 )
 
+st.markdown("""
+<style>
+[data-testid="column"] {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+}
+[data-testid="column"]:first-child {
+    padding-left: 0 !important;
+}
+[data-testid="column"]:last-child {
+    padding-right: 0 !important;
+}
+.block-container {
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # --- 2. เริ่มต้น Session State ---
 if "chat_history" not in st.session_state:
     # โหลดประวัติจาก SQLite อัตโนมัติ
