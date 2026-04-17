@@ -22,5 +22,13 @@ services:
     volumes:
       - chroma_data:/chroma/chroma
 
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflare-tunnel
+    restart: unless-stopped
+    command: tunnel --config /etc/cloudflared/config.yml run ai-workspace
+    volumes:
+      - /var/services/homes/pawin/.cloudflared:/etc/cloudflared
+
 volumes:
   chroma_data:
