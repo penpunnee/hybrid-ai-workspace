@@ -5,7 +5,7 @@ from utils.llm import stream_response, OLLAMA_MODEL, GEMINI_MODEL, check_ollama_
 from utils.rag import build_rag_context, inject_context_to_system
 from utils.history import save_message, load_history, clear_history, export_history_md
 from utils.tokens import count_tokens_approx, get_context_limit, get_token_status
-from utils.memory import save_memory, search_memory, is_memory_available
+from utils.memory import save_memory, search_memory, is_memory_available, save_lesson, save_preference, get_lessons, get_preferences
 from utils.skills import get_all_skills, auto_extract_skills, get_skill_count
 try:
     from streamlit_ace import st_ace
@@ -294,7 +294,12 @@ def render_assistant_chat(name: str, tab_obj):
                 )
                 memory_context = search_memory(name, prompt)
                 skills_context = get_all_skills()
-                full_context = "\n\n".join(filter(None, [rag_context, memory_context, skills_context]))
+                lessons_context = get_lessons(prompt)
+                prefs_context = get_preferences()
+                full_context = "\n\n".join(filter(None, [rag_context, memory_context, skills_context,
+                    f"[บทเรียนที่สะสม]\n{lessons_context}" if lessons_context else "",
+                    f"[ความชอบของพี่ปอย]\n{prefs_context}" if prefs_context else "",
+                ]))
                 system_prompt = inject_context_to_system(base_system_prompt, full_context)
                 for f in st.session_state.uploaded_files:
                     try:
@@ -325,6 +330,34 @@ def render_assistant_chat(name: str, tab_obj):
                 )
                 save_message(name, "assistant", response_text, st.session_state.provider)
                 save_memory(name, prompt, response_text)
+                # Auto-extract lesson จากการสนทนา
+                if len(response_text) > 100:
+                    import threading
+                    def _extract_async():
+                        try:
+                            lesson_msgs = [
+                                {"role": "system", "content": "สรุปบทเรียนหรือความรู้ที่ได้จากการสนทนานี้เป็นภาษาไทย 1-2 ประโยค ถ้าไม่มีบทเรียนตอบว่า SKIP"},
+                                {"role": "user", "content": f"คำถาม: {prompt}\nคำตอบ: {response_text[:500]}"},
+                            ]
+                            lesson = ""
+                            for chunk in stream_response(lesson_msgs, provider=st.session_state.provider):
+                                lesson += chunk
+                            lesson = lesson.strip()
+                            if lesson and lesson != "SKIP" and len(lesson) > 10:
+                                save_lesson(prompt[:50], lesson)
+                            # detect preference
+                            pref_keywords = {
+                                "ตอบสั้น": ("style", "ชอบคำตอบสั้นกระชับ"),
+                                "ตัวอย่าง": ("style", "ชอบมีตัวอย่างโค้ดประกอบ"),
+                                "ภาษาไทย": ("language", "ต้องการคำตอบเป็นภาษาไทยเสมอ"),
+                                "อธิบาย": ("style", "ชอบคำอธิบายละเอียด"),
+                            }
+                            for kw, (key, val) in pref_keywords.items():
+                                if kw in prompt:
+                                    save_preference(key, val)
+                        except Exception:
+                            pass
+                    threading.Thread(target=_extract_async, daemon=True).start()
 
         # ==================== คอลัมน์ขวา: Context ====================
         with col_context:

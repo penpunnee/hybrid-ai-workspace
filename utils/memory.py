@@ -108,6 +108,76 @@ def search_memory(assistant_name: str, query: str, n_results: int = 3) -> str:
         return ""
 
 
+def save_lesson(topic: str, lesson: str) -> bool:
+    """บันทึกบทเรียนที่ AI เรียนรู้จากการสนทนา"""
+    client = _get_client()
+    if client is None:
+        return False
+    try:
+        col = client.get_or_create_collection("lessons", metadata={"hnsw:space": "cosine"})
+        doc_id = f"lesson_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+        col.add(
+            documents=[f"[บทเรียน: {topic}]\n{lesson}"],
+            ids=[doc_id],
+            metadatas=[{"topic": topic, "timestamp": datetime.now().isoformat()}]
+        )
+        return True
+    except Exception:
+        return False
+
+
+def save_preference(key: str, value: str) -> bool:
+    """บันทึก preference ของพี่ปอย"""
+    client = _get_client()
+    if client is None:
+        return False
+    try:
+        col = client.get_or_create_collection("preferences", metadata={"hnsw:space": "cosine"})
+        col.upsert(
+            documents=[f"[preference: {key}]\n{value}"],
+            ids=[f"pref_{key}"],
+            metadatas=[{"key": key, "timestamp": datetime.now().isoformat()}]
+        )
+        return True
+    except Exception:
+        return False
+
+
+def get_lessons(query: str = "", n_results: int = 3) -> str:
+    """ดึงบทเรียนที่เกี่ยวข้อง"""
+    client = _get_client()
+    if client is None:
+        return ""
+    try:
+        col = client.get_or_create_collection("lessons", metadata={"hnsw:space": "cosine"})
+        count = col.count()
+        if count == 0:
+            return ""
+        if query:
+            results = col.query(query_texts=[query], n_results=min(n_results, count))
+            docs = results.get("documents", [[]])[0]
+        else:
+            results = col.get()
+            docs = results.get("documents", [])[:n_results]
+        return "\n---\n".join(docs) if docs else ""
+    except Exception:
+        return ""
+
+
+def get_preferences() -> str:
+    """ดึง preferences ทั้งหมดของพี่ปอย"""
+    client = _get_client()
+    if client is None:
+        return ""
+    try:
+        col = client.get_or_create_collection("preferences", metadata={"hnsw:space": "cosine"})
+        results = col.get()
+        docs = results.get("documents", [])
+        return "\n".join(docs) if docs else ""
+    except Exception:
+        return ""
+
+
 def is_memory_available() -> bool:
     """ตรวจสอบว่า ChromaDB พร้อมใช้งานไหม"""
     client = _get_client()
