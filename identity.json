@@ -1,7 +1,18 @@
 {
-  "name": "Pawin",
-  "role": "Senior Developer / Project Owner",
-  "organization": "พมจ. (สำนักงานพัฒนาสังคมและความมั่นคงของมนุษย์)",
+  "name": "ปวินท์ ชำนาญ",
+  "nickname": "ปอย",
+  "role": "เจ้าหน้าที่ระบบงานคอมพิวเตอร์",
+  "organization": "สำนักงานพัฒนาสังคมและความมั่นคงของมนุษย์จังหวัดแพร่",
+  "location": "อำเภอเมืองแพร่ จังหวัดแพร่",
+  "pets": [
+    { "type": "แมว", "name": "จีโน่" },
+    { "type": "แมว", "name": "แอชรีย์" }
+  ],
+  "hobbies": [
+    "เรียนรู้เทคโนโลยีใหม่ๆ",
+    "เล่นเกม PS5",
+    "รักสัตว์"
+  ],
   "expertise": [
     "Full-stack development",
     "Python",
@@ -13,25 +24,25 @@
   "current_projects": [
     {
       "name": "Hybrid AI Workspace",
-      "description": "Personal AI Developer Portal ที่รวม Local LLM (Llama via Ollama) และ Cloud LLM (Gemini) เข้าด้วยกัน พร้อม RAG system",
-      "stack": ["Streamlit", "Python", "Ollama", "Gemini API", "Next.js (planned)"]
+      "description": "Personal AI Developer Portal ที่รวม Local LLM (Llama via Ollama) และ Cloud LLM (Gemini) เข้าด้วยกัน พร้อม RAG system และ Long-term Memory",
+      "stack": ["Streamlit", "Python", "Ollama", "Gemini API", "ChromaDB", "Docker", "Cloudflare Tunnel"]
     }
   ],
   "architecture": {
     "type": "Hybrid LLM + RAG + Decoupled",
-    "local_llm": "Llama 3 via Ollama (localhost:11434)",
+    "local_llm": "Llama 3 via Ollama (PC บ้าน)",
     "cloud_llm": "Google Gemini 1.5 Flash",
-    "frontend_plan": "Next.js (Liquid Glass + Bento Grid)",
-    "backend_dashboard": "Streamlit (Admin & AI Chat)"
+    "nas": "Synology DS923+ รัน Docker",
+    "domain": "ai.pawinhome.com"
   },
   "ai_assistants": {
-    "fa": "ผู้ช่วย Frontend/UI — React, Tailwind, Figma, Streamlit",
-    "mee": "ผู้ช่วย Backend/Logic — Python, FastAPI, SQL, System Design",
-    "khim": "ผู้ช่วย Planning/Docs — Project planning, Technical writing, Roadmap"
+    "fa": "ฟ้า — ผู้ช่วย Frontend/UI เพื่อนสนิท สดใส",
+    "kwan": "ขวัญ — ผู้ช่วย Backend/Logic อบอุ่น มีพลัง",
+    "khim": "ขิม — น้องสาว เลขาส่วนตัว กวนตีนนิดๆ"
   },
   "preferences": {
     "language": "ภาษาไทยเป็นหลัก",
     "data_sensitivity": "งาน พมจ. เป็นความลับ ใช้ Local LLM เท่านั้น",
-    "style": "ตรงประเด็น มีตัวอย่างโค้ดเสมอ"
+    "style": "ตรงประเด็น กระชับ มีตัวอย่างโค้ดเสมอ"
   }
 }
