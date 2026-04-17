@@ -36,6 +36,13 @@ st.markdown("""
     padding-left: 1.5rem !important;
     padding-right: 1.5rem !important;
 }
+/* Chat messages scroll container */
+[data-testid="stChatMessageContainer"] {
+    max-height: 60vh !important;
+    overflow-y: auto !important;
+    scroll-behavior: smooth !important;
+    padding-right: 0.5rem !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
