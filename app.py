@@ -129,11 +129,26 @@ with st.sidebar:
 
 
 # --- 4. ฟังก์ชันแสดงแชท ---
+def _load_avatar(config: dict):
+    avatar_path = config.get("avatar", "")
+    if avatar_path and os.path.exists(avatar_path):
+        from PIL import Image
+        img = Image.open(avatar_path)
+        w, h = img.size
+        size = min(w, h)
+        left = (w - size) // 2
+        top = (h - size) // 2
+        img = img.crop((left, top, left + size, top + size)).resize((64, 64))
+        return img
+    return "assistant"
+
+
 def render_assistant_chat(name: str, tab_obj):
     config = ASSISTANTS[name]
     slug = config["slug"]
     base_system_prompt = config["system_prompt"]
     templates = config.get("prompt_templates", [])
+    avatar = _load_avatar(config)
 
     with tab_obj:
         col_editor, col_chat, col_context = st.columns([2, 5, 2])
@@ -237,7 +252,8 @@ def render_assistant_chat(name: str, tab_obj):
             st.divider()
 
             for msg in st.session_state.chat_history[name]:
-                with st.chat_message(msg["role"]):
+                av = avatar if msg["role"] == "assistant" else "user"
+                with st.chat_message(msg["role"], avatar=av):
                     st.write(msg["content"])
 
             default_input = st.session_state.pending_prompt.pop(slug, "")
@@ -273,7 +289,7 @@ def render_assistant_chat(name: str, tab_obj):
                     for m in st.session_state.chat_history[name]
                 ]
 
-                with st.chat_message("assistant"):
+                with st.chat_message("assistant", avatar=avatar):
                     response_text = st.write_stream(
                         stream_response(messages, provider=st.session_state.provider)
                     )
