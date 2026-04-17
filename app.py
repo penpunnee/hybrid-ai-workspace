@@ -151,7 +151,7 @@ def render_assistant_chat(name: str, tab_obj):
     avatar = _load_avatar(config)
 
     with tab_obj:
-        col_editor, col_chat, col_context = st.columns([2, 5, 2])
+        col_editor, col_chat, col_context = st.columns([2, 5, 3])
 
         # ==================== คอลัมน์ซ้าย: Code Editor ====================
         with col_editor:
@@ -200,7 +200,7 @@ def render_assistant_chat(name: str, tab_obj):
 
         # ==================== คอลัมน์กลาง: Chat ====================
         with col_chat:
-            col_title, col_badge, col_clear = st.columns([5, 2, 1])
+            col_title, col_badge, col_del, col_exp = st.columns([5, 2, 1, 1])
             with col_title:
                 st.subheader(f"ช่องสนทนากับ {name}")
             with col_badge:
@@ -209,25 +209,25 @@ def render_assistant_chat(name: str, tab_obj):
                     st.caption(f"🏠 {OLLAMA_MODEL}")
                 else:
                     st.caption(f"☁️ {GEMINI_MODEL}")
-            with col_clear:
+            with col_del:
                 st.write("")
-                col_del, col_exp = st.columns(2)
-                with col_del:
-                    if st.button("🗑️", key=f"clear_{slug}", help="ล้างประวัติแชท"):
-                        clear_history(name)
-                        st.session_state.chat_history[name] = []
-                        st.session_state.pending_prompt.pop(slug, None)
-                        st.rerun()
-                with col_exp:
-                    md_text = export_history_md(name)
-                    st.download_button(
-                        "💾",
-                        data=md_text.encode("utf-8"),
-                        file_name=f"chat_{slug}.md",
-                        mime="text/markdown",
-                        key=f"export_{slug}",
-                        help="Export ประวัติแชทเป็น Markdown",
-                    )
+                if st.button("🗑️", key=f"clear_{slug}", help="ล้างประวัติแชท", use_container_width=True):
+                    clear_history(name)
+                    st.session_state.chat_history[name] = []
+                    st.session_state.pending_prompt.pop(slug, None)
+                    st.rerun()
+            with col_exp:
+                st.write("")
+                md_text = export_history_md(name)
+                st.download_button(
+                    "💾",
+                    data=md_text.encode("utf-8"),
+                    file_name=f"chat_{slug}.md",
+                    mime="text/markdown",
+                    key=f"export_{slug}",
+                    help="Export ประวัติแชทเป็น Markdown",
+                    use_container_width=True,
+                )
 
             current_model = OLLAMA_MODEL if st.session_state.provider == "ollama" else GEMINI_MODEL
             token_limit = get_context_limit(current_model)
