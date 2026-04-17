@@ -136,11 +136,11 @@ def render_assistant_chat(name: str, tab_obj):
     templates = config.get("prompt_templates", [])
 
     with tab_obj:
-        col_editor, col_chat, col_context = st.columns([3, 4, 3])
+        col_editor, col_chat, col_context = st.columns([2, 5, 2])
 
         # ==================== คอลัมน์ซ้าย: Code Editor ====================
         with col_editor:
-            st.caption("💻 Code Editor")
+            st.markdown("**💻 Code Editor**")
             lang = st.selectbox(
                 "ภาษา",
                 ["python", "javascript", "typescript", "html", "css", "sql", "json", "markdown"],
@@ -152,8 +152,8 @@ def render_assistant_chat(name: str, tab_obj):
                     placeholder="วางโค้ดที่นี่...",
                     language=lang,
                     theme="monokai",
-                    font_size=13,
-                    height=400,
+                    font_size=12,
+                    height=300,
                     key=f"ace_{slug}",
                     auto_update=True,
                 )
@@ -161,25 +161,27 @@ def render_assistant_chat(name: str, tab_obj):
                 code_content = st.text_area(
                     "โค้ด",
                     placeholder="วางโค้ดที่นี่...",
-                    height=400,
+                    height=300,
                     key=f"code_{slug}",
                     label_visibility="collapsed",
                 )
-            col_r, col_a = st.columns(2)
-            with col_r:
-                if st.button("🔍 Review", key=f"review_{slug}", use_container_width=True):
+            btn1, btn2, btn3 = st.columns(3)
+            with btn1:
+                if st.button("🔍", key=f"review_{slug}", help="Review โค้ด", use_container_width=True):
                     if code_content and code_content.strip():
                         st.session_state.pending_prompt[slug] = f"ช่วย review โค้ดนี้และแนะนำการปรับปรุง:\n\n```{lang}\n{code_content}\n```"
                         st.rerun()
-            with col_a:
-                if st.button("🐛 หา Bug", key=f"bug_{slug}", use_container_width=True):
+            with btn2:
+                if st.button("🐛", key=f"bug_{slug}", help="หา Bug", use_container_width=True):
                     if code_content and code_content.strip():
                         st.session_state.pending_prompt[slug] = f"ช่วยหา bug ในโค้ดนี้:\n\n```{lang}\n{code_content}\n```"
                         st.rerun()
-            if st.button("✨ อธิบายโค้ด", key=f"explain_{slug}", use_container_width=True):
-                if code_content and code_content.strip():
-                    st.session_state.pending_prompt[slug] = f"ช่วยอธิบายโค้ดนี้ทีละบรรทัด:\n\n```{lang}\n{code_content}\n```"
-                    st.rerun()
+            with btn3:
+                if st.button("✨", key=f"explain_{slug}", help="อธิบายโค้ด", use_container_width=True):
+                    if code_content and code_content.strip():
+                        st.session_state.pending_prompt[slug] = f"ช่วยอธิบายโค้ดนี้ทีละบรรทัด:\n\n```{lang}\n{code_content}\n```"
+                        st.rerun()
+            st.caption("🔍 Review &nbsp; 🐛 Bug &nbsp; ✨ อธิบาย")
 
         # ==================== คอลัมน์กลาง: Chat ====================
         with col_chat:
