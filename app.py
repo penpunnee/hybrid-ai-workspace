@@ -7,6 +7,11 @@ from utils.history import save_message, load_history, clear_history, export_hist
 from utils.tokens import count_tokens_approx, get_context_limit, get_token_status
 from utils.memory import save_memory, search_memory, is_memory_available
 from utils.skills import get_all_skills, auto_extract_skills, get_skill_count
+try:
+    from streamlit_ace import st_ace
+    ACE_AVAILABLE = True
+except ImportError:
+    ACE_AVAILABLE = False
 
 # --- 1. ตั้งค่าหน้าจอ ---
 st.set_page_config(
@@ -131,120 +136,167 @@ def render_assistant_chat(name: str, tab_obj):
     templates = config.get("prompt_templates", [])
 
     with tab_obj:
-        # Header + badge provider + ปุ่มล้าง + export
-        col_title, col_badge, col_clear = st.columns([6, 2, 1])
-        with col_title:
-            st.subheader(f"ช่องสนทนากับ {name}")
-        with col_badge:
-            st.write("")
-            if st.session_state.provider == "ollama":
-                st.caption(f"🏠 {OLLAMA_MODEL}")
+        col_editor, col_chat, col_context = st.columns([3, 4, 3])
+
+        # ==================== คอลัมน์ซ้าย: Code Editor ====================
+        with col_editor:
+            st.caption("💻 Code Editor")
+            lang = st.selectbox(
+                "ภาษา",
+                ["python", "javascript", "typescript", "html", "css", "sql", "json", "markdown"],
+                key=f"lang_{slug}",
+                label_visibility="collapsed",
+            )
+            if ACE_AVAILABLE:
+                code_content = st_ace(
+                    placeholder="วางโค้ดที่นี่...",
+                    language=lang,
+                    theme="monokai",
+                    font_size=13,
+                    height=400,
+                    key=f"ace_{slug}",
+                    auto_update=True,
+                )
             else:
-                st.caption(f"☁️ {GEMINI_MODEL}")
-        with col_clear:
-            st.write("")
-            col_del, col_exp = st.columns(2)
-            with col_del:
-                if st.button("🗑️", key=f"clear_{slug}", help="ล้างประวัติแชท"):
-                    clear_history(name)
-                    st.session_state.chat_history[name] = []
-                    st.session_state.pending_prompt.pop(slug, None)
-                    st.rerun()
-            with col_exp:
-                md_text = export_history_md(name)
-                st.download_button(
-                    "💾",
-                    data=md_text.encode("utf-8"),
-                    file_name=f"chat_{slug}.md",
-                    mime="text/markdown",
-                    key=f"export_{slug}",
-                    help="Export ประวัติแชทเป็น Markdown",
+                code_content = st.text_area(
+                    "โค้ด",
+                    placeholder="วางโค้ดที่นี่...",
+                    height=400,
+                    key=f"code_{slug}",
+                    label_visibility="collapsed",
                 )
-
-        # --- Token Counter ---
-        current_model = OLLAMA_MODEL if st.session_state.provider == "ollama" else GEMINI_MODEL
-        token_limit = get_context_limit(current_model)
-        token_used = count_tokens_approx(st.session_state.chat_history[name])
-        status_type, status_msg = get_token_status(token_used, token_limit)
-        if status_type == "normal":
-            st.caption(f"📊 {status_msg}")
-        elif status_type == "warning":
-            st.warning(status_msg)
-        else:
-            st.error(status_msg)
-
-        # --- Prompt Templates ---
-        if templates:
-            st.caption("⚡ Shortcuts:")
-            btn_cols = st.columns(len(templates))
-            for i, (label, template_text) in enumerate(templates):
-                with btn_cols[i]:
-                    if st.button(label, key=f"tpl_{slug}_{i}", use_container_width=True):
-                        st.session_state.pending_prompt[slug] = template_text
+            col_r, col_a = st.columns(2)
+            with col_r:
+                if st.button("🔍 Review", key=f"review_{slug}", use_container_width=True):
+                    if code_content and code_content.strip():
+                        st.session_state.pending_prompt[slug] = f"ช่วย review โค้ดนี้และแนะนำการปรับปรุง:\n\n```{lang}\n{code_content}\n```"
                         st.rerun()
+            with col_a:
+                if st.button("🐛 หา Bug", key=f"bug_{slug}", use_container_width=True):
+                    if code_content and code_content.strip():
+                        st.session_state.pending_prompt[slug] = f"ช่วยหา bug ในโค้ดนี้:\n\n```{lang}\n{code_content}\n```"
+                        st.rerun()
+            if st.button("✨ อธิบายโค้ด", key=f"explain_{slug}", use_container_width=True):
+                if code_content and code_content.strip():
+                    st.session_state.pending_prompt[slug] = f"ช่วยอธิบายโค้ดนี้ทีละบรรทัด:\n\n```{lang}\n{code_content}\n```"
+                    st.rerun()
 
-        st.divider()
+        # ==================== คอลัมน์กลาง: Chat ====================
+        with col_chat:
+            col_title, col_badge, col_clear = st.columns([5, 2, 1])
+            with col_title:
+                st.subheader(f"ช่องสนทนากับ {name}")
+            with col_badge:
+                st.write("")
+                if st.session_state.provider == "ollama":
+                    st.caption(f"🏠 {OLLAMA_MODEL}")
+                else:
+                    st.caption(f"☁️ {GEMINI_MODEL}")
+            with col_clear:
+                st.write("")
+                col_del, col_exp = st.columns(2)
+                with col_del:
+                    if st.button("🗑️", key=f"clear_{slug}", help="ล้างประวัติแชท"):
+                        clear_history(name)
+                        st.session_state.chat_history[name] = []
+                        st.session_state.pending_prompt.pop(slug, None)
+                        st.rerun()
+                with col_exp:
+                    md_text = export_history_md(name)
+                    st.download_button(
+                        "💾",
+                        data=md_text.encode("utf-8"),
+                        file_name=f"chat_{slug}.md",
+                        mime="text/markdown",
+                        key=f"export_{slug}",
+                        help="Export ประวัติแชทเป็น Markdown",
+                    )
 
-        # แสดงประวัติแชท
-        for msg in st.session_state.chat_history[name]:
-            with st.chat_message(msg["role"]):
-                st.write(msg["content"])
+            current_model = OLLAMA_MODEL if st.session_state.provider == "ollama" else GEMINI_MODEL
+            token_limit = get_context_limit(current_model)
+            token_used = count_tokens_approx(st.session_state.chat_history[name])
+            status_type, status_msg = get_token_status(token_used, token_limit)
+            if status_type == "normal":
+                st.caption(f"📊 {status_msg}")
+            elif status_type == "warning":
+                st.warning(status_msg)
+            else:
+                st.error(status_msg)
 
-        # ดึง pending prompt (จาก template button)
-        default_input = st.session_state.pending_prompt.pop(slug, "")
+            if templates:
+                st.caption("⚡ Shortcuts:")
+                btn_cols = st.columns(len(templates))
+                for i, (label, template_text) in enumerate(templates):
+                    with btn_cols[i]:
+                        if st.button(label, key=f"tpl_{slug}_{i}", use_container_width=True):
+                            st.session_state.pending_prompt[slug] = template_text
+                            st.rerun()
 
-        # รับ input ใหม่
-        if prompt := st.chat_input(
-            f"สั่งงาน {name}...",
-            key=f"input_{slug}",
-        ) or default_input:
-            # build RAG context จากไฟล์ที่ upload + skills folder
-            rag_context = build_rag_context(
-                uploaded_files=list(st.session_state.uploaded_files),
-                skills_folder=st.session_state.skills_folder,
-            )
-            # ค้นหา long-term memory ที่เกี่ยวข้อง
-            memory_context = search_memory(name, prompt)
-            # ดึง skills ที่สะสมไว้
-            skills_context = get_all_skills()
-            # รวม context ทั้งหมด
-            full_context = "\n\n".join(filter(None, [rag_context, memory_context, skills_context]))
-            system_prompt = inject_context_to_system(base_system_prompt, full_context)
-            # auto-extract skills จากไฟล์ที่ upload
-            for f in st.session_state.uploaded_files:
-                try:
-                    content = f.read().decode("utf-8", errors="ignore")
-                    auto_extract_skills(content, name)
-                    f.seek(0)
-                except Exception:
-                    pass
+            st.divider()
 
-            # บันทึกและแสดงข้อความ user
-            st.session_state.chat_history[name].append({"role": "user", "content": prompt})
-            save_message(name, "user", prompt, st.session_state.provider)
-            with st.chat_message("user"):
-                st.write(prompt)
+            for msg in st.session_state.chat_history[name]:
+                with st.chat_message(msg["role"]):
+                    st.write(msg["content"])
 
-            # เตรียม messages (system + history)
-            messages = [{"role": "system", "content": system_prompt}]
-            messages += [
-                {"role": m["role"], "content": m["content"]}
-                for m in st.session_state.chat_history[name]
-            ]
+            default_input = st.session_state.pending_prompt.pop(slug, "")
 
-            # Streaming response ตาม provider ที่เลือก
-            with st.chat_message("assistant"):
-                response_text = st.write_stream(
-                    stream_response(messages, provider=st.session_state.provider)
+            if prompt := st.chat_input(
+                f"สั่งงาน {name}...",
+                key=f"input_{slug}",
+            ) or default_input:
+                rag_context = build_rag_context(
+                    uploaded_files=list(st.session_state.uploaded_files),
+                    skills_folder=st.session_state.skills_folder,
                 )
+                memory_context = search_memory(name, prompt)
+                skills_context = get_all_skills()
+                full_context = "\n\n".join(filter(None, [rag_context, memory_context, skills_context]))
+                system_prompt = inject_context_to_system(base_system_prompt, full_context)
+                for f in st.session_state.uploaded_files:
+                    try:
+                        content = f.read().decode("utf-8", errors="ignore")
+                        auto_extract_skills(content, name)
+                        f.seek(0)
+                    except Exception:
+                        pass
 
-            # บันทึกคำตอบลง DB ด้วย
-            st.session_state.chat_history[name].append(
-                {"role": "assistant", "content": response_text}
-            )
-            save_message(name, "assistant", response_text, st.session_state.provider)
-            # บันทึกลง long-term memory
-            save_memory(name, prompt, response_text)
+                st.session_state.chat_history[name].append({"role": "user", "content": prompt})
+                save_message(name, "user", prompt, st.session_state.provider)
+                with st.chat_message("user"):
+                    st.write(prompt)
+
+                messages = [{"role": "system", "content": system_prompt}]
+                messages += [
+                    {"role": m["role"], "content": m["content"]}
+                    for m in st.session_state.chat_history[name]
+                ]
+
+                with st.chat_message("assistant"):
+                    response_text = st.write_stream(
+                        stream_response(messages, provider=st.session_state.provider)
+                    )
+
+                st.session_state.chat_history[name].append(
+                    {"role": "assistant", "content": response_text}
+                )
+                save_message(name, "assistant", response_text, st.session_state.provider)
+                save_memory(name, prompt, response_text)
+
+        # ==================== คอลัมน์ขวา: Context ====================
+        with col_context:
+            st.caption("📚 Context & Memory")
+            skill_count = get_skill_count()
+            memory_ok = is_memory_available()
+            st.caption(f"{'🟢' if memory_ok else '🔴'} Memory | 📖 {skill_count} skills")
+            st.divider()
+            recent_memory = search_memory(name, "recent", n_results=3)
+            if recent_memory:
+                with st.expander("🧠 ความจำล่าสุด", expanded=False):
+                    st.caption(recent_memory[:500] + "..." if len(recent_memory) > 500 else recent_memory)
+            all_skills = get_all_skills()
+            if all_skills:
+                with st.expander("💡 Skills สะสม", expanded=False):
+                    st.caption(all_skills[:500] + "..." if len(all_skills) > 500 else all_skills)
 
 # --- 5. สร้าง Tabs ---
 tab_names = list(ASSISTANTS.keys())
