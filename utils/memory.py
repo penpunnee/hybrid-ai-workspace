@@ -1,5 +1,8 @@
 import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 CHROMA_HOST = os.getenv("CHROMA_HOST", "localhost")
 CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
@@ -13,7 +16,13 @@ def _get_client():
     if _client is None:
         try:
             import chromadb
-            _client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
+            from chromadb.config import Settings
+            _client = chromadb.HttpClient(
+                host=CHROMA_HOST,
+                port=CHROMA_PORT,
+                settings=Settings(anonymized_telemetry=False),
+            )
+            _client.heartbeat()
         except Exception:
             _client = None
     return _client
