@@ -5,21 +5,25 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def _detect_chroma_host() -> str:
-    """Auto-detect CHROMA_HOST: env > chromadb container (NAS) > NAS LAN IP"""
+def _detect_chroma_host() -> tuple:
+    """Auto-detect CHROMA_HOST and PORT"""
     if os.getenv("CHROMA_HOST"):
-        return os.getenv("CHROMA_HOST")
-    for host in ["chromadb", "192.168.51.49", "localhost"]:
+        return os.getenv("CHROMA_HOST"), int(os.getenv("CHROMA_PORT", "8000"))
+    candidates = [
+        ("chromadb", 8000),
+        ("192.168.51.49", 8000),
+        ("chroma.pawinhome.com", 443),
+    ]
+    for host, port in candidates:
         try:
-            s = socket.create_connection((host, int(os.getenv("CHROMA_PORT", "8000"))), timeout=1)
+            s = socket.create_connection((host, port), timeout=2)
             s.close()
-            return host
+            return host, port
         except Exception:
             continue
-    return "localhost"
+    return "localhost", 8000
 
-CHROMA_HOST = _detect_chroma_host()
-CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
+CHROMA_HOST, CHROMA_PORT = _detect_chroma_host()
 
 _client = None
 _collections = {}
@@ -31,9 +35,11 @@ def _get_client():
         try:
             import chromadb
             from chromadb.config import Settings
+            ssl = CHROMA_PORT == 443
             _client = chromadb.HttpClient(
                 host=CHROMA_HOST,
                 port=CHROMA_PORT,
+                ssl=ssl,
                 settings=Settings(anonymized_telemetry=False),
             )
             _client.heartbeat()
