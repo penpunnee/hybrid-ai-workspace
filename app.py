@@ -21,110 +21,219 @@ st.set_page_config(page_title="Hybrid AI Workspace", page_icon="🧠", layout="w
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 /* ===== BASE ===== */
 html, body, [data-testid="stAppViewContainer"] {
-    background: #070b12 !important;
+    background: #080a11 !important;
     font-family: 'Sora', sans-serif !important;
 }
-[data-testid="stAppViewContainer"]::before {
-    content: "";
-    position: fixed;
-    inset: 0;
-    background:
-        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(0,200,255,0.07) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(120,80,255,0.06) 0%, transparent 60%);
-    pointer-events: none;
-    z-index: 0;
-}
 .block-container {
-    padding: 0.75rem 1.5rem 0 1.5rem !important;
+    padding: 0.5rem 1.25rem 0 1.25rem !important;
     position: relative; z-index: 1;
+}
+
+/* ===== ORB BACKGROUND ===== */
+.orb-field { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+.orb {
+    position: absolute; border-radius: 50%;
+    filter: blur(90px); mix-blend-mode: screen;
+    animation: orb-drift 14s ease-in-out infinite alternate;
+}
+.orb-1 {
+    width: 380px; height: 380px;
+    background: radial-gradient(circle, rgba(0,220,255,0.55) 0%, rgba(0,180,255,0.15) 50%, transparent 75%);
+    top: -80px; right: 20%;
+    animation-duration: 18s;
+}
+.orb-2 {
+    width: 320px; height: 320px;
+    background: radial-gradient(circle, rgba(230,60,200,0.5) 0%, rgba(180,40,180,0.15) 50%, transparent 75%);
+    bottom: 60px; right: 28%;
+    animation-duration: 22s; animation-delay: -6s;
+}
+.orb-3 {
+    width: 220px; height: 220px;
+    background: radial-gradient(circle, rgba(160,100,255,0.45) 0%, rgba(120,60,220,0.12) 50%, transparent 75%);
+    bottom: 80px; right: 8%;
+    animation-duration: 16s; animation-delay: -10s;
+}
+@keyframes orb-drift {
+    0%   { transform: translate(0,0) scale(1); }
+    50%  { transform: translate(-30px, 20px) scale(1.05); }
+    100% { transform: translate(20px, -25px) scale(0.97); }
 }
 
 /* ===== SIDEBAR GLASS ===== */
 [data-testid="stSidebar"] {
-    min-width: 270px !important;
-    max-width: 300px !important;
-    background: rgba(8, 14, 24, 0.75) !important;
-    backdrop-filter: blur(24px) saturate(160%) !important;
-    border-right: 1px solid rgba(0, 200, 255, 0.08) !important;
-    box-shadow: 4px 0 40px rgba(0,0,0,0.4) !important;
+    min-width: 200px !important;
+    max-width: 220px !important;
+    background: rgba(10, 13, 22, 0.92) !important;
+    backdrop-filter: blur(28px) saturate(150%) !important;
+    border-right: 1px solid rgba(255,255,255,0.06) !important;
+    box-shadow: 4px 0 50px rgba(0,0,0,0.6) !important;
 }
 [data-testid="stSidebar"] .block-container {
-    padding: 1rem 0.75rem !important;
+    padding: 0.75rem 0.65rem 5rem 0.65rem !important;
 }
-[data-testid="stSidebar"] h2 {
-    background: linear-gradient(120deg, #38d9f5, #7c72fc);
-    -webkit-background-clip: text !important;
-    -webkit-text-fill-color: transparent !important;
-    font-weight: 600 !important;
-    letter-spacing: -0.5px !important;
+
+/* AI card at top */
+.ai-card {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 6px 14px 6px;
+    margin-bottom: 4px;
+}
+.ai-avatar {
+    width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem; font-weight: 700; color: #fff;
+    flex-shrink: 0;
+    box-shadow: 0 0 16px rgba(0,0,0,0.4);
+}
+.ai-avatar.fa  { background: linear-gradient(135deg,#0ea5e9,#38bdf8); }
+.ai-avatar.kwan{ background: linear-gradient(135deg,#f97316,#fb923c); }
+.ai-avatar.khim{ background: linear-gradient(135deg,#8b5cf6,#a78bfa); }
+.ai-meta { flex: 1; min-width: 0; }
+.ai-name-text {
+    font-size: 0.92rem; font-weight: 700;
+    color: #e2e8f0 !important; line-height: 1.2;
+    -webkit-text-fill-color: unset !important;
+}
+.pro-badge {
+    font-size: 0.6rem; font-weight: 600;
+    background: linear-gradient(135deg,#3b82f6,#8b5cf6);
+    color: #fff; border-radius: 4px;
+    padding: 1px 6px; vertical-align: middle;
+}
+
+/* Session group header */
+.sess-group-header {
+    font-size: 0.65rem; font-weight: 600;
+    color: rgba(148,163,184,0.6) !important;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 8px 2px 4px 2px;
+}
+
+/* User profile bottom */
+.user-profile-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 8px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    background: rgba(10,13,22,0.92);
+    position: fixed; bottom: 0; left: 0; width: 220px; z-index: 100;
+    backdrop-filter: blur(20px);
+}
+.user-avatar {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: linear-gradient(135deg,#3b82f6,#1d4ed8);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.78rem; font-weight: 700; color: #fff; flex-shrink: 0;
+}
+.user-info .user-name { font-size: 0.8rem; font-weight: 600; color: #e2e8f0 !important; }
+.user-info .user-plan { font-size: 0.65rem; color: rgba(148,163,184,0.6) !important; }
+.status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #22c55e; margin-left: auto; flex-shrink: 0;
+    box-shadow: 0 0 8px #22c55e;
 }
 
 /* ===== BUTTONS ===== */
 button[data-testid="baseButton-secondary"] {
     background: rgba(255,255,255,0.04) !important;
-    border: 1px solid rgba(255,255,255,0.09) !important;
-    backdrop-filter: blur(12px) !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
     border-radius: 10px !important;
-    color: rgba(200,220,255,0.75) !important;
+    color: rgba(180,200,235,0.7) !important;
     font-family: 'Sora', sans-serif !important;
-    font-size: 0.78rem !important;
-    transition: all 0.2s ease !important;
+    font-size: 0.77rem !important;
+    transition: all 0.18s ease !important;
+    text-align: left !important;
 }
 button[data-testid="baseButton-secondary"]:hover {
-    background: rgba(0,200,255,0.08) !important;
-    border-color: rgba(0,200,255,0.25) !important;
-    color: #38d9f5 !important;
-    box-shadow: 0 0 18px rgba(0,200,255,0.08) !important;
+    background: rgba(255,255,255,0.07) !important;
+    color: rgba(220,235,255,0.9) !important;
+    border-color: rgba(255,255,255,0.14) !important;
 }
 button[data-testid="baseButton-primary"] {
-    background: linear-gradient(135deg, rgba(0,200,255,0.15), rgba(120,80,255,0.15)) !important;
-    border: 1px solid rgba(56,217,245,0.3) !important;
-    backdrop-filter: blur(12px) !important;
+    background: rgba(255,255,255,0.07) !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
     border-radius: 10px !important;
-    color: #38d9f5 !important;
+    color: rgba(220,235,255,0.95) !important;
     font-family: 'Sora', sans-serif !important;
-    font-size: 0.78rem !important;
-    box-shadow: 0 0 20px rgba(0,200,255,0.08), inset 0 1px 0 rgba(255,255,255,0.06) !important;
-    transition: all 0.2s ease !important;
+    font-size: 0.77rem !important;
+    font-weight: 600 !important;
+    transition: all 0.18s ease !important;
+    text-align: left !important;
 }
 button[data-testid="baseButton-primary"]:hover {
-    background: linear-gradient(135deg, rgba(0,200,255,0.25), rgba(120,80,255,0.22)) !important;
-    box-shadow: 0 0 30px rgba(0,200,255,0.15), inset 0 1px 0 rgba(255,255,255,0.1) !important;
+    background: rgba(255,255,255,0.11) !important;
+}
+
+/* New chat button — full width, gradient pill */
+[data-testid="stSidebar"] button[data-testid="baseButton-primary"]:first-of-type {
+    background: linear-gradient(135deg, rgba(0,180,255,0.18), rgba(120,60,240,0.18)) !important;
+    border: 1px solid rgba(120,160,255,0.2) !important;
+    border-radius: 12px !important;
+    color: rgba(200,225,255,0.9) !important;
+    font-size: 0.83rem !important;
+    padding: 0.5rem !important;
+}
+
+/* ===== AI HEADER BAR ===== */
+.ai-header-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 0 12px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    margin-bottom: 6px;
+}
+.ai-header-bar .ai-avatar { width: 34px; height: 34px; font-size: 0.9rem; }
+.ai-header-meta .ai-title { font-size: 0.95rem; font-weight: 700; color: #e2e8f0 !important; }
+.ai-header-meta .ai-status {
+    font-size: 0.7rem; color: rgba(148,163,184,0.7) !important;
+    display: flex; align-items: center; gap: 4px;
+}
+.ai-header-meta .ai-status::before {
+    content: ''; display: inline-block;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #22c55e; box-shadow: 0 0 6px #22c55e;
 }
 
 /* ===== CHAT MESSAGES ===== */
 [data-testid="stChatMessage"] {
-    background: rgba(255,255,255,0.03) !important;
-    backdrop-filter: blur(16px) !important;
-    border: 1px solid rgba(255,255,255,0.065) !important;
-    border-radius: 16px !important;
-    margin: 5px 0 !important;
+    background: rgba(255,255,255,0.035) !important;
+    backdrop-filter: blur(20px) !important;
+    border: 1px solid rgba(255,255,255,0.07) !important;
+    border-radius: 18px !important;
+    margin: 4px 0 !important;
     transition: border-color 0.2s !important;
 }
 [data-testid="stChatMessage"]:hover {
-    border-color: rgba(56,217,245,0.12) !important;
+    border-color: rgba(255,255,255,0.12) !important;
 }
 
 /* ===== CHAT INPUT ===== */
+[data-testid="stBottom"] {
+    background: rgba(8,10,17,0.6) !important;
+    backdrop-filter: blur(24px) !important;
+    padding: 0.5rem 2rem 0.75rem 2rem !important;
+    border-top: 1px solid rgba(255,255,255,0.05) !important;
+}
 [data-testid="stChatInput"] textarea {
-    background: rgba(255,255,255,0.04) !important;
-    border: 1px solid rgba(255,255,255,0.10) !important;
-    border-radius: 14px !important;
+    background: rgba(255,255,255,0.05) !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    border-radius: 20px !important;
     color: rgba(220,235,255,0.9) !important;
     font-family: 'Sora', sans-serif !important;
     backdrop-filter: blur(20px) !important;
+    padding: 0.65rem 1rem !important;
 }
+[data-testid="stChatInput"] textarea::placeholder { color: rgba(148,163,184,0.45) !important; }
 [data-testid="stChatInput"] textarea:focus {
-    border-color: rgba(56,217,245,0.35) !important;
-    box-shadow: 0 0 0 3px rgba(56,217,245,0.06) !important;
+    border-color: rgba(148,163,210,0.3) !important;
+    box-shadow: 0 0 0 3px rgba(100,120,255,0.06) !important;
 }
-[data-testid="stChatInputSubmitButton"] {
-    background: linear-gradient(135deg, rgba(0,200,255,0.2), rgba(120,80,255,0.2)) !important;
-    border-radius: 10px !important;
+[data-testid="stChatInputSubmitButton"] button {
+    background: rgba(100,120,255,0.2) !important;
+    border-radius: 50% !important; border: none !important;
 }
 
 /* ===== EXPANDERS ===== */
@@ -150,11 +259,13 @@ button[data-testid="baseButton-primary"]:hover {
 
 /* ===== HEADERS ===== */
 h1, h2, h3 {
-    color: rgba(200,225,255,0.92) !important;
+    color: rgba(210,228,255,0.9) !important;
     font-family: 'Sora', sans-serif !important;
-    font-weight: 600 !important;
-    letter-spacing: -0.4px !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.5px !important;
 }
+/* Hide default streamlit header/subheader for main area */
+.main-ai-header h3 { font-size: 0 !important; }
 
 /* ===== TEXT & CAPTIONS ===== */
 p, span, label, div {
@@ -226,11 +337,18 @@ code, pre, [data-testid="stCode"] {
 /* ===== FILE UPLOADER ===== */
 [data-testid="stFileUploader"] {
     background: rgba(255,255,255,0.025) !important;
-    border: 1px dashed rgba(56,217,245,0.2) !important;
+    border: 1px dashed rgba(180,180,255,0.15) !important;
     border-radius: 12px !important;
 }
+
+/* ===== HIDE STREAMLIT BRANDING ===== */
+#MainMenu, footer, header { visibility: hidden !important; }
+[data-testid="stToolbar"] { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
+
+# --- Inject background orbs (fixed, behind everything) ---
+st.markdown('<div class="orb-field"><div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div></div>', unsafe_allow_html=True)
 
 # --- 2. Session State ---
 ASSISTANT_NAMES = list(ASSISTANTS.keys())
@@ -288,82 +406,104 @@ def _group_sessions(sessions: list) -> dict:
     return groups
 
 # ==================== SIDEBAR (Master) ====================
-with st.sidebar:
-    st.markdown("## 🧠 Hybrid AI")
+# Derive current AI metadata for sidebar card
+_cur_name_for_sidebar = st.session_state.get("current_assistant", ASSISTANT_NAMES[0])
+_cur_slug_for_sidebar = ASSISTANTS[_cur_name_for_sidebar]["slug"]
+_ai_display = {"fa": ("F", "fa", "ฟ้า AI"), "kwan": ("K", "kwan", "ขวัญ AI"), "khim": ("K", "khim", "ขิม AI")}
+_av_letter, _av_cls, _ai_label = _ai_display.get(_cur_slug_for_sidebar, ("A", "fa", "AI"))
 
-    # AI Selector
-    ai_labels = ["🩵 ฟ้า", "🧡 ขวัญ", "💙 ขิม"]
+with st.sidebar:
+    # --- AI Card at top ---
+    st.markdown(f"""
+    <div class="ai-card">
+        <div class="ai-avatar {_av_cls}">{_av_letter}</div>
+        <div class="ai-meta">
+            <div class="ai-name-text">{_ai_label} <span class="pro-badge">Pro</span></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # --- AI Switcher (compact) ---
+    ai_short = ["🩵 ฟ้า", "🧡 ขวัญ", "💙 ขิม"]
     cur_idx = ASSISTANT_NAMES.index(st.session_state.current_assistant)
-    cols = st.columns(3)
-    for i, (col, label) in enumerate(zip(cols, ai_labels)):
+    sb_cols = st.columns(3)
+    for i, (col, label) in enumerate(zip(sb_cols, ai_short)):
         with col:
-            btn_type = "primary" if i == cur_idx else "secondary"
-            if st.button(label, key=f"ai_{i}", use_container_width=True, type=btn_type):
+            if st.button(label, key=f"ai_{i}", use_container_width=True,
+                         type="primary" if i == cur_idx else "secondary"):
                 st.session_state.current_assistant = ASSISTANT_NAMES[i]
                 st.rerun()
 
-    st.divider()
+    st.markdown("<div style='margin:6px 0'></div>", unsafe_allow_html=True)
 
-    # New Chat
+    # --- New Chat ---
     cur_name = st.session_state.current_assistant
-    if st.button("➕ สนทนาใหม่", use_container_width=True, type="primary"):
+    if st.button("＋  เริ่มแชทใหม่", use_container_width=True, type="primary", key="new_chat_btn"):
         new_sid = _new_session_id()
         st.session_state.current_session[cur_name] = new_sid
         st.session_state.chat_history[cur_name] = []
-        slug = ASSISTANTS[cur_name]["slug"]
-        st.session_state.pending_prompt.pop(slug, None)
+        st.session_state.pending_prompt.pop(ASSISTANTS[cur_name]["slug"], None)
         st.rerun()
 
-    # Session List (Master)
-    st.caption("📋 ประวัติการสนทนา")
+    # --- Session List ---
     sessions = get_sessions(cur_name)
     if not sessions:
-        st.caption("_ยังไม่มีประวัติ_")
+        st.markdown("<div style='padding:8px 2px;font-size:0.72rem;color:rgba(148,163,184,0.4)'>ยังไม่มีประวัติ</div>", unsafe_allow_html=True)
     else:
         groups = _group_sessions(sessions)
         active_sid = st.session_state.current_session.get(cur_name, "default")
         for group_name, group_list in groups.items():
             if group_list:
-                st.caption(f"**{group_name}**")
+                st.markdown(f"<div class='sess-group-header'>{group_name}</div>", unsafe_allow_html=True)
                 for s in group_list:
                     is_active = s["session_id"] == active_sid
-                    label_text = ("▶ " if is_active else "") + s["first_msg"][:28] + ("…" if len(s["first_msg"]) > 28 else "")
-                    if st.button(label_text, key=f"sess_{s['session_id']}", use_container_width=True,
+                    ts = s["started_at"][11:16] if len(s["started_at"]) > 15 else "เมื่อนี้"
+                    title = s["first_msg"][:26] + ("…" if len(s["first_msg"]) > 26 else "")
+                    if st.button(f"{title}\n{ts}", key=f"sess_{s['session_id']}",
+                                 use_container_width=True,
                                  type="primary" if is_active else "secondary"):
                         st.session_state.current_session[cur_name] = s["session_id"]
                         st.session_state.chat_history[cur_name] = load_history(cur_name, s["session_id"])
                         st.rerun()
 
-    st.divider()
+    st.markdown("<div style='height:4rem'></div>", unsafe_allow_html=True)
 
-    # Settings Expander
-    with st.expander("⚙️ การตั้งค่า"):
+    # --- Settings (collapsible, bottom-ish) ---
+    with st.expander("⚙️ Settings"):
         provider_choice = st.radio(
             "AI Engine",
             options=["ollama", "gemini"],
-            format_func=lambda x: f"🏠 Local ({OLLAMA_MODEL})" if x == "ollama" else f"☁️ Gemini ({GEMINI_MODEL})",
+            format_func=lambda x: f"🏠 Local" if x == "ollama" else f"☁️ Gemini",
             index=0 if st.session_state.provider == "ollama" else 1,
         )
         st.session_state.provider = provider_choice
         st.divider()
-
-        st.markdown("**� เพิ่มไฟล์ Context**")
-        st.caption("ลากมาวาง หรือคลิกเลือกไฟล์ (txt, md, json, py)")
+        st.caption("📎 เพิ่มไฟล์ Context")
         uploaded = st.file_uploader(
             "files", type=["txt", "md", "json", "py"],
             accept_multiple_files=True, label_visibility="collapsed",
         )
         if uploaded:
             st.session_state.uploaded_files = uploaded
-            for f in uploaded:
-                st.caption(f"✅ {f.name}")
+            for f in uploaded: st.caption(f"✅ {f.name}")
         else:
             st.session_state.uploaded_files = []
         st.divider()
-
         ollama_ok, _ = check_ollama_health()
         memory_ok = is_memory_available()
-        st.caption(f"{'🟢' if ollama_ok else '🔴'} Ollama &nbsp;|&nbsp; {'🟢' if memory_ok else '🟡'} Memory &nbsp;|&nbsp; 📚 {get_skill_count()} skills")
+        st.caption(f"{'🟢' if ollama_ok else '🔴'} Ollama · {'🟢' if memory_ok else '🟡'} Mem · 📚{get_skill_count()}")
+
+    # --- User profile bar (fixed bottom) ---
+    st.markdown("""
+    <div class="user-profile-bar">
+        <div class="user-avatar">P</div>
+        <div class="user-info">
+            <div class="user-name">พี่ปอย</div>
+            <div class="user-plan">Pro Plan</div>
+        </div>
+        <div class="status-dot"></div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 # ==================== MAIN AREA (Detail) ====================
@@ -375,24 +515,31 @@ templates = config.get("prompt_templates", [])
 session_id = st.session_state.current_session.get(name, "default")
 avatar = _load_avatar(config)
 
-# Header
-col_h1, col_h2, col_h3 = st.columns([7, 2, 1])
-with col_h1:
-    st.subheader(f"สนทนากับ {name}")
-with col_h2:
-    badge = f"🏠 {OLLAMA_MODEL}" if st.session_state.provider == "ollama" else f"☁️ {GEMINI_MODEL}"
-    st.caption(badge)
-with col_h3:
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("�️", key=f"clr_{slug}", help="ล้างการสนทนานี้"):
-            clear_session(name, session_id)
-            st.session_state.chat_history[name] = []
-            st.rerun()
-    with c2:
-        md_text = export_history_md(name, session_id)
-        st.download_button("💾", data=md_text.encode(), file_name=f"chat_{slug}.md",
-                           mime="text/markdown", key=f"exp_{slug}", help="Export")
+# --- AI Status Header ---
+_ai_disp2 = {"fa": ("F", "fa", name), "kwan": ("K", "kwan", name), "khim": ("K", "khim", name)}
+_ltr, _cls, _nm = _ai_disp2.get(slug, ("A", "fa", name))
+_engine_tag = f"Local · {OLLAMA_MODEL}" if st.session_state.provider == "ollama" else f"Cloud · {GEMINI_MODEL}"
+st.markdown(f"""
+<div class="ai-header-bar">
+    <div class="ai-avatar {_cls}">{_ltr}</div>
+    <div class="ai-header-meta">
+        <div class="ai-title">{_nm}</div>
+        <div class="ai-status">ออนไลน์ · {_engine_tag}</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Action buttons (clear + export) — minimal row
+c_del, c_exp, c_space = st.columns([1, 1, 10])
+with c_del:
+    if st.button("🗑️", key=f"clr_{slug}", help="ล้างการสนทนานี้"):
+        clear_session(name, session_id)
+        st.session_state.chat_history[name] = []
+        st.rerun()
+with c_exp:
+    md_text = export_history_md(name, session_id)
+    st.download_button("💾", data=md_text.encode(), file_name=f"chat_{slug}.md",
+                       mime="text/markdown", key=f"exp_{slug}", help="Export")
 
 # Token status
 current_model = OLLAMA_MODEL if st.session_state.provider == "ollama" else GEMINI_MODEL
@@ -448,7 +595,7 @@ with chat_container:
         with st.chat_message(msg["role"], avatar=av):
             st.write(msg["content"])
 
-st.caption("� พิมพ์ **จำไว้ว่า...** เพื่อให้ AI บันทึกข้อมูลลง Memory ทันที")
+st.caption("💡 พิมพ์ จำไว้ว่า... เพื่อให้ AI บันทึกข้อมูลลง Memory")
 
 # Chat Input (fixed below container)
 default_input = st.session_state.pending_prompt.pop(slug, "")
