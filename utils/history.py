@@ -1,7 +1,6 @@
 import sqlite3
-import json
 import os
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "chat_history.db")
 
@@ -15,49 +14,84 @@ def _get_conn():
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             provider TEXT DEFAULT 'ollama',
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            session_id TEXT DEFAULT 'default'
         )
     """)
+    try:
+        conn.execute("ALTER TABLE messages ADD COLUMN session_id TEXT DEFAULT 'default'")
+    except Exception:
+        pass
     conn.commit()
     return conn
 
 
-def save_message(assistant: str, role: str, content: str, provider: str = "ollama"):
-    """บันทึกข้อความ 1 ข้อความลง SQLite"""
+def save_message(assistant: str, role: str, content: str, provider: str = "ollama", session_id: str = "default"):
+    """บันทึกข้อความลง SQLite พร้อม session_id"""
     conn = _get_conn()
     conn.execute(
-        "INSERT INTO messages (assistant, role, content, provider, created_at) VALUES (?, ?, ?, ?, ?)",
-        (assistant, role, content, provider, datetime.now().isoformat()),
+        "INSERT INTO messages (assistant, role, content, provider, created_at, session_id) VALUES (?, ?, ?, ?, ?, ?)",
+        (assistant, role, content, provider, datetime.now().isoformat(), session_id),
     )
     conn.commit()
     conn.close()
 
 
-def load_history(assistant: str) -> list[dict]:
-    """โหลดประวัติแชทของ assistant คนนั้นจาก DB"""
+def load_history(assistant: str, session_id: str = "default") -> list[dict]:
+    """โหลดประวัติแชทของ session นั้นจาก DB"""
     conn = _get_conn()
     rows = conn.execute(
-        "SELECT role, content FROM messages WHERE assistant = ? ORDER BY id ASC",
-        (assistant,),
+        "SELECT role, content FROM messages WHERE assistant = ? AND session_id = ? ORDER BY id ASC",
+        (assistant, session_id),
     ).fetchall()
     conn.close()
     return [{"role": row[0], "content": row[1]} for row in rows]
 
 
+def get_sessions(assistant: str) -> list[dict]:
+    """ดึงรายการ sessions ทั้งหมดของ assistant พร้อม first message"""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT session_id, MIN(created_at) as started_at FROM messages WHERE assistant = ? GROUP BY session_id ORDER BY started_at DESC LIMIT 30",
+        (assistant,),
+    ).fetchall()
+    sessions = []
+    for session_id, started_at in rows:
+        first = conn.execute(
+            "SELECT content FROM messages WHERE assistant = ? AND session_id = ? AND role = 'user' ORDER BY id ASC LIMIT 1",
+            (assistant, session_id),
+        ).fetchone()
+        sessions.append({
+            "session_id": session_id,
+            "started_at": started_at or "",
+            "first_msg": (first[0] if first else "การสนทนา")[:50],
+        })
+    conn.close()
+    return sessions
+
+
+def clear_session(assistant: str, session_id: str):
+    """ลบประวัติแชทของ session นั้น"""
+    conn = _get_conn()
+    conn.execute("DELETE FROM messages WHERE assistant = ? AND session_id = ?", (assistant, session_id))
+    conn.commit()
+    conn.close()
+
+
 def clear_history(assistant: str):
-    """ลบประวัติแชทของ assistant คนนั้น"""
+    """ลบประวัติแชทของ assistant ทั้งหมด"""
     conn = _get_conn()
     conn.execute("DELETE FROM messages WHERE assistant = ?", (assistant,))
     conn.commit()
     conn.close()
 
 
-def export_history_md(assistant: str) -> str:
+def export_history_md(assistant: str, session_id: str = "default") -> str:
     """Export ประวัติแชทเป็น Markdown string"""
     conn = _get_conn()
     rows = conn.execute(
-        "SELECT role, content, created_at FROM messages WHERE assistant = ? ORDER BY id ASC",
-        (assistant,),
+        "SELECT role, content, created_at FROM messages WHERE assistant = ? AND session_id = ? ORDER BY id ASC",
+        (assistant, session_id),
     ).fetchall()
     conn.close()
 
