@@ -21,9 +21,214 @@ st.set_page_config(page_title="Hybrid AI Workspace", page_icon="🧠", layout="w
 
 st.markdown("""
 <style>
-.block-container { padding: 0.75rem 1.5rem 0 1.5rem !important; }
-[data-testid="stSidebar"] { min-width: 270px !important; max-width: 300px !important; }
-[data-testid="stSidebar"] .block-container { padding: 1rem 0.75rem !important; }
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ===== BASE ===== */
+html, body, [data-testid="stAppViewContainer"] {
+    background: #070b12 !important;
+    font-family: 'Sora', sans-serif !important;
+}
+[data-testid="stAppViewContainer"]::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background:
+        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(0,200,255,0.07) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(120,80,255,0.06) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+}
+.block-container {
+    padding: 0.75rem 1.5rem 0 1.5rem !important;
+    position: relative; z-index: 1;
+}
+
+/* ===== SIDEBAR GLASS ===== */
+[data-testid="stSidebar"] {
+    min-width: 270px !important;
+    max-width: 300px !important;
+    background: rgba(8, 14, 24, 0.75) !important;
+    backdrop-filter: blur(24px) saturate(160%) !important;
+    border-right: 1px solid rgba(0, 200, 255, 0.08) !important;
+    box-shadow: 4px 0 40px rgba(0,0,0,0.4) !important;
+}
+[data-testid="stSidebar"] .block-container {
+    padding: 1rem 0.75rem !important;
+}
+[data-testid="stSidebar"] h2 {
+    background: linear-gradient(120deg, #38d9f5, #7c72fc);
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    font-weight: 600 !important;
+    letter-spacing: -0.5px !important;
+}
+
+/* ===== BUTTONS ===== */
+button[data-testid="baseButton-secondary"] {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid rgba(255,255,255,0.09) !important;
+    backdrop-filter: blur(12px) !important;
+    border-radius: 10px !important;
+    color: rgba(200,220,255,0.75) !important;
+    font-family: 'Sora', sans-serif !important;
+    font-size: 0.78rem !important;
+    transition: all 0.2s ease !important;
+}
+button[data-testid="baseButton-secondary"]:hover {
+    background: rgba(0,200,255,0.08) !important;
+    border-color: rgba(0,200,255,0.25) !important;
+    color: #38d9f5 !important;
+    box-shadow: 0 0 18px rgba(0,200,255,0.08) !important;
+}
+button[data-testid="baseButton-primary"] {
+    background: linear-gradient(135deg, rgba(0,200,255,0.15), rgba(120,80,255,0.15)) !important;
+    border: 1px solid rgba(56,217,245,0.3) !important;
+    backdrop-filter: blur(12px) !important;
+    border-radius: 10px !important;
+    color: #38d9f5 !important;
+    font-family: 'Sora', sans-serif !important;
+    font-size: 0.78rem !important;
+    box-shadow: 0 0 20px rgba(0,200,255,0.08), inset 0 1px 0 rgba(255,255,255,0.06) !important;
+    transition: all 0.2s ease !important;
+}
+button[data-testid="baseButton-primary"]:hover {
+    background: linear-gradient(135deg, rgba(0,200,255,0.25), rgba(120,80,255,0.22)) !important;
+    box-shadow: 0 0 30px rgba(0,200,255,0.15), inset 0 1px 0 rgba(255,255,255,0.1) !important;
+}
+
+/* ===== CHAT MESSAGES ===== */
+[data-testid="stChatMessage"] {
+    background: rgba(255,255,255,0.03) !important;
+    backdrop-filter: blur(16px) !important;
+    border: 1px solid rgba(255,255,255,0.065) !important;
+    border-radius: 16px !important;
+    margin: 5px 0 !important;
+    transition: border-color 0.2s !important;
+}
+[data-testid="stChatMessage"]:hover {
+    border-color: rgba(56,217,245,0.12) !important;
+}
+
+/* ===== CHAT INPUT ===== */
+[data-testid="stChatInput"] textarea {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid rgba(255,255,255,0.10) !important;
+    border-radius: 14px !important;
+    color: rgba(220,235,255,0.9) !important;
+    font-family: 'Sora', sans-serif !important;
+    backdrop-filter: blur(20px) !important;
+}
+[data-testid="stChatInput"] textarea:focus {
+    border-color: rgba(56,217,245,0.35) !important;
+    box-shadow: 0 0 0 3px rgba(56,217,245,0.06) !important;
+}
+[data-testid="stChatInputSubmitButton"] {
+    background: linear-gradient(135deg, rgba(0,200,255,0.2), rgba(120,80,255,0.2)) !important;
+    border-radius: 10px !important;
+}
+
+/* ===== EXPANDERS ===== */
+[data-testid="stExpander"] {
+    background: rgba(255,255,255,0.025) !important;
+    backdrop-filter: blur(16px) !important;
+    border: 1px solid rgba(255,255,255,0.07) !important;
+    border-radius: 14px !important;
+    overflow: hidden !important;
+}
+[data-testid="stExpander"] summary {
+    color: rgba(180,210,255,0.8) !important;
+    font-family: 'Sora', sans-serif !important;
+}
+
+/* ===== SCROLLABLE CONTAINER ===== */
+[data-testid="stVerticalBlockBorderWrapper"] > div {
+    background: rgba(255,255,255,0.02) !important;
+    border: 1px solid rgba(255,255,255,0.05) !important;
+    border-radius: 16px !important;
+    backdrop-filter: blur(12px) !important;
+}
+
+/* ===== HEADERS ===== */
+h1, h2, h3 {
+    color: rgba(200,225,255,0.92) !important;
+    font-family: 'Sora', sans-serif !important;
+    font-weight: 600 !important;
+    letter-spacing: -0.4px !important;
+}
+
+/* ===== TEXT & CAPTIONS ===== */
+p, span, label, div {
+    color: rgba(185,210,245,0.82) !important;
+    font-family: 'Sora', sans-serif !important;
+}
+[data-testid="stCaptionContainer"] p {
+    color: rgba(140,170,210,0.6) !important;
+    font-size: 0.75rem !important;
+}
+
+/* ===== TEXT INPUT & SELECTBOX ===== */
+[data-testid="stTextInput"] input,
+[data-testid="stSelectbox"] select {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid rgba(255,255,255,0.09) !important;
+    border-radius: 10px !important;
+    color: rgba(210,230,255,0.88) !important;
+    font-family: 'Sora', sans-serif !important;
+}
+
+/* ===== RADIO ===== */
+[data-testid="stRadio"] label {
+    color: rgba(180,210,250,0.78) !important;
+}
+
+/* ===== DIVIDER ===== */
+hr {
+    border-color: rgba(255,255,255,0.06) !important;
+}
+
+/* ===== ALERTS ===== */
+[data-testid="stAlert"] {
+    background: rgba(255,200,100,0.07) !important;
+    border: 1px solid rgba(255,200,100,0.18) !important;
+    border-radius: 12px !important;
+    backdrop-filter: blur(12px) !important;
+}
+
+/* ===== SUCCESS / WARNING / ERROR ===== */
+[data-testid="stNotification"] {
+    background: rgba(0,200,100,0.08) !important;
+    border-radius: 12px !important;
+    backdrop-filter: blur(12px) !important;
+}
+
+/* ===== CODE / MONO ===== */
+code, pre, [data-testid="stCode"] {
+    font-family: 'JetBrains Mono', monospace !important;
+    background: rgba(0,0,0,0.3) !important;
+    border: 1px solid rgba(255,255,255,0.07) !important;
+    border-radius: 10px !important;
+}
+
+/* ===== DOWNLOAD BUTTON ===== */
+[data-testid="stDownloadButton"] button {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid rgba(255,255,255,0.09) !important;
+    border-radius: 10px !important;
+    color: rgba(200,220,255,0.75) !important;
+}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
+::-webkit-scrollbar-thumb { background: rgba(56,217,245,0.2); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(56,217,245,0.35); }
+
+/* ===== FILE UPLOADER ===== */
+[data-testid="stFileUploader"] {
+    background: rgba(255,255,255,0.025) !important;
+    border: 1px dashed rgba(56,217,245,0.2) !important;
+    border-radius: 12px !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
