@@ -1,15 +1,17 @@
 version: "3.8"
 
 services:
-  streamlit:
+  hybrid-ai:
     build: .
     container_name: hybrid-ai-workspace
     restart: unless-stopped
     ports:
-      - "8501:8501"
+      - "8080:8000"
     volumes:
-      - ./chat_history.db:/app/chat_history.db
+      - ${NAS_DATA_PATH:-./data}/chat_history.db:/app/chat_history.db
       - ./identity.json:/app/identity.json
+    environment:
+      - DB_PATH=/app/chat_history.db
     env_file:
       - .env
 

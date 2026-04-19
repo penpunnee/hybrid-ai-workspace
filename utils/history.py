@@ -1,8 +1,12 @@
 import sqlite3
 import os
 from datetime import datetime, date, timedelta
+from dotenv import load_dotenv
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "chat_history.db")
+load_dotenv()
+
+_default_db = os.path.join(os.path.dirname(__file__), "..", "chat_history.db")
+DB_PATH = os.getenv("DB_PATH", _default_db)
 
 
 def _get_conn():
