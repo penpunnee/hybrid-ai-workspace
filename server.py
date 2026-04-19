@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -81,6 +81,22 @@ def get_history(assistant: str, session_id: str):
 def export_session(assistant: str, session_id: str):
     md = export_history_md(assistant, session_id)
     return {"markdown": md}
+
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    content = await file.read()
+    name = file.filename or "file"
+    try:
+        if name.lower().endswith(".json"):
+            import json as _json
+            data = _json.loads(content)
+            text = f"[ไฟล์ JSON: {name}]\n{_json.dumps(data, ensure_ascii=False, indent=2)}"
+        else:
+            text = f"[ไฟล์: {name}]\n{content.decode('utf-8', errors='ignore')}"
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    return {"ok": True, "filename": name, "text": text[:8000]}
 
 
 @app.post("/api/memory/{assistant}")

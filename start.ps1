@@ -62,11 +62,25 @@ CHROMA_PORT=8000
     Write-Host "✅ สร้าง .env แล้ว — แก้ค่าใน .env ก่อนใช้งาน" -ForegroundColor Green
 }
 
-# --- 5. รัน Streamlit ---
+# --- 5. ตรวจสอบ static/index.html ---
+if (-not (Test-Path "static\index.html")) {
+    Write-Host ""
+    Write-Host "⚠️  ไม่พบ static/index.html" -ForegroundColor Yellow
+    Write-Host "   วิธีแก้: ไปที่โฟลเดอร์ appscript.ui แล้วรัน: npm run build" -ForegroundColor Yellow
+    Write-Host "   หรือใช้ static/index.html เดิมที่มีอยู่แล้ว" -ForegroundColor Gray
+}
+
+# --- 6. รัน FastAPI ---
 Write-Host ""
 Write-Host "🚀 กำลังเปิด Hybrid AI Workspace..." -ForegroundColor Green
-Write-Host "   เปิด Browser: http://localhost:8501" -ForegroundColor Cyan
+Write-Host "   เปิด Browser: http://localhost:8000" -ForegroundColor Cyan
 Write-Host "   กด Ctrl+C เพื่อหยุด" -ForegroundColor Gray
 Write-Host ""
 
-python -m streamlit run app.py --server.port 8501 --server.headless false
+# เปิด browser หลังจาก server เริ่มต้น 2 วินาที
+Start-Job -ScriptBlock {
+    Start-Sleep -Seconds 2
+    Start-Process "http://localhost:8000"
+} | Out-Null
+
+python server.py
