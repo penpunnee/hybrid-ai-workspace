@@ -1,5 +1,7 @@
 .env
 chat_history.db
 __pycache__/
+Icon?
+Icon
 *.pyc
 .DS_Store
