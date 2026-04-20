@@ -15,6 +15,7 @@ from utils.rag import inject_context_to_system
 from utils.history import save_message, load_history, get_sessions, clear_session, export_history_md
 from utils.memory import save_memory, search_memory, is_memory_available, save_lesson, save_preference, get_lessons, get_preferences
 from utils.skills import get_all_skills, get_skill_count
+from utils.obsidian_sync import sync_vault, search_vault, get_vault_stats
 
 app = FastAPI(title="Hybrid AI Workspace")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -83,6 +84,25 @@ def get_history(assistant: str, session_id: str):
 def export_session(assistant: str, session_id: str):
     md = export_history_md(assistant, session_id)
     return {"markdown": md}
+
+
+@app.get("/api/vault/stats")
+def vault_stats():
+    return get_vault_stats()
+
+
+@app.post("/api/vault/sync")
+async def vault_sync(request: Request):
+    data = await request.json()
+    vault_path = data.get("vault_path", "")
+    result = sync_vault(vault_path)
+    return result
+
+
+@app.get("/api/vault/search")
+def vault_search(q: str, n: int = 5):
+    results = search_vault(q, n)
+    return {"results": results}
 
 
 @app.post("/api/upload")

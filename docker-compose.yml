@@ -10,8 +10,10 @@ services:
     volumes:
       - ${NAS_DATA_PATH:-./data}/chat_history.db:/app/chat_history.db
       - ./identity.json:/app/identity.json
+      - ${OBSIDIAN_VAULT_NAS_PATH:-./data}:/vault:ro
     environment:
       - DB_PATH=/app/chat_history.db
+      - OBSIDIAN_VAULT_PATH=/vault
     env_file:
       - .env
 
