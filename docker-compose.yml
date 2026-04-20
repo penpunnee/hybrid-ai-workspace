@@ -3,7 +3,7 @@ version: "3.8"
 services:
   hybrid-ai:
     build: .
-    container_name: hybrid-ai-workspace
+    container_name: ai-backend
     restart: unless-stopped
     ports:
       - "8080:8000"
