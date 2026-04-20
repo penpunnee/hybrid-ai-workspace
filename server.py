@@ -48,12 +48,21 @@ def get_config():
 
 
 @app.get("/api/status")
-def status():
-    ollama_ok, _ = check_ollama_health()
+async def status():
+    import asyncio
+    loop = asyncio.get_event_loop()
+    try:
+        ollama_ok = await asyncio.wait_for(loop.run_in_executor(None, lambda: check_ollama_health()[0]), timeout=4)
+    except Exception:
+        ollama_ok = False
+    try:
+        mem_ok = await asyncio.wait_for(loop.run_in_executor(None, is_memory_available), timeout=4)
+    except Exception:
+        mem_ok = False
     return {
         "ollama": ollama_ok,
         "gemini": bool(os.getenv("GEMINI_API_KEY", "")),
-        "memory": is_memory_available(),
+        "memory": mem_ok,
         "skills": get_skill_count(),
     }
 
