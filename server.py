@@ -48,17 +48,15 @@ def get_config():
 
 
 @app.get("/api/status")
-async def status():
-    import asyncio
-    loop = asyncio.get_event_loop()
-    try:
-        ollama_ok = await asyncio.wait_for(loop.run_in_executor(None, lambda: check_ollama_health()[0]), timeout=4)
-    except Exception:
-        ollama_ok = False
-    try:
-        mem_ok = await asyncio.wait_for(loop.run_in_executor(None, is_memory_available), timeout=4)
-    except Exception:
-        mem_ok = False
+def status():
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f1 = ex.submit(lambda: check_ollama_health()[0])
+        f2 = ex.submit(is_memory_available)
+        try: ollama_ok = f1.result(timeout=5)
+        except Exception: ollama_ok = False
+        try: mem_ok = f2.result(timeout=5)
+        except Exception: mem_ok = False
     return {
         "ollama": ollama_ok,
         "gemini": bool(os.getenv("GEMINI_API_KEY", "")),
