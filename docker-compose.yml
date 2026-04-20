@@ -26,9 +26,12 @@ services:
 
   cloudflared:
     image: cloudflare/cloudflared:latest
-    container_name: cloudflare-tunnel
+    container_name: ai-cloudflared
     restart: unless-stopped
     command: tunnel --config /etc/cloudflared/config.yml run ai-workspace
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     volumes:
       - /var/services/homes/pawin/.cloudflared:/etc/cloudflared
 
