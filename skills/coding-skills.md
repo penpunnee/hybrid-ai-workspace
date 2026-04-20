@@ -73,6 +73,80 @@ async def chat(request: Request):
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 ```
 
+## Gemini API (google-genai SDK)
+```python
+from google import genai
+from google.genai import types
+import os
+
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+# Simple generate
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents="สวัสดี บอกชื่อตัวเองหน่อย"
+)
+print(response.text)
+
+# Streaming
+for chunk in client.models.generate_content_stream(
+    model="gemini-2.0-flash",
+    contents="เล่านิทานสั้นๆ"
+):
+    print(chunk.text, end="", flush=True)
+
+# Chat with system prompt + history
+config = types.GenerateContentConfig(
+    system_instruction="คุณคือ AI ผู้ช่วยภาษาไทย ตอบสั้นกระชับ",
+)
+history = [
+    types.Content(role="user", parts=[types.Part(text="สวัสดี")]),
+    types.Content(role="model", parts=[types.Part(text="สวัสดีค่ะ!")]),
+    types.Content(role="user", parts=[types.Part(text="ชื่อคุณคืออะไร")]),
+]
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents=history,
+    config=config,
+)
+print(response.text)
+
+# Streaming chat (ใช้ใน FastAPI)
+def stream_gemini(messages: list[dict], system: str = ""):
+    history = []
+    for m in messages:
+        if m["role"] == "system":
+            continue
+        role = "user" if m["role"] == "user" else "model"
+        history.append(types.Content(role=role, parts=[types.Part(text=m["content"])]))
+    
+    config = types.GenerateContentConfig(system_instruction=system)
+    for chunk in client.models.generate_content_stream(
+        model="gemini-2.0-flash",
+        contents=history,
+        config=config,
+    ):
+        if chunk.text:
+            yield chunk.text
+
+# Error handling
+try:
+    response = client.models.generate_content(model="gemini-2.0-flash", contents="test")
+except Exception as e:
+    err = str(e)
+    if "API_KEY_INVALID" in err or "401" in err:
+        print("API Key ไม่ถูกต้อง")
+    elif "429" in err or "quota" in err.lower():
+        print("Quota หมด รอสักครู่")
+    else:
+        print(f"Error: {e}")
+
+# Available models
+# gemini-2.0-flash       → เร็ว ถูก ใช้งานทั่วไป
+# gemini-1.5-pro         → ฉลาดกว่า context ยาว
+# gemini-1.5-flash       → balance ระหว่างเร็วกับฉลาด
+```
+
 ## JavaScript / TypeScript
 ```typescript
 // Arrow functions
