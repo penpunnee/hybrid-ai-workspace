@@ -178,6 +178,25 @@ def get_preferences() -> str:
         return ""
 
 
+def search_long_term_memory(query: str, n_results: int = 3) -> str:
+    """ค้นหาจาก long_term_memory (ความจำที่ผ่าน Dream Cycle แล้ว)"""
+    client = _get_client()
+    if client is None:
+        return ""
+    try:
+        col = client.get_or_create_collection("long_term_memory", metadata={"hnsw:space": "cosine"})
+        count = col.count()
+        if count == 0:
+            return ""
+        results = col.query(query_texts=[query], n_results=min(n_results, count))
+        docs = results.get("documents", [[]])[0]
+        if not docs:
+            return ""
+        return "\n---\n".join(docs)
+    except Exception:
+        return ""
+
+
 def is_memory_available() -> bool:
     """ตรวจสอบว่า ChromaDB พร้อมใช้งานไหม"""
     client = _get_client()

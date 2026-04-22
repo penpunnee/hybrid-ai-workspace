@@ -13,7 +13,7 @@ from assistants.config import ASSISTANTS
 from utils.llm import stream_response, OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health
 from utils.rag import inject_context_to_system
 from utils.history import save_message, load_history, get_sessions, clear_session, export_history_md
-from utils.memory import save_memory, search_memory, is_memory_available, save_lesson, save_preference, get_lessons, get_preferences
+from utils.memory import save_memory, search_memory, is_memory_available, save_lesson, save_preference, get_lessons, get_preferences, search_long_term_memory
 from utils.skills import get_all_skills, get_skill_count
 from utils.obsidian_sync import sync_vault, search_vault, get_vault_stats
 from utils.dream import run_dream_cycle, get_latest_report, list_reports
@@ -178,8 +178,10 @@ async def chat(request: Request):
 
     lessons = get_lessons(prompt)
     prefs = get_preferences()
+    long_term = search_long_term_memory(prompt)
     full_context = "\n\n".join(filter(None, [
         search_memory(assistant, prompt),
+        long_term,
         get_all_skills(),
         f"[บทเรียนสะสม]\n{lessons}" if lessons else "",
         f"[ความชอบ]\n{prefs}" if prefs else "",
