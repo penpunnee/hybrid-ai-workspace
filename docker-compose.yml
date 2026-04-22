@@ -11,6 +11,8 @@ services:
       - ${NAS_DATA_PATH:-./data}/chat_history.db:/app/chat_history.db
       - ./identity.json:/app/identity.json
       - ${OBSIDIAN_VAULT_NAS_PATH:-./data}:/vault:ro
+      - ${NAS_DATA_PATH:-./data}/dream_reports:/app/dream_reports
+      - ${NAS_DATA_PATH:-./data}/skills_db.json:/app/skills_db.json
     environment:
       - DB_PATH=/app/chat_history.db
       - OBSIDIAN_VAULT_PATH=/vault

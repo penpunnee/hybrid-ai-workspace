@@ -16,6 +16,7 @@ from utils.history import save_message, load_history, get_sessions, clear_sessio
 from utils.memory import save_memory, search_memory, is_memory_available, save_lesson, save_preference, get_lessons, get_preferences
 from utils.skills import get_all_skills, get_skill_count
 from utils.obsidian_sync import sync_vault, search_vault, get_vault_stats
+from utils.dream import run_dream_cycle, get_latest_report, list_reports
 
 app = FastAPI(title="Hybrid AI Workspace")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -96,6 +97,33 @@ def export_session(assistant: str, session_id: str):
 @app.get("/api/vault/stats")
 def vault_stats():
     return get_vault_stats()
+
+
+@app.post("/api/dream")
+async def dream(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    provider = data.get("provider", "ollama") if isinstance(data, dict) else "ollama"
+    hours = data.get("hours", 24) if isinstance(data, dict) else 24
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        try:
+            result = ex.submit(run_dream_cycle, provider, hours).result(timeout=120)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+    return {"ok": True, "report": result}
+
+
+@app.get("/api/dream/report")
+def dream_report():
+    return get_latest_report()
+
+
+@app.get("/api/dream/history")
+def dream_history(limit: int = 10):
+    return {"reports": list_reports(limit)}
 
 
 @app.post("/api/vault/sync")
