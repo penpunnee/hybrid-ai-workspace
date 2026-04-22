@@ -52,7 +52,7 @@ OLLAMA_BASE_URL=http://192.168.51.235:11434/v1
 OLLAMA_MODEL=llama3
 
 # Gemini (Cloud LLM)
-GEMINI_API_KEY=AIzaSyAX50OTJ9pUzDvnbRQ_nmd2VPE118J1WO8
+GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash
 
 # ChromaDB (Long-term Memory)
