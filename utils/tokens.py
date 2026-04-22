@@ -16,6 +16,7 @@ CONTEXT_LIMITS = {
     "gemini-1.5-flash": 1048576,
     "gemini-1.5-pro": 2097152,
     "gemini-2.0-flash": 1048576,
+    "gemini-2.5-flash": 1048576,
 }
 
 
