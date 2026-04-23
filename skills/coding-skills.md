@@ -83,14 +83,14 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # Simple generate
 response = client.models.generate_content(
-    model="gemini-2.0-flash",
+    model="gemini-2.5-flash",
     contents="สวัสดี บอกชื่อตัวเองหน่อย"
 )
 print(response.text)
 
 # Streaming
 for chunk in client.models.generate_content_stream(
-    model="gemini-2.0-flash",
+    model="gemini-2.5-flash",
     contents="เล่านิทานสั้นๆ"
 ):
     print(chunk.text, end="", flush=True)
@@ -105,7 +105,7 @@ history = [
     types.Content(role="user", parts=[types.Part(text="ชื่อคุณคืออะไร")]),
 ]
 response = client.models.generate_content(
-    model="gemini-2.0-flash",
+    model="gemini-2.5-flash",
     contents=history,
     config=config,
 )
@@ -122,7 +122,7 @@ def stream_gemini(messages: list[dict], system: str = ""):
     
     config = types.GenerateContentConfig(system_instruction=system)
     for chunk in client.models.generate_content_stream(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=history,
         config=config,
     ):
@@ -131,7 +131,7 @@ def stream_gemini(messages: list[dict], system: str = ""):
 
 # Error handling
 try:
-    response = client.models.generate_content(model="gemini-2.0-flash", contents="test")
+    response = client.models.generate_content(model="gemini-2.5-flash", contents="test")
 except Exception as e:
     err = str(e)
     if "API_KEY_INVALID" in err or "401" in err:
@@ -142,9 +142,10 @@ except Exception as e:
         print(f"Error: {e}")
 
 # Available models
-# gemini-2.0-flash       → เร็ว ถูก ใช้งานทั่วไป
-# gemini-1.5-pro         → ฉลาดกว่า context ยาว
-# gemini-1.5-flash       → balance ระหว่างเร็วกับฉลาด
+# gemini-2.5-flash       → เร็ว ถูก ใช้งานทั่วไป
+# gemini-2.5-flash-lite  → เบา ประหยัด quota
+# gemini-3.1-flash-lite  → เร็วสุด ใหม่ล่าสุด
+# gemini-3.1-pro-preview → ฉลาดสุด แก้โจทย์ซับซ้อน
 ```
 
 ## JavaScript / TypeScript

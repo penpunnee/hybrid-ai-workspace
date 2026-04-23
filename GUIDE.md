@@ -83,7 +83,7 @@ npm run dev
 แก้ไฟล์ `.env`:
 ```
 OLLAMA_MODEL=llama3        # เปลี่ยน local model
-GEMINI_MODEL=gemini-1.5-flash  # เปลี่ยน cloud model
+GEMINI_MODEL=gemini-2.5-flash  # เปลี่ยน cloud model (หรือ 3.1-flash-lite / 3.1-pro-preview)
 ```
 
 ### เพิ่ม/แก้ข้อมูลตัวเอง
