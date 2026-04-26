@@ -22,9 +22,9 @@ DREAM_REPORTS_DIR = Path(__file__).parent.parent / "dream_reports"
 DREAM_REPORTS_DIR.mkdir(exist_ok=True)
 
 # เกณฑ์เลื่อนขั้นเข้า Deep Sleep (long-term memory)
-PROMOTE_MIN_SCORE = 0.8
-PROMOTE_MIN_HITS = 3
-PROMOTE_MIN_QUERIES = 3
+PROMOTE_MIN_SCORE = 0.5
+PROMOTE_MIN_HITS = 1
+PROMOTE_MIN_QUERIES = 1
 
 
 # ---------- Phase 1: Light Sleep ----------
@@ -110,7 +110,7 @@ def deep_sleep(memories: list[dict], themes: list[dict]) -> dict:
     theme_counts = Counter()
     for t in themes:
         name = t.get("name", "").strip()
-        count = t.get("count", 0)
+        count = t.get("count", 1)  # default 1 ถ้า AI ไม่ส่ง count
         if name and count >= PROMOTE_MIN_HITS:
             theme_counts[name] = count
 
@@ -217,11 +217,16 @@ def list_reports(limit: int = 10) -> list[dict]:
         try:
             with open(f, "r", encoding="utf-8") as fp:
                 data = json.load(fp)
+                themes = data.get("phase2_rem", {}).get("themes", [])
+                promoted_list = data.get("phase3_deep", {}).get("promoted", [])
                 out.append({
                     "file": f.name,
                     "started_at": data.get("started_at", ""),
-                    "themes_count": len(data.get("phase2_rem", {}).get("themes", [])),
-                    "promoted": data.get("phase3_deep", {}).get("count", 0),
+                    "duration_sec": data.get("duration_sec"),
+                    "skipped": data.get("skipped"),
+                    "phase1_light": data.get("phase1_light", {}),
+                    "phase2_rem": {"themes": themes, "insights": data.get("phase2_rem", {}).get("insights", [])},
+                    "phase3_deep": {"promoted": promoted_list, "count": len(promoted_list)},
                 })
         except Exception:
             pass
