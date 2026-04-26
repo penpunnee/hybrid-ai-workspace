@@ -26,6 +26,8 @@ from utils.dream import run_dream_cycle, get_latest_report, list_reports
 app = FastAPI(title="Hybrid AI Workspace")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+_share_store: dict = {}  # token -> {assistant, session_id, created}
+
 # --- Auto Dream Scheduler ---
 def _scheduled_dream():
     """รัน dream cycle อัตโนมัติ (ตี 2 ทุกคืน)"""
@@ -410,6 +412,62 @@ async def save_mem(assistant: str, request: Request):
     return {"ok": True, "saved": text}
 
 
+@app.get("/api/digest")
+def daily_digest():
+    """Daily digest: สรุปแชทเมื่อวานด้วย Gemini"""
+    import sqlite3 as _sql
+    from datetime import date, timedelta
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    today = date.today().isoformat()
+    db_path = os.path.join(os.path.dirname(__file__), "chat_history.db")
+    if not os.path.exists(db_path):
+        return {"ok": False, "message": "ยังไม่มีข้อมูล"}
+    conn = _sql.connect(db_path)
+    rows = conn.execute(
+        "SELECT assistant, role, content FROM messages WHERE created_at >= ? AND created_at < ? ORDER BY id ASC LIMIT 80",
+        (yesterday, today)
+    ).fetchall()
+    conn.close()
+    if not rows:
+        return {"ok": False, "message": "ไม่มีแชทเมื่อวาน"}
+    chat_text = "\n".join([f"[{r[0]}] {r[1]}: {r[2][:150]}" for r in rows])
+    msgs = [
+        {"role": "system", "content": "สรุปการสนทนาเป็นภาษาไทย ใช้ bullet points ไม่เกิน 5 ข้อ กระชับมีประโยชน์"},
+        {"role": "user", "content": f"สนทนา {yesterday}:\n{chat_text[:2500]}"},
+    ]
+    try:
+        summary = "".join(stream_response(msgs, provider="gemini"))
+    except Exception as e:
+        summary = f"(สรุปไม่ได้: {e})"
+    return {"ok": True, "date": yesterday, "summary": summary, "count": len(rows)}
+
+
+@app.post("/api/share")
+async def create_share(request: Request):
+    data = await request.json()
+    assistant = data.get("assistant", "")
+    session_id = data.get("session_id", "")
+    if not assistant or not session_id:
+        return {"ok": False, "error": "ระบุ assistant และ session_id"}
+    token = uuid.uuid4().hex[:10]
+    _share_store[token] = {"assistant": assistant, "session_id": session_id, "created": datetime.now().isoformat()}
+    return {"ok": True, "token": token}
+
+
+@app.get("/api/shared/{token}")
+def get_shared_data(token: str):
+    info = _share_store.get(token)
+    if not info:
+        return {"ok": False, "error": "ไม่พบ link"}
+    msgs = load_history(info["assistant"], info["session_id"], include_meta=False)
+    return {"ok": True, "assistant": info["assistant"], "messages": msgs, "created": info["created"]}
+
+
+@app.get("/shared/{token}", response_class=HTMLResponse)
+def shared_page(token: str):
+    return HTMLResponse(content=f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Shared Chat</title><style>body{{font-family:'Segoe UI',sans-serif;background:#0a0c14;color:#e2e8f0;margin:0;padding:24px}}.c{{max-width:780px;margin:0 auto}}h1{{font-size:1.1rem;color:#a5b4fc;border-bottom:1px solid rgba(255,255,255,.1);padding-bottom:10px;margin-bottom:20px}}.m{{margin:10px 0;padding:12px 16px;border-radius:14px;font-size:.9rem;line-height:1.6}}.u{{background:rgba(45,212,191,.09);border:1px solid rgba(45,212,191,.2);margin-left:15%}}.a{{background:rgba(99,102,241,.09);border:1px solid rgba(99,102,241,.18);margin-right:15%}}.r{{font-size:10px;opacity:.45;margin-bottom:6px}}.load{{color:#4b5563;font-style:italic}}</style></head><body><div class="c"><h1>💬 Shared Chat</h1><div id="m" class="load">กำลังโหลด...</div></div><script>fetch('/api/shared/{token}').then(r=>r.json()).then(d=>{{if(!d.ok){{document.getElementById('m').textContent='ไม่พบแชทนี้';return;}}document.querySelector('h1').textContent='💬 '+d.assistant;const c=document.getElementById('m');c.innerHTML='';d.messages.forEach(m=>{{const e=document.createElement('div');e.className='m '+(m.role==='user'?'u':'a');e.innerHTML='<div class="r">'+(m.role==='user'?'👤 User':'🤖 AI')+'</div>'+m.content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>');c.appendChild(e);}});}}).catch(()=>{{document.getElementById('m').textContent='โหลดไม่ได้';}});</script></body></html>""")
+
+
 @app.post("/api/regenerate")
 async def regenerate_response(request: Request):
     """ลบ AI response ล่าสุดแล้ว stream ใหม่"""
@@ -468,6 +526,7 @@ async def chat(request: Request):
     image_b64 = data.get("image_b64", "")
     image_mime = data.get("image_mime", "")
     agent_mode = bool(data.get("agent_mode", False))
+    obsidian_inject_flag = bool(data.get("obsidian_inject", False))
 
     config = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])
     base_prompt = config["system_prompt"]
@@ -477,6 +536,11 @@ async def chat(request: Request):
     long_term = search_long_term_memory(prompt)
     skills_folder_path = os.path.join(os.path.dirname(__file__), "skills")
     skills_md = load_skills_folder(skills_folder_path)
+    vault_ctx = ""
+    if obsidian_inject_flag:
+        vault_results = search_vault(prompt, n=3)
+        if vault_results:
+            vault_ctx = "\n\n".join([f"[Note: {r['title']}]\n{r['content'][:500]}" for r in vault_results])
     full_context = "\n\n".join(filter(None, [
         search_memory(assistant, prompt),
         long_term,
@@ -484,6 +548,7 @@ async def chat(request: Request):
         f"[Skills & Knowledge]\n{skills_md}" if skills_md else "",
         f"[บทเรียนสะสม]\n{lessons}" if lessons else "",
         f"[ความชอบ]\n{prefs}" if prefs else "",
+        f"[Obsidian Vault Notes]\n{vault_ctx}" if vault_ctx else "",
     ]))
     system_prompt = inject_context_to_system(base_prompt, full_context)
 
