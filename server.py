@@ -556,7 +556,7 @@ async def regenerate_response(request: Request):
     last_prompt = get_last_user_message(assistant, session_id)
     if not last_prompt:
         async def _err():
-            yield f"data: {json.dumps({'error': '\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e02\u0e49\u0e2d\u0e04\u0e27\u0e32\u0e21'})}\ n\n"
+            yield "data: " + json.dumps({'error': 'ไม่พบข้อความ'}) + "\n\n"
         return StreamingResponse(_err(), media_type="text/event-stream")
 
     cfg = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])
