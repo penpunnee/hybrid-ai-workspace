@@ -11,10 +11,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from assistants.config import ASSISTANTS
 from utils.llm import stream_response, OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health
-from utils.rag import inject_context_to_system
+from utils.rag import inject_context_to_system, load_skills_folder
 from utils.history import save_message, load_history, get_sessions, clear_session, export_history_md
 from utils.memory import save_memory, search_memory, is_memory_available, save_lesson, save_preference, get_lessons, get_preferences, search_long_term_memory, get_memory_stats, cleanup_old_memories
-from utils.skills import get_all_skills, get_skill_count
+from utils.skills import get_all_skills, get_skill_count, save_skill, auto_extract_skills, _load_skills_db, _save_skills_db
 from utils.obsidian_sync import sync_vault, search_vault, get_vault_stats
 from utils.dream import run_dream_cycle, get_latest_report, list_reports
 
@@ -153,7 +153,28 @@ async def upload_file(file: UploadFile = File(...)):
             text = f"[ไฟล์: {name}]\n{content.decode('utf-8', errors='ignore')}"
     except Exception as e:
         return {"ok": False, "error": str(e)}
-    return {"ok": True, "filename": name, "text": text[:8000]}
+    # Auto-extract skills จากไฟล์ที่ upload
+    raw_text = content.decode('utf-8', errors='ignore')
+    extracted = auto_extract_skills(raw_text, name)
+    return {"ok": True, "filename": name, "text": text[:8000], "skills_extracted": extracted}
+
+
+@app.get("/api/skills")
+def list_skills():
+    db = _load_skills_db()
+    return {"skills": db, "count": len(db)}
+
+
+@app.delete("/api/skills/{topic}")
+def delete_skill(topic: str):
+    from urllib.parse import unquote
+    topic = unquote(topic)
+    db = _load_skills_db()
+    if topic in db:
+        del db[topic]
+        _save_skills_db(db)
+        return {"ok": True, "deleted": topic}
+    return {"ok": False, "error": "ไม่พบ topic นี้"}
 
 
 @app.get("/api/memory/stats")
@@ -194,10 +215,13 @@ async def chat(request: Request):
     lessons = get_lessons(prompt)
     prefs = get_preferences()
     long_term = search_long_term_memory(prompt)
+    skills_folder_path = os.path.join(os.path.dirname(__file__), "skills")
+    skills_md = load_skills_folder(skills_folder_path)
     full_context = "\n\n".join(filter(None, [
         search_memory(assistant, prompt),
         long_term,
         get_all_skills(),
+        f"[Skills & Knowledge]\n{skills_md}" if skills_md else "",
         f"[บทเรียนสะสม]\n{lessons}" if lessons else "",
         f"[ความชอบ]\n{prefs}" if prefs else "",
     ]))
