@@ -1,4 +1,4 @@
-import os
+import os, base64
 from openai import OpenAI
 from google import genai
 from google.genai import types
@@ -25,14 +25,15 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 _last_failover: dict = {"active": False}  # track failover state
 
 
-def stream_response(messages: list[dict], provider: str = "ollama"):
+def stream_response(messages: list[dict], provider: str = "ollama",
+                    image_b64: str = "", image_mime: str = ""):
     """
     Stream response จาก LLM ที่เลือก
     provider: 'ollama' (local) หรือ 'gemini' (cloud)
     Auto-failover: ถ้า ollama offline และมี gemini key จะสลับไป gemini อัตโนมัติ
     """
-    if provider == "gemini":
-        yield from _stream_gemini(messages)
+    if provider == "gemini" or image_b64:
+        yield from _stream_gemini(messages, image_b64, image_mime)
         return
 
     # ตรวจ ollama ก่อน
@@ -41,7 +42,7 @@ def stream_response(messages: list[dict], provider: str = "ollama"):
         if gemini_client:
             _last_failover["active"] = True
             yield "⚠️ **Ollama offline** — สลับไปใช้ Gemini อัตโนมัติ\n\n"
-            yield from _stream_gemini(messages)
+            yield from _stream_gemini(messages, image_b64, image_mime)
         else:
             _last_failover["active"] = False
             yield (
@@ -90,7 +91,7 @@ def _stream_ollama(messages: list[dict]):
         yield f"❌ Ollama error: {e}"
 
 
-def _stream_gemini(messages: list[dict]):
+def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = ""):
     """Stream จาก Gemini Cloud ด้วย google-genai SDK ใหม่"""
     if not gemini_client:
         yield (
@@ -108,6 +109,15 @@ def _stream_gemini(messages: list[dict]):
                 continue
             role = "user" if m["role"] == "user" else "model"
             history.append(types.Content(role=role, parts=[types.Part(text=m["content"])]))
+
+        # ถ้ามีรูปภาพ ใส่เข้าไปใน parts ของ user message ล่าสุด
+        if image_b64 and history and history[-1].role == "user":
+            img_bytes = base64.b64decode(image_b64)
+            last = history[-1]
+            history[-1] = types.Content(
+                role="user",
+                parts=list(last.parts) + [types.Part(inline_data=types.Blob(data=img_bytes, mime_type=image_mime or "image/jpeg"))]
+            )
 
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,

@@ -298,8 +298,14 @@ def vault_search(q: str, n: int = 5):
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
+    import base64 as _b64
     content = await file.read()
     name = file.filename or "file"
+    mime = file.content_type or ""
+    # ตรวจว่าเป็นรูปภาพ
+    if mime.startswith("image/") or name.lower().split('.')[-1] in ('jpg','jpeg','png','gif','webp','bmp'):
+        b64 = _b64.b64encode(content).decode()
+        return {"ok": True, "filename": name, "is_image": True, "b64": b64, "mime": mime or "image/jpeg"}
     try:
         if name.lower().endswith(".json"):
             import json as _json
@@ -309,10 +315,36 @@ async def upload_file(file: UploadFile = File(...)):
             text = f"[ไฟล์: {name}]\n{content.decode('utf-8', errors='ignore')}"
     except Exception as e:
         return {"ok": False, "error": str(e)}
-    # Auto-extract skills จากไฟล์ที่ upload
     raw_text = content.decode('utf-8', errors='ignore')
     extracted = auto_extract_skills(raw_text, name)
-    return {"ok": True, "filename": name, "text": text[:8000], "skills_extracted": extracted}
+    return {"ok": True, "filename": name, "is_image": False, "text": text[:8000], "skills_extracted": extracted}
+
+
+@app.get("/api/stats")
+def usage_stats():
+    """Dashboard stats: messages, sessions, memory"""
+    import sqlite3
+    from datetime import date
+    db_path = os.path.join(os.path.dirname(__file__), "chat_history.db")
+    result = {"total_messages": 0, "today_messages": 0, "total_sessions": 0,
+              "by_assistant": {}, "sessions_by_assistant": {}, "memory": {}}
+    if os.path.exists(db_path):
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM messages")
+        result["total_messages"] = cur.fetchone()[0]
+        today = date.today().isoformat()
+        cur.execute("SELECT COUNT(*) FROM messages WHERE created_at >= ?", (today,))
+        result["today_messages"] = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(DISTINCT session_id) FROM messages")
+        result["total_sessions"] = cur.fetchone()[0]
+        cur.execute("SELECT assistant, COUNT(*) FROM messages GROUP BY assistant")
+        result["by_assistant"] = {r[0]: r[1] for r in cur.fetchall()}
+        cur.execute("SELECT assistant, COUNT(DISTINCT session_id) FROM messages GROUP BY assistant")
+        result["sessions_by_assistant"] = {r[0]: r[1] for r in cur.fetchall()}
+        conn.close()
+    result["memory"] = get_memory_stats()
+    return result
 
 
 @app.get("/api/skills")
@@ -364,6 +396,8 @@ async def chat(request: Request):
     session_id = data.get("session_id", "default")
     prompt = data.get("prompt", "")
     provider = data.get("provider", "ollama")
+    image_b64 = data.get("image_b64", "")
+    image_mime = data.get("image_mime", "")
 
     config = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])
     base_prompt = config["system_prompt"]
@@ -393,7 +427,7 @@ async def chat(request: Request):
     def generate():
         full_response = ""
         try:
-            for chunk in stream_response(messages, provider=provider):
+            for chunk in stream_response(messages, provider=provider, image_b64=image_b64, image_mime=image_mime):
                 full_response += chunk
                 yield f"data: {json.dumps({'chunk': chunk})}\n\n"
         except Exception as e:
