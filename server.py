@@ -8,7 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from fastapi import FastAPI, Request, UploadFile, File
-from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
+from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -138,6 +138,23 @@ def list_pinned(assistant: str, session_id: str):
 def export_session(assistant: str, session_id: str):
     md = export_history_md(assistant, session_id)
     return {"markdown": md}
+
+
+@app.post("/api/tts")
+async def text_to_speech(request: Request):
+    """TTS โดย Gemini Native Audio — คืนค่า WAV bytes"""
+    from utils.tts import generate_tts
+    data = await request.json()
+    text = data.get("text", "").strip()
+    slug = data.get("assistant_slug", "")
+    if not text:
+        return {"error": "no text"}
+    try:
+        wav = generate_tts(text, slug)
+        return Response(content=wav, media_type="audio/wav",
+                        headers={"Cache-Control": "no-cache"})
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.get("/api/vault/stats")
