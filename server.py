@@ -15,7 +15,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from assistants.config import ASSISTANTS
 from utils.llm import stream_response, OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health, _last_failover
 from utils.rag import inject_context_to_system, load_skills_folder
-from utils.history import save_message, load_history, get_sessions, clear_session, export_history_md, search_messages, pin_message, get_pinned_messages
+from utils.history import (save_message, load_history, get_sessions, clear_session, export_history_md,
+    search_messages, pin_message, get_pinned_messages,
+    delete_last_assistant_message, truncate_from_db_id, get_last_user_message)
 from utils.memory import save_memory, search_memory, is_memory_available, save_lesson, save_preference, get_lessons, get_preferences, search_long_term_memory, get_memory_stats, cleanup_old_memories
 from utils.skills import get_all_skills, get_skill_count, save_skill, auto_extract_skills, _load_skills_db, _save_skills_db
 from utils.obsidian_sync import sync_vault, search_vault, get_vault_stats
@@ -158,7 +160,7 @@ async def text_to_speech(request: Request):
 
 
 @app.websocket("/ws/voice/{assistant_slug}")
-async def voice_websocket(websocket: WebSocket, assistant_slug: str):
+async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id: str = "voice_default"):
     """Live Voice Chat ผ่าน Gemini Live API"""
     import asyncio, base64
     await websocket.accept()
@@ -168,13 +170,11 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str):
         await websocket.send_json({"type": "error", "message": "GEMINI_API_KEY not set"})
         return
 
-    from utils.voice import GEMINI_LIVE_MODEL, VOICE_MAP, DEFAULT_VOICE
-    from google import genai
-    from google.genai import types
-
     voice = VOICE_MAP.get(assistant_slug.lower(), DEFAULT_VOICE)
-    asst  = next((v for v in ASSISTANTS.values() if v.get("slug") == assistant_slug), {})
-    sys_prompt = asst.get("system_prompt", "คุณเป็น AI ผู้ช่วยที่เป็นมิตร ตอบภาษาไทยกระชับ")
+    asst_name, asst = next(((k,v) for k,v in ASSISTANTS.items() if v.get("slug") == assistant_slug), ("", {}))
+    if not asst_name:
+        asst_name = assistant_slug
+    sys_prompt = asst.get("system_prompt", "\u0e04\u0e38\u0e13\u0e40\u0e1b\u0e47\u0e19 AI \u0e1c\u0e39\u0e49\u0e0a\u0e48\u0e27\u0e22\u0e17\u0e35\u0e48\u0e40\u0e1b\u0e47\u0e19\u0e21\u0e34\u0e15\u0e23 \u0e15\u0e2d\u0e1a\u0e20\u0e32\u0e29\u0e32\u0e44\u0e17\u0e22\u0e01\u0e23\u0e30\u0e0a\u0e31\u0e1a")
 
     client = genai.Client(api_key=gemini_key, http_options={"api_version": "v1beta"})
     live_config = types.LiveConnectConfig(
@@ -185,6 +185,8 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str):
             )
         ),
         system_instruction=types.Content(parts=[types.Part(text=sys_prompt)]),
+        output_audio_transcription=types.AudioTranscriptionConfig(),
+        input_audio_transcription=types.AudioTranscriptionConfig(),
     )
 
     try:
@@ -215,6 +217,8 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str):
                     stop.set()
 
             async def send_loop():
+                user_transcript = ""
+                ai_transcript = ""
                 try:
                     async for response in session.receive():
                         if stop.is_set():
@@ -226,13 +230,30 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str):
                             })
                         sc = getattr(response, "server_content", None)
                         if sc:
-                            if getattr(sc, "turn_complete", False):
-                                await websocket.send_json({"type": "done"})
+                            # Input (user) transcription
+                            it = getattr(sc, "input_transcription", None)
+                            if it and getattr(it, "text", None):
+                                user_transcript += it.text
+                                await websocket.send_json({"type": "user_text", "text": it.text})
+                            # Output (AI) transcription
+                            ot = getattr(sc, "output_transcription", None)
+                            if ot and getattr(ot, "text", None):
+                                ai_transcript += ot.text
                             mt = getattr(sc, "model_turn", None)
                             if mt:
                                 for part in getattr(mt, "parts", []):
                                     if getattr(part, "text", None):
+                                        ai_transcript += part.text
                                         await websocket.send_json({"type": "text", "text": part.text})
+                            if getattr(sc, "turn_complete", False):
+                                await websocket.send_json({"type": "done"})
+                                # บันทึก transcript ลง DB
+                                if user_transcript.strip():
+                                    save_message(asst_name, "user", user_transcript.strip(), "gemini_live", session_id)
+                                    user_transcript = ""
+                                if ai_transcript.strip():
+                                    save_message(asst_name, "assistant", ai_transcript.strip(), "gemini_live", session_id)
+                                    ai_transcript = ""
                 except Exception as e:
                     stop.set()
                     try:
@@ -389,6 +410,54 @@ async def save_mem(assistant: str, request: Request):
     return {"ok": True, "saved": text}
 
 
+@app.post("/api/regenerate")
+async def regenerate_response(request: Request):
+    """ลบ AI response ล่าสุดแล้ว stream ใหม่"""
+    data = await request.json()
+    assistant = data.get("assistant", list(ASSISTANTS.keys())[0])
+    session_id = data.get("session_id", "default")
+    provider = data.get("provider", "ollama")
+    agent_mode = bool(data.get("agent_mode", False))
+
+    delete_last_assistant_message(assistant, session_id)
+    last_prompt = get_last_user_message(assistant, session_id)
+    if not last_prompt:
+        async def _err():
+            yield f"data: {json.dumps({'error': '\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e02\u0e49\u0e2d\u0e04\u0e27\u0e32\u0e21'})}\ n\n"
+        return StreamingResponse(_err(), media_type="text/event-stream")
+
+    cfg = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])
+    base_prompt = cfg["system_prompt"]
+    full_context = "\n\n".join(filter(None, [search_memory(assistant, last_prompt)]))
+    system_prompt = inject_context_to_system(base_prompt, full_context)
+    history = load_history(assistant, session_id)
+    messages = [{"role": "system", "content": system_prompt}]
+    messages += [{"role": m["role"], "content": m["content"]} for m in history]
+    messages.append({"role": "user", "content": last_prompt})
+
+    def gen_regen():
+        full_response = ""
+        try:
+            for chunk in stream_response(messages, provider=provider, agent_mode=agent_mode):
+                full_response += chunk
+                yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            return
+        save_message(assistant, "assistant", full_response, provider, session_id)
+        yield f"data: {json.dumps({'done': True})}\n\n"
+
+    return StreamingResponse(gen_regen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.delete("/api/truncate/{db_id}")
+def truncate_endpoint(db_id: int):
+    """ลบข้อความทุกรายการที่มี id >= db_id (ใช้สำหรับ Edit & Resend)"""
+    truncate_from_db_id(db_id)
+    return {"ok": True}
+
+
 @app.post("/api/chat")
 async def chat(request: Request):
     data = await request.json()
@@ -398,6 +467,7 @@ async def chat(request: Request):
     provider = data.get("provider", "ollama")
     image_b64 = data.get("image_b64", "")
     image_mime = data.get("image_mime", "")
+    agent_mode = bool(data.get("agent_mode", False))
 
     config = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])
     base_prompt = config["system_prompt"]
@@ -427,7 +497,7 @@ async def chat(request: Request):
     def generate():
         full_response = ""
         try:
-            for chunk in stream_response(messages, provider=provider, image_b64=image_b64, image_mime=image_mime):
+            for chunk in stream_response(messages, provider=provider, image_b64=image_b64, image_mime=image_mime, agent_mode=agent_mode):
                 full_response += chunk
                 yield f"data: {json.dumps({'chunk': chunk})}\n\n"
         except Exception as e:

@@ -139,6 +139,39 @@ def search_messages(query: str, assistant: str = "", limit: int = 20) -> list[di
     return results
 
 
+def delete_last_assistant_message(assistant: str, session_id: str) -> bool:
+    """ลบ assistant message ล่าสุดของ session คืน True ถ้าลบได้"""
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT id FROM messages WHERE assistant = ? AND session_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1",
+        (assistant, session_id),
+    ).fetchone()
+    if row:
+        conn.execute("DELETE FROM messages WHERE id = ?", (row[0],))
+        conn.commit()
+    conn.close()
+    return bool(row)
+
+
+def truncate_from_db_id(db_id: int):
+    """ลบข้อความทุกรายการที่มี id >= db_id"""
+    conn = _get_conn()
+    conn.execute("DELETE FROM messages WHERE id >= ?", (db_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_last_user_message(assistant: str, session_id: str) -> str:
+    """ดึง user message ล่าสุดของ session"""
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT content FROM messages WHERE assistant = ? AND session_id = ? AND role = 'user' ORDER BY id DESC LIMIT 1",
+        (assistant, session_id),
+    ).fetchone()
+    conn.close()
+    return row[0] if row else ""
+
+
 def clear_history(assistant: str):
     """ลบประวัติแชทของ assistant ทั้งหมด"""
     conn = _get_conn()

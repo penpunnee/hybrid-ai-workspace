@@ -26,14 +26,15 @@ _last_failover: dict = {"active": False}  # track failover state
 
 
 def stream_response(messages: list[dict], provider: str = "ollama",
-                    image_b64: str = "", image_mime: str = ""):
+                    image_b64: str = "", image_mime: str = "",
+                    agent_mode: bool = False):
     """
     Stream response จาก LLM ที่เลือก
     provider: 'ollama' (local) หรือ 'gemini' (cloud)
     Auto-failover: ถ้า ollama offline และมี gemini key จะสลับไป gemini อัตโนมัติ
     """
-    if provider == "gemini" or image_b64:
-        yield from _stream_gemini(messages, image_b64, image_mime)
+    if provider == "gemini" or image_b64 or agent_mode:
+        yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode)
         return
 
     # ตรวจ ollama ก่อน
@@ -42,7 +43,7 @@ def stream_response(messages: list[dict], provider: str = "ollama",
         if gemini_client:
             _last_failover["active"] = True
             yield "⚠️ **Ollama offline** — สลับไปใช้ Gemini อัตโนมัติ\n\n"
-            yield from _stream_gemini(messages, image_b64, image_mime)
+            yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=False)
         else:
             _last_failover["active"] = False
             yield (
@@ -53,6 +54,7 @@ def stream_response(messages: list[dict], provider: str = "ollama",
 
     _last_failover["active"] = False
     yield from _stream_ollama(messages)
+
 
 
 def check_ollama_health() -> tuple[bool, str]:
@@ -91,7 +93,8 @@ def _stream_ollama(messages: list[dict]):
         yield f"❌ Ollama error: {e}"
 
 
-def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = ""):
+def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = "",
+                   agent_mode: bool = False):
     """Stream จาก Gemini Cloud ด้วย google-genai SDK ใหม่"""
     if not gemini_client:
         yield (
@@ -119,8 +122,16 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
                 parts=list(last.parts) + [types.Part(inline_data=types.Blob(data=img_bytes, mime_type=image_mime or "image/jpeg"))]
             )
 
+        tools = None
+        if agent_mode:
+            tools = [
+                types.Tool(google_search=types.GoogleSearch()),
+                types.Tool(code_execution=types.ToolCodeExecution()),
+            ]
+
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
+            tools=tools,
         )
         response = gemini_client.models.generate_content_stream(
             model=GEMINI_MODEL,
