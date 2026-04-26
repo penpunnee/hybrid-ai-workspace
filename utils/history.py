@@ -82,6 +82,40 @@ def clear_session(assistant: str, session_id: str):
     conn.close()
 
 
+def search_messages(query: str, assistant: str = "", limit: int = 20) -> list[dict]:
+    """ค้นหาข้อความใน chat history ด้วย keyword"""
+    conn = _get_conn()
+    q = f"%{query}%"
+    if assistant:
+        rows = conn.execute(
+            "SELECT assistant, session_id, role, content, created_at FROM messages "
+            "WHERE assistant = ? AND content LIKE ? ORDER BY id DESC LIMIT ?",
+            (assistant, q, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT assistant, session_id, role, content, created_at FROM messages "
+            "WHERE content LIKE ? ORDER BY id DESC LIMIT ?",
+            (q, limit),
+        ).fetchall()
+    conn.close()
+    results = []
+    for assistant_name, session_id, role, content, created_at in rows:
+        # highlight snippet รอบ keyword
+        idx = content.lower().find(query.lower())
+        start = max(0, idx - 40)
+        end = min(len(content), idx + len(query) + 60)
+        snippet = ("..." if start > 0 else "") + content[start:end] + ("..." if end < len(content) else "")
+        results.append({
+            "assistant": assistant_name,
+            "session_id": session_id,
+            "role": role,
+            "snippet": snippet,
+            "created_at": created_at,
+        })
+    return results
+
+
 def clear_history(assistant: str):
     """ลบประวัติแชทของ assistant ทั้งหมด"""
     conn = _get_conn()

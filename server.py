@@ -4,15 +4,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+
 from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from assistants.config import ASSISTANTS
-from utils.llm import stream_response, OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health
+from utils.llm import stream_response, OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health, _last_failover
 from utils.rag import inject_context_to_system, load_skills_folder
-from utils.history import save_message, load_history, get_sessions, clear_session, export_history_md
+from utils.history import save_message, load_history, get_sessions, clear_session, export_history_md, search_messages
 from utils.memory import save_memory, search_memory, is_memory_available, save_lesson, save_preference, get_lessons, get_preferences, search_long_term_memory, get_memory_stats, cleanup_old_memories
 from utils.skills import get_all_skills, get_skill_count, save_skill, auto_extract_skills, _load_skills_db, _save_skills_db
 from utils.obsidian_sync import sync_vault, search_vault, get_vault_stats
@@ -20,6 +23,22 @@ from utils.dream import run_dream_cycle, get_latest_report, list_reports
 
 app = FastAPI(title="Hybrid AI Workspace")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# --- Auto Dream Scheduler ---
+def _scheduled_dream():
+    """รัน dream cycle อัตโนมัติ (ตี 2 ทุกคืน)"""
+    provider = "gemini" if os.getenv("GEMINI_API_KEY") else "ollama"
+    print(f"[Scheduler] รัน Dream Cycle อัตโนมัติ ({datetime.now().strftime('%Y-%m-%d %H:%M')}) provider={provider}")
+    try:
+        run_dream_cycle(provider=provider)
+        print("[Scheduler] Dream Cycle เสร็จ")
+    except Exception as e:
+        print(f"[Scheduler] Dream error: {e}")
+
+_scheduler = BackgroundScheduler(timezone="Asia/Bangkok")
+_scheduler.add_job(_scheduled_dream, CronTrigger(hour=2, minute=0), id="dream_nightly", replace_existing=True)
+_scheduler.start()
+print("[Scheduler] ตั้ง Dream รันทุกคืนตี 2 แล้ว")
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 if os.path.exists("static/assets"):
@@ -58,12 +77,26 @@ def status():
         except Exception: ollama_ok = False
         try: mem_ok = f2.result(timeout=5)
         except Exception: mem_ok = False
+    next_dream = None
+    job = _scheduler.get_job("dream_nightly")
+    if job and job.next_run_time:
+        next_dream = job.next_run_time.strftime("%Y-%m-%d %H:%M")
     return {
         "ollama": ollama_ok,
         "gemini": bool(os.getenv("GEMINI_API_KEY", "")),
         "memory": mem_ok,
         "skills": get_skill_count(),
+        "failover_active": _last_failover.get("active", False),
+        "next_dream_schedule": next_dream,
     }
+
+
+@app.get("/api/search")
+def search_chat(q: str = "", assistant: str = "", limit: int = 20):
+    if not q or len(q) < 2:
+        return {"results": [], "query": q}
+    results = search_messages(query=q, assistant=assistant, limit=limit)
+    return {"results": results, "query": q, "count": len(results)}
 
 
 @app.get("/api/sessions/{assistant}")

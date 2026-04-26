@@ -22,15 +22,36 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 
+_last_failover: dict = {"active": False}  # track failover state
+
+
 def stream_response(messages: list[dict], provider: str = "ollama"):
     """
     Stream response จาก LLM ที่เลือก
     provider: 'ollama' (local) หรือ 'gemini' (cloud)
+    Auto-failover: ถ้า ollama offline และมี gemini key จะสลับไป gemini อัตโนมัติ
     """
     if provider == "gemini":
         yield from _stream_gemini(messages)
-    else:
-        yield from _stream_ollama(messages)
+        return
+
+    # ตรวจ ollama ก่อน
+    ok, _ = check_ollama_health()
+    if not ok:
+        if gemini_client:
+            _last_failover["active"] = True
+            yield "⚠️ **Ollama offline** — สลับไปใช้ Gemini อัตโนมัติ\n\n"
+            yield from _stream_gemini(messages)
+        else:
+            _last_failover["active"] = False
+            yield (
+                "❌ **Ollama offline** และไม่มี Gemini API Key\n\n"
+                "กรุณาเปิด LM Studio หรือตั้งค่า `GEMINI_API_KEY` ใน `.env`"
+            )
+        return
+
+    _last_failover["active"] = False
+    yield from _stream_ollama(messages)
 
 
 def check_ollama_health() -> tuple[bool, str]:
