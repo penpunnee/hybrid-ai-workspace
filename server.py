@@ -13,7 +13,7 @@ from assistants.config import ASSISTANTS
 from utils.llm import stream_response, OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health
 from utils.rag import inject_context_to_system
 from utils.history import save_message, load_history, get_sessions, clear_session, export_history_md
-from utils.memory import save_memory, search_memory, is_memory_available, save_lesson, save_preference, get_lessons, get_preferences, search_long_term_memory
+from utils.memory import save_memory, search_memory, is_memory_available, save_lesson, save_preference, get_lessons, get_preferences, search_long_term_memory, get_memory_stats, cleanup_old_memories
 from utils.skills import get_all_skills, get_skill_count
 from utils.obsidian_sync import sync_vault, search_vault, get_vault_stats
 from utils.dream import run_dream_cycle, get_latest_report, list_reports
@@ -154,6 +154,21 @@ async def upload_file(file: UploadFile = File(...)):
     except Exception as e:
         return {"ok": False, "error": str(e)}
     return {"ok": True, "filename": name, "text": text[:8000]}
+
+
+@app.get("/api/memory/stats")
+def memory_stats():
+    return get_memory_stats()
+
+
+@app.post("/api/memory/cleanup")
+async def memory_cleanup(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    days = data.get("days", 30) if isinstance(data, dict) else 30
+    return cleanup_old_memories(days=days)
 
 
 @app.post("/api/memory/{assistant}")
