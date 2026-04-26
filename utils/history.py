@@ -19,13 +19,15 @@ def _get_conn():
             content TEXT NOT NULL,
             provider TEXT DEFAULT 'ollama',
             created_at TEXT NOT NULL,
-            session_id TEXT DEFAULT 'default'
+            session_id TEXT DEFAULT 'default',
+            pinned INTEGER DEFAULT 0
         )
     """)
-    try:
-        conn.execute("ALTER TABLE messages ADD COLUMN session_id TEXT DEFAULT 'default'")
-    except Exception:
-        pass
+    for col, default in [("session_id", "'default'"), ("pinned", "0")]:
+        try:
+            conn.execute(f"ALTER TABLE messages ADD COLUMN {col} {'TEXT' if col=='session_id' else 'INTEGER'} DEFAULT {default}")
+        except Exception:
+            pass
     conn.commit()
     return conn
 
@@ -41,15 +43,17 @@ def save_message(assistant: str, role: str, content: str, provider: str = "ollam
     conn.close()
 
 
-def load_history(assistant: str, session_id: str = "default") -> list[dict]:
+def load_history(assistant: str, session_id: str = "default", include_meta: bool = False) -> list[dict]:
     """โหลดประวัติแชทของ session นั้นจาก DB"""
     conn = _get_conn()
     rows = conn.execute(
-        "SELECT role, content FROM messages WHERE assistant = ? AND session_id = ? ORDER BY id ASC",
+        "SELECT id, role, content, pinned FROM messages WHERE assistant = ? AND session_id = ? ORDER BY id ASC",
         (assistant, session_id),
     ).fetchall()
     conn.close()
-    return [{"role": row[0], "content": row[1]} for row in rows]
+    if include_meta:
+        return [{"db_id": r[0], "role": r[1], "content": r[2], "pinned": bool(r[3])} for r in rows]
+    return [{"role": r[1], "content": r[2]} for r in rows]
 
 
 def get_sessions(assistant: str) -> list[dict]:
@@ -80,6 +84,25 @@ def clear_session(assistant: str, session_id: str):
     conn.execute("DELETE FROM messages WHERE assistant = ? AND session_id = ?", (assistant, session_id))
     conn.commit()
     conn.close()
+
+
+def pin_message(db_id: int, pinned: bool = True):
+    """Pin/Unpin ข้อความตาม db id"""
+    conn = _get_conn()
+    conn.execute("UPDATE messages SET pinned = ? WHERE id = ?", (1 if pinned else 0, db_id))
+    conn.commit()
+    conn.close()
+
+
+def get_pinned_messages(assistant: str, session_id: str) -> list[dict]:
+    """ดึง pinned messages ของ session"""
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT id, role, content, created_at FROM messages WHERE assistant = ? AND session_id = ? AND pinned = 1 ORDER BY id ASC",
+        (assistant, session_id),
+    ).fetchall()
+    conn.close()
+    return [{"db_id": r[0], "role": r[1], "content": r[2], "created_at": r[3]} for r in rows]
 
 
 def search_messages(query: str, assistant: str = "", limit: int = 20) -> list[dict]:

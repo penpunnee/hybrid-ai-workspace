@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from assistants.config import ASSISTANTS
 from utils.llm import stream_response, OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health, _last_failover
 from utils.rag import inject_context_to_system, load_skills_folder
-from utils.history import save_message, load_history, get_sessions, clear_session, export_history_md, search_messages
+from utils.history import save_message, load_history, get_sessions, clear_session, export_history_md, search_messages, pin_message, get_pinned_messages
 from utils.memory import save_memory, search_memory, is_memory_available, save_lesson, save_preference, get_lessons, get_preferences, search_long_term_memory, get_memory_stats, cleanup_old_memories
 from utils.skills import get_all_skills, get_skill_count, save_skill, auto_extract_skills, _load_skills_db, _save_skills_db
 from utils.obsidian_sync import sync_vault, search_vault, get_vault_stats
@@ -118,7 +118,20 @@ def delete_session(assistant: str, session_id: str):
 
 @app.get("/api/history/{assistant}/{session_id}")
 def get_history(assistant: str, session_id: str):
-    return load_history(assistant, session_id)
+    return load_history(assistant, session_id, include_meta=True)
+
+
+@app.post("/api/pin/{db_id}")
+async def toggle_pin(db_id: int, request: Request):
+    data = await request.json()
+    pinned = data.get("pinned", True)
+    pin_message(db_id, pinned)
+    return {"ok": True, "db_id": db_id, "pinned": pinned}
+
+
+@app.get("/api/pinned/{assistant}/{session_id}")
+def list_pinned(assistant: str, session_id: str):
+    return get_pinned_messages(assistant, session_id)
 
 
 @app.get("/api/export/{assistant}/{session_id}")
