@@ -173,7 +173,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str):
     from google.genai import types
 
     voice = VOICE_MAP.get(assistant_slug.lower(), DEFAULT_VOICE)
-    asst  = next((a for a in ASSISTANTS if a.get("slug") == assistant_slug), {})
+    asst  = next((v for v in ASSISTANTS.values() if v.get("slug") == assistant_slug), {})
     sys_prompt = asst.get("system_prompt", "คุณเป็น AI ผู้ช่วยที่เป็นมิตร ตอบภาษาไทยกระชับ")
 
     client = genai.Client(api_key=gemini_key, http_options={"api_version": "v1beta"})

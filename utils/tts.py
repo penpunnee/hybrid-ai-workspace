@@ -1,4 +1,4 @@
-import os, io, wave, base64
+import os, io, wave
 from google import genai
 from google.genai import types
 
@@ -57,6 +57,5 @@ def generate_tts(text: str, assistant_slug: str = "") -> bytes:
     )
 
     part = response.candidates[0].content.parts[0]
-    audio_b64: str = part.inline_data.data
-    pcm_bytes = base64.b64decode(audio_b64)
+    pcm_bytes: bytes = part.inline_data.data  # SDK คืน bytes โดยตรง
     return _pcm_to_wav(pcm_bytes)
