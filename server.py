@@ -7,7 +7,7 @@ load_dotenv()
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from fastapi import FastAPI, Request, UploadFile, File
+from fastapi import FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -155,6 +155,99 @@ async def text_to_speech(request: Request):
                         headers={"Cache-Control": "no-cache"})
     except Exception as e:
         return {"error": str(e)}
+
+
+@app.websocket("/ws/voice/{assistant_slug}")
+async def voice_websocket(websocket: WebSocket, assistant_slug: str):
+    """Live Voice Chat ผ่าน Gemini Live API"""
+    import asyncio, base64
+    await websocket.accept()
+
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    if not gemini_key:
+        await websocket.send_json({"type": "error", "message": "GEMINI_API_KEY not set"})
+        return
+
+    from utils.voice import GEMINI_LIVE_MODEL, VOICE_MAP, DEFAULT_VOICE
+    from google import genai
+    from google.genai import types
+
+    voice = VOICE_MAP.get(assistant_slug.lower(), DEFAULT_VOICE)
+    asst  = next((a for a in ASSISTANTS if a.get("slug") == assistant_slug), {})
+    sys_prompt = asst.get("system_prompt", "คุณเป็น AI ผู้ช่วยที่เป็นมิตร ตอบภาษาไทยกระชับ")
+
+    client = genai.Client(api_key=gemini_key, http_options={"api_version": "v1beta"})
+    live_config = types.LiveConnectConfig(
+        response_modalities=["AUDIO"],
+        speech_config=types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice)
+            )
+        ),
+        system_instruction=types.Content(parts=[types.Part(text=sys_prompt)]),
+    )
+
+    try:
+        async with client.aio.live.connect(model=GEMINI_LIVE_MODEL, config=live_config) as session:
+            await websocket.send_json({"type": "connected", "voice": voice})
+            stop = asyncio.Event()
+
+            async def recv_loop():
+                try:
+                    while not stop.is_set():
+                        try:
+                            msg = await asyncio.wait_for(websocket.receive_json(), timeout=60.0)
+                        except asyncio.TimeoutError:
+                            continue
+                        t = msg.get("type", "")
+                        if t == "audio":
+                            pcm = base64.b64decode(msg["data"])
+                            await session.send(input=types.LiveClientRealtimeInput(
+                                media_chunks=[types.Blob(data=pcm, mime_type="audio/pcm;rate=16000")]
+                            ))
+                        elif t == "end_turn":
+                            await session.send(input=".", end_of_turn=True)
+                        elif t == "text":
+                            await session.send(input=msg.get("text", ""), end_of_turn=True)
+                        elif t == "close":
+                            stop.set()
+                except (WebSocketDisconnect, Exception):
+                    stop.set()
+
+            async def send_loop():
+                try:
+                    async for response in session.receive():
+                        if stop.is_set():
+                            break
+                        if response.data:
+                            await websocket.send_json({
+                                "type": "audio",
+                                "data": base64.b64encode(response.data).decode()
+                            })
+                        sc = getattr(response, "server_content", None)
+                        if sc:
+                            if getattr(sc, "turn_complete", False):
+                                await websocket.send_json({"type": "done"})
+                            mt = getattr(sc, "model_turn", None)
+                            if mt:
+                                for part in getattr(mt, "parts", []):
+                                    if getattr(part, "text", None):
+                                        await websocket.send_json({"type": "text", "text": part.text})
+                except Exception as e:
+                    stop.set()
+                    try:
+                        await websocket.send_json({"type": "error", "message": str(e)})
+                    except Exception:
+                        pass
+
+            await asyncio.gather(recv_loop(), send_loop())
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except Exception:
+            pass
 
 
 @app.get("/api/vault/stats")
