@@ -343,6 +343,81 @@ async def upload_file(file: UploadFile = File(...)):
     return {"ok": True, "filename": name, "is_image": False, "text": text[:8000], "skills_extracted": extracted}
 
 
+@app.post("/api/skills/extract")
+async def skills_extract(request: Request):
+    """ให้ Gemini สกัดและจัดระเบียบ content เป็น skill .md แล้วบันทึกลง skills/ folder"""
+    data = await request.json()
+    content = data.get("content", "").strip()
+    topic = data.get("topic", "").strip()  # ชื่อหัวข้อ เช่น "appscript"
+    if not content:
+        return {"ok": False, "error": "ไม่มี content"}
+
+    # สร้างชื่อไฟล์จาก topic หรือ auto
+    if not topic:
+        topic = f"skill-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    safe_topic = "".join(c if c.isalnum() or c in "-_" else "-" for c in topic.lower()).strip("-")
+    filename = f"{safe_topic}.md"
+    skills_dir = os.path.join(os.path.dirname(__file__), "skills")
+    os.makedirs(skills_dir, exist_ok=True)
+    filepath = os.path.join(skills_dir, filename)
+
+    # ให้ Gemini จัดระเบียบเป็น skill .md
+    msgs = [
+        {"role": "system", "content": (
+            "คุณคือ Technical Writer ที่เชี่ยวชาญ\n"
+            "งาน: อ่าน content ด้านล่าง แล้วสกัดออกมาเป็น Skill Reference .md ที่ดี\n"
+            "รูปแบบที่ต้องการ:\n"
+            "- ใช้ # สำหรับชื่อหัวข้อหลัก\n"
+            "- ใช้ ## สำหรับแต่ละ subtopic\n"
+            "- ใส่ code block ``` ทุกครั้งที่มี code\n"
+            "- สรุปกระชับ อ่านง่าย เป็น quick reference\n"
+            "- ตอบเป็น markdown ล้วนๆ ไม่ต้องมีคำอธิบายเพิ่ม\n"
+            f"- ชื่อหัวข้อหลัก: {topic}"
+        )},
+        {"role": "user", "content": content[:6000]},
+    ]
+    try:
+        md_content = "".join(stream_response(msgs, provider="gemini"))
+    except Exception as e:
+        return {"ok": False, "error": f"Gemini error: {e}"}
+
+    # บันทึกไฟล์
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(md_content)
+    except Exception as e:
+        return {"ok": False, "error": f"บันทึกไฟล์ไม่ได้: {e}"}
+
+    return {"ok": True, "filename": filename, "path": filepath, "preview": md_content[:500]}
+
+
+@app.get("/api/skills/list")
+def skills_list():
+    """รายชื่อไฟล์ .md ทั้งหมดใน skills/ folder"""
+    skills_dir = os.path.join(os.path.dirname(__file__), "skills")
+    if not os.path.isdir(skills_dir):
+        return {"files": []}
+    files = []
+    for f in sorted(os.listdir(skills_dir)):
+        fp = os.path.join(skills_dir, f)
+        if os.path.isfile(fp) and f.endswith(".md"):
+            files.append({"name": f, "size": os.path.getsize(fp)})
+    return {"files": files}
+
+
+@app.delete("/api/skills/{filename}")
+def skills_delete(filename: str):
+    """ลบไฟล์ .md ออกจาก skills/ folder"""
+    if ".." in filename or "/" in filename:
+        return {"ok": False, "error": "invalid filename"}
+    skills_dir = os.path.join(os.path.dirname(__file__), "skills")
+    fp = os.path.join(skills_dir, filename)
+    if not os.path.exists(fp):
+        return {"ok": False, "error": "ไม่พบไฟล์"}
+    os.remove(fp)
+    return {"ok": True}
+
+
 @app.get("/api/stats")
 def usage_stats():
     """Dashboard stats: messages, sessions, memory"""
