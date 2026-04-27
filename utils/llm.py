@@ -75,11 +75,6 @@ def check_ollama_health() -> tuple[bool, str]:
 
 def _stream_ollama(messages: list[dict]):
     """Stream จาก Ollama local พร้อม error handling"""
-    ok, err_msg = check_ollama_health()
-    if not ok:
-        yield err_msg
-        return
-
     try:
         stream = ollama_client.chat.completions.create(
             model=OLLAMA_MODEL,
