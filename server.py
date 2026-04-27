@@ -22,6 +22,11 @@ from utils.memory import save_memory, search_memory, is_memory_available, save_l
 from utils.skills import get_all_skills, get_skill_count, save_skill, auto_extract_skills, _load_skills_db, _save_skills_db
 from utils.obsidian_sync import sync_vault, search_vault, get_vault_stats
 from utils.dream import run_dream_cycle, get_latest_report, list_reports
+from utils.tts import generate_tts, VOICE_MAP, DEFAULT_VOICE
+from google import genai
+from google.genai import types
+
+GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-live-001")
 
 app = FastAPI(title="Hybrid AI Workspace")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -147,7 +152,6 @@ def export_session(assistant: str, session_id: str):
 @app.post("/api/tts")
 async def text_to_speech(request: Request):
     """TTS โดย Gemini Native Audio — คืนค่า WAV bytes"""
-    from utils.tts import generate_tts
     data = await request.json()
     text = data.get("text", "").strip()
     slug = data.get("assistant_slug", "")
