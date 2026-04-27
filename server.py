@@ -262,6 +262,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                     save_message(asst_name, "assistant", ai_transcript.strip(), "gemini_live", session_id)
                                     ai_transcript = ""
                 except Exception as e:
+                    print(f"[Voice send_loop ERROR] {type(e).__name__}: {e}")
                     stop.set()
                     try:
                         await websocket.send_json({"type": "error", "message": str(e)})
@@ -272,6 +273,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     except WebSocketDisconnect:
         pass
     except Exception as e:
+        print(f"[Voice WS ERROR] {type(e).__name__}: {e}")
         try:
             await websocket.send_json({"type": "error", "message": str(e)})
         except Exception:

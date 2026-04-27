@@ -63,7 +63,7 @@ def check_ollama_health() -> tuple[bool, str]:
     import urllib.request
     try:
         base = OLLAMA_BASE_URL.replace("/v1", "")
-        urllib.request.urlopen(f"{base}/api/tags", timeout=3)
+        urllib.request.urlopen(f"{base}/api/tags", timeout=8)
         return True, ""
     except Exception:
         return False, (
