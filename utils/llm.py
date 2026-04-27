@@ -32,26 +32,22 @@ def stream_response(messages: list[dict], provider: str = "ollama",
     """
     Stream response จาก LLM ที่เลือก
     provider: 'ollama' (local) หรือ 'gemini' (cloud)
-    Auto-failover: ถ้า ollama offline และมี gemini key จะสลับไป gemini อัตโนมัติ
+    ถ้า ollama offline จะแสดง error — ไม่ auto-failover ไป gemini
     """
     if provider == "gemini" or image_b64 or agent_mode:
         _last_failover["active"] = False
         yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode)
         return
 
-    # ตรวจ ollama ก่อน
-    ok, _ = check_ollama_health()
+    # ตรวจ ollama — ถ้า offline แสดง error ตรงๆ ไม่ fallback ไป Gemini
+    ok, err_msg = check_ollama_health()
     if not ok:
-        if gemini_client:
-            _last_failover["active"] = True
-            yield "⚠️ **Ollama offline** — สลับไปใช้ Gemini อัตโนมัติ\n\n"
-            yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=False)
-        else:
-            _last_failover["active"] = False
-            yield (
-                "❌ **Ollama offline** และไม่มี Gemini API Key\n\n"
-                "กรุณาเปิด LM Studio หรือตั้งค่า `GEMINI_API_KEY` ใน `.env`"
-            )
+        _last_failover["active"] = False
+        yield (
+            "❌ **Ollama offline** — ไม่สามารถเชื่อมต่อ Local LLM ได้\n\n"
+            f"ตรวจสอบว่า Ollama รันอยู่ที่ `{OLLAMA_BASE_URL.replace('/v1','')}`\n"
+            "หรือสลับไปใช้ **Gemini** ด้วยปุ่ม badge มุมบนขวา"
+        )
         return
 
     _last_failover["active"] = False
