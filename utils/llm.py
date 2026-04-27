@@ -39,17 +39,6 @@ def stream_response(messages: list[dict], provider: str = "ollama",
         yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode)
         return
 
-    # ตรวจ ollama — ถ้า offline แสดง error ตรงๆ ไม่ fallback ไป Gemini
-    ok, err_msg = check_ollama_health()
-    if not ok:
-        _last_failover["active"] = False
-        yield (
-            "❌ **Ollama offline** — ไม่สามารถเชื่อมต่อ Local LLM ได้\n\n"
-            f"ตรวจสอบว่า Ollama รันอยู่ที่ `{OLLAMA_BASE_URL.replace('/v1','')}`\n"
-            "หรือสลับไปใช้ **Gemini** ด้วยปุ่ม badge มุมบนขวา"
-        )
-        return
-
     _last_failover["active"] = False
     yield from _stream_ollama(messages)
 
