@@ -23,6 +23,7 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 
 _last_failover: dict = {"active": False}  # track failover state
+_health_cache: dict = {"ok": None, "ts": 0.0}  # cache health check 30s
 
 
 def stream_response(messages: list[dict], provider: str = "ollama",
@@ -58,14 +59,21 @@ def stream_response(messages: list[dict], provider: str = "ollama",
 
 
 
-def check_ollama_health() -> tuple[bool, str]:
-    """ตรวจสอบว่า Ollama รันอยู่หรือไม่ คืนค่า (ok, message)"""
-    import urllib.request
+def check_ollama_health(force: bool = False) -> tuple[bool, str]:
+    """ตรวจสอบว่า Ollama รันอยู่หรือไม่ คืนค่า (ok, message) — cache 30 วินาที"""
+    import urllib.request, time
+    if not force and _health_cache["ok"] is not None:
+        if time.time() - _health_cache["ts"] < 30:
+            return _health_cache["ok"], ""
     try:
         base = OLLAMA_BASE_URL.replace("/v1", "")
         urllib.request.urlopen(f"{base}/api/tags", timeout=8)
+        _health_cache["ok"] = True
+        _health_cache["ts"] = time.time()
         return True, ""
     except Exception:
+        _health_cache["ok"] = False
+        _health_cache["ts"] = time.time()
         return False, (
             f"❌ ไม่สามารถเชื่อมต่อ Ollama ได้\n\n"
             f"กรุณาเปิด Ollama ก่อนด้วยคำสั่ง:\n```\nollama serve\n```\n"
