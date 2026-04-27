@@ -34,6 +34,7 @@ def stream_response(messages: list[dict], provider: str = "ollama",
     Auto-failover: ถ้า ollama offline และมี gemini key จะสลับไป gemini อัตโนมัติ
     """
     if provider == "gemini" or image_b64 or agent_mode:
+        _last_failover["active"] = False
         yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode)
         return
 
