@@ -27,7 +27,7 @@ from utils.tokens import count_tokens_approx
 from google import genai
 from google.genai import types
 
-GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-live-001")
+GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-exp")
 
 app = FastAPI(title="Hybrid AI Workspace")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -183,7 +183,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
         asst_name = assistant_slug
     sys_prompt = asst.get("system_prompt", "\u0e04\u0e38\u0e13\u0e40\u0e1b\u0e47\u0e19 AI \u0e1c\u0e39\u0e49\u0e0a\u0e48\u0e27\u0e22\u0e17\u0e35\u0e48\u0e40\u0e1b\u0e47\u0e19\u0e21\u0e34\u0e15\u0e23 \u0e15\u0e2d\u0e1a\u0e20\u0e32\u0e29\u0e32\u0e44\u0e17\u0e22\u0e01\u0e23\u0e30\u0e0a\u0e31\u0e1a")
 
-    client = genai.Client(api_key=gemini_key, http_options={"api_version": "v1beta"})
+    client = genai.Client(api_key=gemini_key, http_options={"api_version": "v1alpha"})
     live_config = types.LiveConnectConfig(
         response_modalities=["AUDIO"],
         speech_config=types.SpeechConfig(
