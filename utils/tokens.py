@@ -8,10 +8,11 @@ def count_tokens_approx(messages: list[dict]) -> int:
 
 
 CONTEXT_LIMITS = {
-    "llama3": 8192,
+    "llama3": 4096,
+    "llama3:latest": 4096,
     "llama3.2": 128000,
-    "llama3:8b": 8192,
-    "llama3:70b": 8192,
+    "llama3:8b": 4096,
+    "llama3:70b": 4096,
     "llama2": 4096,
     "gemini-2.0-flash": 1048576,
     "gemini-2.5-flash": 1048576,

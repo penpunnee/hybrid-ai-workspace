@@ -23,6 +23,7 @@ from utils.skills import get_all_skills, get_skill_count, save_skill, auto_extra
 from utils.obsidian_sync import sync_vault, search_vault, get_vault_stats
 from utils.dream import run_dream_cycle, get_latest_report, list_reports
 from utils.tts import generate_tts, VOICE_MAP, DEFAULT_VOICE
+from utils.tokens import count_tokens_approx
 from google import genai
 from google.genai import types
 
@@ -629,6 +630,9 @@ async def chat(request: Request):
         f"[ความชอบ]\n{prefs}" if prefs else "",
         f"[Obsidian Vault Notes]\n{vault_ctx}" if vault_ctx else "",
     ]))
+    # จำกัด context สำหรับ Ollama (n_ctx=4096) ให้ system_prompt ≤ ~1000 token
+    if provider == "ollama" and len(full_context) > 2000:
+        full_context = full_context[:2000]
     system_prompt = inject_context_to_system(base_prompt, full_context)
 
     history = load_history(assistant, session_id)
@@ -637,6 +641,18 @@ async def chat(request: Request):
     messages = [{"role": "system", "content": system_prompt}]
     messages += [{"role": m["role"], "content": m["content"]} for m in history]
     messages.append({"role": "user", "content": prompt})
+
+    # ตัด context สำหรับ Ollama ให้พอดี n_ctx=4096 (เหลือ ~1000 token สำหรับ response)
+    if provider == "ollama":
+        MAX_INPUT_TOKENS = 3000
+        # ตัด system prompt ก่อนถ้ายาวเกิน
+        sys_msg = messages[0]
+        if len(sys_msg["content"]) > 4000:
+            sys_msg = {"role": "system", "content": sys_msg["content"][:4000]}
+            messages[0] = sys_msg
+        # ถ้ายังเกิน ตัด history เก่าออก (เก็บ system + user ล่าสุด)
+        while len(messages) > 2 and count_tokens_approx(messages) > MAX_INPUT_TOKENS:
+            messages.pop(1)  # ลบ history เก่าสุด
 
     def generate():
         full_response = ""
