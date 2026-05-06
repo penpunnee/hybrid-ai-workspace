@@ -428,6 +428,23 @@ def skills_delete(filename: str):
     return {"ok": True}
 
 
+@app.post("/api/skills/sync")
+def sync_skills_to_search():
+    """Sync skills จาก skills_db.json ไป ChromaDB search index"""
+    try:
+        from utils.skills import _load_skills_db
+        from utils.skills_search import sync_skills_to_search
+        
+        db = _load_skills_db()
+        if not db:
+            return {"ok": False, "error": "No skills found in skills_db.json"}
+        
+        sync_skills_to_search(db)
+        return {"ok": True, "synced": len(db), "message": f"Synced {len(db)} skills to ChromaDB"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.get("/api/stats")
 def usage_stats():
     """Dashboard stats: messages, sessions, memory"""
