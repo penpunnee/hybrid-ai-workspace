@@ -167,7 +167,10 @@ def run_dream_cycle(provider: str = "ollama", hours: int = 24) -> dict:
     report["phase1_light"] = {"raw_count": len(memories)}
 
     if not memories:
+        end = datetime.now()
         report["skipped"] = "no memories in window"
+        report["finished_at"] = end.isoformat()
+        report["duration_sec"] = (end - start).total_seconds()
         _save_report(report)
         return report
 

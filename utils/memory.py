@@ -203,20 +203,18 @@ def get_memory_stats() -> dict:
     if client is None:
         return {"available": False}
     stats = {"available": True, "collections": {}}
-    collection_names = ["lessons", "preferences", "long_term_memory"]
     try:
-        for name, cfg in _collections.items():
+        all_collections = client.list_collections()
+        for col_info in all_collections:
+            name = col_info.name if hasattr(col_info, "name") else str(col_info)
             try:
-                stats["collections"][f"memory_{name}"] = cfg.count()
+                col = client.get_collection(name)
+                stats["collections"][name] = col.count()
             except Exception:
-                stats["collections"][f"memory_{name}"] = 0
-        for cname in collection_names:
-            try:
-                col = client.get_or_create_collection(cname, metadata={"hnsw:space": "cosine"})
-                stats["collections"][cname] = col.count()
-            except Exception:
-                stats["collections"][cname] = 0
+                stats["collections"][name] = 0
         stats["total"] = sum(stats["collections"].values())
+        stats["long_term"] = stats["collections"].get("long_term_memory", 0)
+        stats["lessons"] = stats["collections"].get("lessons", 0)
     except Exception as e:
         stats["error"] = str(e)
     return stats
@@ -231,10 +229,15 @@ def cleanup_old_memories(days: int = 30) -> dict:
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
     deleted_total = 0
     detail = {}
+    skip_collections = {"long_term_memory", "preferences"}
     try:
-        all_cols = list(_collections.values())
-        for col in all_cols:
+        all_collections = client.list_collections()
+        for col_info in all_collections:
+            name = col_info.name if hasattr(col_info, "name") else str(col_info)
+            if name in skip_collections:
+                continue
             try:
+                col = client.get_collection(name)
                 results = col.get(include=["metadatas"])
                 ids_to_delete = [
                     results["ids"][i]
@@ -244,7 +247,7 @@ def cleanup_old_memories(days: int = 30) -> dict:
                 if ids_to_delete:
                     col.delete(ids=ids_to_delete)
                     deleted_total += len(ids_to_delete)
-                    detail[col.name] = len(ids_to_delete)
+                    detail[name] = len(ids_to_delete)
             except Exception:
                 continue
     except Exception as e:
