@@ -428,7 +428,7 @@ def skills_delete(filename: str):
     return {"ok": True}
 
 
-@app.post("/api/skills/sync")
+@app.post("/api/skills/sync-to-chroma")
 def sync_skills_to_search():
     """Sync skills จาก skills_db.json ไป ChromaDB search index"""
     try:
