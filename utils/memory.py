@@ -1,9 +1,13 @@
 import os
 import socket
+import logging
 from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Configure logging for memory system
+logger = logging.getLogger(__name__)
 
 def _detect_chroma_host() -> tuple:
     """Auto-detect CHROMA_HOST and PORT"""
@@ -43,7 +47,9 @@ def _get_client():
                 settings=Settings(anonymized_telemetry=False),
             )
             _client.heartbeat()
-        except Exception:
+            logger.info(f"ChromaDB connected to {CHROMA_HOST}:{CHROMA_PORT}")
+        except Exception as e:
+            logger.error(f"ChromaDB connection error: {str(e)}")
             _client = None
     return _client
 
@@ -68,6 +74,7 @@ def save_memory(assistant_name: str, user_msg: str, ai_msg: str) -> bool:
     """บันทึกบทสนทนาสำคัญลง ChromaDB"""
     col = _get_collection(assistant_name)
     if col is None:
+        logger.error(f"Memory save failed: Collection not available for {assistant_name}")
         return False
     try:
         doc_id = f"{assistant_name}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
@@ -82,7 +89,8 @@ def save_memory(assistant_name: str, user_msg: str, ai_msg: str) -> bool:
             }]
         )
         return True
-    except Exception:
+    except Exception as e:
+        logger.error(f"Memory save error for {assistant_name}: {str(e)}")
         return False
 
 
@@ -90,6 +98,7 @@ def search_memory(assistant_name: str, query: str, n_results: int = 3) -> str:
     """ค้นหา memory ที่เกี่ยวข้องกับ query"""
     col = _get_collection(assistant_name)
     if col is None:
+        logger.warning(f"Memory search failed: Collection not available for {assistant_name}")
         return ""
     try:
         count = col.count()
@@ -104,7 +113,8 @@ def search_memory(assistant_name: str, query: str, n_results: int = 3) -> str:
             return ""
         memory_text = "\n---\n".join(docs)
         return f"[ความจำจากการสนทนาก่อนหน้า]\n{memory_text}"
-    except Exception:
+    except Exception as e:
+        logger.error(f"Memory search error for {assistant_name}: {str(e)}")
         return ""
 
 

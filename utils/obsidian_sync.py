@@ -1,10 +1,14 @@
 import os
 import re
 import hashlib
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Configure logging for obsidian sync
+logger = logging.getLogger(__name__)
 
 VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH", "")
 COLLECTION_NAME = "obsidian_notes"
@@ -60,10 +64,12 @@ def sync_vault(vault_path: str = "") -> dict:
     """Sync all .md files in vault into ChromaDB. Returns stats."""
     vp = vault_path or VAULT_PATH
     if not vp or not os.path.isdir(vp):
+        logger.error(f"Vault sync failed: Path not found: {vp}")
         return {"ok": False, "error": f"Vault path not found: {vp}"}
 
     col = _get_collection()
     if col is None:
+        logger.error("Vault sync failed: ChromaDB not available")
         return {"ok": False, "error": "ChromaDB not available"}
 
     md_files = list(Path(vp).rglob("*.md"))
@@ -96,9 +102,11 @@ def sync_vault(vault_path: str = "") -> dict:
                 }],
             )
             added += 1
-        except Exception:
+        except Exception as e:
+            logger.error(f"Vault sync error for {fp}: {str(e)}")
             skipped += 1
 
+    logger.info(f"Vault sync complete: {added} added, {skipped} skipped out of {len(md_files)} total")
     return {"ok": True, "total": len(md_files), "synced": added, "skipped": skipped}
 
 
@@ -106,6 +114,7 @@ def search_vault(query: str, n: int = 5) -> list[dict]:
     """Search obsidian notes by semantic similarity."""
     col = _get_collection()
     if col is None:
+        logger.warning("Vault search failed: ChromaDB not available")
         return []
     try:
         results = col.query(query_texts=[query], n_results=min(n, col.count()))
@@ -113,8 +122,10 @@ def search_vault(query: str, n: int = 5) -> list[dict]:
         for i, doc in enumerate(results["documents"][0]):
             meta = results["metadatas"][0][i]
             out.append({"title": meta.get("title", ""), "content": doc, "path": meta.get("path", "")})
+        logger.info(f"Vault search: Found {len(out)} results for query: {query[:50]}")
         return out
-    except Exception:
+    except Exception as e:
+        logger.error(f"Vault search error: {str(e)}")
         return []
 
 

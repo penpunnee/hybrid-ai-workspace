@@ -489,9 +489,16 @@ with st.sidebar:
         else:
             st.session_state.uploaded_files = []
         st.divider()
-        ollama_ok, _ = check_ollama_health()
+        ollama_ok, ollama_msg = check_ollama_health()
         memory_ok = is_memory_available()
-        st.caption(f"{'🟢' if ollama_ok else '🔴'} Ollama · {'🟢' if memory_ok else '🟡'} Mem · 📚{get_skill_count()}")
+        
+        # แสดงสถานะ Ollama พร้อม error message
+        if ollama_ok:
+            st.caption(f"🟢 Ollama · {'🟢' if memory_ok else '�'} Mem · 📚{get_skill_count()}")
+        else:
+            st.caption(f"🔴 Ollama · {'🟢' if memory_ok else '🟡'} Mem · 📚{get_skill_count()}")
+            if ollama_msg:
+                st.error(ollama_msg)
 
     # --- User profile bar (fixed bottom) ---
     st.markdown("""

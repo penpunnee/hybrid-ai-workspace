@@ -1,16 +1,14 @@
-version: "3.8"
-
 services:
   hybrid-ai:
     build: .
-    container_name: ai-backend
+    container_name: ai-backend-1
     restart: unless-stopped
     ports:
       - "8080:8000"
     volumes:
       - ${NAS_DATA_PATH:-./data}/chat_history.db:/app/chat_history.db
       - ./identity.json:/app/identity.json
-      - ${OBSIDIAN_VAULT_NAS_PATH:-./data}:/vault:ro
+      - ${OBSIDIAN_VAULT_NAS_PATH:-./data}:/vault
       - ${NAS_DATA_PATH:-./data}/dream_reports:/app/dream_reports
       - ${NAS_DATA_PATH:-./data}/skills_db.json:/app/skills_db.json
     environment:
@@ -19,14 +17,14 @@ services:
     env_file:
       - .env
 
-  chromadb:
-    image: chromadb/chroma:latest
-    container_name: chromadb
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    volumes:
-      - chroma_data:/chroma/chroma
+  # chromadb:
+  #   image: chromadb/chroma:latest
+  #   container_name: chromadb
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - chroma_data:/chroma/chroma
 
   cloudflared:
     image: cloudflare/cloudflared:latest

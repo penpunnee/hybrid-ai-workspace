@@ -81,10 +81,12 @@ def get_config():
 def status():
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=2) as ex:
-        f1 = ex.submit(lambda: check_ollama_health()[0])
+        f1 = ex.submit(check_ollama_health)
         f2 = ex.submit(is_memory_available)
-        try: ollama_ok = f1.result(timeout=5)
-        except Exception: ollama_ok = False
+        try: 
+            ollama_ok, ollama_msg = f1.result(timeout=5)
+        except Exception: 
+            ollama_ok, ollama_msg = False, "Health check error"
         try: mem_ok = f2.result(timeout=5)
         except Exception: mem_ok = False
     next_dream = None
@@ -93,6 +95,7 @@ def status():
         next_dream = job.next_run_time.strftime("%Y-%m-%d %H:%M")
     return {
         "ollama": ollama_ok,
+        "ollama_message": ollama_msg,
         "gemini": bool(os.getenv("GEMINI_API_KEY", "")),
         "memory": mem_ok,
         "skills": get_skill_count(),
