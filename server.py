@@ -19,7 +19,7 @@ from utils.history import (save_message, load_history, get_sessions, clear_sessi
     search_messages, pin_message, get_pinned_messages,
     delete_last_assistant_message, truncate_from_db_id, get_last_user_message)
 from utils.memory import save_memory, search_memory, is_memory_available, save_lesson, save_preference, get_lessons, get_preferences, search_long_term_memory, get_memory_stats, cleanup_old_memories
-from utils.skills import get_all_skills, get_skill_count, save_skill, auto_extract_skills, _load_skills_db, _save_skills_db
+from utils.skills import get_all_skills, get_skill_count, save_skill, auto_extract_skills, _load_skills_db, _save_skills_db, search_skills
 from utils.obsidian_sync import sync_vault, search_vault, get_vault_stats
 from utils.dream import run_dream_cycle, get_latest_report, list_reports
 from utils.tts import generate_tts, VOICE_MAP, DEFAULT_VOICE
@@ -629,7 +629,7 @@ async def chat(request: Request):
     full_context = "\n\n".join(filter(None, [
         search_memory(assistant, prompt),
         long_term,
-        get_all_skills(),
+        search_skills(prompt, n_results=3),  # Use semantic search instead of loading all skills
         f"[Skills & Knowledge]\n{skills_md}" if skills_md else "",
         f"[บทเรียนสะสม]\n{lessons}" if lessons else "",
         f"[ความชอบ]\n{prefs}" if prefs else "",
