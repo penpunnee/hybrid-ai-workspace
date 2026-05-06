@@ -715,4 +715,5 @@ async def chat(request: Request):
 if __name__ == "__main__":
     import uvicorn
     print("🚀 Hybrid AI Workspace  →  http://localhost:8000")
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+    reload = os.getenv("RELOAD", "false").lower() == "true"
+    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=reload)
