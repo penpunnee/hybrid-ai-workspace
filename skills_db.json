@@ -1,0 +1,74 @@
+{
+  "Python List Comprehension": {
+    "topic": "Python List Comprehension",
+    "summary": "result = [x*2 for x in items if x > 0] - สร้าง list จาก iterable ด้วย expression และ condition",
+    "source": "coding-skills",
+    "created_at": "2026-05-07"
+  },
+  "Python Dict Comprehension": {
+    "topic": "Python Dict Comprehension",
+    "summary": "d = {k: v for k, v in pairs} - สร้าง dictionary จาก pairs ด้วย comprehension",
+    "source": "coding-skills",
+    "created_at": "2026-05-07"
+  },
+  "Python f-string": {
+    "topic": "Python f-string",
+    "summary": "msg = f'Hello {name}, you are {age} years old' - ใช้ f-string สำหรับ string formatting",
+    "source": "coding-skills",
+    "created_at": "2026-05-07"
+  },
+  "Python Context Manager": {
+    "topic": "Python Context Manager",
+    "summary": "with open('file.txt', 'r', encoding='utf-8') as f: data = f.read() - ใช้ with statement สำหรับ resource management",
+    "source": "coding-skills",
+    "created_at": "2026-05-07"
+  },
+  "Python Dataclass": {
+    "topic": "Python Dataclass",
+    "summary": "@dataclass class User: name: str; age: int = 0 - ใช้ dataclass สำหรับ data structure",
+    "source": "coding-skills",
+    "created_at": "2026-05-07"
+  },
+  "Python Async/Await": {
+    "topic": "Python Async/Await",
+    "summary": "async def fetch(url): await asyncio.sleep(1) - ใช้ async/await สำหรับ asynchronous programming",
+    "source": "coding-skills",
+    "created_at": "2026-05-07"
+  },
+  "Python Type Hints": {
+    "topic": "Python Type Hints",
+    "summary": "def greet(name: str) -> str: return f'Hello {name}' - ใช้ type hints สำหรับ function signatures",
+    "source": "coding-skills",
+    "created_at": "2026-05-07"
+  },
+  "Python Error Handling": {
+    "topic": "Python Error Handling",
+    "summary": "try: result = risky() except (ValueError, KeyError) as e: print(f'Error: {e}') - ใช้ try/except/finally สำหรับ error handling",
+    "source": "coding-skills",
+    "created_at": "2026-05-07"
+  },
+  "Python Lambda Map Filter": {
+    "topic": "Python Lambda Map Filter",
+    "summary": "nums = list(map(lambda x: x**2, filter(lambda x: x%2==0, range(10)))) - ใช้ lambda, map, filter สำหรับ functional programming",
+    "source": "coding-skills",
+    "created_at": "2026-05-07"
+  },
+  "Python Walrus Operator": {
+    "topic": "Python Walrus Operator",
+    "summary": "if (n := len(data)) > 10: print(f'Too long: {n}') - ใช้ walrus operator (:=) สำหรับ assignment expression",
+    "source": "coding-skills",
+    "created_at": "2026-05-07"
+  },
+  "Pawin Context": {
+    "topic": "Pawin Context",
+    "summary": "ข้อมูล context เกี่ยวกับ Pawin - developer ที่ใช้ React, TypeScript, Google Apps Script, และ Firebase",
+    "source": "pawin-context",
+    "created_at": "2026-05-07"
+  },
+  "System Manual": {
+    "topic": "System Manual",
+    "summary": "คู่มือการใช้งานระบบ Hybrid AI Workspace - รวมการตั้งค่าและการใช้งาน",
+    "source": "system-manual",
+    "created_at": "2026-05-07"
+  }
+}
