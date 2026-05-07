@@ -207,6 +207,83 @@ def search_long_term_memory(query: str, n_results: int = 3) -> str:
         return ""
 
 
+def list_lessons(n: int = 50) -> list:
+    """ดึง lessons ทั้งหมดพร้อม metadata"""
+    client = _get_client()
+    if client is None:
+        return []
+    try:
+        col = client.get_or_create_collection("lessons", metadata={"hnsw:space": "cosine"})
+        results = col.get(include=["documents", "metadatas"])
+        docs = results.get("documents", [])
+        metas = results.get("metadatas", [])
+        ids = results.get("ids", [])
+        items = []
+        for i, doc in enumerate(docs[:n]):
+            meta = metas[i] if i < len(metas) else {}
+            items.append({
+                "id": ids[i] if i < len(ids) else f"lesson_{i}",
+                "topic": meta.get("topic", ""),
+                "content": doc,
+                "timestamp": meta.get("timestamp", ""),
+            })
+        items.sort(key=lambda x: x["timestamp"], reverse=True)
+        return items
+    except Exception:
+        return []
+
+
+def list_preferences() -> list:
+    """ดึง preferences ทั้งหมดพร้อม metadata"""
+    client = _get_client()
+    if client is None:
+        return []
+    try:
+        col = client.get_or_create_collection("preferences", metadata={"hnsw:space": "cosine"})
+        results = col.get(include=["documents", "metadatas"])
+        docs = results.get("documents", [])
+        metas = results.get("metadatas", [])
+        ids = results.get("ids", [])
+        items = []
+        for i, doc in enumerate(docs):
+            meta = metas[i] if i < len(metas) else {}
+            items.append({
+                "id": ids[i] if i < len(ids) else f"pref_{i}",
+                "key": meta.get("key", ids[i] if i < len(ids) else ""),
+                "content": doc,
+                "timestamp": meta.get("timestamp", ""),
+            })
+        return items
+    except Exception:
+        return []
+
+
+def delete_lesson(doc_id: str) -> bool:
+    """ลบ lesson ตาม doc_id"""
+    client = _get_client()
+    if client is None:
+        return False
+    try:
+        col = client.get_or_create_collection("lessons", metadata={"hnsw:space": "cosine"})
+        col.delete(ids=[doc_id])
+        return True
+    except Exception:
+        return False
+
+
+def delete_preference(doc_id: str) -> bool:
+    """ลบ preference ตาม doc_id/key"""
+    client = _get_client()
+    if client is None:
+        return False
+    try:
+        col = client.get_or_create_collection("preferences", metadata={"hnsw:space": "cosine"})
+        col.delete(ids=[doc_id])
+        return True
+    except Exception:
+        return False
+
+
 def get_memory_stats() -> dict:
     """ดูจำนวน entries ใน collections ทั้งหมด"""
     client = _get_client()

@@ -23,6 +23,14 @@ def _get_conn():
             pinned INTEGER DEFAULT 0
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS session_names (
+            assistant TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            PRIMARY KEY (assistant, session_id)
+        )
+    """)
     for col, default in [("session_id", "'default'"), ("pinned", "0")]:
         try:
             conn.execute(f"ALTER TABLE messages ADD COLUMN {col} {'TEXT' if col=='session_id' else 'INTEGER'} DEFAULT {default}")
@@ -57,7 +65,7 @@ def load_history(assistant: str, session_id: str = "default", include_meta: bool
 
 
 def get_sessions(assistant: str) -> list[dict]:
-    """ดึงรายการ sessions ทั้งหมดของ assistant พร้อม first message"""
+    """ดึงรายการ sessions ทั้งหมดของ assistant พร้อม first message และ custom name"""
     conn = _get_conn()
     rows = conn.execute(
         "SELECT session_id, MIN(created_at) as started_at FROM messages WHERE assistant = ? GROUP BY session_id ORDER BY started_at DESC LIMIT 30",
@@ -69,19 +77,37 @@ def get_sessions(assistant: str) -> list[dict]:
             "SELECT content FROM messages WHERE assistant = ? AND session_id = ? AND role = 'user' ORDER BY id ASC LIMIT 1",
             (assistant, session_id),
         ).fetchone()
+        custom_name = conn.execute(
+            "SELECT name FROM session_names WHERE assistant = ? AND session_id = ?",
+            (assistant, session_id),
+        ).fetchone()
         sessions.append({
             "session_id": session_id,
             "started_at": started_at or "",
             "first_msg": (first[0] if first else "การสนทนา")[:50],
+            "name": custom_name[0] if custom_name else None,
         })
     conn.close()
     return sessions
 
 
+def rename_session(assistant: str, session_id: str, name: str):
+    """ตั้งชื่อ session แบบ custom ลงใน session_names table"""
+    conn = _get_conn()
+    conn.execute(
+        "INSERT INTO session_names (assistant, session_id, name) VALUES (?, ?, ?) "
+        "ON CONFLICT(assistant, session_id) DO UPDATE SET name = excluded.name",
+        (assistant, session_id, name.strip()),
+    )
+    conn.commit()
+    conn.close()
+
+
 def clear_session(assistant: str, session_id: str):
-    """ลบประวัติแชทของ session นั้น"""
+    """ลบประวัติแชทของ session นั้น รวมถึง custom name"""
     conn = _get_conn()
     conn.execute("DELETE FROM messages WHERE assistant = ? AND session_id = ?", (assistant, session_id))
+    conn.execute("DELETE FROM session_names WHERE assistant = ? AND session_id = ?", (assistant, session_id))
     conn.commit()
     conn.close()
 

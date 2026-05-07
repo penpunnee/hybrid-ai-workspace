@@ -17,8 +17,10 @@ from utils.llm import stream_response, OLLAMA_MODEL, GEMINI_MODEL, check_ollama_
 from utils.rag import inject_context_to_system, load_skills_folder
 from utils.history import (save_message, load_history, get_sessions, clear_session, export_history_md,
     search_messages, pin_message, get_pinned_messages,
-    delete_last_assistant_message, truncate_from_db_id, get_last_user_message)
-from utils.memory import save_memory, search_memory, is_memory_available, save_lesson, save_preference, get_lessons, get_preferences, search_long_term_memory, get_memory_stats, cleanup_old_memories
+    delete_last_assistant_message, truncate_from_db_id, get_last_user_message, rename_session)
+from utils.memory import (save_memory, search_memory, is_memory_available, save_lesson, save_preference,
+    get_lessons, get_preferences, search_long_term_memory, get_memory_stats, cleanup_old_memories,
+    list_lessons, list_preferences, delete_lesson, delete_preference)
 from utils.skills import get_all_skills, get_skill_count, save_skill, auto_extract_skills, _load_skills_db, _save_skills_db, search_skills
 from utils.obsidian_sync import sync_vault, search_vault, get_vault_stats
 from utils.dream import run_dream_cycle, get_latest_report, list_reports
@@ -32,7 +34,7 @@ GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-exp")
 app = FastAPI(title="Hybrid AI Workspace")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-_share_store: dict = {}  # token -> {assistant, session_id, created}
+_share_store: dict = {}  # fallback in-memory (also persisted to SQLite)
 
 # --- Auto Dream Scheduler ---
 def _scheduled_dream():
@@ -121,6 +123,16 @@ def list_sessions(assistant: str):
 def new_session(assistant: str):
     sid = f"s_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     return {"session_id": sid}
+
+
+@app.patch("/api/sessions/{assistant}/{session_id}")
+async def patch_session(assistant: str, session_id: str, request: Request):
+    data = await request.json()
+    name = data.get("name", "").strip()
+    if not name:
+        return {"ok": False, "error": "ชื่อว่างไม่ได้"}
+    rename_session(assistant, session_id, name)
+    return {"ok": True, "session_id": session_id, "name": name}
 
 
 @app.delete("/api/sessions/{assistant}/{session_id}")
@@ -495,6 +507,28 @@ def memory_stats():
     return get_memory_stats()
 
 
+@app.get("/api/memory/lessons")
+def api_list_lessons():
+    return {"ok": True, "lessons": list_lessons(50)}
+
+
+@app.get("/api/memory/preferences")
+def api_list_preferences():
+    return {"ok": True, "preferences": list_preferences()}
+
+
+@app.delete("/api/memory/lessons/{doc_id}")
+def api_delete_lesson(doc_id: str):
+    ok = delete_lesson(doc_id)
+    return {"ok": ok}
+
+
+@app.delete("/api/memory/preferences/{doc_id}")
+def api_delete_preference(doc_id: str):
+    ok = delete_preference(doc_id)
+    return {"ok": ok}
+
+
 @app.post("/api/memory/cleanup")
 async def memory_cleanup(request: Request):
     try:
@@ -552,13 +586,38 @@ async def create_share(request: Request):
     if not assistant or not session_id:
         return {"ok": False, "error": "ระบุ assistant และ session_id"}
     token = uuid.uuid4().hex[:10]
-    _share_store[token] = {"assistant": assistant, "session_id": session_id, "created": datetime.now().isoformat()}
+    created = datetime.now().isoformat()
+    _share_store[token] = {"assistant": assistant, "session_id": session_id, "created": created}
+    # Persist to SQLite so links survive restart
+    try:
+        from utils.history import _get_conn
+        conn = _get_conn()
+        conn.execute("CREATE TABLE IF NOT EXISTS share_links (token TEXT PRIMARY KEY, assistant TEXT, session_id TEXT, created TEXT)")
+        conn.execute("INSERT OR REPLACE INTO share_links (token, assistant, session_id, created) VALUES (?,?,?,?)",
+                     (token, assistant, session_id, created))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
     return {"ok": True, "token": token}
 
 
 @app.get("/api/shared/{token}")
 def get_shared_data(token: str):
     info = _share_store.get(token)
+    if not info:
+        # Fallback: load from SQLite
+        try:
+            from utils.history import _get_conn
+            conn = _get_conn()
+            conn.execute("CREATE TABLE IF NOT EXISTS share_links (token TEXT PRIMARY KEY, assistant TEXT, session_id TEXT, created TEXT)")
+            row = conn.execute("SELECT assistant, session_id, created FROM share_links WHERE token=?", (token,)).fetchone()
+            conn.close()
+            if row:
+                info = {"assistant": row[0], "session_id": row[1], "created": row[2]}
+                _share_store[token] = info
+        except Exception:
+            pass
     if not info:
         return {"ok": False, "error": "ไม่พบ link"}
     msgs = load_history(info["assistant"], info["session_id"], include_meta=False)
@@ -567,7 +626,98 @@ def get_shared_data(token: str):
 
 @app.get("/shared/{token}", response_class=HTMLResponse)
 def shared_page(token: str):
-    return HTMLResponse(content=f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Shared Chat</title><style>body{{font-family:'Segoe UI',sans-serif;background:#0a0c14;color:#e2e8f0;margin:0;padding:24px}}.c{{max-width:780px;margin:0 auto}}h1{{font-size:1.1rem;color:#a5b4fc;border-bottom:1px solid rgba(255,255,255,.1);padding-bottom:10px;margin-bottom:20px}}.m{{margin:10px 0;padding:12px 16px;border-radius:14px;font-size:.9rem;line-height:1.6}}.u{{background:rgba(45,212,191,.09);border:1px solid rgba(45,212,191,.2);margin-left:15%}}.a{{background:rgba(99,102,241,.09);border:1px solid rgba(99,102,241,.18);margin-right:15%}}.r{{font-size:10px;opacity:.45;margin-bottom:6px}}.load{{color:#4b5563;font-style:italic}}</style></head><body><div class="c"><h1>💬 Shared Chat</h1><div id="m" class="load">กำลังโหลด...</div></div><script>fetch('/api/shared/{token}').then(r=>r.json()).then(d=>{{if(!d.ok){{document.getElementById('m').textContent='ไม่พบแชทนี้';return;}}document.querySelector('h1').textContent='💬 '+d.assistant;const c=document.getElementById('m');c.innerHTML='';d.messages.forEach(m=>{{const e=document.createElement('div');e.className='m '+(m.role==='user'?'u':'a');e.innerHTML='<div class="r">'+(m.role==='user'?'👤 User':'🤖 AI')+'</div>'+m.content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>');c.appendChild(e);}});}}).catch(()=>{{document.getElementById('m').textContent='โหลดไม่ได้';}});</script></body></html>""")
+    html = f"""<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Shared Chat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:'Sora',sans-serif;background:#060810;color:#e2e8f0;min-height:100vh;padding:0}}
+.bg{{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}}
+.orb{{position:absolute;border-radius:50%;filter:blur(80px);opacity:.5}}
+.orb1{{width:400px;height:400px;background:radial-gradient(circle,rgba(168,85,247,.5),transparent 70%);top:-100px;right:10%}}
+.orb2{{width:300px;height:300px;background:radial-gradient(circle,rgba(236,72,153,.4),transparent 70%);bottom:50px;left:5%}}
+.wrap{{position:relative;z-index:1;max-width:800px;margin:0 auto;padding:24px 16px 60px}}
+header{{display:flex;align-items:center;gap:12px;padding:20px 0 24px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:28px}}
+.avatar{{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#a855f7,#ec4899);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff;flex-shrink:0;box-shadow:0 0 20px rgba(168,85,247,.4)}}
+.title{{font-size:1rem;font-weight:600;color:#e2e8f0}}
+.subtitle{{font-size:.72rem;color:rgba(148,163,184,.5);margin-top:2px}}
+.badge{{margin-left:auto;font-size:.65rem;padding:3px 10px;border-radius:20px;background:rgba(168,85,247,.12);border:1px solid rgba(168,85,247,.25);color:#c4b5fd}}
+.msgs{{display:flex;flex-direction:column;gap:16px}}
+.msg{{display:flex;gap:12px;animation:fadeIn .3s ease forwards}}
+.msg.user{{flex-direction:row-reverse}}
+.bubble-avatar{{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;margin-top:2px}}
+.msg.ai .bubble-avatar{{background:linear-gradient(135deg,#a855f7,#7c3aed);color:#fff;box-shadow:0 0 12px rgba(168,85,247,.35)}}
+.msg.user .bubble-avatar{{background:linear-gradient(135deg,#2dd4bf,#06b6d4);color:#fff;box-shadow:0 0 12px rgba(6,182,212,.3)}}
+.bubble{{max-width:72%;padding:12px 16px;border-radius:18px;font-size:.88rem;line-height:1.65;position:relative}}
+.msg.ai .bubble{{background:linear-gradient(135deg,rgba(99,102,241,.09),rgba(139,92,246,.06));border:1px solid rgba(99,102,241,.2);border-radius:4px 18px 18px 18px}}
+.msg.user .bubble{{background:linear-gradient(135deg,rgba(45,212,191,.1),rgba(6,182,212,.07));border:1px solid rgba(45,212,191,.22);border-radius:18px 4px 18px 18px;text-align:left}}
+.role-label{{font-size:.65rem;font-weight:600;margin-bottom:5px;opacity:.5;text-transform:uppercase;letter-spacing:.06em}}
+.msg.ai .role-label{{color:#a5b4fc}}
+.msg.user .role-label{{color:#5eead4}}
+pre{{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:.5em 0;font-family:'JetBrains Mono',monospace;font-size:.78em;line-height:1.5}}
+code{{background:rgba(255,255,255,.1);border-radius:4px;padding:1px 5px;font-family:'JetBrains Mono',monospace;font-size:.82em}}
+.empty{{text-align:center;padding:60px 20px;color:rgba(148,163,184,.35);font-size:.9rem}}
+.load{{text-align:center;padding:80px 20px}}
+.spinner{{width:32px;height:32px;border:2px solid rgba(168,85,247,.2);border-top-color:#a855f7;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px}}
+.footer{{text-align:center;padding-top:40px;font-size:.7rem;color:rgba(148,163,184,.25)}}
+@keyframes spin{{to{{transform:rotate(360deg)}}}}
+@keyframes fadeIn{{from{{opacity:0;transform:translateY(8px)}}to{{opacity:1;transform:translateY(0)}}}}
+@media(max-width:600px){{.bubble{{max-width:88%}}.wrap{{padding:16px 12px 50px}}}}
+</style>
+</head>
+<body>
+<div class="bg"><div class="orb orb1"></div><div class="orb orb2"></div></div>
+<div class="wrap">
+  <header>
+    <div class="avatar" id="avatar">AI</div>
+    <div>
+      <div class="title" id="title">Shared Chat</div>
+      <div class="subtitle" id="subtitle">กำลังโหลด...</div>
+    </div>
+    <div class="badge">Shared</div>
+  </header>
+  <div class="msgs" id="msgs">
+    <div class="load"><div class="spinner"></div><div style="color:rgba(148,163,184,.4);font-size:.85rem">กำลังโหลด...</div></div>
+  </div>
+  <div class="footer">Hybrid AI Workspace · Shared via link</div>
+</div>
+<script>
+function esc(s){{return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}}
+function fmt(s){{
+  s=esc(s);
+  s=s.replace(/```([\\s\\S]*?)```/g,'<pre><code>$1</code></pre>');
+  s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
+  s=s.replace(/\\*\\*([^*]+)\\*\\*/g,'<strong>$1</strong>');
+  s=s.replace(/\\*([^*]+)\\*/g,'<em>$1</em>');
+  s=s.replace(/^#{1,3} (.+)$/gm,'<strong style="font-size:1.05em;display:block;margin:.5em 0 .2em">$1</strong>');
+  s=s.replace(/\\n/g,'<br>');
+  return s;
+}}
+fetch('/api/shared/{token}').then(r=>r.json()).then(d=>{{
+  if(!d.ok){{document.getElementById('msgs').innerHTML='<div class="empty">❌ ไม่พบแชทนี้ หรือ link หมดอายุแล้ว</div>';return;}}
+  document.getElementById('title').textContent='💬 '+d.assistant;
+  document.getElementById('avatar').textContent=d.assistant.charAt(0).toUpperCase();
+  document.getElementById('subtitle').textContent=(d.messages?.length||0)+' ข้อความ · '+new Date(d.created).toLocaleDateString('th-TH',{{day:'numeric',month:'short',year:'2-digit'}});
+  const c=document.getElementById('msgs');
+  if(!d.messages?.length){{c.innerHTML='<div class="empty">ไม่มีข้อความใน session นี้</div>';return;}}
+  c.innerHTML='';
+  d.messages.forEach(m=>{{
+    const isUser=m.role==='user';
+    const el=document.createElement('div');
+    el.className='msg '+(isUser?'user':'ai');
+    el.innerHTML=`<div class="bubble-avatar">${{isUser?'U':'A'}}</div><div class="bubble"><div class="role-label">${{isUser?'User':'AI'}}</div>${{fmt(m.content)}}</div>`;
+    c.appendChild(el);
+  }});
+}}).catch(()=>{{document.getElementById('msgs').innerHTML='<div class="empty">❌ โหลดไม่ได้ — ตรวจสอบการเชื่อมต่อ</div>';}});
+</script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
 
 
 @app.post("/api/regenerate")
