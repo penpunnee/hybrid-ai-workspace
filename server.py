@@ -38,7 +38,14 @@ _OPEN_PATHS = {"/", "/api/config", "/api/status", "/api/auth/check", "/api/auth/
 _OPEN_PREFIXES = ("/static", "/assets", "/shared", "/ws")
 
 def _is_local_ip(ip: str) -> bool:
-    return ip.startswith(("192.168.", "10.", "172.", "127.", "::1"))
+    return ip.startswith(("192.168.", "10.", "127.", "::1"))
+
+def _is_local_request(request: Request) -> bool:
+    # ถ้ามาผ่าน Cloudflare Tunnel จะมี CF-Connecting-IP header → ไม่ใช่ local
+    if request.headers.get("cf-connecting-ip"):
+        return False
+    ip = request.client.host if request.client else ""
+    return _is_local_ip(ip)
 
 # --- Skills sync on startup ---
 def _startup_sync_skills():
@@ -81,8 +88,7 @@ async def auth_middleware(request: Request, call_next):
     path = request.url.path
     if path in _OPEN_PATHS or any(path.startswith(p) for p in _OPEN_PREFIXES):
         return await call_next(request)
-    client_ip = request.client.host if request.client else ""
-    if _is_local_ip(client_ip):
+    if _is_local_request(request):
         return await call_next(request)
     token = request.headers.get("x-auth-token", "")
     if token == UI_PASSWORD:
@@ -115,8 +121,7 @@ print("[Scheduler] ตั้ง Dream รันทุกคืนตี 2 แล
 def auth_check(request: Request):
     if not UI_PASSWORD:
         return {"required": False, "ok": True}
-    client_ip = request.client.host if request.client else ""
-    if _is_local_ip(client_ip):
+    if _is_local_request(request):
         return {"required": True, "ok": True, "bypass": "local_ip"}
     token = request.headers.get("x-auth-token", "")
     return {"required": True, "ok": token == UI_PASSWORD}
