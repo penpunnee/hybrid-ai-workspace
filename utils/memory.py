@@ -1,6 +1,8 @@
 import os
+import re
 import socket
 import logging
+import threading
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -32,44 +34,55 @@ CHROMA_HOST, CHROMA_PORT = _detect_chroma_host()
 
 _client = None
 _collections = {}
+_lock = threading.Lock()
+
+
+def _safe_slug(name: str) -> str:
+    """แปลงชื่อ assistant → ชื่อ ChromaDB collection ที่ถูกต้อง [a-zA-Z0-9._-]"""
+    # ตัด emoji และ non-ASCII ออก แล้ว sanitize
+    ascii_only = name.encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-zA-Z0-9]+", "_", ascii_only.lower()).strip("_")
+    return slug or "default"
 
 
 def _get_client():
     global _client
-    if _client is None:
-        try:
-            import chromadb
-            from chromadb.config import Settings
-            ssl = CHROMA_PORT == 443
-            _client = chromadb.HttpClient(
-                host=CHROMA_HOST,
-                port=CHROMA_PORT,
-                ssl=ssl,
-                settings=Settings(anonymized_telemetry=False),
-            )
-            _client.heartbeat()
-            logger.info(f"ChromaDB connected to {CHROMA_HOST}:{CHROMA_PORT}")
-        except Exception as e:
-            logger.error(f"ChromaDB connection error: {str(e)}")
-            _client = None
-    return _client
+    with _lock:
+        if _client is None:
+            try:
+                import chromadb
+                from chromadb.config import Settings
+                ssl = CHROMA_PORT == 443
+                _client = chromadb.HttpClient(
+                    host=CHROMA_HOST,
+                    port=CHROMA_PORT,
+                    ssl=ssl,
+                    settings=Settings(anonymized_telemetry=False),
+                )
+                _client.heartbeat()
+                logger.info(f"ChromaDB connected to {CHROMA_HOST}:{CHROMA_PORT}")
+            except Exception as e:
+                logger.error(f"ChromaDB connection error: {str(e)}")
+                _client = None
+        return _client
 
 
 def _get_collection(assistant_name: str):
     client = _get_client()
     if client is None:
         return None
-    slug = assistant_name.lower().replace(" ", "_")
-    if slug not in _collections:
-        try:
-            _collections[slug] = client.get_or_create_collection(
-                name=f"memory_{slug}",
-                metadata={"hnsw:space": "cosine"},
-            )
-        except Exception as e:
-            logger.warning(f"Failed to get or create collection for {slug}: {e}")
-            return None
-    return _collections[slug]
+    slug = _safe_slug(assistant_name)
+    with _lock:
+        if slug not in _collections:
+            try:
+                _collections[slug] = client.get_or_create_collection(
+                    name=f"memory_{slug}",
+                    metadata={"hnsw:space": "cosine"},
+                )
+            except Exception as e:
+                logger.warning(f"Failed to get or create collection for {slug}: {e}")
+                return None
+        return _collections[slug]
 
 
 def save_memory(assistant_name: str, user_msg: str, ai_msg: str) -> bool:

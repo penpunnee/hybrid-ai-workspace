@@ -93,21 +93,31 @@ app.add_middleware(
 )
 
 # --- Auth middleware ---
-# GET/HEAD/OPTIONS → ผ่านเสมอ (React โหลดได้, ไม่ใช้เงิน)
-# POST/PATCH/DELETE → ต้อง token (chat, dream, tts ที่ใช้เงิน)
+# WRITE methods + sensitive GET paths → ต้อง token จาก Cloudflare
 _WRITE_METHODS = {"POST", "PATCH", "DELETE", "PUT"}
+# GET paths ที่มีข้อมูลส่วนตัว — ต้อง auth เมื่อเข้าจากนอก LAN
+_PROTECTED_GET_PREFIXES = (
+    "/api/history/", "/api/export/", "/api/pinned/",
+    "/api/memory/", "/api/sessions/", "/api/dream/",
+    "/api/tools/home/",
+)
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     if not UI_PASSWORD:
         return await call_next(request)
-    if request.method not in _WRITE_METHODS:
-        return await call_next(request)
     path = request.url.path
+    # static / public paths → ผ่านเสมอ
     if path in _OPEN_PATHS or any(path.startswith(p) for p in _OPEN_PREFIXES):
         return await call_next(request)
+    # LAN → ผ่านเสมอ
     if _is_local_request(request):
         return await call_next(request)
+    # GET ทั่วไป → ผ่าน ยกเว้น sensitive paths
+    if request.method not in _WRITE_METHODS:
+        if not any(path.startswith(p) for p in _PROTECTED_GET_PREFIXES):
+            return await call_next(request)
+    # ต้องมี token
     token = request.headers.get("x-auth-token", "")
     if token == UI_PASSWORD:
         return await call_next(request)
@@ -778,8 +788,21 @@ def usage_stats():
 
 @app.get("/api/skills")
 def list_skills():
+    """รวมข้อมูล skills จาก skills_db.json + ChromaDB + skills/ folder"""
     db = _load_skills_db()
-    return {"skills": db, "count": len(db)}
+    # นับไฟล์ .md จริงใน skills/ folder
+    skills_dir = os.path.join(os.path.dirname(__file__), "skills")
+    md_files = []
+    if os.path.isdir(skills_dir):
+        md_files = [f for f in os.listdir(skills_dir) if f.endswith(".md")]
+    # นับใน ChromaDB
+    chroma_count = get_skill_count()
+    return {
+        "skills": db,
+        "count": len(db),
+        "md_files": len(md_files),
+        "chroma_count": chroma_count,
+    }
 
 
 @app.get("/api/memory/stats")
