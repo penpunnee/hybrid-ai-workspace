@@ -30,7 +30,14 @@
         opts.headers = { ...(opts.headers || {}), "x-auth-token": _authToken };
       }
     }
-    return _origFetch(url, opts);
+    // ดัก 401 → แสดง login modal ทันที (ก่อน React crash)
+    return _origFetch(url, opts).then((resp) => {
+      if (resp.status === 401) {
+        loginOverlay.classList.add("open");
+        setTimeout(() => document.getElementById("login-input")?.focus(), 100);
+      }
+      return resp;
+    });
   };
 
   // ── Styles ──────────────────────────────────────────────────────────────────
@@ -225,8 +232,8 @@
       if (d.ok) {
         _authToken = d.token;
         localStorage.setItem("hw_auth_token", _authToken);
-        loginOverlay.classList.remove("open");
-        document.getElementById("login-err").textContent = "";
+        // reload เพื่อให้ React โหลดใหม่พร้อม token
+        window.location.reload();
       } else {
         document.getElementById("login-err").textContent = d.error || "รหัสผ่านไม่ถูกต้อง";
       }
