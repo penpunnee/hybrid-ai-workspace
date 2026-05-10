@@ -65,37 +65,15 @@ class SkillsSearch:
             return
         
         try:
-            # Generate a unique ID for the skill
             skill_id = f"skill_{topic.replace(' ', '_').lower()}"
-            
-            # Check if skill already exists
-            try:
-                self.collection.get(ids=[skill_id])
-                # Update existing skill
-                self.collection.update(
-                    ids=[skill_id],
-                    documents=[f"{topic}: {summary}"],
-                    metadatas=[{
-                        "topic": topic,
-                        "category": category,
-                        "source": source
-                    }]
-                )
-                logger.info(f"Updated skill in search index: {topic}")
-            except Exception:
-                # Add new skill
-                self.collection.add(
-                    ids=[skill_id],
-                    documents=[f"{topic}: {summary}"],
-                    metadatas=[{
-                        "topic": topic,
-                        "category": category,
-                        "source": source
-                    }]
-                )
-                logger.info(f"Added skill to search index: {topic}")
+            self.collection.upsert(
+                ids=[skill_id],
+                documents=[f"{topic}: {summary}"],
+                metadatas=[{"topic": topic, "category": category, "source": source}],
+            )
+            logger.info(f"Upserted skill: {topic}")
         except Exception as e:
-            logger.error(f"Failed to add skill to search index: {e}")
+            logger.error(f"Failed to upsert skill: {e}")
     
     def add_skills_from_db(self, skills_db: Dict):
         """
