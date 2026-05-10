@@ -249,18 +249,20 @@
     if (e.key === "Enter") doLogin(e.target.value);
   });
 
-  // ตรวจสอบ auth ตอนโหลดหน้า
-  async function checkAuth() {
-    try {
-      const r = await _origFetch("/api/auth/check");
-      const d = await r.json();
-      if (d.required && !d.ok) {
-        loginOverlay.classList.add("open");
-        setTimeout(() => document.getElementById("login-input")?.focus(), 100);
-      }
-    } catch {}
+  // ── เช็ค hostname synchronously — ถ้าเป็น domain (ไม่ใช่ IP/localhost) และไม่มี token → แสดงทันที
+  function _isLocalHost() {
+    const h = window.location.hostname;
+    return h === "localhost" || /^(192\.168\.|10\.|172\.|127\.)/.test(h);
   }
-  checkAuth();
+
+  function _showLoginIfNeeded() {
+    if (!_isLocalHost() && !_authToken) {
+      loginOverlay.classList.add("open");
+      setTimeout(() => document.getElementById("login-input")?.focus(), 50);
+    }
+  }
+
+  _showLoginIfNeeded(); // synchronous — ไม่รอ API
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 1. HEALTH WIDGET
