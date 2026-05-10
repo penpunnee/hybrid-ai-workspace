@@ -1042,228 +1042,188 @@
   );
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 14. HOME CONTROL PANEL — NAS + PC + Wake-on-LAN
+  // 14. HOME CONTROL PANEL — NAS + PC + Wake-on-LAN (rewritten v2)
   // ─────────────────────────────────────────────────────────────────────────────
-  const homeCSS = `
-    #enh-home-panel {
-      position: fixed; bottom: 120px; right: 18px; z-index: 9200;
-      width: 300px;
-      background: rgba(10,14,26,0.92);
-      border: 1px solid rgba(99,102,241,0.3);
-      border-radius: 16px;
-      backdrop-filter: blur(18px);
-      padding: 14px 16px 12px;
-      display: none; flex-direction: column; gap: 10px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-      font-size: 12px; color: #e2e8f0;
+  // inject CSS
+  document.head.insertAdjacentHTML("beforeend", `<style>
+    #hw-home-btn {
+      position:fixed; bottom:72px; right:18px; z-index:9300;
+      width:42px; height:42px; border-radius:50%;
+      background:rgba(15,23,42,0.9); border:1.5px solid rgba(99,102,241,0.5);
+      cursor:pointer; font-size:20px; display:flex; align-items:center; justify-content:center;
+      box-shadow:0 4px 16px rgba(0,0,0,0.5); transition:all .2s; user-select:none;
     }
-    #enh-home-panel.open { display: flex; }
-    #enh-home-toggle {
-      position: fixed; bottom: 76px; right: 18px; z-index: 9100;
-      width: 40px; height: 40px; border-radius: 50%;
-      background: rgba(15,23,42,0.85);
-      border: 1px solid rgba(99,102,241,0.4);
-      cursor: pointer; display: flex; align-items: center; justify-content: center;
-      font-size: 18px;
-      transition: all 0.2s;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    #hw-home-btn:hover { transform:scale(1.12); border-color:#818cf8; }
+    #hw-home-btn.active { border-color:#6366f1; background:rgba(99,102,241,0.25); }
+    #hw-home-panel {
+      position:fixed; bottom:122px; right:18px; z-index:9299;
+      width:308px; max-height:70vh; overflow-y:auto;
+      background:rgba(8,12,24,0.96); border:1px solid rgba(99,102,241,0.35);
+      border-radius:16px; backdrop-filter:blur(20px);
+      padding:14px 14px 12px; display:none; flex-direction:column; gap:9px;
+      box-shadow:0 12px 40px rgba(0,0,0,0.6); color:#e2e8f0; font-size:12px;
     }
-    #enh-home-toggle:hover { transform: scale(1.1); border-color: rgba(139,92,246,0.7); }
-    .enh-home-row { display: flex; align-items: center; gap: 8px; }
-    .enh-home-label { flex: 1; color: #94a3b8; font-size: 11px; }
-    .enh-home-val { font-weight: 600; font-size: 12px; }
-    .enh-home-bar {
-      height: 4px; border-radius: 2px;
-      background: rgba(255,255,255,0.08);
-      margin-top: 2px; overflow: hidden;
+    #hw-home-panel.show { display:flex; }
+    .hw-h { font-size:10px; color:#6366f1; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
+    .hw-row { display:flex; align-items:center; gap:7px; }
+    .hw-bar { height:4px; border-radius:2px; background:rgba(255,255,255,0.07); margin-top:3px; }
+    .hw-bar-fill { height:100%; border-radius:2px; transition:width .5s; }
+    .hw-sep { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:1px 0; }
+    .hw-btn {
+      flex:1; padding:5px 6px; border-radius:8px; border:none; cursor:pointer;
+      font-size:11px; font-weight:600; transition:all .18s;
     }
-    .enh-home-bar-fill { height: 100%; border-radius: 2px; transition: width 0.4s; }
-    .enh-home-btn {
-      flex: 1; padding: 5px 8px; border-radius: 8px; border: none; cursor: pointer;
-      font-size: 11px; font-weight: 600; transition: all 0.2s;
-    }
-    .enh-home-btn.green {
-      background: rgba(16,185,129,0.15); color: #34d399;
-      border: 1px solid rgba(16,185,129,0.3);
-    }
-    .enh-home-btn.green:hover { background: rgba(16,185,129,0.25); }
-    .enh-home-btn.blue {
-      background: rgba(99,102,241,0.15); color: #818cf8;
-      border: 1px solid rgba(99,102,241,0.3);
-    }
-    .enh-home-btn.blue:hover { background: rgba(99,102,241,0.25); }
-    .enh-home-btn.orange {
-      background: rgba(251,146,60,0.15); color: #fb923c;
-      border: 1px solid rgba(251,146,60,0.3);
-    }
-    .enh-home-btn.orange:hover { background: rgba(251,146,60,0.25); }
-    .enh-home-divider { border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 2px 0; }
-    .enh-home-title { font-size: 11px; color: #6366f1; font-weight: 700; letter-spacing: 0.05em; }
-    .enh-home-status { font-size: 10px; color: #64748b; margin-top: -6px; }
-  `;
-  document.head.appendChild(Object.assign(document.createElement("style"), { textContent: homeCSS }));
+    .hw-g { background:rgba(16,185,129,.12); color:#34d399; border:1px solid rgba(16,185,129,.3); }
+    .hw-g:hover { background:rgba(16,185,129,.22); }
+    .hw-o { background:rgba(251,146,60,.12); color:#fb923c; border:1px solid rgba(251,146,60,.3); }
+    .hw-o:hover { background:rgba(251,146,60,.22); }
+    .hw-b { background:rgba(99,102,241,.12); color:#818cf8; border:1px solid rgba(99,102,241,.3); }
+    .hw-b:hover { background:rgba(99,102,241,.22); }
+  </style>`);
 
-  // Toggle button
-  const homeToggle = document.createElement("button");
-  homeToggle.id = "enh-home-toggle";
-  homeToggle.title = "Home Control";
-  homeToggle.textContent = "🏠";
-  document.body.appendChild(homeToggle);
+  // toggle button
+  const hwBtn = document.createElement("div");
+  hwBtn.id = "hw-home-btn";
+  hwBtn.title = "Home Control";
+  hwBtn.innerHTML = "🏠";
+  document.body.appendChild(hwBtn);
 
-  // Panel
-  const homePanel = document.createElement("div");
-  homePanel.id = "enh-home-panel";
-  homePanel.innerHTML = `
-    <div class="enh-home-row">
-      <span class="enh-home-title">🏠 HOME CONTROL</span>
-      <span id="enh-home-ts" class="enh-home-status">—</span>
-    </div>
-    <hr class="enh-home-divider">
-    <div class="enh-home-title" style="color:#94a3b8">💾 NAS Storage</div>
-    <div id="enh-home-disk">กำลังโหลด…</div>
-    <hr class="enh-home-divider">
-    <div class="enh-home-title" style="color:#94a3b8">🐳 Docker</div>
-    <div id="enh-home-docker">กำลังโหลด…</div>
-    <hr class="enh-home-divider">
-    <div class="enh-home-title" style="color:#94a3b8">🖥️ PC (${PC_IP_PLACEHOLDER})</div>
-    <div id="enh-home-pc" class="enh-home-row">กำลัง ping…</div>
-    <hr class="enh-home-divider">
-    <div class="enh-home-row">
-      <button class="enh-home-btn green" onclick="enhHomeRefresh()">🔄 Refresh</button>
-      <button class="enh-home-btn orange" onclick="enhHomeWol()">⚡ Wake PC</button>
-      <button class="enh-home-btn blue" onclick="enhHomePingNAS()">📡 Ping NAS</button>
-    </div>
-  `.replace("${PC_IP_PLACEHOLDER}", "192.168.51.235");
-  document.body.appendChild(homePanel);
+  // panel skeleton (buttons wired via addEventListener, NOT onclick=)
+  const hwPanel = document.createElement("div");
+  hwPanel.id = "hw-home-panel";
+  document.body.appendChild(hwPanel);
 
-  let _homePanelOpen = false;
+  function _hwBarColor(p) { return p > 85 ? "#ef4444" : p > 65 ? "#f59e0b" : "#10b981"; }
 
-  function _closeHomePanel() {
-    homePanel.classList.remove("open");
-    homeToggle.style.display = "flex";
-    _homePanelOpen = false;
+  function _hwRender() {
+    hwPanel.innerHTML = `
+      <div class="hw-row" style="margin-bottom:2px">
+        <span class="hw-h" style="flex:1">🏠 Home Control</span>
+        <span id="hw-ts" style="font-size:10px;color:#475569">—</span>
+        <button id="hw-x" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:13px;padding:0 0 0 8px">✕</button>
+      </div>
+      <hr class="hw-sep">
+      <div class="hw-h" style="color:#94a3b8">💾 NAS Storage</div>
+      <div id="hw-disk" style="color:#64748b;font-size:11px">กำลังโหลด…</div>
+      <hr class="hw-sep">
+      <div class="hw-h" style="color:#94a3b8">🐳 Docker Containers</div>
+      <div id="hw-docker" style="color:#64748b;font-size:11px">กำลังโหลด…</div>
+      <hr class="hw-sep">
+      <div class="hw-h" style="color:#94a3b8">🖥️ PC 192.168.51.235</div>
+      <div id="hw-pc" class="hw-row" style="color:#64748b;font-size:11px">กำลัง ping…</div>
+      <hr class="hw-sep">
+      <div class="hw-row">
+        <button id="hw-refresh" class="hw-btn hw-g">🔄 Refresh</button>
+        <button id="hw-wol" class="hw-btn hw-o">⚡ Wake PC</button>
+        <button id="hw-pingnas" class="hw-btn hw-b">📡 Ping NAS</button>
+      </div>`;
+
+    document.getElementById("hw-x").addEventListener("click", _hwClose);
+    document.getElementById("hw-refresh").addEventListener("click", _hwRefresh);
+    document.getElementById("hw-wol").addEventListener("click", _hwWol);
+    document.getElementById("hw-pingnas").addEventListener("click", _hwPingNAS);
   }
 
-  homeToggle.addEventListener("click", (e) => {
+  let _hwOpen = false;
+
+  function _hwClose() { hwPanel.classList.remove("show"); hwBtn.classList.remove("active"); _hwOpen = false; }
+  function _hwToggle(e) {
     e.stopPropagation();
-    if (_homePanelOpen) {
-      _closeHomePanel();
-    } else {
-      _homePanelOpen = true;
-      homePanel.classList.add("open");
-      homeToggle.style.display = "none";
-      enhHomeRefresh();
-      // show toggle-like close affordance
-    }
-  });
+    if (_hwOpen) { _hwClose(); return; }
+    _hwOpen = true;
+    _hwRender();
+    hwPanel.classList.add("show");
+    hwBtn.classList.add("active");
+    _hwRefresh();
+  }
 
-  // ปุ่ม X ปิด panel
-  const homeCloseBtn = document.createElement("button");
-  homeCloseBtn.textContent = "✕";
-  homeCloseBtn.style.cssText = "position:absolute;top:10px;right:12px;background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;";
-  homeCloseBtn.addEventListener("click", (e) => { e.stopPropagation(); _closeHomePanel(); });
-  homePanel.style.position = "fixed";
-  homePanel.appendChild(homeCloseBtn);
-
-  // Click outside
+  hwBtn.addEventListener("click", _hwToggle);
   document.addEventListener("click", (e) => {
-    if (_homePanelOpen && !homePanel.contains(e.target) && e.target !== homeToggle) {
-      _closeHomePanel();
-    }
+    if (_hwOpen && !hwPanel.contains(e.target) && e.target !== hwBtn && !hwBtn.contains(e.target))
+      _hwClose();
   });
 
-  function _barColor(pct) {
-    if (pct > 85) return "#ef4444";
-    if (pct > 65) return "#f59e0b";
-    return "#10b981";
+  async function _hwRefresh() {
+    const h = _authToken ? { "x-auth-token": _authToken } : {};
+
+    // disk
+    try {
+      const r = await _origFetch("/api/tools/home/disk", { headers: h }).then(x => x.json());
+      const el = document.getElementById("hw-disk");
+      if (!el) return;
+      if (r.error) { el.textContent = "❌ " + r.error; }
+      else if (!r.volumes?.length) { el.textContent = "ไม่พบข้อมูล volume"; }
+      else {
+        el.innerHTML = r.volumes.map(v => {
+          const c = _hwBarColor(v.percent);
+          return `<div style="margin-bottom:4px">
+            <div class="hw-row"><span style="flex:1;color:#94a3b8">${v.path}</span>
+            <span style="color:${c};font-weight:600">${v.free_gb} GB ว่าง</span></div>
+            <div class="hw-bar"><div class="hw-bar-fill" style="width:${v.percent}%;background:${c}"></div></div>
+            <div style="color:#475569;font-size:10px">${v.used_gb} / ${v.total_gb} GB · ${v.percent}%</div>
+          </div>`;
+        }).join("");
+      }
+    } catch(e) { const el=document.getElementById("hw-disk"); if(el) el.textContent="❌ " + e.message; }
+
+    // docker
+    try {
+      const r = await _origFetch("/api/tools/home/docker", { headers: h }).then(x => x.json());
+      const el = document.getElementById("hw-docker");
+      if (!el) return;
+      if (r.error) { el.textContent = "❌ " + r.error; }
+      else {
+        const cs = r.containers || [];
+        el.innerHTML = cs.length ? cs.map(c =>
+          `<div class="hw-row" style="margin-bottom:2px">
+            <span>${c.running?"🟢":"🔴"}</span>
+            <span style="flex:1;color:${c.running?"#e2e8f0":"#475569"}">${c.name}</span>
+            <span style="color:#334155;font-size:10px">${c.status}</span>
+          </div>`).join("") : "ไม่พบ container";
+      }
+    } catch(e) { const el=document.getElementById("hw-docker"); if(el) el.textContent="❌ " + e.message; }
+
+    // ping PC
+    try {
+      const r = await _origFetch("/api/tools/home/ping/192.168.51.235", { headers: h }).then(x => x.json());
+      const el = document.getElementById("hw-pc");
+      if (!el) return;
+      const lat = r.latency_ms != null ? ` · ${r.latency_ms.toFixed(1)}ms` : "";
+      el.innerHTML = r.online
+        ? `<span>🟢</span><span style="color:#34d399">Online${lat}</span>`
+        : `<span>🔴</span><span style="color:#ef4444">Offline</span>`;
+    } catch(e) { const el=document.getElementById("hw-pc"); if(el) el.textContent="❌ " + e.message; }
+
+    const ts = document.getElementById("hw-ts");
+    if (ts) ts.textContent = new Date().toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"});
   }
 
-  async function enhHomeRefresh() {
-    document.getElementById("enh-home-disk").textContent = "กำลังโหลด…";
-    document.getElementById("enh-home-docker").textContent = "กำลังโหลด…";
-    document.getElementById("enh-home-pc").textContent = "กำลัง ping…";
-
-    const headers = _authToken ? { "x-auth-token": _authToken } : {};
-
-    // Disk
+  async function _hwWol() {
+    const btn = document.getElementById("hw-wol");
+    if (!btn) return;
+    btn.textContent = "⏳…"; btn.disabled = true;
     try {
-      const r = await _origFetch("/api/tools/home/disk", { headers }).then(x => x.json());
-      const diskEl = document.getElementById("enh-home-disk");
-      if (r.error) { diskEl.textContent = "❌ " + r.error; }
-      else {
-        diskEl.innerHTML = (r.volumes || []).map(v => `
-          <div style="margin-bottom:6px">
-            <div class="enh-home-row">
-              <span class="enh-home-label">${v.path}</span>
-              <span class="enh-home-val" style="color:${_barColor(v.percent)}">${v.free_gb}GB ว่าง</span>
-            </div>
-            <div class="enh-home-bar"><div class="enh-home-bar-fill"
-              style="width:${v.percent}%;background:${_barColor(v.percent)}"></div></div>
-            <div style="color:#475569;font-size:10px">${v.used_gb}GB / ${v.total_gb}GB (${v.percent}%)</div>
-          </div>`).join("") || "ไม่พบข้อมูล volume";
-      }
-    } catch { document.getElementById("enh-home-disk").textContent = "❌ ไม่สามารถเชื่อมต่อ NAS"; }
-
-    // Docker
-    try {
-      const r = await _origFetch("/api/tools/home/docker", { headers }).then(x => x.json());
-      const dockerEl = document.getElementById("enh-home-docker");
-      if (r.error) { dockerEl.textContent = "❌ " + r.error; }
-      else {
-        const ctrs = r.containers || [];
-        dockerEl.innerHTML = ctrs.length === 0 ? "ไม่พบ container" :
-          ctrs.map(c => `<div class="enh-home-row" style="margin-bottom:2px">
-            <span>${c.running ? "🟢" : "🔴"}</span>
-            <span style="flex:1;color:${c.running?"#e2e8f0":"#64748b"}">${c.name}</span>
-            <span style="color:#475569;font-size:10px">${c.status}</span>
-          </div>`).join("");
-      }
-    } catch { document.getElementById("enh-home-docker").textContent = "❌ ไม่สามารถดึงข้อมูล Docker"; }
-
-    // Ping PC
-    try {
-      const r = await _origFetch("/api/tools/home/ping/192.168.51.235", { headers }).then(x => x.json());
-      const pcEl = document.getElementById("enh-home-pc");
-      const lat = r.latency_ms ? ` (${r.latency_ms.toFixed(1)}ms)` : "";
-      pcEl.innerHTML = r.online
-        ? `<span>🟢</span><span style="color:#34d399;flex:1">Online${lat}</span>`
-        : `<span>🔴</span><span style="color:#ef4444;flex:1">Offline</span>`;
-    } catch { document.getElementById("enh-home-pc").textContent = "❌ ping ไม่ได้"; }
-
-    document.getElementById("enh-home-ts").textContent =
-      "อัปเดต " + new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
-  }
-
-  async function enhHomeWol() {
-    const btn = event.target;
-    btn.textContent = "⏳ กำลังส่ง…";
-    btn.disabled = true;
-    try {
-      const headers = { "Content-Type": "application/json", ..._authToken ? { "x-auth-token": _authToken } : {} };
-      const r = await _origFetch("/api/tools/home/wol", { method: "POST", headers }).then(x => x.json());
-      if (r.ok) {
-        btn.textContent = "✅ ส่งแล้ว!";
-        setTimeout(() => enhHomeRefresh(), 35000); // ping หลัง 35s
-      } else {
-        btn.textContent = "❌ Error";
-        alert(r.error || "Wake-on-LAN ล้มเหลว");
-      }
+      const h = { "Content-Type": "application/json", ...(_authToken ? { "x-auth-token": _authToken } : {}) };
+      const r = await _origFetch("/api/tools/home/wol", { method: "POST", headers: h }).then(x => x.json());
+      btn.textContent = r.ok ? "✅ ส่งแล้ว!" : "❌ Error";
+      if (!r.ok && r.error) alert(r.error);
+      if (r.ok) setTimeout(_hwRefresh, 35000);
     } catch { btn.textContent = "❌ Error"; }
-    setTimeout(() => { btn.textContent = "⚡ Wake PC"; btn.disabled = false; }, 5000);
+    setTimeout(() => { if(btn){btn.textContent="⚡ Wake PC";btn.disabled=false;} }, 5000);
   }
 
-  async function enhHomePingNAS() {
-    const btn = event.target;
-    btn.textContent = "⏳…";
-    btn.disabled = true;
+  async function _hwPingNAS() {
+    const btn = document.getElementById("hw-pingnas");
+    if (!btn) return;
+    btn.textContent = "⏳…"; btn.disabled = true;
     try {
-      const headers = _authToken ? { "x-auth-token": _authToken } : {};
-      const r = await _origFetch("/api/tools/home/ping/192.168.51.49", { headers }).then(x => x.json());
-      const lat = r.latency_ms ? ` ${r.latency_ms.toFixed(1)}ms` : "";
-      btn.textContent = r.online ? `📡 NAS OK${lat}` : "📡 NAS Offline";
+      const h = _authToken ? { "x-auth-token": _authToken } : {};
+      const r = await _origFetch("/api/tools/home/ping/192.168.51.49", { headers: h }).then(x => x.json());
+      const lat = r.latency_ms != null ? ` ${r.latency_ms.toFixed(1)}ms` : "";
+      btn.textContent = r.online ? `📡 OK${lat}` : "📡 Offline";
     } catch { btn.textContent = "📡 Error"; }
-    setTimeout(() => { btn.textContent = "📡 Ping NAS"; btn.disabled = false; }, 4000);
+    setTimeout(() => { if(btn){btn.textContent="📡 Ping NAS";btn.disabled=false;} }, 4000);
   }
 
-  console.log("[Enhanced UI] v4 — Home Control (NAS + WoL + Docker) — loaded ✅");
+  console.log("[Enhanced UI] v5 — Home Control rewritten — loaded ✅");
 })();
