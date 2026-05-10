@@ -37,15 +37,21 @@ UI_PASSWORD = os.getenv("UI_PASSWORD", "")
 _OPEN_PATHS = {"/", "/api/config", "/api/status", "/api/auth/check", "/api/auth/login"}
 _OPEN_PREFIXES = ("/static", "/assets", "/shared", "/ws")
 
-def _is_local_ip(ip: str) -> bool:
-    return ip.startswith(("192.168.", "10.", "127.", "::1"))
-
 def _is_local_request(request: Request) -> bool:
-    # ถ้ามาผ่าน Cloudflare Tunnel จะมี CF-Connecting-IP header → ไม่ใช่ local
+    """ตรวจว่า request มาจาก LAN โดยตรง (ไม่ผ่าน Cloudflare)
+    Docker NAT ทำให้ client.host = 172.x เสมอ → ใช้ Host header แทน
+    LAN:        Host = 192.168.x.x:8080  (IP ตรง)
+    Cloudflare: Host = ai.pawinhome.com  + มี CF-Connecting-IP header
+    """
     if request.headers.get("cf-connecting-ip"):
         return False
-    ip = request.client.host if request.client else ""
-    return _is_local_ip(ip)
+    host = request.headers.get("host", "")
+    return (
+        host.startswith("192.168.") or
+        host.startswith("10.") or
+        host.startswith("127.") or
+        host.startswith("localhost")
+    )
 
 # --- Skills sync on startup ---
 def _startup_sync_skills():
