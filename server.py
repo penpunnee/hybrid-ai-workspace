@@ -110,6 +110,15 @@ async def auth_middleware(request: Request, call_next):
     return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
 _share_store: dict = {}  # fallback in-memory (also persisted to SQLite)
+_SHARE_STORE_LIMIT = 500
+
+def _share_store_set(token: str, data: dict):
+    """เพิ่ม share link พร้อม evict เก่าสุดถ้าเกิน limit"""
+    if len(_share_store) >= _SHARE_STORE_LIMIT:
+        oldest = next(iter(_share_store))
+        del _share_store[oldest]
+        logger.debug(f"share_store evicted oldest entry (limit={_SHARE_STORE_LIMIT})")
+    _share_store[token] = data
 
 # --- Auto Dream Scheduler ---
 def _scheduled_dream():
@@ -855,7 +864,7 @@ async def create_share(request: Request):
         return {"ok": False, "error": "ระบุ assistant และ session_id"}
     token = uuid.uuid4().hex[:10]
     created = datetime.now().isoformat()
-    _share_store[token] = {"assistant": assistant, "session_id": session_id, "created": created}
+    _share_store_set(token, {"assistant": assistant, "session_id": session_id, "created": created})
     try:
         from utils.history import _get_conn
         conn = _get_conn()
@@ -881,7 +890,7 @@ def get_shared_data(token: str):
             conn.close()
             if row:
                 info = {"assistant": row[0], "session_id": row[1], "created": row[2]}
-                _share_store[token] = info
+                _share_store_set(token, info)
         except Exception as e:
             logger.warning(f"Share link lookup failed: {e}")
     if not info:

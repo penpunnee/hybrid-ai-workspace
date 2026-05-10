@@ -10,4 +10,4 @@ RUN python3 -c "from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 impor
 COPY . .
 
 EXPOSE 8000
-CMD ["python", "server.py"]
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
