@@ -1,23 +1,34 @@
 /* =====================================================
    Hybrid AI Workspace — Enhanced UI Layer
-   Features: Health Widget, Global Search, Export,
-             Pin Message, @vault Search
+   Features: Auth, Health Widget, Global Search,
+             Export, Pin Message, @vault Search
    Injected via index.html — no React source needed
    ===================================================== */
 (function () {
   "use strict";
 
-  // ── State tracker (intercept /api/chat to know active assistant + session) ──
+  // ── Auth token (stored in localStorage) ─────────────────────────────────────
+  let _authToken = localStorage.getItem("hw_auth_token") || "";
+
+  // ── State tracker + auth header injector ────────────────────────────────────
   const ctx = { assistant: null, session: null };
   const _origFetch = window.fetch.bind(window);
 
   window.fetch = function (url, opts) {
-    if (typeof url === "string" && url === "/api/chat" && opts?.body) {
-      try {
-        const b = JSON.parse(opts.body);
-        if (b.assistant) ctx.assistant = b.assistant;
-        if (b.session_id) ctx.session = b.session_id;
-      } catch {}
+    if (typeof url === "string") {
+      // Track current assistant + session from /api/chat calls
+      if (url === "/api/chat" && opts?.body) {
+        try {
+          const b = JSON.parse(opts.body);
+          if (b.assistant) ctx.assistant = b.assistant;
+          if (b.session_id) ctx.session = b.session_id;
+        } catch {}
+      }
+      // Inject auth token into all /api/ calls
+      if (url.startsWith("/api/") && _authToken) {
+        opts = opts ? { ...opts } : {};
+        opts.headers = { ...(opts.headers || {}), "x-auth-token": _authToken };
+      }
     }
     return _origFetch(url, opts);
   };
@@ -25,6 +36,36 @@
   // ── Styles ──────────────────────────────────────────────────────────────────
   const css = document.createElement("style");
   css.textContent = `
+    /* Login Modal */
+    #login-overlay {
+      position: fixed; inset: 0; z-index: 99999;
+      background: rgba(2,6,23,0.97); backdrop-filter: blur(20px);
+      display: none; align-items: center; justify-content: center;
+    }
+    #login-overlay.open { display: flex; }
+    #login-box {
+      background: rgba(15,23,42,0.98); border: 1px solid rgba(99,102,241,0.4);
+      border-radius: 24px; padding: 40px; width: 360px; text-align: center;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.6);
+    }
+    #login-box h2 { color: #e2e8f0; font-size: 20px; margin: 0 0 6px; font-weight: 600; }
+    #login-box p { color: #64748b; font-size: 13px; margin: 0 0 24px; }
+    #login-input {
+      width: 100%; padding: 12px 16px; background: rgba(30,41,59,0.8);
+      border: 1px solid rgba(99,102,241,0.3); border-radius: 12px;
+      color: #e2e8f0; font-size: 14px; outline: none;
+      font-family: inherit; box-sizing: border-box; margin-bottom: 12px;
+      text-align: center; letter-spacing: 2px;
+    }
+    #login-input:focus { border-color: rgba(99,102,241,0.7); }
+    #login-btn {
+      width: 100%; padding: 12px; background: linear-gradient(135deg,#6366f1,#8b5cf6);
+      border: none; border-radius: 12px; color: #fff; font-size: 14px;
+      font-weight: 600; cursor: pointer; font-family: inherit; transition: opacity .2s;
+    }
+    #login-btn:hover { opacity: 0.9; }
+    #login-err { color: #f87171; font-size: 12px; margin-top: 10px; min-height: 18px; }
+
     /* Health Widget */
     #hw-btn {
       position: fixed; bottom: 16px; right: 16px; z-index: 9000;
@@ -157,6 +198,62 @@
     const re = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi");
     return esc(text).replace(re, "<mark>$1</mark>");
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 0. AUTH — Login modal (แสดงเมื่อ UI_PASSWORD ตั้งค่าไว้และยังไม่ได้ login)
+  // ─────────────────────────────────────────────────────────────────────────────
+  const loginOverlay = document.createElement("div");
+  loginOverlay.id = "login-overlay";
+  loginOverlay.innerHTML = `
+    <div id="login-box">
+      <h2>🔐 Hybrid AI Workspace</h2>
+      <p>กรุณาใส่รหัสผ่านเพื่อเข้าใช้งาน</p>
+      <input id="login-input" type="password" placeholder="••••••••" autocomplete="current-password">
+      <button id="login-btn">เข้าสู่ระบบ</button>
+      <div id="login-err"></div>
+    </div>`;
+  document.body.appendChild(loginOverlay);
+
+  async function doLogin(pwd) {
+    try {
+      const r = await _origFetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pwd }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        _authToken = d.token;
+        localStorage.setItem("hw_auth_token", _authToken);
+        loginOverlay.classList.remove("open");
+        document.getElementById("login-err").textContent = "";
+      } else {
+        document.getElementById("login-err").textContent = d.error || "รหัสผ่านไม่ถูกต้อง";
+      }
+    } catch {
+      document.getElementById("login-err").textContent = "เชื่อมต่อไม่ได้";
+    }
+  }
+
+  document.getElementById("login-btn").addEventListener("click", () => {
+    doLogin(document.getElementById("login-input").value);
+  });
+  document.getElementById("login-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") doLogin(e.target.value);
+  });
+
+  // ตรวจสอบ auth ตอนโหลดหน้า
+  async function checkAuth() {
+    try {
+      const r = await _origFetch("/api/auth/check");
+      const d = await r.json();
+      if (d.required && !d.ok) {
+        loginOverlay.classList.add("open");
+        setTimeout(() => document.getElementById("login-input")?.focus(), 100);
+      }
+    } catch {}
+  }
+  checkAuth();
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 1. HEALTH WIDGET

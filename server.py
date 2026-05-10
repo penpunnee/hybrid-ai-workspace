@@ -1,4 +1,5 @@
 import os, uuid, json, threading
+from contextlib import asynccontextmanager
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -8,7 +9,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from fastapi import FastAPI, Request, UploadFile, File, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse, Response
+from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse, Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -31,8 +32,62 @@ from google.genai import types
 
 GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-exp")
 
-app = FastAPI(title="Hybrid AI Workspace")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# --- Auth config ---
+UI_PASSWORD = os.getenv("UI_PASSWORD", "")
+_OPEN_PATHS = {"/", "/api/config", "/api/status", "/api/auth/check", "/api/auth/login"}
+_OPEN_PREFIXES = ("/static", "/assets", "/shared", "/ws")
+
+def _is_local_ip(ip: str) -> bool:
+    return ip.startswith(("192.168.", "10.", "172.", "127.", "::1"))
+
+# --- Skills sync on startup ---
+def _startup_sync_skills():
+    try:
+        from utils.skills_search import sync_skills_to_search
+        db = _load_skills_db()
+        if db:
+            sync_skills_to_search(db)
+            print(f"[Startup] Synced {len(db)} skills to ChromaDB ✅")
+    except Exception as e:
+        print(f"[Startup] Skills sync skipped: {e}")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    threading.Thread(target=_startup_sync_skills, daemon=True).start()
+    yield
+
+# --- CORS from env ---
+_cors_raw = os.getenv("CORS_ORIGINS", "")
+_cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()] or [
+    "http://localhost:8000",
+    "http://localhost:5173",
+    f"http://192.168.51.49:8080",
+]
+
+app = FastAPI(title="Hybrid AI Workspace", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- Auth middleware ---
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    if not UI_PASSWORD:
+        return await call_next(request)
+    path = request.url.path
+    if path in _OPEN_PATHS or any(path.startswith(p) for p in _OPEN_PREFIXES):
+        return await call_next(request)
+    client_ip = request.client.host if request.client else ""
+    if _is_local_ip(client_ip):
+        return await call_next(request)
+    token = request.headers.get("x-auth-token", "")
+    if token == UI_PASSWORD:
+        return await call_next(request)
+    return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
 _share_store: dict = {}  # fallback in-memory (also persisted to SQLite)
 
@@ -54,6 +109,28 @@ _scheduler = BackgroundScheduler(timezone="Asia/Bangkok")
 _scheduler.add_job(_scheduled_dream, CronTrigger(hour=2, minute=0), id="dream_nightly", replace_existing=True)
 _scheduler.start()
 print("[Scheduler] ตั้ง Dream รันทุกคืนตี 2 แล้ว")
+
+
+@app.get("/api/auth/check")
+def auth_check(request: Request):
+    if not UI_PASSWORD:
+        return {"required": False, "ok": True}
+    client_ip = request.client.host if request.client else ""
+    if _is_local_ip(client_ip):
+        return {"required": True, "ok": True, "bypass": "local_ip"}
+    token = request.headers.get("x-auth-token", "")
+    return {"required": True, "ok": token == UI_PASSWORD}
+
+
+@app.post("/api/auth/login")
+async def auth_login(request: Request):
+    data = await request.json()
+    pwd = data.get("password", "")
+    if not UI_PASSWORD or pwd == UI_PASSWORD:
+        return {"ok": True, "token": UI_PASSWORD}
+    return JSONResponse({"ok": False, "error": "รหัสผ่านไม่ถูกต้อง"}, status_code=401)
+
+
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 if os.path.exists("static/assets"):
