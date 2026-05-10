@@ -1082,21 +1082,21 @@
   </style>`);
 
   // toggle button
-  const hwBtn = document.createElement("div");
-  hwBtn.id = "hw-home-btn";
-  hwBtn.title = "Home Control";
-  hwBtn.innerHTML = "🏠";
-  document.body.appendChild(hwBtn);
+  const hcBtn = document.createElement("div");
+  hcBtn.id = "hw-home-btn";
+  hcBtn.title = "Home Control";
+  hcBtn.innerHTML = "🏠";
+  document.body.appendChild(hcBtn);
 
   // panel skeleton (buttons wired via addEventListener, NOT onclick=)
-  const hwPanel = document.createElement("div");
-  hwPanel.id = "hw-home-panel";
-  document.body.appendChild(hwPanel);
+  const hcPanel = document.createElement("div");
+  hcPanel.id = "hw-home-panel";
+  document.body.appendChild(hcPanel);
 
   function _hwBarColor(p) { return p > 85 ? "#ef4444" : p > 65 ? "#f59e0b" : "#10b981"; }
 
   function _hwRender() {
-    hwPanel.innerHTML = `
+    hcPanel.innerHTML = `
       <div class="hw-row" style="margin-bottom:2px">
         <span class="hw-h" style="flex:1">🏠 Home Control</span>
         <span id="hw-ts" style="font-size:10px;color:#475569">—</span>
@@ -1126,20 +1126,20 @@
 
   let _hwOpen = false;
 
-  function _hwClose() { hwPanel.classList.remove("show"); hwBtn.classList.remove("active"); _hwOpen = false; }
+  function _hwClose() { hcPanel.classList.remove("show"); hcBtn.classList.remove("active"); _hwOpen = false; }
   function _hwToggle(e) {
     e.stopPropagation();
     if (_hwOpen) { _hwClose(); return; }
     _hwOpen = true;
     _hwRender();
-    hwPanel.classList.add("show");
-    hwBtn.classList.add("active");
+    hcPanel.classList.add("show");
+    hcBtn.classList.add("active");
     _hwRefresh();
   }
 
-  hwBtn.addEventListener("click", _hwToggle);
+  hcBtn.addEventListener("click", _hwToggle);
   document.addEventListener("click", (e) => {
-    if (_hwOpen && !hwPanel.contains(e.target) && e.target !== hwBtn && !hwBtn.contains(e.target))
+    if (_hwOpen && !hcPanel.contains(e.target) && e.target !== hcBtn && !hcBtn.contains(e.target))
       _hwClose();
   });
 
