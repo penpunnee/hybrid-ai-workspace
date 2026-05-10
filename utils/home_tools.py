@@ -230,12 +230,26 @@ def wol_pc() -> dict:
             return {"error": f"PC_MAC ไม่ถูกต้อง: {PC_MAC}"}
         mac_bytes = bytes.fromhex(mac)
         magic = b"\xff" * 6 + mac_bytes * 16
+
+        # คำนวณ LAN broadcast address จาก PC_IP (ใช้ /24 subnet)
+        ip_parts = PC_IP.split(".")
+        lan_broadcast = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.255"
+
+        sent_to = []
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            s.sendto(magic, ("<broadcast>", 9))
-        logger.info(f"WoL sent to {PC_MAC} ({PC_IP})")
+            # ส่งหลาย targets เพื่อให้แน่ใจว่าถึง PC
+            for target in [lan_broadcast, "255.255.255.255", PC_IP]:
+                for port in [9, 7]:
+                    try:
+                        s.sendto(magic, (target, port))
+                        sent_to.append(f"{target}:{port}")
+                    except Exception:
+                        pass
+
+        logger.info(f"WoL sent to {PC_MAC} via {sent_to}")
         return {"ok": True, "mac": PC_MAC, "ip": PC_IP,
-                "message": f"ส่ง Wake-on-LAN ไปยัง {PC_MAC} แล้ว — PC ควรเปิดใน ~30 วินาที"}
+                "message": f"ส่ง WoL ไปยัง {PC_MAC} ({lan_broadcast}) แล้ว — รอ ~30 วินาที"}
     except Exception as e:
         logger.error(f"WoL error: {e}")
         return {"error": str(e)}
@@ -244,26 +258,33 @@ def wol_pc() -> dict:
 # ── Ping ──────────────────────────────────────────────────────────────────────
 
 def ping_device(ip: str) -> dict:
+    """ตรวจสอบ device online ด้วย TCP port check (ไม่ต้องใช้ ICMP/CAP_NET_RAW)"""
+    # ลอง TCP connect หลาย port (Windows: RDP 3389, SMB 445, HTTP 80)
+    check_ports = [3389, 445, 80, 22, 443, 135]
+    import time
+    for port in check_ports:
+        try:
+            t0 = time.monotonic()
+            with socket.create_connection((ip, port), timeout=1.5):
+                latency = round((time.monotonic() - t0) * 1000, 1)
+                return {"ip": ip, "online": True, "latency_ms": latency, "port": port}
+        except (socket.timeout, ConnectionRefusedError, OSError):
+            continue
+        except Exception:
+            continue
+
+    # fallback: ลอง ping ถ้า subprocess พอใช้ได้
     try:
         result = subprocess.run(
-            ["ping", "-c", "3", "-W", "2", ip],
-            capture_output=True, text=True, timeout=12
+            ["ping", "-c", "2", "-W", "1", ip],
+            capture_output=True, text=True, timeout=6
         )
-        online = result.returncode == 0
-        latency = None
-        for line in result.stdout.splitlines():
-            if "min/avg/max" in line or "rtt" in line:
-                parts = line.split("=")[-1].strip().split("/")
-                if len(parts) >= 2:
-                    try:
-                        latency = float(parts[1])
-                    except ValueError:
-                        pass
-        return {"ip": ip, "online": online, "latency_ms": latency}
-    except subprocess.TimeoutExpired:
-        return {"ip": ip, "online": False, "latency_ms": None}
-    except Exception as e:
-        return {"ip": ip, "online": False, "error": str(e)}
+        if result.returncode == 0:
+            return {"ip": ip, "online": True, "latency_ms": None}
+    except Exception:
+        pass
+
+    return {"ip": ip, "online": False, "latency_ms": None}
 
 
 # ── Keyword Detection ─────────────────────────────────────────────────────────
