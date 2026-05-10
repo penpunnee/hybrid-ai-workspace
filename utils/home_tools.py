@@ -66,21 +66,48 @@ def nas_disk_usage() -> dict:
     if not sid:
         return {"error": f"Login NAS {NAS_IP} ไม่สำเร็จ — ตรวจสอบ NAS_USER / NAS_PASS"}
     try:
+        # ลอง DSM 7 API ก่อน แล้ว fallback ไป DSM 6
         data = _nas_api("SYNO.Core.Storage.Volume", 1, "list", sid, {"limit": -1})
+        raw_volumes = data.get("data", {}).get("volumes", []) if data.get("success") else []
+
+        # DSM 7 อาจใช้ SYNO.Storage.CGI.Storage
+        if not raw_volumes:
+            data2 = _nas_api("SYNO.Storage.CGI.Storage", 1, "load_info", sid)
+            if data2.get("success"):
+                raw_volumes = data2.get("data", {}).get("volumes", [])
+
         volumes = []
-        if data.get("success"):
-            for v in data["data"].get("volumes", []):
-                total = v.get("size", {}).get("total", 0)
-                used  = v.get("size", {}).get("used", 0)
-                free  = total - used
-                volumes.append({
-                    "path":     v.get("vol_path", ""),
-                    "total_gb": round(total / 1e9, 1),
-                    "used_gb":  round(used  / 1e9, 1),
-                    "free_gb":  round(free  / 1e9, 1),
-                    "percent":  round(used / total * 100, 1) if total else 0,
-                    "status":   v.get("status", "normal"),
-                })
+        for v in raw_volumes:
+            # DSM 7 format
+            size_info = v.get("size", {})
+            total = size_info.get("total", 0) or v.get("total_size", 0)
+            used  = size_info.get("used",  0) or v.get("used_size",  0)
+            free  = total - used
+            if total == 0:
+                continue
+            volumes.append({
+                "path":     v.get("vol_path", v.get("id", "volume")),
+                "total_gb": round(total / 1e9, 1),
+                "used_gb":  round(used  / 1e9, 1),
+                "free_gb":  round(free  / 1e9, 1),
+                "percent":  round(used / total * 100, 1),
+                "status":   v.get("status", "normal"),
+            })
+
+        # ถ้ายังว่างอยู่ ดึงจาก /api/v2 ตรงๆ
+        if not volumes:
+            try:
+                resp = urllib.request.urlopen(
+                    f"http://{NAS_IP}:{NAS_PORT}/webapi/entry.cgi?"
+                    f"api=SYNO.Core.Storage.Volume&version=1&method=list&limit=-1&_sid={sid}",
+                    timeout=12
+                )
+                raw = json.loads(resp.read())
+                logger.debug(f"NAS disk raw response: {str(raw)[:500]}")
+                return {"ok": True, "volumes": [], "nas_ip": NAS_IP, "raw": raw}
+            except Exception:
+                pass
+
         return {"ok": True, "volumes": volumes, "nas_ip": NAS_IP}
     except Exception as e:
         logger.error(f"nas_disk_usage error: {e}")

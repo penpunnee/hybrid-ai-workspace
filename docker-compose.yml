@@ -16,6 +16,8 @@ services:
       - ./static:/app/static
       - ./utils:/app/utils
       - ./assistants:/app/assistants
+      - ./server.py:/app/server.py
+      - ./app.py:/app/app.py
       - chroma_model_cache:/root/.cache/chroma
     environment:
       - DB_PATH=/app/chat_history.db
