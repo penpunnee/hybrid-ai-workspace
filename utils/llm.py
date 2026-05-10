@@ -177,6 +177,14 @@ def _stream_ollama(messages: list[dict]):
                 messages=messages,
                 stream=True,
                 timeout=OLLAMA_TIMEOUT,
+                temperature=float(os.getenv("OLLAMA_TEMPERATURE", "0.7")),
+                top_p=float(os.getenv("OLLAMA_TOP_P", "0.85")),
+                extra_body={
+                    "options": {
+                        "num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "4096")),
+                        "repeat_penalty": float(os.getenv("OLLAMA_REPEAT_PENALTY", "1.1")),
+                    }
+                },
             )
             for chunk in stream:
                 delta = chunk.choices[0].delta.content

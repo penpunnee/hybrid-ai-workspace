@@ -29,6 +29,10 @@ from utils.obsidian_sync import sync_vault, search_vault, get_vault_stats
 from utils.dream import run_dream_cycle, get_latest_report, list_reports
 from utils.tts import generate_tts, VOICE_MAP, DEFAULT_VOICE
 from utils.tokens import count_tokens_approx
+from utils.home_tools import (
+    nas_disk_usage, nas_docker_status, nas_system_info, home_status_all,
+    wol_pc, ping_device, detect_home_tools, build_tool_context, PC_IP,
+)
 from google import genai
 from google.genai import types
 
@@ -1043,6 +1047,36 @@ def truncate_endpoint(db_id: int):
     return {"ok": True}
 
 
+# ── Home Network Tools ────────────────────────────────────────────────────────
+
+@app.get("/api/tools/home/status")
+def home_status():
+    return home_status_all()
+
+@app.get("/api/tools/home/disk")
+def home_disk():
+    return nas_disk_usage()
+
+@app.get("/api/tools/home/docker")
+def home_docker():
+    return nas_docker_status()
+
+@app.get("/api/tools/home/sysinfo")
+def home_sysinfo():
+    return nas_system_info()
+
+@app.post("/api/tools/home/wol")
+async def home_wol(request: Request):
+    return wol_pc()
+
+@app.get("/api/tools/home/ping/{ip}")
+def home_ping(ip: str):
+    import re
+    if not re.match(r"^[\d.]+$", ip):
+        return {"error": "IP ไม่ถูกต้อง"}
+    return ping_device(ip)
+
+
 @app.post("/api/chat")
 async def chat(request: Request):
     data = await request.json()
@@ -1069,6 +1103,11 @@ async def chat(request: Request):
         if vault_results:
             vault_ctx = "\n\n".join([f"[Note: {r['title']}]\n{r['content'][:500]}" for r in vault_results])
 
+    home_tool_ctx = ""
+    home_tools_needed = detect_home_tools(prompt)
+    if home_tools_needed:
+        home_tool_ctx = build_tool_context(home_tools_needed)
+
     full_context = "\n\n".join(filter(None, [
         search_memory(assistant, prompt),
         long_term,
@@ -1077,6 +1116,7 @@ async def chat(request: Request):
         f"[บทเรียนสะสม]\n{lessons}" if lessons else "",
         f"[ความชอบ]\n{prefs}" if prefs else "",
         f"[Obsidian Vault Notes]\n{vault_ctx}" if vault_ctx else "",
+        f"[ข้อมูลจากบ้านแบบ Real-time]\n{home_tool_ctx}" if home_tool_ctx else "",
     ]))
 
     if provider == "ollama" and len(full_context) > 2000:
