@@ -866,10 +866,15 @@
   // ─────────────────────────────────────────────────────────────────────────────
   // (ตัวแปรและ tracking อยู่ใน unified fetch override แล้ว)
 
-  // ↑/↓ ใน textarea
+  // ↑/↓ ใน input หรือ textarea (chat ใช้ input[type="text"])
+  function _isChatInput(el) {
+    return (el.tagName === "TEXTAREA" || el.tagName === "INPUT") &&
+           (el.placeholder?.includes("ส่งความคิดให้") || el.placeholder?.includes("สั่งงาน"));
+  }
+
   document.addEventListener("keydown", (e) => {
     const ta = e.target;
-    if (ta.tagName !== "TEXTAREA" || !ta.placeholder?.includes("สั่งงาน")) return;
+    if (!_isChatInput(ta)) return;
     if (e.key === "ArrowUp" && !e.shiftKey) {
       if (_promptHistory.length === 0) return;
       e.preventDefault();
@@ -957,5 +962,84 @@
   // ผูก ref typing element (unified fetch override จะใช้ผ่าน _typingElRef)
   _typingElRef = typingEl;
 
-  console.log("[Enhanced UI] v2 — Copy, Stop, Scroll↓, Token bar, History↑, Paste, Typing — loaded ✅");
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 13. CHAT INPUT + BUTTON IMPROVEMENTS
+  // ─────────────────────────────────────────────────────────────────────────────
+  const chatCSS = `
+    /* ── Chat input glow on focus ── */
+    input[placeholder*="ส่งความคิดให้"]:focus,
+    input[placeholder*="สั่งงาน"]:focus {
+      box-shadow:
+        0 0 0 1.5px rgba(139,92,246,0.55),
+        0 0 24px rgba(99,102,241,0.18),
+        inset 0 1px 0 rgba(255,255,255,0.06) !important;
+      outline: none !important;
+    }
+
+    /* placeholder สว่างขึ้น */
+    input[placeholder*="ส่งความคิดให้"]::placeholder,
+    input[placeholder*="สั่งงาน"]::placeholder {
+      color: rgba(148,163,184,0.55) !important;
+    }
+
+    /* ── Icon buttons ในแถบ input (w-7 h-7 rounded-full) ── */
+    button.w-7.h-7.rounded-full {
+      transition: all 0.2s !important;
+      position: relative;
+    }
+    button.w-7.h-7.rounded-full:hover {
+      transform: scale(1.15);
+      filter: brightness(1.3);
+    }
+
+    /* Tooltip บน icon buttons */
+    button.w-7.h-7.rounded-full[title]:hover::after {
+      content: attr(title);
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15,23,42,0.95);
+      border: 1px solid rgba(99,102,241,0.3);
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-size: 11px;
+      color: #e2e8f0;
+      white-space: nowrap;
+      z-index: 9500;
+      pointer-events: none;
+    }
+
+    /* Send button ปุ่มส่ง */
+    button[class*="rounded-full"][class*="pr"] svg,
+    button[class*="rounded-full"] svg {
+      transition: transform 0.2s;
+    }
+    button[class*="rounded-full"]:not(:disabled):hover svg {
+      transform: translateX(2px) scale(1.05);
+    }
+
+    /* ── Toolbar pill buttons (text-[11px] px-3 py-1 rounded-full) ── */
+    .text-\\[11px\\].px-3.py-1.rounded-full {
+      transition: all 0.15s !important;
+    }
+    .text-\\[11px\\].px-3.py-1.rounded-full:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.2);
+    }
+
+    /* ── Pulse animation บน token bar เมื่อใกล้เต็ม ── */
+    #enh-token-fill[style*="ef4444"] {
+      animation: token-pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes token-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+  `;
+  document.head.appendChild(
+    Object.assign(document.createElement("style"), { textContent: chatCSS })
+  );
+
+  console.log("[Enhanced UI] v3 — Copy, Stop, Scroll↓, Token bar, History↑, Paste, Typing, Chat UI — loaded ✅");
 })();
