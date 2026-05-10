@@ -9,7 +9,7 @@ from utils.rag import build_rag_context, inject_context_to_system
 from utils.history import save_message, load_history, clear_session, get_sessions, export_history_md
 from utils.tokens import count_tokens_approx, get_context_limit, get_token_status
 from utils.memory import save_memory, search_memory, is_memory_available, save_lesson, save_preference, get_lessons, get_preferences
-from utils.skills import get_all_skills, auto_extract_skills, get_skill_count
+from utils.skills import get_all_skills, search_skills, auto_extract_skills, get_skill_count
 try:
     from streamlit_ace import st_ace
     ACE_AVAILABLE = True
@@ -637,7 +637,7 @@ if prompt := st.chat_input(f"สั่งงาน {name}...", key=f"inp_{slug}"
         full_context = "\n\n".join(filter(None, [
             rag_context,
             search_memory(name, prompt),
-            get_all_skills(),
+            search_skills(prompt, n_results=3),  # BUG FIX: ใช้ semantic search แทน get_all_skills()
             f"[บทเรียนสะสม]\n{get_lessons(prompt)}" if get_lessons(prompt) else "",
             f"[ความชอบ]\n{get_preferences()}" if get_preferences() else "",
         ]))

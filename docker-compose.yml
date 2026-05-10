@@ -11,6 +11,8 @@ services:
       - ${OBSIDIAN_VAULT_NAS_PATH:-./data}:/vault
       - ${NAS_DATA_PATH:-./data}/dream_reports:/app/dream_reports
       - ${NAS_DATA_PATH:-./data}/skills_db.json:/app/skills_db.json
+      # BUG FIX: mount skills/ folder ไม่งั้นไฟล์ .md หายทุกครั้งที่ recreate
+      - ${NAS_DATA_PATH:-./data}/skills:/app/skills
     environment:
       - DB_PATH=/app/chat_history.db
       - OBSIDIAN_VAULT_PATH=/vault

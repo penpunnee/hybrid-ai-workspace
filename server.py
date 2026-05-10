@@ -38,7 +38,7 @@ _share_store: dict = {}  # fallback in-memory (also persisted to SQLite)
 
 # --- Auto Dream Scheduler ---
 def _scheduled_dream():
-    """รัน dream cycle อัตโนมัติ (ตี 2 ทุกคืน)"""
+    """รัน dream cycle อัตโนมัติ (ตี 2 ทุกคืน) — fallback ไป gemini ถ้า ollama offline"""
     provider = "gemini" if os.getenv("GEMINI_API_KEY") else "ollama"
     print(f"[Scheduler] รัน Dream Cycle อัตโนมัติ ({datetime.now().strftime('%Y-%m-%d %H:%M')}) provider={provider}")
     try:
@@ -85,12 +85,14 @@ def status():
     with ThreadPoolExecutor(max_workers=2) as ex:
         f1 = ex.submit(check_ollama_health)
         f2 = ex.submit(is_memory_available)
-        try: 
+        try:
             ollama_ok, ollama_msg = f1.result(timeout=5)
-        except Exception: 
+        except Exception:
             ollama_ok, ollama_msg = False, "Health check error"
-        try: mem_ok = f2.result(timeout=5)
-        except Exception: mem_ok = False
+        try:
+            mem_ok = f2.result(timeout=5)
+        except Exception:
+            mem_ok = False
     next_dream = None
     job = _scheduler.get_job("dream_nightly")
     if job and job.next_run_time:
@@ -193,10 +195,10 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
         return
 
     voice = VOICE_MAP.get(assistant_slug.lower(), DEFAULT_VOICE)
-    asst_name, asst = next(((k,v) for k,v in ASSISTANTS.items() if v.get("slug") == assistant_slug), ("", {}))
+    asst_name, asst = next(((k, v) for k, v in ASSISTANTS.items() if v.get("slug") == assistant_slug), ("", {}))
     if not asst_name:
         asst_name = assistant_slug
-    sys_prompt = asst.get("system_prompt", "\u0e04\u0e38\u0e13\u0e40\u0e1b\u0e47\u0e19 AI \u0e1c\u0e39\u0e49\u0e0a\u0e48\u0e27\u0e22\u0e17\u0e35\u0e48\u0e40\u0e1b\u0e47\u0e19\u0e21\u0e34\u0e15\u0e23 \u0e15\u0e2d\u0e1a\u0e20\u0e32\u0e29\u0e32\u0e44\u0e17\u0e22\u0e01\u0e23\u0e30\u0e0a\u0e31\u0e1a")
+    sys_prompt = asst.get("system_prompt", "คุณเป็น AI ผู้ช่วยที่เป็นมิตร ตอบภาษาไทยกระชับ")
 
     client = genai.Client(api_key=gemini_key, http_options={"api_version": "v1alpha"})
     live_config = types.LiveConnectConfig(
@@ -252,12 +254,10 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                             })
                         sc = getattr(response, "server_content", None)
                         if sc:
-                            # Input (user) transcription
                             it = getattr(sc, "input_transcription", None)
                             if it and getattr(it, "text", None):
                                 user_transcript += it.text
                                 await websocket.send_json({"type": "user_text", "text": it.text})
-                            # Output (AI) transcription
                             ot = getattr(sc, "output_transcription", None)
                             if ot and getattr(ot, "text", None):
                                 ai_transcript += ot.text
@@ -269,7 +269,6 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                         await websocket.send_json({"type": "text", "text": part.text})
                             if getattr(sc, "turn_complete", False):
                                 await websocket.send_json({"type": "done"})
-                                # บันทึก transcript ลง DB
                                 if user_transcript.strip():
                                     save_message(asst_name, "user", user_transcript.strip(), "gemini_live", session_id)
                                     user_transcript = ""
@@ -347,8 +346,7 @@ async def upload_file(file: UploadFile = File(...)):
     content = await file.read()
     name = file.filename or "file"
     mime = file.content_type or ""
-    # ตรวจว่าเป็นรูปภาพ
-    if mime.startswith("image/") or name.lower().split('.')[-1] in ('jpg','jpeg','png','gif','webp','bmp'):
+    if mime.startswith("image/") or name.lower().split('.')[-1] in ('jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'):
         b64 = _b64.b64encode(content).decode()
         return {"ok": True, "filename": name, "is_image": True, "b64": b64, "mime": mime or "image/jpeg"}
     try:
@@ -370,11 +368,10 @@ async def skills_extract(request: Request):
     """ให้ Gemini สกัดและจัดระเบียบ content เป็น skill .md แล้วบันทึกลง skills/ folder"""
     data = await request.json()
     content = data.get("content", "").strip()
-    topic = data.get("topic", "").strip()  # ชื่อหัวข้อ เช่น "appscript"
+    topic = data.get("topic", "").strip()
     if not content:
         return {"ok": False, "error": "ไม่มี content"}
 
-    # สร้างชื่อไฟล์จาก topic หรือ auto
     if not topic:
         topic = f"skill-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     safe_topic = "".join(c if c.isalnum() or c in "-_" else "-" for c in topic.lower()).strip("-")
@@ -383,7 +380,6 @@ async def skills_extract(request: Request):
     os.makedirs(skills_dir, exist_ok=True)
     filepath = os.path.join(skills_dir, filename)
 
-    # ให้ Gemini จัดระเบียบเป็น skill .md
     msgs = [
         {"role": "system", "content": (
             "คุณคือ Technical Writer ที่เชี่ยวชาญ\n"
@@ -403,7 +399,6 @@ async def skills_extract(request: Request):
     except Exception as e:
         return {"ok": False, "error": f"Gemini error: {e}"}
 
-    # บันทึกไฟล์
     try:
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(md_content)
@@ -427,30 +422,55 @@ def skills_list():
     return {"files": files}
 
 
-@app.delete("/api/skills/{filename}")
-def skills_delete(filename: str):
-    """ลบไฟล์ .md ออกจาก skills/ folder"""
-    if ".." in filename or "/" in filename:
-        return {"ok": False, "error": "invalid filename"}
+# BUG FIX: รวม route ซ้ำ DELETE /api/skills/{id} เข้าเป็น route เดียว
+# ลบทั้งไฟล์ .md ใน skills/ folder และลบออกจาก skills_db.json ในครั้งเดียว
+@app.delete("/api/skills/{skill_id}")
+def skills_delete(skill_id: str):
+    """ลบ skill — รองรับทั้ง filename (.md) และ topic name จาก skills_db.json"""
+    from urllib.parse import unquote
+    skill_id = unquote(skill_id)
+
+    deleted_file = False
+    deleted_db = False
+
+    # 1) ลบไฟล์ .md จาก skills/ folder (ถ้าชื่อลงท้าย .md หรือมีไฟล์ตรงกัน)
     skills_dir = os.path.join(os.path.dirname(__file__), "skills")
-    fp = os.path.join(skills_dir, filename)
-    if not os.path.exists(fp):
-        return {"ok": False, "error": "ไม่พบไฟล์"}
-    os.remove(fp)
-    return {"ok": True}
+    if ".." not in skill_id and "/" not in skill_id:
+        # ลองหาทั้ง exact match และ .md version
+        candidates = [skill_id, f"{skill_id}.md"]
+        for fname in candidates:
+            fp = os.path.join(skills_dir, fname)
+            if os.path.exists(fp):
+                os.remove(fp)
+                deleted_file = True
+                break
+
+    # 2) ลบออกจาก skills_db.json (ถ้ามี topic ตรงกัน)
+    db = _load_skills_db()
+    if skill_id in db:
+        del db[skill_id]
+        _save_skills_db(db)
+        deleted_db = True
+    # ลองลบ topic ที่ไม่มี .md extension ด้วย
+    topic_no_ext = skill_id.replace(".md", "")
+    if topic_no_ext in db:
+        del db[topic_no_ext]
+        _save_skills_db(db)
+        deleted_db = True
+
+    if deleted_file or deleted_db:
+        return {"ok": True, "deleted_file": deleted_file, "deleted_db": deleted_db}
+    return {"ok": False, "error": "ไม่พบ skill นี้"}
 
 
 @app.post("/api/admin/sync-skills")
-def sync_skills_to_search():
+def sync_skills_to_search_endpoint():
     """Sync skills จาก skills_db.json ไป ChromaDB search index"""
     try:
-        from utils.skills import _load_skills_db
         from utils.skills_search import sync_skills_to_search
-        
         db = _load_skills_db()
         if not db:
             return {"ok": False, "error": "No skills found in skills_db.json"}
-        
         sync_skills_to_search(db)
         return {"ok": True, "synced": len(db), "message": f"Synced {len(db)} skills to ChromaDB"}
     except Exception as e:
@@ -488,18 +508,6 @@ def usage_stats():
 def list_skills():
     db = _load_skills_db()
     return {"skills": db, "count": len(db)}
-
-
-@app.delete("/api/skills/{topic}")
-def delete_skill(topic: str):
-    from urllib.parse import unquote
-    topic = unquote(topic)
-    db = _load_skills_db()
-    if topic in db:
-        del db[topic]
-        _save_skills_db(db)
-        return {"ok": True, "deleted": topic}
-    return {"ok": False, "error": "ไม่พบ topic นี้"}
 
 
 @app.get("/api/memory/stats")
@@ -588,7 +596,6 @@ async def create_share(request: Request):
     token = uuid.uuid4().hex[:10]
     created = datetime.now().isoformat()
     _share_store[token] = {"assistant": assistant, "session_id": session_id, "created": created}
-    # Persist to SQLite so links survive restart
     try:
         from utils.history import _get_conn
         conn = _get_conn()
@@ -606,7 +613,6 @@ async def create_share(request: Request):
 def get_shared_data(token: str):
     info = _share_store.get(token)
     if not info:
-        # Fallback: load from SQLite
         try:
             from utils.history import _get_conn
             conn = _get_conn()
@@ -793,16 +799,17 @@ async def chat(request: Request):
         vault_results = search_vault(prompt, n=3)
         if vault_results:
             vault_ctx = "\n\n".join([f"[Note: {r['title']}]\n{r['content'][:500]}" for r in vault_results])
+
     full_context = "\n\n".join(filter(None, [
         search_memory(assistant, prompt),
         long_term,
-        search_skills(prompt, n_results=3),  # Use semantic search instead of loading all skills
+        search_skills(prompt, n_results=3),
         f"[Skills & Knowledge]\n{skills_md}" if skills_md else "",
         f"[บทเรียนสะสม]\n{lessons}" if lessons else "",
         f"[ความชอบ]\n{prefs}" if prefs else "",
         f"[Obsidian Vault Notes]\n{vault_ctx}" if vault_ctx else "",
     ]))
-    # จำกัด context สำหรับ Ollama (n_ctx=4096) ให้ system_prompt ≤ ~1000 token
+
     if provider == "ollama" and len(full_context) > 2000:
         full_context = full_context[:2000]
     system_prompt = inject_context_to_system(base_prompt, full_context)
@@ -814,17 +821,14 @@ async def chat(request: Request):
     messages += [{"role": m["role"], "content": m["content"]} for m in history]
     messages.append({"role": "user", "content": prompt})
 
-    # ตัด context สำหรับ Ollama ให้พอดี n_ctx=4096 (เหลือ ~1000 token สำหรับ response)
     if provider == "ollama":
         MAX_INPUT_TOKENS = 3000
-        # ตัด system prompt ก่อนถ้ายาวเกิน
         sys_msg = messages[0]
         if len(sys_msg["content"]) > 4000:
             sys_msg = {"role": "system", "content": sys_msg["content"][:4000]}
             messages[0] = sys_msg
-        # ถ้ายังเกิน ตัด history เก่าออก (เก็บ system + user ล่าสุด)
         while len(messages) > 2 and count_tokens_approx(messages) > MAX_INPUT_TOKENS:
-            messages.pop(1)  # ลบ history เก่าสุด
+            messages.pop(1)
 
     def generate():
         full_response = ""

@@ -1,5 +1,5 @@
 # 📘 คู่มือใช้งาน Hybrid AI Workspace
-> อัพเดทล่าสุด: เมษายน 2026 — FastAPI + React + Docker + Gemini Live + All Features
+> อัพเดทล่าสุด: พฤษภาคม 2026 — FastAPI + React + Docker + Gemini Live + All Features
 
 ---
 
@@ -87,7 +87,7 @@ git add . && git commit -m "update" && git push
 
 ---
 
-## � Regenerate Response
+## 🔄 Regenerate Response
 
 สั่งให้ AI **ตอบใหม่** โดยไม่ต้องพิมพ์ซ้ำ
 
@@ -146,7 +146,7 @@ git add . && git commit -m "update" && git push
 
 ---
 
-## � Obsidian Vault Mode — inject notes เข้า context
+## 🌙 Obsidian Vault Mode — inject notes เข้า context
 
 เมื่อเปิด AI จะ **ค้นหา Obsidian notes ที่เกี่ยวข้อง** แล้วแนบเข้า context ก่อนตอบ
 
@@ -173,7 +173,7 @@ GET /api/vault/sync
 2. Link ถูก copy ไปยัง clipboard อัตโนมัติ
 3. ส่ง link ให้ใครก็เปิดดูได้ที่ `/shared/{token}`
 
-> ⚠️ Link อยู่ใน memory — **reset เมื่อ restart server**
+> ✅ Link ถูกบันทึกลง SQLite — **ไม่หายแม้ restart server**
 
 ---
 
@@ -243,7 +243,7 @@ transcript ทั้ง **User** และ **AI** จะถูกบันทึ
 
 ## 📊 Usage Dashboard
 
-กดปุ่ม **�** ใน header → เปิด modal แสดง:
+กดปุ่ม **📊** ใน header → เปิด modal แสดง:
 - จำนวนข้อความทั้งหมดแต่ละ AI
 - Tokens ที่ใช้งาน
 - สถิติ Memory (lessons, preferences, long-term)
@@ -304,28 +304,33 @@ AI จำข้อมูลสำคัญของคุณ **ข้ามเ�
 
 > Auto-trigger เมื่อ memory เกิน **100 รายการ**
 
+### Dream Reports
+- ดูรายงานล่าสุด: `GET /api/dream/report`
+- ดูประวัติรายงาน: `GET /api/dream/history?limit=10`
+- รายงานถูกบันทึกที่ `dream_reports/`
+
 ---
 
-## ⚙️ การตั้งค่า Environment (`.env`)
+## 🗂️ Skills Management
 
-```env
-# ============ AI Models ============
-GEMINI_API_KEY=your_key_here
+ระบบจัดการ **Knowledge Base** ส่วนตัว — AI อ่าน skills ก่อนตอบทุกครั้ง
 
-# ⚠️ ต้องเป็น gemini-2.0-flash ขึ้นไป (สำหรับ Agent Mode)
-GEMINI_MODEL=gemini-2.0-flash
+### วิธีทำงาน
+- AI อ่านไฟล์ `.md` จากโฟลเดอร์ `skills/` อัตโนมัติ
+- ใช้ semantic search เลือก skills ที่เกี่ยวข้องกับคำถาม
+- แนบเข้า context ก่อนส่งให้ LLM
 
-GEMINI_TTS_MODEL=gemini-2.5-flash-preview-native-audio-dialog
-GEMINI_LIVE_MODEL=gemini-live-2.0-flash-001
+### Extract Skill จากแชท
+`POST /api/skills/extract` — ส่ง content + topic → Gemini จัดระเบียบเป็น `.md`
 
-# ============ Ollama (Local) ============
-OLLAMA_MODEL=llama3
-OLLAMA_BASE_URL=http://host.docker.internal:11434
-
-# ============ Storage ============
-CHROMA_PATH=/app/data/chroma
-OBSIDIAN_VAULT_PATH=/volume1/obsidian   # สำหรับ 🌙 Obsidian Mode
-```
+### จัดการ Skills
+| Endpoint | การทำงาน |
+|---|---|
+| `GET /api/skills` | รายการ skills ทั้งหมด (จาก skills_db.json) |
+| `GET /api/skills/list` | รายชื่อไฟล์ `.md` ใน skills/ |
+| `DELETE /api/skills/{topic}` | ลบ skill จาก database |
+| `DELETE /api/skills/{filename}` | ลบไฟล์ `.md` ออกจาก skills/ |
+| `POST /api/admin/sync-skills` | sync skills_db.json → ChromaDB search index |
 
 ---
 
@@ -334,12 +339,20 @@ OBSIDIAN_VAULT_PATH=/volume1/obsidian   # สำหรับ 🌙 Obsidian Mode
 ```
 ui/
 ├── server.py               # FastAPI: API endpoints + WebSocket
+├── app.py                  # Streamlit (legacy, optional)
 ├── requirements.txt
 ├── Dockerfile / docker-compose.yml
 ├── .env                    # API keys (ห้าม push git)
 ├── chat_history.db         # SQLite (auto-created)
+├── skills_db.json          # Skills database
+├── identity.json           # AI identity config
 ├── static/                 # React build output
-├── assistants/config.py    # ตั้งค่า AI + templates
+│   ├── index.html
+│   └── assets/
+├── skills/                 # Knowledge base .md files
+├── dream_reports/          # Dream cycle reports
+├── assistants/
+│   └── config.py           # ตั้งค่า AI + templates
 └── utils/
     ├── llm.py              # Ollama + Gemini + agent_mode
     ├── tts.py              # TTS
@@ -348,37 +361,88 @@ ui/
     ├── dream.py            # Dream Cycle
     ├── obsidian_sync.py    # Obsidian vault sync
     ├── skills.py           # Skills DB
-    └── tokens.py           # Token counter
+    ├── skills_search.py    # Skills semantic search
+    ├── rag.py              # RAG context injection
+    ├── tokens.py           # Token counter
+    └── voice.py            # Voice helpers
 ```
 
 ---
 
 ## 🌐 API Endpoints (ทั้งหมด)
 
+### Chat & Session
 | Method | Path | การทำงาน |
 |---|---|---|
-| GET | `/api/config` | ดึง config assistants |
 | POST | `/api/chat` | แชท streaming SSE (`agent_mode`, `obsidian_inject`) |
 | POST | `/api/regenerate` | ลบ AI response ล่าสุด + stream ใหม่ |
 | DELETE | `/api/truncate/{db_id}` | ลบประวัติตั้งแต่ db_id ขึ้นไป (Edit & Resend) |
 | GET | `/api/history/{ai}/{sid}` | ประวัติแชท |
 | GET | `/api/sessions/{ai}` | รายการ sessions |
 | POST | `/api/sessions/{ai}` | สร้าง session ใหม่ |
+| PATCH | `/api/sessions/{ai}/{sid}` | แก้ไขชื่อ session |
+| DELETE | `/api/sessions/{ai}/{sid}` | ลบ session |
+
+### Message Tools
+| Method | Path | การทำงาน |
+|---|---|---|
 | POST | `/api/pin/{db_id}` | pin / unpin |
 | GET | `/api/pinned/{ai}/{sid}` | ข้อความที่ pin |
 | GET | `/api/export/{ai}/{sid}` | export markdown |
 | GET | `/api/search?q=...` | ค้นหาข้อความ |
+
+### Voice & TTS
+| Method | Path | การทำงาน |
+|---|---|---|
 | POST | `/api/tts` | สร้างเสียง WAV |
 | WS | `/ws/voice/{slug}?session_id=...` | Voice Mode + transcript save |
+
+### File Upload
+| Method | Path | การทำงาน |
+|---|---|---|
+| POST | `/api/upload` | อัปโหลดไฟล์ (รูป/ข้อความ) — คืน base64 หรือ text |
+
+### Memory & Dream
+| Method | Path | การทำงาน |
+|---|---|---|
+| POST | `/api/memory/{assistant}` | บันทึก memory |
+| GET | `/api/memory/stats` | สถิติ memory |
+| GET | `/api/memory/lessons` | รายการ lessons |
+| GET | `/api/memory/preferences` | รายการ preferences |
+| DELETE | `/api/memory/lessons/{doc_id}` | ลบ lesson |
+| DELETE | `/api/memory/preferences/{doc_id}` | ลบ preference |
+| POST | `/api/memory/cleanup` | ล้าง memory เก่า (param: days) |
 | POST | `/api/dream` | รัน Dream Cycle |
+| GET | `/api/dream/report` | รายงาน Dream ล่าสุด |
+| GET | `/api/dream/history` | ประวัติรายงาน Dream |
+
+### Skills
+| Method | Path | การทำงาน |
+|---|---|---|
+| GET | `/api/skills` | รายการ skills (from DB) |
+| GET | `/api/skills/list` | รายชื่อไฟล์ `.md` |
+| POST | `/api/skills/extract` | สกัด content → skill `.md` |
+| DELETE | `/api/skills/{topic}` | ลบ skill จาก DB |
+| DELETE | `/api/skills/{filename}` | ลบไฟล์ `.md` |
+| POST | `/api/admin/sync-skills` | sync skills → ChromaDB |
+
+### Vault & Config
+| Method | Path | การทำงาน |
+|---|---|---|
+| GET | `/api/config` | ดึง config assistants |
+| GET | `/api/status` | สถานะ Ollama / Gemini / Memory |
+| POST | `/api/vault/sync` | Sync Obsidian vault → ChromaDB |
+| GET | `/api/vault/stats` | สถิติ Obsidian vault |
+| GET | `/api/vault/search?q=...` | ค้นหาใน vault |
+
+### Stats & Share
+| Method | Path | การทำงาน |
+|---|---|---|
 | GET | `/api/stats` | Usage Dashboard |
 | GET | `/api/digest` | Daily Digest (Gemini summary) |
 | POST | `/api/share` | สร้าง share token |
 | GET | `/api/shared/{token}` | ดึงข้อมูล shared chat (JSON) |
 | GET | `/shared/{token}` | หน้า shared chat (HTML read-only) |
-| GET | `/api/vault/sync` | Sync Obsidian vault → ChromaDB |
-| GET | `/api/vault/stats` | สถิติ Obsidian vault |
-| GET | `/api/status` | สถานะ Ollama / Gemini |
 
 ---
 
@@ -391,7 +455,8 @@ ui/
 | **AI ไม่ตอบ / หน้าขาว** | `sudo docker compose logs hybrid-ai` ดู error |
 | **TTS ไม่มีเสียง** | ① เช็ค `GEMINI_API_KEY` ② browser ไม่ได้ mute ③ เปิด 🔊 toggle |
 | **Voice ไม่เชื่อม** | ① อนุญาต mic ใน browser ② ใช้ HTTP ไม่ใช่ HTTPS |
-| **Share link หาย** | restart server จะ reset — feature นี้ in-memory |
+| **Share link หาย** | ✅ ตอนนี้ persist ลง SQLite แล้ว — ไม่หาย |
 | **Obsidian ไม่ inject** | ① ตั้ง `OBSIDIAN_VAULT_PATH` ② sync vault ก่อน ③ เปิด 🌙 |
 | **Memory เต็ม** | รัน 🌙 Dream Cycle ใน Sidebar |
 | **Build ล้มเหลว** | `sudo docker compose build --no-cache hybrid-ai` |
+| **ChromaDB error** | ChromaDB container ถูก comment ใน docker-compose.yml — ระบบ fallback ใช้ SQLite |
