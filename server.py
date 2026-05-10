@@ -148,6 +148,14 @@ async def auth_login(request: Request):
     return JSONResponse({"ok": False, "error": "รหัสผ่านไม่ถูกต้อง"}, status_code=401)
 
 
+@app.get("/enhanced.js")
+def serve_enhanced_js():
+    """Serve enhanced.js with no-cache — ไม่ให้ browser cache เวอร์ชันเก่า"""
+    path = os.path.join(os.path.dirname(__file__), "static", "enhanced.js")
+    return FileResponse(path, media_type="application/javascript",
+                        headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
+
+
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 if os.path.exists("static/assets"):
