@@ -122,16 +122,50 @@ def nas_docker_status() -> dict:
     if not sid:
         return {"error": f"Login NAS {NAS_IP} ไม่สำเร็จ"}
     try:
-        data = _nas_api("SYNO.Docker.Container", 1, "list", sid, {"limit": 50})
         containers = []
-        if data.get("success"):
-            for c in data["data"].get("containers", []):
-                containers.append({
-                    "name":    c.get("name", ""),
-                    "status":  c.get("status", ""),
-                    "running": c.get("status", "") == "running",
-                    "image":   c.get("image", ""),
-                })
+        # ลอง SYNO.Docker.Container API หลายเวอร์ชัน
+        for api, ver, method in [
+            ("SYNO.Docker.Container", 1, "list"),
+            ("SYNO.Docker.Container", 2, "list"),
+            ("SYNO.Docker.Container.Profile", 1, "list"),
+        ]:
+            try:
+                data = _nas_api(api, ver, method, sid, {"limit": 50, "offset": 0})
+                if data.get("success") and data.get("data"):
+                    raw = data["data"].get("containers", data["data"].get("profiles", []))
+                    for c in raw:
+                        containers.append({
+                            "name":    c.get("name", c.get("id", "")),
+                            "status":  c.get("status", c.get("state", "")),
+                            "running": c.get("status", c.get("state", "")) in ("running", "up"),
+                            "image":   c.get("image", ""),
+                        })
+                    if containers:
+                        break
+            except Exception:
+                continue
+
+        # fallback: ดึงจาก docker ps ผ่าน SSH subprocess (ถ้า API ไม่ work)
+        if not containers:
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["docker", "ps", "--format", "{{.Names}}\t{{.Status}}\t{{.Image}}"],
+                    capture_output=True, text=True, timeout=8
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.strip().splitlines():
+                        parts = line.split("\t")
+                        if len(parts) >= 2:
+                            containers.append({
+                                "name":    parts[0],
+                                "status":  parts[1] if len(parts) > 1 else "",
+                                "running": True,
+                                "image":   parts[2] if len(parts) > 2 else "",
+                            })
+            except Exception as e:
+                logger.debug(f"docker ps fallback failed: {e}")
+
         return {"ok": True, "containers": containers, "nas_ip": NAS_IP}
     except Exception as e:
         logger.error(f"nas_docker_status error: {e}")
