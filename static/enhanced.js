@@ -639,5 +639,337 @@
       setTimeout(() => vsInput.focus(), 50);
   });
 
-  console.log("[Enhanced UI] Health Widget, Search, Export, Pin, @vault — loaded ✅");
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 6. COPY CODE BUTTON — เพิ่มปุ่ม copy บน code block อัตโนมัติ
+  // ─────────────────────────────────────────────────────────────────────────────
+  const copyCSS = `
+    .enh-copy-wrap { position:relative; }
+    .enh-copy-btn {
+      position:absolute; top:8px; right:8px; opacity:0;
+      background:rgba(30,41,59,0.9); border:1px solid rgba(99,102,241,0.4);
+      border-radius:6px; padding:3px 8px; font-size:11px; color:#94a3b8;
+      cursor:pointer; transition:opacity .15s; z-index:10;
+    }
+    .enh-copy-wrap:hover .enh-copy-btn { opacity:1; }
+    .enh-copy-btn.copied { color:#34d399; border-color:rgba(52,211,153,0.5); }
+  `;
+  document.head.appendChild(Object.assign(document.createElement("style"), { textContent: copyCSS }));
+
+  function _wireCopyButtons() {
+    document.querySelectorAll("pre.md-pre").forEach((pre) => {
+      if (pre.dataset.copyWired) return;
+      pre.dataset.copyWired = "1";
+      pre.classList.add("enh-copy-wrap");
+      const btn = document.createElement("button");
+      btn.className = "enh-copy-btn";
+      btn.textContent = "Copy";
+      btn.addEventListener("click", () => {
+        const code = pre.querySelector("code")?.innerText || pre.innerText;
+        navigator.clipboard.writeText(code).then(() => {
+          btn.textContent = "✅ Copied";
+          btn.classList.add("copied");
+          setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("copied"); }, 2000);
+        });
+      });
+      pre.appendChild(btn);
+    });
+  }
+
+  new MutationObserver(_wireCopyButtons).observe(document.getElementById("root"), {
+    childList: true, subtree: true,
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 7. STOP GENERATION — หยุด streaming กลางคัน
+  // ─────────────────────────────────────────────────────────────────────────────
+  let _abortCtrl = null;
+  let _stopBtn = null;
+
+  // เพิ่มปุ่ม STOP ใน toolbar
+  _stopBtn = document.createElement("button");
+  _stopBtn.className = "enh-fab";
+  _stopBtn.id = "fab-stop";
+  _stopBtn.title = "หยุด AI (Stop)";
+  _stopBtn.innerHTML = `⏹ <span>Stop</span>`;
+  _stopBtn.style.display = "none";
+  _stopBtn.style.background = "rgba(239,68,68,0.2)";
+  _stopBtn.style.borderColor = "rgba(239,68,68,0.5)";
+  _stopBtn.style.color = "#fca5a5";
+  toolbar.insertBefore(_stopBtn, toolbar.firstChild);
+
+  _stopBtn.addEventListener("click", () => {
+    if (_abortCtrl) {
+      _abortCtrl.abort();
+      _abortCtrl = null;
+    }
+    _stopBtn.style.display = "none";
+  });
+
+  // ปรับ fetch override ให้ inject AbortController สำหรับ /api/chat
+  const _prevFetch = window.fetch;
+  window.fetch = function (url, opts) {
+    if (typeof url === "string" && opts?.method === "POST" &&
+        (url === "/api/chat" || url.includes("/api/regenerate"))) {
+      _abortCtrl = new AbortController();
+      opts = { ...opts, signal: _abortCtrl.signal };
+      _stopBtn.style.display = "flex";
+      // ซ่อนปุ่มเมื่อ streaming cursor หายไป
+      const stopCheck = setInterval(() => {
+        if (!document.querySelector('[class*="animate-pulse"][class*="opacity-70"]')) {
+          _stopBtn.style.display = "none";
+          _abortCtrl = null;
+          clearInterval(stopCheck);
+        }
+      }, 300);
+      return _prevFetch(url, opts).catch((err) => {
+        _stopBtn.style.display = "none";
+        if (err.name === "AbortError") {
+          // คืน empty SSE stream แทน error — React จบ streaming อย่างสวยงาม
+          return new Response(new ReadableStream({ start(c) { c.close(); } }),
+            { status: 200, headers: { "Content-Type": "text/event-stream" } });
+        }
+        throw err;
+      }).then((resp) => {
+        if (resp.status === 401) { loginOverlay.classList.add("open"); }
+        return resp;
+      });
+    }
+    return _prevFetch(url, opts);
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 8. SCROLL TO BOTTOM BUTTON
+  // ─────────────────────────────────────────────────────────────────────────────
+  const scrollBtnCSS = `
+    #enh-scroll-btn {
+      position:fixed; bottom:70px; right:16px; z-index:8999;
+      background:rgba(15,23,42,0.9); border:1px solid rgba(99,102,241,0.35);
+      border-radius:50%; width:36px; height:36px; cursor:pointer;
+      color:#94a3b8; font-size:16px; display:none;
+      align-items:center; justify-content:center;
+      transition:all .2s; backdrop-filter:blur(8px);
+    }
+    #enh-scroll-btn:hover { color:#e2e8f0; border-color:rgba(99,102,241,0.7); }
+    #enh-scroll-btn.show { display:flex; }
+  `;
+  document.head.appendChild(Object.assign(document.createElement("style"), { textContent: scrollBtnCSS }));
+
+  const scrollBtn = document.createElement("button");
+  scrollBtn.id = "enh-scroll-btn";
+  scrollBtn.textContent = "↓";
+  scrollBtn.title = "ไปล่างสุด";
+  document.body.appendChild(scrollBtn);
+
+  function _getScrollContainer() {
+    const el = document.querySelector("div.flex.group.justify-start, div.flex.group.justify-end");
+    if (!el) return null;
+    let p = el.parentElement;
+    while (p && p !== document.body) {
+      if (p.scrollHeight > p.clientHeight + 50) return p;
+      p = p.parentElement;
+    }
+    return null;
+  }
+
+  let _scrollCont = null;
+  window.addEventListener("load", () => {
+    setTimeout(() => {
+      _scrollCont = _getScrollContainer();
+      if (_scrollCont) {
+        _scrollCont.addEventListener("scroll", () => {
+          const atBottom = _scrollCont.scrollHeight - _scrollCont.scrollTop - _scrollCont.clientHeight < 80;
+          scrollBtn.classList.toggle("show", !atBottom);
+        });
+      }
+    }, 2000);
+  });
+
+  scrollBtn.addEventListener("click", () => {
+    if (!_scrollCont) _scrollCont = _getScrollContainer();
+    _scrollCont?.scrollTo({ top: _scrollCont.scrollHeight, behavior: "smooth" });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 9. TOKEN USAGE BAR — อ่านจาก localStorage ที่ React เก็บไว้
+  // ─────────────────────────────────────────────────────────────────────────────
+  const tokenCSS = `
+    #enh-token-bar {
+      position:fixed; bottom:0; left:0; right:0; z-index:8998;
+      background:rgba(10,16,30,0.85); backdrop-filter:blur(8px);
+      border-top:1px solid rgba(71,85,105,0.2);
+      padding:3px 16px; display:flex; align-items:center; gap:12px;
+      font-size:11px; color:#475569;
+    }
+    #enh-token-track {
+      flex:1; height:3px; background:rgba(71,85,105,0.2); border-radius:2px; overflow:hidden;
+    }
+    #enh-token-fill {
+      height:100%; border-radius:2px; background:#6366f1; transition:width .5s;
+    }
+    #enh-token-text { white-space:nowrap; min-width:100px; text-align:right; }
+  `;
+  document.head.appendChild(Object.assign(document.createElement("style"), { textContent: tokenCSS }));
+
+  const tokenBar = document.createElement("div");
+  tokenBar.id = "enh-token-bar";
+  tokenBar.innerHTML = `
+    <span>🔢 Context</span>
+    <div id="enh-token-track"><div id="enh-token-fill" style="width:0%"></div></div>
+    <span id="enh-token-text">— / —</span>`;
+  document.body.appendChild(tokenBar);
+
+  function _updateTokenBar() {
+    try {
+      const raw = localStorage.getItem("lastDigest");
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      const used = d.tokens_used || d.token_count || d.tokens || 0;
+      const limit = d.context_limit || d.limit || d.max_tokens || 8192;
+      if (!used) return;
+      const pct = Math.min(100, Math.round(used / limit * 100));
+      const fill = document.getElementById("enh-token-fill");
+      const text = document.getElementById("enh-token-text");
+      if (fill) fill.style.width = pct + "%";
+      if (fill) fill.style.background = pct > 85 ? "#ef4444" : pct > 65 ? "#f59e0b" : "#6366f1";
+      if (text) text.textContent = `${used.toLocaleString()} / ${limit.toLocaleString()} tokens`;
+    } catch {}
+  }
+
+  setInterval(_updateTokenBar, 2000);
+  _updateTokenBar();
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 10. PROMPT HISTORY — ↑/↓ เรียก prompt ก่อนหน้า (เหมือน terminal)
+  // ─────────────────────────────────────────────────────────────────────────────
+  let _promptHistory = JSON.parse(localStorage.getItem("hw_prompt_history") || "[]");
+  let _histIdx = -1;
+  let _draftPrompt = "";
+
+  // บันทึก prompt ที่ส่งออกไป
+  const _origFetch2 = window.fetch;
+  window.fetch = function (url, opts) {
+    if (url === "/api/chat" && opts?.body) {
+      try {
+        const b = JSON.parse(opts.body);
+        if (b.prompt?.trim()) {
+          _promptHistory = [b.prompt, ..._promptHistory.filter(p => p !== b.prompt)].slice(0, 50);
+          localStorage.setItem("hw_prompt_history", JSON.stringify(_promptHistory));
+          _histIdx = -1;
+        }
+      } catch {}
+    }
+    return _origFetch2(url, opts);
+  };
+
+  // ↑/↓ ใน textarea
+  document.addEventListener("keydown", (e) => {
+    const ta = e.target;
+    if (ta.tagName !== "TEXTAREA" || !ta.placeholder?.includes("สั่งงาน")) return;
+    if (e.key === "ArrowUp" && !e.shiftKey) {
+      if (_promptHistory.length === 0) return;
+      e.preventDefault();
+      if (_histIdx === -1) _draftPrompt = ta.value;
+      _histIdx = Math.min(_histIdx + 1, _promptHistory.length - 1);
+      ta.value = _promptHistory[_histIdx];
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+    } else if (e.key === "ArrowDown" && !e.shiftKey && _histIdx >= 0) {
+      e.preventDefault();
+      _histIdx--;
+      ta.value = _histIdx < 0 ? _draftPrompt : _promptHistory[_histIdx];
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 11. PASTE IMAGE FROM CLIPBOARD — วาง Ctrl+V ได้เลยไม่ต้องกด upload
+  // ─────────────────────────────────────────────────────────────────────────────
+  document.addEventListener("paste", async (e) => {
+    const items = [...(e.clipboardData?.items || [])];
+    const img = items.find(i => i.type.startsWith("image/"));
+    if (!img) return;
+    const ta = e.target;
+    if (ta.tagName !== "TEXTAREA") return;
+    e.preventDefault();
+    showToast("📎 กำลัง upload รูปจาก clipboard…");
+    const file = img.getAsFile();
+    const form = new FormData();
+    form.append("file", file, "clipboard.png");
+    try {
+      const r = await _origFetch("/api/upload", {
+        method: "POST",
+        headers: _authToken ? { "x-auth-token": _authToken } : {},
+        body: form,
+      });
+      const d = await r.json();
+      if (d.ok && d.is_image) {
+        // เก็บ base64 ใน localStorage ชั่วคราว แล้วแจ้งผู้ใช้
+        localStorage.setItem("hw_pending_image", JSON.stringify({ b64: d.b64, mime: d.mime }));
+        showToast("✅ รูปพร้อมแล้ว — กด Send เพื่อส่ง");
+      } else if (d.text) {
+        ta.value += (ta.value ? "\n" : "") + d.text;
+        ta.dispatchEvent(new Event("input", { bubbles: true }));
+        showToast("✅ วางข้อความจาก clipboard แล้ว");
+      }
+    } catch {
+      showToast("❌ Upload ล้มเหลว");
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 12. TYPING INDICATOR — "กำลังคิด…" ก่อน chunk แรกถึง
+  // ─────────────────────────────────────────────────────────────────────────────
+  const typingCSS = `
+    #enh-typing {
+      position:fixed; bottom:52px; left:50%; transform:translateX(-50%);
+      background:rgba(15,23,42,0.9); border:1px solid rgba(99,102,241,0.3);
+      border-radius:20px; padding:6px 16px; font-size:12px; color:#94a3b8;
+      z-index:8997; display:none; align-items:center; gap:8px;
+      backdrop-filter:blur(8px); pointer-events:none;
+    }
+    #enh-typing.show { display:flex; }
+    .enh-typing-dot {
+      width:5px; height:5px; border-radius:50%; background:#6366f1;
+      animation:enh-dot-bounce 1.2s infinite;
+    }
+    .enh-typing-dot:nth-child(2) { animation-delay:.2s; }
+    .enh-typing-dot:nth-child(3) { animation-delay:.4s; }
+    @keyframes enh-dot-bounce {
+      0%,60%,100% { transform:translateY(0); }
+      30% { transform:translateY(-6px); }
+    }
+  `;
+  document.head.appendChild(Object.assign(document.createElement("style"), { textContent: typingCSS }));
+
+  const typingEl = document.createElement("div");
+  typingEl.id = "enh-typing";
+  typingEl.innerHTML = `
+    <div class="enh-typing-dot"></div>
+    <div class="enh-typing-dot"></div>
+    <div class="enh-typing-dot"></div>
+    <span>AI กำลังคิด…</span>`;
+  document.body.appendChild(typingEl);
+
+  // แสดง typing indicator ตอน POST /api/chat ส่งออก และซ่อนเมื่อ chunk แรกถึง
+  let _typingTimer = null;
+  const _origFetch3 = window.fetch;
+  window.fetch = function (url, opts) {
+    if (typeof url === "string" && url === "/api/chat" && opts?.method === "POST") {
+      typingEl.classList.add("show");
+      // ซ่อนทันทีที่ streaming cursor ปรากฏ (chunk แรกถึง)
+      clearTimeout(_typingTimer);
+      _typingTimer = setTimeout(() => {
+        const watchTyping = setInterval(() => {
+          if (document.querySelector('[class*="animate-pulse"][class*="opacity-70"]') ||
+              document.querySelector('[class*="whitespace-pre-wrap"]')) {
+            typingEl.classList.remove("show");
+            clearInterval(watchTyping);
+          }
+        }, 100);
+        setTimeout(() => { typingEl.classList.remove("show"); clearInterval(watchTyping); }, 30000);
+      }, 200);
+    }
+    return _origFetch3(url, opts);
+  };
+
+  console.log("[Enhanced UI] v2 — Copy, Stop, Scroll↓, Token bar, History↑, Paste, Typing — loaded ✅");
 })();
