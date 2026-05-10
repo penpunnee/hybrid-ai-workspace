@@ -687,6 +687,19 @@ async def skills_extract(request: Request):
     except Exception as e:
         return {"ok": False, "error": f"บันทึกไฟล์ไม่ได้: {e}"}
 
+    # อัปเดต skills_db.json ด้วย เพื่อให้ sync-skills เห็นไฟล์ใหม่
+    try:
+        db = _load_skills_db()
+        first_line = next((l.strip("# \n") for l in md_content.splitlines() if l.strip()), topic)
+        db[topic] = {
+            "summary": md_content[:300].strip(),
+            "source": filename,
+            "updated": datetime.now().isoformat(),
+        }
+        _save_skills_db(db)
+    except Exception as e:
+        logger.warning(f"skills_db update failed: {e}")
+
     return {"ok": True, "filename": filename, "path": filepath, "preview": md_content[:500]}
 
 
