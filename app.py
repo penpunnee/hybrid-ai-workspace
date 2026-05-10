@@ -450,21 +450,35 @@ with st.sidebar:
     if not sessions:
         st.markdown("<div style='padding:8px 2px;font-size:0.72rem;color:rgba(148,163,184,0.4)'>ยังไม่มีประวัติ</div>", unsafe_allow_html=True)
     else:
-        groups = _group_sessions(sessions)
-        active_sid = st.session_state.current_session.get(cur_name, "default")
-        for group_name, group_list in groups.items():
-            if group_list:
-                st.markdown(f"<div class='sess-group-header'>{group_name}</div>", unsafe_allow_html=True)
-                for s in group_list:
-                    is_active = s["session_id"] == active_sid
-                    ts = s["started_at"][11:16] if len(s["started_at"]) > 15 else "เมื่อนี้"
-                    title = s["first_msg"][:26] + ("…" if len(s["first_msg"]) > 26 else "")
-                    if st.button(f"{title}\n{ts}", key=f"sess_{s['session_id']}",
-                                 use_container_width=True,
-                                 type="primary" if is_active else "secondary"):
-                        st.session_state.current_session[cur_name] = s["session_id"]
-                        st.session_state.chat_history[cur_name] = load_history(cur_name, s["session_id"])
-                        st.rerun()
+        # search box (แสดงเมื่อมี session มากกว่า 5)
+        sess_filter = ""
+        if len(sessions) > 5:
+            sess_filter = st.text_input("🔍", placeholder="ค้นหาชื่อ session…",
+                                        key="sess_search", label_visibility="collapsed")
+        if sess_filter.strip():
+            q = sess_filter.strip().lower()
+            filtered = [s for s in sessions if q in s.get("first_msg", "").lower()]
+        else:
+            filtered = sessions
+
+        if not filtered:
+            st.markdown("<div style='padding:6px 2px;font-size:0.72rem;color:rgba(148,163,184,0.4)'>ไม่พบ session ที่ค้นหา</div>", unsafe_allow_html=True)
+        else:
+            groups = _group_sessions(filtered)
+            active_sid = st.session_state.current_session.get(cur_name, "default")
+            for group_name, group_list in groups.items():
+                if group_list:
+                    st.markdown(f"<div class='sess-group-header'>{group_name}</div>", unsafe_allow_html=True)
+                    for s in group_list:
+                        is_active = s["session_id"] == active_sid
+                        ts = s["started_at"][11:16] if len(s["started_at"]) > 15 else "เมื่อนี้"
+                        title = s["first_msg"][:26] + ("…" if len(s["first_msg"]) > 26 else "")
+                        if st.button(f"{title}\n{ts}", key=f"sess_{s['session_id']}",
+                                     use_container_width=True,
+                                     type="primary" if is_active else "secondary"):
+                            st.session_state.current_session[cur_name] = s["session_id"]
+                            st.session_state.chat_history[cur_name] = load_history(cur_name, s["session_id"])
+                            st.rerun()
 
     st.markdown("<div style='height:4rem'></div>", unsafe_allow_html=True)
 

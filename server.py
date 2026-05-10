@@ -39,13 +39,16 @@ _share_store: dict = {}  # fallback in-memory (also persisted to SQLite)
 # --- Auto Dream Scheduler ---
 def _scheduled_dream():
     """รัน dream cycle อัตโนมัติ (ตี 2 ทุกคืน) — fallback ไป gemini ถ้า ollama offline"""
+    from utils.notify import send_line_notify
     provider = "gemini" if os.getenv("GEMINI_API_KEY") else "ollama"
-    print(f"[Scheduler] รัน Dream Cycle อัตโนมัติ ({datetime.now().strftime('%Y-%m-%d %H:%M')}) provider={provider}")
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    print(f"[Scheduler] รัน Dream Cycle อัตโนมัติ ({ts}) provider={provider}")
     try:
         run_dream_cycle(provider=provider)
         print("[Scheduler] Dream Cycle เสร็จ")
     except Exception as e:
         print(f"[Scheduler] Dream error: {e}")
+        send_line_notify(f"⚠️ Dream Cycle ล้มเหลว ({ts})\nError: {e}")
 
 _scheduler = BackgroundScheduler(timezone="Asia/Bangkok")
 _scheduler.add_job(_scheduled_dream, CronTrigger(hour=2, minute=0), id="dream_nightly", replace_existing=True)
@@ -199,8 +202,12 @@ def search_chat(q: str = "", assistant: str = "", limit: int = 20):
 
 
 @app.get("/api/sessions/{assistant}")
-def list_sessions(assistant: str):
-    return get_sessions(assistant)
+def list_sessions(assistant: str, q: str = ""):
+    sessions = get_sessions(assistant)
+    if q.strip():
+        q_lower = q.strip().lower()
+        sessions = [s for s in sessions if q_lower in s.get("first_msg", "").lower()]
+    return sessions
 
 
 @app.post("/api/sessions/{assistant}")
@@ -263,6 +270,40 @@ async def text_to_speech(request: Request):
                         headers={"Cache-Control": "no-cache"})
     except Exception as e:
         return {"error": str(e)}
+
+
+@app.post("/api/tts/stream")
+async def text_to_speech_stream(request: Request):
+    """TTS แบบ streaming — แบ่งเป็น sentence แล้ว stream WAV chunks ทีละประโยค
+    Response: SSE events  data: {"chunk": "<base64 wav>", "done": false}
+              สุดท้าย    data: {"done": true}
+    """
+    import re, base64
+    data = await request.json()
+    text = data.get("text", "").strip()
+    slug = data.get("assistant_slug", "")
+    if not text:
+        return {"error": "no text"}
+
+    # ตัดเป็น sentences (จบด้วย .!?… หรือ newline)
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?…\n])\s+", text) if s.strip()]
+    if not sentences:
+        sentences = [text]
+
+    async def event_gen():
+        for sentence in sentences:
+            if not sentence:
+                continue
+            try:
+                wav = generate_tts(sentence, slug)
+                b64 = base64.b64encode(wav).decode()
+                yield f"data: {json.dumps({'chunk': b64, 'done': False})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e), 'done': False})}\n\n"
+        yield f"data: {json.dumps({'done': True})}\n\n"
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.websocket("/ws/voice/{assistant_slug}")
@@ -424,23 +465,58 @@ def vault_search(q: str, n: int = 5):
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
-    import base64 as _b64
+    import base64 as _b64, io
     content = await file.read()
     name = file.filename or "file"
     mime = file.content_type or ""
-    if mime.startswith("image/") or name.lower().split('.')[-1] in ('jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'):
+    ext = name.lower().rsplit(".", 1)[-1] if "." in name else ""
+
+    # รูปภาพ
+    if mime.startswith("image/") or ext in ('jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'):
         b64 = _b64.b64encode(content).decode()
         return {"ok": True, "filename": name, "is_image": True, "b64": b64, "mime": mime or "image/jpeg"}
+
+    # PDF
+    if ext == "pdf" or mime == "application/pdf":
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(io.BytesIO(content))
+            pages_text = [page.extract_text() or "" for page in reader.pages]
+            raw_text = "\n\n".join(pages_text)
+            text = f"[PDF: {name} — {len(reader.pages)} หน้า]\n{raw_text}"
+        except ImportError:
+            return {"ok": False, "error": "ไม่พบ library pypdf — กรุณา pip install pypdf"}
+        except Exception as e:
+            return {"ok": False, "error": f"อ่าน PDF ไม่ได้: {e}"}
+        extracted = auto_extract_skills(raw_text, name)
+        return {"ok": True, "filename": name, "is_image": False, "text": text[:8000], "skills_extracted": extracted}
+
+    # DOCX
+    if ext == "docx" or mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        try:
+            import docx
+            doc = docx.Document(io.BytesIO(content))
+            raw_text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            text = f"[DOCX: {name}]\n{raw_text}"
+        except ImportError:
+            return {"ok": False, "error": "ไม่พบ library python-docx — กรุณา pip install python-docx"}
+        except Exception as e:
+            return {"ok": False, "error": f"อ่าน DOCX ไม่ได้: {e}"}
+        extracted = auto_extract_skills(raw_text, name)
+        return {"ok": True, "filename": name, "is_image": False, "text": text[:8000], "skills_extracted": extracted}
+
+    # JSON / text-based files
     try:
-        if name.lower().endswith(".json"):
+        if ext == "json":
             import json as _json
             data = _json.loads(content)
-            text = f"[ไฟล์ JSON: {name}]\n{_json.dumps(data, ensure_ascii=False, indent=2)}"
+            raw_text = _json.dumps(data, ensure_ascii=False, indent=2)
+            text = f"[ไฟล์ JSON: {name}]\n{raw_text}"
         else:
-            text = f"[ไฟล์: {name}]\n{content.decode('utf-8', errors='ignore')}"
+            raw_text = content.decode('utf-8', errors='ignore')
+            text = f"[ไฟล์: {name}]\n{raw_text}"
     except Exception as e:
         return {"ok": False, "error": str(e)}
-    raw_text = content.decode('utf-8', errors='ignore')
     extracted = auto_extract_skills(raw_text, name)
     return {"ok": True, "filename": name, "is_image": False, "text": text[:8000], "skills_extracted": extracted}
 
