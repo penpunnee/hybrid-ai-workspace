@@ -1046,7 +1046,7 @@
   // ─────────────────────────────────────────────────────────────────────────────
   const homeCSS = `
     #enh-home-panel {
-      position: fixed; bottom: 76px; right: 18px; z-index: 9200;
+      position: fixed; bottom: 120px; right: 18px; z-index: 9200;
       width: 300px;
       background: rgba(10,14,26,0.92);
       border: 1px solid rgba(99,102,241,0.3);
@@ -1137,27 +1137,38 @@
   document.body.appendChild(homePanel);
 
   let _homePanelOpen = false;
-  homeToggle.addEventListener("click", () => {
-    _homePanelOpen = !_homePanelOpen;
+
+  function _closeHomePanel() {
+    homePanel.classList.remove("open");
+    homeToggle.style.display = "flex";
+    _homePanelOpen = false;
+  }
+
+  homeToggle.addEventListener("click", (e) => {
+    e.stopPropagation();
     if (_homePanelOpen) {
+      _closeHomePanel();
+    } else {
+      _homePanelOpen = true;
       homePanel.classList.add("open");
-      // position panel above toggle
-      homePanel.style.bottom = "124px";
-      homePanel.style.right = "18px";
       homeToggle.style.display = "none";
       enhHomeRefresh();
-    } else {
-      homePanel.classList.remove("open");
-      homeToggle.style.display = "flex";
+      // show toggle-like close affordance
     }
   });
 
-  // Close panel when clicking outside
+  // ปุ่ม X ปิด panel
+  const homeCloseBtn = document.createElement("button");
+  homeCloseBtn.textContent = "✕";
+  homeCloseBtn.style.cssText = "position:absolute;top:10px;right:12px;background:none;border:none;color:#64748b;cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;";
+  homeCloseBtn.addEventListener("click", (e) => { e.stopPropagation(); _closeHomePanel(); });
+  homePanel.style.position = "fixed";
+  homePanel.appendChild(homeCloseBtn);
+
+  // Click outside
   document.addEventListener("click", (e) => {
     if (_homePanelOpen && !homePanel.contains(e.target) && e.target !== homeToggle) {
-      homePanel.classList.remove("open");
-      homeToggle.style.display = "flex";
-      _homePanelOpen = false;
+      _closeHomePanel();
     }
   });
 
