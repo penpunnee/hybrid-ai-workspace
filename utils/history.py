@@ -1,7 +1,10 @@
 import sqlite3
 import os
+import logging
 from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -34,7 +37,8 @@ def _get_conn():
     for col, default in [("session_id", "'default'"), ("pinned", "0")]:
         try:
             conn.execute(f"ALTER TABLE messages ADD COLUMN {col} {'TEXT' if col=='session_id' else 'INTEGER'} DEFAULT {default}")
-        except Exception:
+        except Exception as e:
+            logger.debug(f"ALTER TABLE messages column '{col}' already exists or failed: {e}")
             pass
     conn.commit()
     return conn

@@ -24,7 +24,8 @@ def _get_collection():
             name=COLLECTION_NAME,
             metadata={"hnsw:space": "cosine"},
         )
-    except Exception:
+    except Exception as e:
+        logger.warning(f"obsidian_sync: failed to get or create ChromaDB collection '{COLLECTION_NAME}': {e}")
         return None
 
 
@@ -136,5 +137,6 @@ def get_vault_stats() -> dict:
         return {"indexed": 0, "available": False}
     try:
         return {"indexed": col.count(), "available": True}
-    except Exception:
+    except Exception as e:
+        logger.warning(f"get_vault_stats: failed to get collection count: {e}")
         return {"indexed": 0, "available": False}

@@ -12,7 +12,8 @@ def _load_skills_db() -> dict:
         try:
             with open(SKILLS_DB_PATH, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to load skills_db.json: {e}")
             return {}
     return {}
 
@@ -21,7 +22,8 @@ def _save_skills_db(db: dict):
     try:
         with open(SKILLS_DB_PATH, "w", encoding="utf-8") as f:
             json.dump(db, f, ensure_ascii=False, indent=2)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to save skills_db.json: {e}")
         pass
 
 
@@ -39,7 +41,8 @@ def save_skill(topic: str, summary: str, source: str = "auto"):
     try:
         from utils.skills_search import sync_skills_to_search
         sync_skills_to_search(db)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"sync_skills_to_search failed: {e}")
         pass
 
 
@@ -104,7 +107,8 @@ def auto_extract_skills(text: str, assistant_name: str) -> list[str]:
                     )
                     extracted.append(key)
             return extracted
-    except Exception:
+    except Exception as e:
+        logger.debug(f"auto_extract_skills: text is not valid JSON, falling back to markdown: {e}")
         pass
 
     # สกัดจาก Markdown headings

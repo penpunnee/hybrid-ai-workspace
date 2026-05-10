@@ -401,7 +401,8 @@ def list_reports(limit: int = 10) -> list[dict]:
                     "phase2_rem": {"themes": themes, "insights": data.get("phase2_rem", {}).get("insights", [])},
                     "phase3_deep": {"promoted": promoted_list, "count": len(promoted_list)},
                 })
-        except Exception:
+        except Exception as e:
+            logger.warning(f"list_reports: failed to read report file '{f}': {e}")
             pass
     return out
 

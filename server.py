@@ -1,7 +1,9 @@
-import os, uuid, json, threading
+import os, uuid, json, threading, logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -60,9 +62,9 @@ def _startup_sync_skills():
         db = _load_skills_db()
         if db:
             sync_skills_to_search(db)
-            print(f"[Startup] Synced {len(db)} skills to ChromaDB ✅")
+            logger.info(f"[Startup] Synced {len(db)} skills to ChromaDB")
     except Exception as e:
-        print(f"[Startup] Skills sync skipped: {e}")
+        logger.warning(f"[Startup] Skills sync skipped: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -115,18 +117,18 @@ def _scheduled_dream():
     from utils.notify import send_line_notify
     provider = "gemini" if os.getenv("GEMINI_API_KEY") else "ollama"
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-    print(f"[Scheduler] รัน Dream Cycle อัตโนมัติ ({ts}) provider={provider}")
+    logger.info(f"[Scheduler] รัน Dream Cycle ({ts}) provider={provider}")
     try:
         run_dream_cycle(provider=provider)
-        print("[Scheduler] Dream Cycle เสร็จ")
+        logger.info("[Scheduler] Dream Cycle เสร็จ")
     except Exception as e:
-        print(f"[Scheduler] Dream error: {e}")
+        logger.error(f"[Scheduler] Dream error: {e}")
         send_line_notify(f"⚠️ Dream Cycle ล้มเหลว ({ts})\nError: {e}")
 
 _scheduler = BackgroundScheduler(timezone="Asia/Bangkok")
 _scheduler.add_job(_scheduled_dream, CronTrigger(hour=2, minute=0), id="dream_nightly", replace_existing=True)
 _scheduler.start()
-print("[Scheduler] ตั้ง Dream รันทุกคืนตี 2 แล้ว")
+logger.info("[Scheduler] ตั้ง Dream รันทุกคืนตี 2 แล้ว")
 
 
 @app.get("/api/auth/check")
@@ -184,12 +186,14 @@ def status():
         f2 = ex.submit(is_memory_available)
         try:
             ollama_ok, ollama_msg = f1.result(timeout=5)
-        except Exception:
+        except Exception as e:
             ollama_ok, ollama_msg = False, "Health check error"
+            logger.warning(f"Ollama health check failed: {e}")
         try:
             mem_ok = f2.result(timeout=5)
-        except Exception:
+        except Exception as e:
             mem_ok = False
+            logger.warning(f"Memory check failed: {e}")
     next_dream = None
     job = _scheduler.get_job("dream_nightly")
     if job and job.next_run_time:
@@ -269,8 +273,9 @@ def health_detail():
     try:
         db_path = os.getenv("DB_PATH", "./chat_history.db")
         db_size_mb = round(os.path.getsize(db_path) / 1e6, 2) if os.path.exists(db_path) else 0
-    except Exception:
+    except Exception as e:
         db_size_mb = 0
+        logger.warning(f"DB size check failed: {e}")
 
     return {
         "status": "ok",
@@ -493,22 +498,22 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                     save_message(asst_name, "assistant", ai_transcript.strip(), "gemini_live", session_id)
                                     ai_transcript = ""
                 except Exception as e:
-                    print(f"[Voice send_loop ERROR] {type(e).__name__}: {e}")
+                    logger.error(f"[Voice send_loop] {type(e).__name__}: {e}")
                     stop.set()
                     try:
                         await websocket.send_json({"type": "error", "message": str(e)})
-                    except Exception:
-                        pass
+                    except Exception as ws_err:
+                        logger.debug(f"WS send error ignored: {ws_err}")
 
             await asyncio.gather(recv_loop(), send_loop())
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        print(f"[Voice WS ERROR] {type(e).__name__}: {e}")
+        logger.error(f"[Voice WS] {type(e).__name__}: {e}")
         try:
             await websocket.send_json({"type": "error", "message": str(e)})
-        except Exception:
-            pass
+        except Exception as ws_err:
+            logger.debug(f"WS send error ignored: {ws_err}")
 
 
 @app.get("/api/vault/stats")
@@ -520,9 +525,11 @@ def vault_stats():
 async def dream(request: Request):
     try:
         data = await request.json()
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Dream request body parse failed: {e}")
         data = {}
     provider = data.get("provider", "ollama") if isinstance(data, dict) else "ollama"
+
     hours = data.get("hours", 24) if isinstance(data, dict) else 24
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=1) as ex:
@@ -793,7 +800,8 @@ def api_delete_preference(doc_id: str):
 async def memory_cleanup(request: Request):
     try:
         data = await request.json()
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Memory cleanup request body parse failed: {e}")
         data = {}
     days = data.get("days", 30) if isinstance(data, dict) else 30
     return cleanup_old_memories(days=days)
@@ -856,8 +864,8 @@ async def create_share(request: Request):
                      (token, assistant, session_id, created))
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Share link persist failed: {e}")
     return {"ok": True, "token": token}
 
 
@@ -874,8 +882,8 @@ def get_shared_data(token: str):
             if row:
                 info = {"assistant": row[0], "session_id": row[1], "created": row[2]}
                 _share_store[token] = info
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Share link lookup failed: {e}")
     if not info:
         return {"ok": False, "error": "ไม่พบ link"}
     msgs = load_history(info["assistant"], info["session_id"], include_meta=False)
@@ -1108,8 +1116,8 @@ async def chat(request: Request):
                     for kw, (k, v) in {"ตอบสั้น": ("style", "ชอบสั้น"), "อธิบาย": ("style", "ชอบละเอียด")}.items():
                         if kw in p:
                             save_preference(k, v)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Auto-learn failed: {e}")
             threading.Thread(target=_learn, daemon=True).start()
 
         yield f"data: {json.dumps({'done': True})}\n\n"
@@ -1120,6 +1128,7 @@ async def chat(request: Request):
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Hybrid AI Workspace  →  http://localhost:8000")
+    logging.basicConfig(level=logging.INFO)
+    logger.info("Hybrid AI Workspace → http://localhost:8000")
     reload = os.getenv("RELOAD", "false").lower() == "true"
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=reload)

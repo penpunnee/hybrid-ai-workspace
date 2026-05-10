@@ -490,28 +490,30 @@
     }
   }
 
-  // Observe DOM for new message bubbles
+  // Observe DOM — ใช้ Tailwind class จริงจาก compiled React
+  // AI bubble: div.flex.group.justify-start > div.rounded-3xl.rounded-tl-sm
   const pinObserver = new MutationObserver(() => {
-    // ตามหา AI message bubbles (class ที่มี prose หรือ markdown content)
-    document.querySelectorAll(
-      '[class*="message"],[class*="bubble"],[class*="chat"],[class*="msg"]'
-    ).forEach((el) => {
-      if (el.dataset.pinWired) return;
-      el.dataset.pinWired = "1";
-      el.style.position = "relative";
+    document.querySelectorAll("div.flex.group.justify-start").forEach((container) => {
+      if (container.dataset.pinWired) return;
+      const bubble = container.querySelector('[class*="rounded-3xl"]');
+      if (!bubble) return;
+      container.dataset.pinWired = "1";
 
       const btn = document.createElement("button");
       btn.className = "enh-pin-btn";
       btn.textContent = "📌";
       btn.title = "Pin message";
-      el.appendChild(btn);
+      btn.style.cssText = "position:absolute;top:6px;right:-32px;background:rgba(15,23,42,0.9);border:1px solid rgba(71,85,105,0.4);border-radius:8px;padding:3px 6px;cursor:pointer;font-size:12px;color:#94a3b8;opacity:0;transition:opacity .15s;z-index:10;";
 
-      el.addEventListener("mouseenter", () => (btn.style.opacity = "1"));
-      el.addEventListener("mouseleave", () => (btn.style.opacity = "0"));
+      bubble.style.position = "relative";
+      bubble.appendChild(btn);
+
+      container.addEventListener("mouseenter", () => (btn.style.opacity = "1"));
+      container.addEventListener("mouseleave", () => (btn.style.opacity = "0"));
 
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
-        pinMessage(el.innerText.replace("📌", "").trim());
+        pinMessage(bubble.innerText.replace("📌", "").trim());
       });
     });
   });

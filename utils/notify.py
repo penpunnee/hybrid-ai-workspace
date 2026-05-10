@@ -1,5 +1,8 @@
 import os
+import logging
 import requests
+
+logger = logging.getLogger(__name__)
 
 LINE_NOTIFY_TOKEN = os.getenv("LINE_NOTIFY_TOKEN", "")
 
@@ -16,5 +19,6 @@ def send_line_notify(message: str) -> bool:
             timeout=10,
         )
         return r.status_code == 200
-    except Exception:
+    except Exception as e:
+        logger.warning(f"send_line_notify failed: {e}")
         return False

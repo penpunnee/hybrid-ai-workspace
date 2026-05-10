@@ -1,5 +1,8 @@
 import os
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IDENTITY_PATH = os.path.join(ROOT_DIR, "identity.json")
@@ -44,7 +47,8 @@ def load_skills_folder(folder_path: str) -> str:
             try:
                 with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                     texts.append(f"[{filename}]\n{f.read()}")
-            except Exception:
+            except Exception as e:
+                logger.warning(f"load_skills_folder: failed to read '{filepath}': {e}")
                 pass
 
     return "\n\n---\n\n".join(texts)

@@ -23,7 +23,8 @@ def _detect_chroma_host() -> tuple:
             s = socket.create_connection((host, port), timeout=2)
             s.close()
             return host, port
-        except Exception:
+        except Exception as e:
+            logger.debug(f"ChromaDB host probe failed for {host}:{port}: {e}")
             continue
     return "localhost", 8000
 
@@ -65,7 +66,8 @@ def _get_collection(assistant_name: str):
                 name=f"memory_{slug}",
                 metadata={"hnsw:space": "cosine"},
             )
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to get or create collection for {slug}: {e}")
             return None
     return _collections[slug]
 
@@ -132,7 +134,8 @@ def save_lesson(topic: str, lesson: str) -> bool:
             metadatas=[{"topic": topic, "timestamp": datetime.now().isoformat()}]
         )
         return True
-    except Exception:
+    except Exception as e:
+        logger.warning(f"save_lesson failed for topic '{topic}': {e}")
         return False
 
 
@@ -149,7 +152,8 @@ def save_preference(key: str, value: str) -> bool:
             metadatas=[{"key": key, "timestamp": datetime.now().isoformat()}]
         )
         return True
-    except Exception:
+    except Exception as e:
+        logger.warning(f"save_preference failed for key '{key}': {e}")
         return False
 
 
@@ -170,7 +174,8 @@ def get_lessons(query: str = "", n_results: int = 3) -> str:
             results = col.get()
             docs = results.get("documents", [])[:n_results]
         return "\n---\n".join(docs) if docs else ""
-    except Exception:
+    except Exception as e:
+        logger.warning(f"get_lessons failed: {e}")
         return ""
 
 
@@ -184,7 +189,8 @@ def get_preferences() -> str:
         results = col.get()
         docs = results.get("documents", [])
         return "\n".join(docs) if docs else ""
-    except Exception:
+    except Exception as e:
+        logger.warning(f"get_preferences failed: {e}")
         return ""
 
 
@@ -203,7 +209,8 @@ def search_long_term_memory(query: str, n_results: int = 3) -> str:
         if not docs:
             return ""
         return "\n---\n".join(docs)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"search_long_term_memory failed for query '{query[:50]}': {e}")
         return ""
 
 
@@ -229,7 +236,8 @@ def list_lessons(n: int = 50) -> list:
             })
         items.sort(key=lambda x: x["timestamp"], reverse=True)
         return items
-    except Exception:
+    except Exception as e:
+        logger.warning(f"list_lessons failed: {e}")
         return []
 
 
@@ -254,7 +262,8 @@ def list_preferences() -> list:
                 "timestamp": meta.get("timestamp", ""),
             })
         return items
-    except Exception:
+    except Exception as e:
+        logger.warning(f"list_preferences failed: {e}")
         return []
 
 
@@ -267,7 +276,8 @@ def delete_lesson(doc_id: str) -> bool:
         col = client.get_or_create_collection("lessons", metadata={"hnsw:space": "cosine"})
         col.delete(ids=[doc_id])
         return True
-    except Exception:
+    except Exception as e:
+        logger.warning(f"delete_lesson failed for id '{doc_id}': {e}")
         return False
 
 
@@ -280,7 +290,8 @@ def delete_preference(doc_id: str) -> bool:
         col = client.get_or_create_collection("preferences", metadata={"hnsw:space": "cosine"})
         col.delete(ids=[doc_id])
         return True
-    except Exception:
+    except Exception as e:
+        logger.warning(f"delete_preference failed for id '{doc_id}': {e}")
         return False
 
 
@@ -297,7 +308,8 @@ def get_memory_stats() -> dict:
             try:
                 col = client.get_collection(name)
                 stats["collections"][name] = col.count()
-            except Exception:
+            except Exception as e:
+                logger.warning(f"get_memory_stats: failed to get count for collection '{name}': {e}")
                 stats["collections"][name] = 0
         stats["total"] = sum(stats["collections"].values())
         stats["long_term"] = stats["collections"].get("long_term_memory", 0)
@@ -335,7 +347,8 @@ def cleanup_old_memories(days: int = 30) -> dict:
                     col.delete(ids=ids_to_delete)
                     deleted_total += len(ids_to_delete)
                     detail[name] = len(ids_to_delete)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"cleanup_old_memories: failed to process collection '{name}': {e}")
                 continue
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -350,5 +363,6 @@ def is_memory_available() -> bool:
     try:
         client.heartbeat()
         return True
-    except Exception:
+    except Exception as e:
+        logger.warning(f"ChromaDB heartbeat failed: {e}")
         return False

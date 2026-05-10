@@ -37,7 +37,8 @@ class SkillsSearch:
             try:
                 self.collection = self.client.get_collection(self.collection_name)
                 logger.info(f"Skills search loaded existing collection: {self.collection_name}")
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Skills search collection '{self.collection_name}' not found, creating new: {e}")
                 self.collection = self.client.create_collection(
                     name=self.collection_name,
                     metadata={"description": "Skills Semantic Search"}
