@@ -14,6 +14,7 @@ services:
       # BUG FIX: mount skills/ folder ไม่งั้นไฟล์ .md หายทุกครั้งที่ recreate
       - ${NAS_DATA_PATH:-./data}/skills:/app/skills
       - ./static:/app/static
+      - chroma_model_cache:/root/.cache/chroma
     environment:
       - DB_PATH=/app/chat_history.db
       - OBSIDIAN_VAULT_PATH=/vault
@@ -42,3 +43,4 @@ services:
 
 volumes:
   chroma_data:
+  chroma_model_cache:
