@@ -108,6 +108,88 @@ def status():
     }
 
 
+@app.get("/api/health")
+def health_detail():
+    import shutil
+    from utils.memory import get_memory_stats
+
+    # --- Disk ---
+    try:
+        data_path = os.getenv("NAS_DATA_PATH", "./data")
+        usage = shutil.disk_usage(data_path if os.path.exists(data_path) else ".")
+        disk = {
+            "total_gb": round(usage.total / 1e9, 1),
+            "used_gb": round(usage.used / 1e9, 1),
+            "free_gb": round(usage.free / 1e9, 1),
+            "used_pct": round(usage.used / usage.total * 100, 1),
+        }
+    except Exception as e:
+        disk = {"error": str(e)}
+
+    # --- RAM (อ่านจาก /proc/meminfo บน Linux/Docker) ---
+    try:
+        mem = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                k, v = line.split(":", 1)
+                mem[k.strip()] = int(v.strip().split()[0])  # kB
+        total_mb = mem["MemTotal"] // 1024
+        avail_mb = mem["MemAvailable"] // 1024
+        used_mb = total_mb - avail_mb
+        ram = {
+            "total_mb": total_mb,
+            "used_mb": used_mb,
+            "free_mb": avail_mb,
+            "used_pct": round(used_mb / total_mb * 100, 1),
+        }
+    except Exception as e:
+        ram = {"error": str(e)}
+
+    # --- Last Dream ---
+    try:
+        report = get_latest_report()
+        last_dream = {
+            "started_at": report.get("started_at", ""),
+            "provider": report.get("provider", ""),
+            "memories_processed": report.get("memories_processed", 0),
+            "promoted": len(report.get("phase3_deep", {}).get("promoted", [])),
+        } if "error" not in report else {"error": report["error"]}
+    except Exception as e:
+        last_dream = {"error": str(e)}
+
+    next_dream = None
+    job = _scheduler.get_job("dream_nightly")
+    if job and job.next_run_time:
+        next_dream = job.next_run_time.strftime("%Y-%m-%d %H:%M")
+
+    # --- ChromaDB ---
+    try:
+        chroma = get_memory_stats()
+    except Exception as e:
+        chroma = {"available": False, "error": str(e)}
+
+    # --- Skills & DB size ---
+    try:
+        db_path = os.getenv("DB_PATH", "./chat_history.db")
+        db_size_mb = round(os.path.getsize(db_path) / 1e6, 2) if os.path.exists(db_path) else 0
+    except Exception:
+        db_size_mb = 0
+
+    return {
+        "status": "ok",
+        "timestamp": datetime.now().isoformat(),
+        "disk": disk,
+        "ram": ram,
+        "dream": {
+            "last": last_dream,
+            "next_scheduled": next_dream,
+        },
+        "chromadb": chroma,
+        "skills_count": get_skill_count(),
+        "db_size_mb": db_size_mb,
+    }
+
+
 @app.get("/api/search")
 def search_chat(q: str = "", assistant: str = "", limit: int = 20):
     if not q or len(q) < 2:
