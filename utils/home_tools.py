@@ -78,10 +78,9 @@ def nas_disk_usage() -> dict:
 
         volumes = []
         for v in raw_volumes:
-            # DSM 7 format
             size_info = v.get("size", {})
-            total = size_info.get("total", 0) or v.get("total_size", 0)
-            used  = size_info.get("used",  0) or v.get("used_size",  0)
+            total = int(size_info.get("total", 0) or v.get("total_size", 0) or 0)
+            used  = int(size_info.get("used",  0) or v.get("used_size",  0) or 0)
             free  = total - used
             if total == 0:
                 continue
