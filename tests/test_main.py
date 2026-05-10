@@ -7,7 +7,12 @@ import sys
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Disable auth for tests (ก่อน import server เพื่อให้ UI_PASSWORD = "")
+os.environ["UI_PASSWORD"] = ""
+
 from server import app
+import server as _server
+_server.UI_PASSWORD = ""   # override หลัง import ด้วย เผื่อ load แล้ว
 
 client = TestClient(app)
 
