@@ -10,34 +10,82 @@
   // ── Auth token (stored in localStorage) ─────────────────────────────────────
   let _authToken = localStorage.getItem("hw_auth_token") || "";
 
-  // ── State tracker + auth header injector ────────────────────────────────────
+  // ── Single unified fetch override (auth + stop + history + typing) ──────────
   const ctx = { assistant: null, session: null };
   const _origFetch = window.fetch.bind(window);
 
+  // ตัวแปรที่ใช้ร่วมกันระหว่าง features (ประกาศ forward เพื่อให้ fetch ใช้ได้)
+  let _abortCtrl = null;
+  let _stopBtnEl = null;   // set ทีหลังเมื่อ DOM พร้อม
+  let _typingElRef = null; // set ทีหลังเมื่อ DOM พร้อม
+  let _promptHistory = JSON.parse(localStorage.getItem("hw_prompt_history") || "[]");
+  let _histIdx = -1;
+  let _draftPrompt = "";
+
   window.fetch = function (url, opts) {
     if (typeof url === "string") {
-      // Track current assistant + session from /api/chat calls
+      // 1. Track assistant + session + prompt history
       if (url === "/api/chat" && opts?.body) {
         try {
           const b = JSON.parse(opts.body);
           if (b.assistant) ctx.assistant = b.assistant;
           if (b.session_id) ctx.session = b.session_id;
+          if (b.prompt?.trim()) {
+            _promptHistory = [b.prompt, ..._promptHistory.filter(p => p !== b.prompt)].slice(0, 50);
+            localStorage.setItem("hw_prompt_history", JSON.stringify(_promptHistory));
+            _histIdx = -1;
+          }
         } catch {}
       }
-      // Inject auth token into all /api/ calls
+
+      // 2. Auth token injection
       if (url.startsWith("/api/") && _authToken) {
         opts = opts ? { ...opts } : {};
         opts.headers = { ...(opts.headers || {}), "x-auth-token": _authToken };
       }
-    }
-    // ดัก 401 → แสดง login modal ทันที (ก่อน React crash)
-    return _origFetch(url, opts).then((resp) => {
-      if (resp.status === 401) {
-        loginOverlay.classList.add("open");
-        setTimeout(() => document.getElementById("login-input")?.focus(), 100);
+
+      // 3. AbortController + typing indicator for streaming calls
+      if (opts?.method === "POST" && (url === "/api/chat" || url.includes("/api/regenerate"))) {
+        _abortCtrl = new AbortController();
+        opts = { ...opts, signal: _abortCtrl.signal };
+
+        // แสดง Stop button + typing indicator (ใช้ ref เพราะ DOM ยังไม่พร้อมตอน declare)
+        if (_stopBtnEl) _stopBtnEl.style.display = "flex";
+        if (_typingElRef) _typingElRef.classList.add("show");
+
+        // Poll ซ่อนเมื่อ streaming cursor หายไป
+        const poll = setInterval(() => {
+          if (!document.querySelector('[class*="animate-pulse"][class*="opacity-70"]')) {
+            if (_stopBtnEl) _stopBtnEl.style.display = "none";
+            if (_typingElRef) _typingElRef.classList.remove("show");
+            _abortCtrl = null;
+            clearInterval(poll);
+          }
+        }, 300);
+        // Timeout กัน poll ค้าง
+        setTimeout(() => { clearInterval(poll); if (_typingElRef) _typingElRef.classList.remove("show"); }, 60000);
       }
-      return resp;
-    });
+    }
+
+    return _origFetch(url, opts)
+      .catch((err) => {
+        if (_stopBtnEl) _stopBtnEl.style.display = "none";
+        if (_typingElRef) _typingElRef.classList.remove("show");
+        if (err.name === "AbortError") {
+          // หยุด streaming อย่างสวยงาม — คืน empty stream แทน error
+          return new Response(new ReadableStream({ start(c) { c.close(); } }),
+            { status: 200, headers: { "Content-Type": "text/event-stream" } });
+        }
+        throw err;
+      })
+      .then((resp) => {
+        // ดัก 401 → login modal
+        if (resp.status === 401) {
+          loginOverlay.classList.add("open");
+          setTimeout(() => document.getElementById("login-input")?.focus(), 100);
+        }
+        return resp;
+      });
   };
 
   // ── Styles ──────────────────────────────────────────────────────────────────
@@ -682,7 +730,6 @@
   // ─────────────────────────────────────────────────────────────────────────────
   // 7. STOP GENERATION — หยุด streaming กลางคัน
   // ─────────────────────────────────────────────────────────────────────────────
-  let _abortCtrl = null;
   let _stopBtn = null;
 
   // เพิ่มปุ่ม STOP ใน toolbar
@@ -705,37 +752,8 @@
     _stopBtn.style.display = "none";
   });
 
-  // ปรับ fetch override ให้ inject AbortController สำหรับ /api/chat
-  const _prevFetch = window.fetch;
-  window.fetch = function (url, opts) {
-    if (typeof url === "string" && opts?.method === "POST" &&
-        (url === "/api/chat" || url.includes("/api/regenerate"))) {
-      _abortCtrl = new AbortController();
-      opts = { ...opts, signal: _abortCtrl.signal };
-      _stopBtn.style.display = "flex";
-      // ซ่อนปุ่มเมื่อ streaming cursor หายไป
-      const stopCheck = setInterval(() => {
-        if (!document.querySelector('[class*="animate-pulse"][class*="opacity-70"]')) {
-          _stopBtn.style.display = "none";
-          _abortCtrl = null;
-          clearInterval(stopCheck);
-        }
-      }, 300);
-      return _prevFetch(url, opts).catch((err) => {
-        _stopBtn.style.display = "none";
-        if (err.name === "AbortError") {
-          // คืน empty SSE stream แทน error — React จบ streaming อย่างสวยงาม
-          return new Response(new ReadableStream({ start(c) { c.close(); } }),
-            { status: 200, headers: { "Content-Type": "text/event-stream" } });
-        }
-        throw err;
-      }).then((resp) => {
-        if (resp.status === 401) { loginOverlay.classList.add("open"); }
-        return resp;
-      });
-    }
-    return _prevFetch(url, opts);
-  };
+  // ผูก ref stop button (DOM พร้อมแล้วตอนนี้)
+  _stopBtnEl = _stopBtn;
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 8. SCROLL TO BOTTOM BUTTON
@@ -818,48 +836,35 @@
     <span id="enh-token-text">— / —</span>`;
   document.body.appendChild(tokenBar);
 
+  // นับ token จาก DOM (ไม่ต้องรอ API) — 1 char ≈ 0.35 token (Thai/English mix)
   function _updateTokenBar() {
     try {
-      const raw = localStorage.getItem("lastDigest");
-      if (!raw) return;
-      const d = JSON.parse(raw);
-      const used = d.tokens_used || d.token_count || d.tokens || 0;
-      const limit = d.context_limit || d.limit || d.max_tokens || 8192;
-      if (!used) return;
-      const pct = Math.min(100, Math.round(used / limit * 100));
+      const msgs = document.querySelectorAll("p.whitespace-pre-wrap, p[class*='whitespace-pre']");
+      if (!msgs.length) return;
+      let chars = 0;
+      msgs.forEach(p => { chars += (p.innerText || "").length; });
+      const estimated = Math.round(chars * 0.35);
+      // ดึง limit จาก /api/status ที่ React เคย load (หรือ fallback)
+      const statusRaw = localStorage.getItem("hw_status_cache");
+      const limit = statusRaw ? (JSON.parse(statusRaw).context_limit || 4096) : 4096;
+      const pct = Math.min(100, Math.round(estimated / limit * 100));
       const fill = document.getElementById("enh-token-fill");
       const text = document.getElementById("enh-token-text");
-      if (fill) fill.style.width = pct + "%";
-      if (fill) fill.style.background = pct > 85 ? "#ef4444" : pct > 65 ? "#f59e0b" : "#6366f1";
-      if (text) text.textContent = `${used.toLocaleString()} / ${limit.toLocaleString()} tokens`;
+      if (fill) {
+        fill.style.width = pct + "%";
+        fill.style.background = pct > 85 ? "#ef4444" : pct > 65 ? "#f59e0b" : "#6366f1";
+      }
+      if (text) text.textContent = `~${estimated.toLocaleString()} / ${limit.toLocaleString()} tokens`;
     } catch {}
   }
 
-  setInterval(_updateTokenBar, 2000);
-  _updateTokenBar();
+  setInterval(_updateTokenBar, 3000);
+  setTimeout(_updateTokenBar, 3000); // รอ React render ก่อน
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 10. PROMPT HISTORY — ↑/↓ เรียก prompt ก่อนหน้า (เหมือน terminal)
   // ─────────────────────────────────────────────────────────────────────────────
-  let _promptHistory = JSON.parse(localStorage.getItem("hw_prompt_history") || "[]");
-  let _histIdx = -1;
-  let _draftPrompt = "";
-
-  // บันทึก prompt ที่ส่งออกไป
-  const _origFetch2 = window.fetch;
-  window.fetch = function (url, opts) {
-    if (url === "/api/chat" && opts?.body) {
-      try {
-        const b = JSON.parse(opts.body);
-        if (b.prompt?.trim()) {
-          _promptHistory = [b.prompt, ..._promptHistory.filter(p => p !== b.prompt)].slice(0, 50);
-          localStorage.setItem("hw_prompt_history", JSON.stringify(_promptHistory));
-          _histIdx = -1;
-        }
-      } catch {}
-    }
-    return _origFetch2(url, opts);
-  };
+  // (ตัวแปรและ tracking อยู่ใน unified fetch override แล้ว)
 
   // ↑/↓ ใน textarea
   document.addEventListener("keydown", (e) => {
@@ -949,27 +954,8 @@
     <span>AI กำลังคิด…</span>`;
   document.body.appendChild(typingEl);
 
-  // แสดง typing indicator ตอน POST /api/chat ส่งออก และซ่อนเมื่อ chunk แรกถึง
-  let _typingTimer = null;
-  const _origFetch3 = window.fetch;
-  window.fetch = function (url, opts) {
-    if (typeof url === "string" && url === "/api/chat" && opts?.method === "POST") {
-      typingEl.classList.add("show");
-      // ซ่อนทันทีที่ streaming cursor ปรากฏ (chunk แรกถึง)
-      clearTimeout(_typingTimer);
-      _typingTimer = setTimeout(() => {
-        const watchTyping = setInterval(() => {
-          if (document.querySelector('[class*="animate-pulse"][class*="opacity-70"]') ||
-              document.querySelector('[class*="whitespace-pre-wrap"]')) {
-            typingEl.classList.remove("show");
-            clearInterval(watchTyping);
-          }
-        }, 100);
-        setTimeout(() => { typingEl.classList.remove("show"); clearInterval(watchTyping); }, 30000);
-      }, 200);
-    }
-    return _origFetch3(url, opts);
-  };
+  // ผูก ref typing element (unified fetch override จะใช้ผ่าน _typingElRef)
+  _typingElRef = typingEl;
 
   console.log("[Enhanced UI] v2 — Copy, Stop, Scroll↓, Token bar, History↑, Paste, Typing — loaded ✅");
 })();
