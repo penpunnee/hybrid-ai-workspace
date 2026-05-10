@@ -87,9 +87,15 @@ app.add_middleware(
 )
 
 # --- Auth middleware ---
+# GET/HEAD/OPTIONS → ผ่านเสมอ (React โหลดได้, ไม่ใช้เงิน)
+# POST/PATCH/DELETE → ต้อง token (chat, dream, tts ที่ใช้เงิน)
+_WRITE_METHODS = {"POST", "PATCH", "DELETE", "PUT"}
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     if not UI_PASSWORD:
+        return await call_next(request)
+    if request.method not in _WRITE_METHODS:
         return await call_next(request)
     path = request.url.path
     if path in _OPEN_PATHS or any(path.startswith(p) for p in _OPEN_PREFIXES):
