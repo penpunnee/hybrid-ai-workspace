@@ -52,6 +52,25 @@ _REASONING_PATTERNS = [
 
 _REASONING_MIN_WORDS = 15  # ถ้าคำถามยาวกว่านี้ = complex
 
+# Internet search patterns → ต้องใช้ Gemini Agent
+_SEARCH_PATTERNS = [
+    r"หาในเน็ต|หาข้อมูลในเน็ต|ค้นในเน็ต|search.*net|ค้นหาข้อมูล.*ออนไลน์",
+    r"ไปหาข้อมูล|ช่วยหาข้อมูล|หาข้อมูลให้|google.*หน่อย",
+    r"ข้อมูลล่าสุด|real.?time|ข่าวล่าสุด|ราคาตอนนี้|อัตราแลกเปลี่ยน",
+    r"ราคาทอง|ราคาหุ้น|ราคาน้ำมัน|ราคา.*วันนี้|ค้นหาข้อมูล.*ราคา",
+    r"อากาศ.*พรุ่งนี้|พยากรณ์อากาศ|weather.*tomorrow",
+    r"เปิดเว็บ|browse|ค้น.*web|search.*web",
+]
+
+
+def needs_internet(text: str) -> bool:
+    """ตรวจว่า query ต้องการ internet search จริงๆ"""
+    text_lower = text.lower()
+    for p in _SEARCH_PATTERNS:
+        if re.search(p, text_lower, re.IGNORECASE):
+            return True
+    return False
+
 
 def classify(text: str) -> Complexity:
     """จัดประเภทคำถาม → Complexity enum"""

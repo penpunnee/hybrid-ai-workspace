@@ -76,6 +76,11 @@ def stream_response(messages: list[dict], provider: str = "ollama",
     provider: 'ollama' | 'gemini' | 'lmstudio' | 'auto'
     model_override: ใช้ model นี้แทน default (สำหรับ LM Studio)
     """
+    if provider == "gemini_agent":
+        _last_failover["active"] = False
+        yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=True)
+        return
+
     if provider == "gemini" or agent_mode or (image_b64 and provider not in ("lmstudio", "auto")):
         _last_failover["active"] = False
         yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode)
@@ -95,8 +100,9 @@ def stream_response(messages: list[dict], provider: str = "ollama",
             decision = route(prompt, provider_hint="auto",
                              has_image=bool(image_b64), agent_mode=agent_mode)
             logger.info(f"[AutoRoute] {decision.reason} | model={decision.model}")
-            if decision.provider == "gemini":
-                yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode)
+            if decision.provider in ("gemini", "gemini_agent"):
+                use_agent = agent_mode or decision.provider == "gemini_agent"
+                yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=use_agent)
             elif decision.provider == "lmstudio":
                 show = os.getenv("SHOW_THINKING", "false").lower() == "true"
                 raw_chunks = _stream_lmstudio(messages, model=decision.model,

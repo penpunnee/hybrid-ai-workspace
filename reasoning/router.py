@@ -100,6 +100,12 @@ def route(
     if agent_mode:
         return RouteDecision("gemini", "", Complexity.NORMAL, "agent mode → Gemini")
 
+    # ── Internet search detection → Gemini Agent อัตโนมัติ ────────────────
+    from reasoning.classifier import needs_internet
+    if needs_internet(prompt):
+        return RouteDecision("gemini_agent", "", Complexity.NORMAL,
+                             "🌐 internet search → Gemini + Google Search")
+
     if has_image:
         # ใช้ vision model โดยเฉพาะถ้าพร้อม → ไม่ต้องใช้ Gemini
         vision_model = LMSTUDIO_VISION_MODEL or LMSTUDIO_CHAT_MODEL
