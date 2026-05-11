@@ -97,9 +97,17 @@ def route(
     )
 
     # ── Forced providers ────────────────────────────────────────────────────
-    if has_image or agent_mode:
-        return RouteDecision("gemini", "", Complexity.NORMAL,
-                             "vision/agent → Gemini เสมอ")
+    if agent_mode:
+        return RouteDecision("gemini", "", Complexity.NORMAL, "agent mode → Gemini")
+
+    if has_image:
+        # ถ้า LM Studio มี vision model → ใช้ local แทน Gemini
+        if LMSTUDIO_BASE_URL and LMSTUDIO_CHAT_MODEL and _is_model_available(
+            LMSTUDIO_BASE_URL, LMSTUDIO_CHAT_MODEL
+        ):
+            return RouteDecision("lmstudio", LMSTUDIO_CHAT_MODEL, Complexity.NORMAL,
+                                 "vision → LM Studio (local)")
+        return RouteDecision("gemini", "", Complexity.NORMAL, "vision → Gemini (LM Studio unavailable)")
 
     if provider_hint == "gemini":
         return RouteDecision("gemini", "", Complexity.NORMAL, "user เลือก Gemini")

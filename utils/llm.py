@@ -99,7 +99,8 @@ def stream_response(messages: list[dict], provider: str = "ollama",
                 yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode)
             elif decision.provider == "lmstudio":
                 show = os.getenv("SHOW_THINKING", "false").lower() == "true"
-                raw_chunks = _stream_lmstudio(messages, model=decision.model)
+                raw_chunks = _stream_lmstudio(messages, model=decision.model,
+                                              image_b64=image_b64, image_mime=image_mime)
                 yield from stream_with_thinking(raw_chunks, show_thinking=show)
             else:
                 yield from _stream_ollama(messages)
@@ -112,14 +113,35 @@ def stream_response(messages: list[dict], provider: str = "ollama",
     yield from _stream_ollama(messages)
 
 
-def _stream_lmstudio(messages: list[dict], model: str = ""):
-    """Stream จาก LM Studio (OpenAI-compatible API)"""
+def _stream_lmstudio(messages: list[dict], model: str = "",
+                     image_b64: str = "", image_mime: str = ""):
+    """Stream จาก LM Studio (OpenAI-compatible API) รองรับ vision"""
     if not model:
-        model = os.getenv("LMSTUDIO_CHAT_MODEL", "meta-llama-3.1-8b-instruct")
+        model = os.getenv("LMSTUDIO_CHAT_MODEL", "meta-llama-3.2-11b-vision-instruct")
+
+    # ถ้ามีรูป → แทรก image content เข้าไปใน user message ล่าสุด
+    if image_b64:
+        msgs = []
+        for i, m in enumerate(messages):
+            if m["role"] == "user" and i == len(messages) - 1:
+                msgs.append({
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": m["content"]},
+                        {"type": "image_url", "image_url": {
+                            "url": f"data:{image_mime or 'image/jpeg'};base64,{image_b64}"
+                        }},
+                    ],
+                })
+            else:
+                msgs.append(m)
+    else:
+        msgs = messages
+
     try:
         stream = lmstudio_client.chat.completions.create(
             model=model,
-            messages=messages,
+            messages=msgs,
             stream=True,
             temperature=float(os.getenv("OLLAMA_TEMPERATURE", "0.7")),
         )
@@ -127,13 +149,15 @@ def _stream_lmstudio(messages: list[dict], model: str = ""):
             delta = chunk.choices[0].delta.content
             if delta:
                 yield delta
-        logger.info(f"LM Studio stream successful (model: {model})")
+        logger.info(f"LM Studio stream OK (model={model}, vision={'yes' if image_b64 else 'no'})")
     except Exception as e:
         err = str(e).lower()
         if "connection" in err or "refused" in err:
-            yield f"❌ เชื่อมต่อ LM Studio ไม่ได้ ({_LMSTUDIO_BASE_URL}) — ตรวจสอบว่า LM Studio เปิดอยู่"
+            yield f"❌ เชื่อมต่อ LM Studio ไม่ได้ ({_LMSTUDIO_BASE_URL})"
         elif "model" in err or "not found" in err:
-            yield f"❌ ไม่พบ model `{model}` ใน LM Studio"
+            yield f"❌ ไม่พบ model `{model}` ใน LM Studio — ตรวจสอบว่าโหลดแล้ว"
+        elif "resources" in err or "memory" in err:
+            yield f"❌ RAM/VRAM ไม่พอสำหรับ `{model}` — ลอง quantization ต่ำกว่านี้"
         else:
             logger.error(f"LM Studio error: {e}")
             yield f"❌ LM Studio error: {e}"
