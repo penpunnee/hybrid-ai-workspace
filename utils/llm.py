@@ -76,7 +76,7 @@ def stream_response(messages: list[dict], provider: str = "ollama",
     provider: 'ollama' | 'gemini' | 'lmstudio' | 'auto'
     model_override: ใช้ model นี้แทน default (สำหรับ LM Studio)
     """
-    if provider == "gemini" or image_b64 or agent_mode:
+    if provider == "gemini" or agent_mode or (image_b64 and provider not in ("lmstudio", "auto")):
         _last_failover["active"] = False
         yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode)
         return
