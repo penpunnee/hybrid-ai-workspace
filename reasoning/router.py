@@ -103,15 +103,18 @@ def route(
     # ── Internet search detection ─────────────────────────────────────────
     from reasoning.classifier import needs_internet
     if needs_internet(prompt):
-        # ถ้า local model พร้อม → ใช้ local + web search context (ประหยัด quota)
+        # Gemini Agent มี Google Search ในตัว — quality ดีกว่า DDG+Gemma มาก
+        # ใช้ Gemini ก่อน fallback เป็น local+web search เมื่อไม่มี API key
+        if GEMINI_API_KEY:
+            return RouteDecision("gemini_agent", "", Complexity.NORMAL,
+                                 "🌐 internet search → Gemini Agent (Google Search)")
         if LMSTUDIO_BASE_URL and LMSTUDIO_CHAT_MODEL and _is_model_available(
             LMSTUDIO_BASE_URL, LMSTUDIO_CHAT_MODEL
         ):
             return RouteDecision("lmstudio_web", LMSTUDIO_CHAT_MODEL, Complexity.NORMAL,
-                                 "🌐 web search → inject context → local model")
-        # fallback Gemini Agent ถ้า local ไม่พร้อม
-        return RouteDecision("gemini_agent", "", Complexity.NORMAL,
-                             "🌐 internet search → Gemini Agent (local unavailable)")
+                                 "🌐 web search → DDG + local (no Gemini key)")
+        return RouteDecision("ollama", OLLAMA_MODEL, Complexity.NORMAL,
+                             "🌐 no internet provider available → fallback")
 
     if has_image:
         # ใช้ vision model โดยเฉพาะถ้าพร้อม → ไม่ต้องใช้ Gemini
