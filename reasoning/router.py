@@ -12,6 +12,61 @@ from .classifier import Complexity, classify
 
 logger = logging.getLogger(__name__)
 
+_model_cache: dict[str, bool] = {}
+
+
+def _is_model_available(base_url: str, model: str) -> bool:
+    """ตรวจว่า model พร้อมใช้งานจริง (cache 60s)"""
+    import time, urllib.request, json
+    key = f"{base_url}:{model}"
+    cached = _model_cache.get(key)
+    if cached is not None and isinstance(cached, tuple):
+        ok, ts = cached
+        if time.time() - ts < 60:
+            return ok
+
+    try:
+        req = urllib.request.Request(
+            f"{base_url.rstrip('/v1').rstrip('/')}/v1/models",
+            headers={"Content-Type": "application/json"},
+        )
+        resp = urllib.request.urlopen(req, timeout=3)
+        data = json.loads(resp.read())
+        available_ids = [m["id"] for m in data.get("data", [])]
+        # ทดสอบจริงว่า load ได้ด้วยการ ping แบบสั้น
+        ok = model in available_ids
+        if ok:
+            ok = _ping_model(base_url, model)
+    except Exception:
+        ok = False
+
+    _model_cache[key] = (ok, time.time())
+    logger.info(f"[Router] model check {model}: {'✅' if ok else '❌'}")
+    return ok
+
+
+def _ping_model(base_url: str, model: str) -> bool:
+    """ส่ง request จริงเล็กๆ เพื่อตรวจว่า model load ได้"""
+    import urllib.request, json
+    payload = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": "hi"}],
+        "max_tokens": 1,
+        "stream": False,
+    }).encode()
+    try:
+        req = urllib.request.Request(
+            f"{base_url}/chat/completions",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=8)
+        return True
+    except Exception as e:
+        logger.debug(f"[Router] ping {model} failed: {e}")
+        return False
+
 
 @dataclass
 class RouteDecision:
@@ -66,12 +121,12 @@ def route(
                              "LM Studio ไม่ได้ตั้งค่า → fallback Ollama")
 
     if complexity == Complexity.REASONING:
-        if LMSTUDIO_REASON_MODEL:
+        if LMSTUDIO_REASON_MODEL and _is_model_available(LMSTUDIO_BASE_URL, LMSTUDIO_REASON_MODEL):
             return RouteDecision("lmstudio", LMSTUDIO_REASON_MODEL, complexity,
-                                 f"reasoning → DeepSeek R1")
-        # ถ้าไม่มี reason model → ใช้ chat model + CoT prompt
+                                 "reasoning → DeepSeek R1")
+        # reason model ไม่พร้อม → chat model + CoT prompt
         return RouteDecision("lmstudio", LMSTUDIO_CHAT_MODEL, complexity,
-                             "reasoning แต่ไม่มี reason model → chat + CoT")
+                             "reasoning → Llama 3.1 + CoT (DeepSeek unavailable)")
 
     # simple/normal → chat model
     return RouteDecision("lmstudio", LMSTUDIO_CHAT_MODEL, complexity,
