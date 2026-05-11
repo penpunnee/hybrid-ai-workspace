@@ -87,6 +87,58 @@ def get_all_skills() -> str:
     return "\n".join(lines)
 
 
+def _is_meaningful_skill(topic: str, summary: str) -> bool:
+    """กรอง skill ที่เป็น fragment / junk ออก"""
+    import re
+    # ตัด emoji และ symbols ออก เหลือแค่ตัวอักษรจริง
+    clean = re.sub(r'[^\w\s฀-๿]', '', topic).strip()
+
+    # หัวข้อต้องมีตัวอักษรมากกว่า 4 ตัว
+    if len(clean) < 5:
+        return False
+
+    # summary ต้องมีเนื้อหาพอสมควร
+    clean_summary = re.sub(r'[^\w\s฀-๿]', '', summary).strip()
+    if len(clean_summary) < 20:
+        return False
+
+    # กรอง fragment/command ที่ไม่ใช่ความรู้จริง
+    _JUNK_PATTERNS = [
+        r'^ได้เลย', r'^ดู\s', r'^เปิด\s', r'^แล้ว\s',
+        r'pull.*NAS', r'localhost', r'^http',
+        r'ขั้นตอนข้างบน', r'ตามขั้นตอน',
+    ]
+    for p in _JUNK_PATTERNS:
+        if re.search(p, topic, re.IGNORECASE):
+            return False
+
+    return True
+
+
+def cleanup_junk_skills() -> dict:
+    """ลบ skills ที่เป็น junk ออกจาก skills_db.json และ sync ChromaDB"""
+    db = _load_skills_db()
+    removed = []
+    kept = {}
+    for topic, data in db.items():
+        summary = data.get("summary", "")
+        if _is_meaningful_skill(topic, summary):
+            kept[topic] = data
+        else:
+            removed.append(topic)
+
+    if removed:
+        _save_skills_db(kept)
+        try:
+            from utils.skills_search import sync_skills_to_search
+            sync_skills_to_search(kept)
+        except Exception as e:
+            logger.warning(f"cleanup sync failed: {e}")
+        logger.info(f"[Cleanup] ลบ {len(removed)} junk skills: {removed[:5]}...")
+
+    return {"removed": removed, "remaining": len(kept)}
+
+
 def auto_extract_skills(text: str, assistant_name: str) -> list[str]:
     """
     สรุป skills จากไฟล์ที่ upload อัตโนมัติ
@@ -103,29 +155,39 @@ def auto_extract_skills(text: str, assistant_name: str) -> list[str]:
         if isinstance(data, dict):
             for key, value in data.items():
                 if isinstance(value, str) and len(value) > 10:
-                    save_skill(
-                        topic=key,
-                        summary=value[:300],
-                        source=f"identity.json ({assistant_name})"
-                    )
-                    extracted.append(key)
+                    if _is_meaningful_skill(key, value):
+                        save_skill(
+                            topic=key,
+                            summary=value[:300],
+                            source=f"identity.json ({assistant_name})"
+                        )
+                        extracted.append(key)
             return extracted
     except Exception as e:
         logger.debug(f"auto_extract_skills: text is not valid JSON, falling back to markdown: {e}")
         pass
 
-    # สกัดจาก Markdown headings
-    for line in text.split("\n"):
+    # สกัดจาก Markdown headings — ต้องมี content ข้างใต้ด้วย
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
         line = line.strip()
         if line.startswith("## ") or line.startswith("# "):
             topic = line.lstrip("#").strip()
-            if 3 < len(topic) < 80:
-                idx = text.find(line)
-                snippet = text[idx:idx+300].split("\n")
-                summary = " ".join(snippet[1:4]).strip()[:200]
-                if summary:
-                    save_skill(topic=topic, summary=summary, source=assistant_name)
-                    extracted.append(topic)
+            if not (4 < len(topic) < 80):
+                continue
+            # ดึง content ข้างใต้ heading (ไม่รวม heading ถัดไป)
+            content_lines = []
+            for j in range(i + 1, min(i + 10, len(lines))):
+                next_line = lines[j].strip()
+                if next_line.startswith("#"):
+                    break
+                if next_line:
+                    content_lines.append(next_line)
+            summary = " ".join(content_lines[:3]).strip()[:200]
+
+            if _is_meaningful_skill(topic, summary):
+                save_skill(topic=topic, summary=summary, source=assistant_name)
+                extracted.append(topic)
 
     return extracted
 

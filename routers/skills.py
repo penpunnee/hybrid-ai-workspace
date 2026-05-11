@@ -3,7 +3,8 @@ from datetime import datetime
 from fastapi import APIRouter, Request, UploadFile, File
 
 from utils.skills import (
-    get_skill_count, auto_extract_skills, _load_skills_db, _save_skills_db, search_skills,
+    get_skill_count, auto_extract_skills, _load_skills_db, _save_skills_db,
+    search_skills, cleanup_junk_skills,
 )
 from utils.llm import stream_response
 
@@ -111,6 +112,13 @@ def skills_delete(skill_id: str):
     if deleted_file or deleted_db:
         return {"ok": True, "deleted_file": deleted_file, "deleted_db": deleted_db}
     return {"ok": False, "error": "ไม่พบ skill นี้"}
+
+
+@router.post("/admin/cleanup-skills")
+def cleanup_skills_endpoint():
+    """ลบ junk skills ออกจาก db + re-sync ChromaDB"""
+    result = cleanup_junk_skills()
+    return {"ok": True, **result}
 
 
 @router.post("/admin/sync-skills")
