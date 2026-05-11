@@ -129,8 +129,10 @@ async def chat(request: Request):
 
     def generate():
         full_response = ""
+        # ใช้ provider_used (หลัง routing decision) ไม่ใช่ provider ต้นฉบับ
+        _provider = provider_used if provider_used and provider_used != "auto" else provider
         try:
-            for chunk in stream_response(messages, provider=provider, image_b64=image_b64,
+            for chunk in stream_response(messages, provider=_provider, image_b64=image_b64,
                                          image_mime=image_mime, agent_mode=agent_mode,
                                          model_override=model_override):
                 full_response += chunk
