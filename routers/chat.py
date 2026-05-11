@@ -105,6 +105,25 @@ async def chat(request: Request):
             model_override = decision.model
             model_used = decision.model.split("/")[-1] if decision.model else decision.provider
             logger.info(f"[Chat] route → {decision.provider}/{decision.model} ({decision.reason})")
+
+            # ── Web search: ค้น DDG แล้ว inject context ─────────────────────
+            if decision.provider == "lmstudio_web":
+                try:
+                    from utils.websearch import web_search_context
+                    web_ctx = web_search_context(prompt)
+                    if web_ctx:
+                        # inject เป็น user context เพิ่มเติม
+                        messages[-1]["content"] = (
+                            f"{web_ctx}\n\n---\n\nคำถาม: {prompt}"
+                        )
+                        provider_used = "lmstudio"
+                        logger.info(f"[Chat] web search injected ({len(web_ctx)} chars)")
+                    else:
+                        provider_used = "lmstudio"
+                except Exception as e:
+                    logger.warning(f"[Chat] web search failed: {e}")
+                    provider_used = "lmstudio"
+
         except Exception as e:
             logger.warning(f"[Chat] route failed: {e}")
 

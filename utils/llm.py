@@ -86,7 +86,7 @@ def stream_response(messages: list[dict], provider: str = "ollama",
         yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode)
         return
 
-    if provider == "lmstudio":
+    if provider in ("lmstudio", "lmstudio_web"):
         _last_failover["active"] = False
         yield from _stream_lmstudio(messages, model=model_override)
         return

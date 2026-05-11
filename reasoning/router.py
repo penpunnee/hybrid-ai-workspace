@@ -100,11 +100,18 @@ def route(
     if agent_mode:
         return RouteDecision("gemini", "", Complexity.NORMAL, "agent mode → Gemini")
 
-    # ── Internet search detection → Gemini Agent อัตโนมัติ ────────────────
+    # ── Internet search detection ─────────────────────────────────────────
     from reasoning.classifier import needs_internet
     if needs_internet(prompt):
+        # ถ้า local model พร้อม → ใช้ local + web search context (ประหยัด quota)
+        if LMSTUDIO_BASE_URL and LMSTUDIO_CHAT_MODEL and _is_model_available(
+            LMSTUDIO_BASE_URL, LMSTUDIO_CHAT_MODEL
+        ):
+            return RouteDecision("lmstudio_web", LMSTUDIO_CHAT_MODEL, Complexity.NORMAL,
+                                 "🌐 web search → inject context → local model")
+        # fallback Gemini Agent ถ้า local ไม่พร้อม
         return RouteDecision("gemini_agent", "", Complexity.NORMAL,
-                             "🌐 internet search → Gemini + Google Search")
+                             "🌐 internet search → Gemini Agent (local unavailable)")
 
     if has_image:
         # ใช้ vision model โดยเฉพาะถ้าพร้อม → ไม่ต้องใช้ Gemini
