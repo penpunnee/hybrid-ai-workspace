@@ -18,6 +18,24 @@ from utils.history import search_messages
 router = APIRouter(prefix="/api", tags=["system"])
 
 
+@router.get("/routing/preview")
+def routing_preview(q: str):
+    """ดูว่าคำถามนี้จะถูก route ไป model ไหน"""
+    try:
+        from reasoning.router import route
+        from reasoning.classifier import classify_label
+        decision = route(q, provider_hint="auto")
+        return {
+            "query": q,
+            "complexity": classify_label(q),
+            "provider": decision.provider,
+            "model": decision.model,
+            "reason": decision.reason,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.get("/config")
 def get_config():
     return {

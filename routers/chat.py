@@ -33,7 +33,7 @@ async def chat(request: Request):
     assistant   = data.get("assistant", list(ASSISTANTS.keys())[0])
     session_id  = data.get("session_id", "default")
     prompt      = data.get("prompt", "")
-    provider    = data.get("provider", "ollama")
+    provider    = data.get("provider", "auto")
     image_b64   = data.get("image_b64", "")
     image_mime  = data.get("image_mime", "")
     agent_mode  = bool(data.get("agent_mode", False))

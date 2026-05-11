@@ -53,6 +53,16 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
+# --- LM Studio (OpenAI-compatible local server) ---
+_LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
+_LMSTUDIO_TIMEOUT  = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
+
+lmstudio_client = OpenAI(
+    base_url=_LMSTUDIO_BASE_URL,
+    api_key="lmstudio",
+    timeout=_LMSTUDIO_TIMEOUT,
+)
+
 
 _last_failover: dict = {"active": False}  # track failover state
 _health_cache: dict = {"ok": None, "ts": 0.0, "msg": ""}  # cache health check 30s
@@ -60,19 +70,73 @@ _health_cache: dict = {"ok": None, "ts": 0.0, "msg": ""}  # cache health check 3
 
 def stream_response(messages: list[dict], provider: str = "ollama",
                     image_b64: str = "", image_mime: str = "",
-                    agent_mode: bool = False):
+                    agent_mode: bool = False, model_override: str = ""):
     """
     Stream response จาก LLM ที่เลือก
-    provider: 'ollama' (local) หรือ 'gemini' (cloud)
-    ถ้า ollama offline จะแสดง error — ไม่ auto-failover ไป gemini
+    provider: 'ollama' | 'gemini' | 'lmstudio' | 'auto'
+    model_override: ใช้ model นี้แทน default (สำหรับ LM Studio)
     """
     if provider == "gemini" or image_b64 or agent_mode:
         _last_failover["active"] = False
         yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode)
         return
 
+    if provider == "lmstudio":
+        _last_failover["active"] = False
+        yield from _stream_lmstudio(messages, model=model_override)
+        return
+
+    if provider == "auto":
+        # ดึงจาก reasoning router
+        try:
+            from reasoning.router import route
+            from reasoning.parser import stream_with_thinking
+            prompt = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+            decision = route(prompt, provider_hint="auto",
+                             has_image=bool(image_b64), agent_mode=agent_mode)
+            logger.info(f"[AutoRoute] {decision.reason} | model={decision.model}")
+            if decision.provider == "gemini":
+                yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode)
+            elif decision.provider == "lmstudio":
+                show = os.getenv("SHOW_THINKING", "false").lower() == "true"
+                raw_chunks = _stream_lmstudio(messages, model=decision.model)
+                yield from stream_with_thinking(raw_chunks, show_thinking=show)
+            else:
+                yield from _stream_ollama(messages)
+        except Exception as e:
+            logger.warning(f"Auto-route failed ({e}), fallback ollama")
+            yield from _stream_ollama(messages)
+        return
+
     _last_failover["active"] = False
     yield from _stream_ollama(messages)
+
+
+def _stream_lmstudio(messages: list[dict], model: str = ""):
+    """Stream จาก LM Studio (OpenAI-compatible API)"""
+    if not model:
+        model = os.getenv("LMSTUDIO_CHAT_MODEL", "meta-llama-3.1-8b-instruct")
+    try:
+        stream = lmstudio_client.chat.completions.create(
+            model=model,
+            messages=messages,
+            stream=True,
+            temperature=float(os.getenv("OLLAMA_TEMPERATURE", "0.7")),
+        )
+        for chunk in stream:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
+        logger.info(f"LM Studio stream successful (model: {model})")
+    except Exception as e:
+        err = str(e).lower()
+        if "connection" in err or "refused" in err:
+            yield f"❌ เชื่อมต่อ LM Studio ไม่ได้ ({_LMSTUDIO_BASE_URL}) — ตรวจสอบว่า LM Studio เปิดอยู่"
+        elif "model" in err or "not found" in err:
+            yield f"❌ ไม่พบ model `{model}` ใน LM Studio"
+        else:
+            logger.error(f"LM Studio error: {e}")
+            yield f"❌ LM Studio error: {e}"
 
 
 
