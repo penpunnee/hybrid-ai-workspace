@@ -9,6 +9,7 @@ Flow:
 """
 import logging
 import re
+import html as html_lib
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -27,7 +28,8 @@ def _extract_text(html: str, max_chars: int = 1500) -> str:
     html = re.sub(r"<header[^>]*>.*?</header>", " ", html, flags=re.DOTALL | re.IGNORECASE)
     html = re.sub(r"<footer[^>]*>.*?</footer>", " ", html, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", html)
-    text = re.sub(r"&nbsp;|&amp;|&quot;|&#\d+;", " ", text)
+    # decode &#xE01; &amp; &nbsp; etc. → ภาษาไทยจริง
+    text = html_lib.unescape(text)
     text = re.sub(r"\s+", " ", text).strip()
     return text[:max_chars]
 
