@@ -72,19 +72,25 @@ def format_for_context(results: list[dict], query: str) -> str:
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     lines = [
-        f"[ข้อมูลจากอินเตอร์เน็ต — ค้นหา: '{query}' เวลา {now}]",
-        "ใช้ข้อมูลด้านล่างนี้ในการตอบคำถาม:",
+        "🌐 **ข้อมูลล่าสุดจากอินเตอร์เน็ต** (ระบบดึงให้แล้ว ณ เวลานี้)",
+        f"คำค้น: \"{query}\" | เวลา: {now}",
+        "",
+        "**คำสั่งสำคัญ:** ห้ามบอกว่า \"ไม่มี internet\" หรือ \"ไม่มีข้อมูล real-time\" "
+        "เพราะระบบดึงข้อมูลด้านล่างให้แล้ว ตอบโดยใช้ข้อมูลด้านล่างนี้เท่านั้น "
+        "และอ้างอิงแหล่งที่มาทุกครั้ง:",
+        "",
     ]
     for i, r in enumerate(results, 1):
         title = r.get("title", "").strip()
-        body  = r.get("body", "").strip()[:300]
+        body  = r.get("body", "").strip()[:500]
         href  = r.get("href", "").strip()
         if not body:
             continue
-        lines.append(f"\n{i}. **{title}**")
-        lines.append(f"   {body}")
+        lines.append(f"[{i}] **{title}**")
+        lines.append(f"    {body}")
         if href:
-            lines.append(f"   แหล่งที่มา: {href}")
+            lines.append(f"    🔗 {href}")
+        lines.append("")
 
     return "\n".join(lines)
 

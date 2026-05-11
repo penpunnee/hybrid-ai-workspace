@@ -112,10 +112,18 @@ async def chat(request: Request):
                     from utils.websearch import web_search_context
                     web_ctx = web_search_context(prompt)
                     if web_ctx:
-                        # inject เป็น user context เพิ่มเติม
-                        messages[-1]["content"] = (
-                            f"{web_ctx}\n\n---\n\nคำถาม: {prompt}"
+                        # inject เป็น system instruction + user prompt
+                        sys_extra = (
+                            "\n\n=== INTERNET CONTEXT (real-time data) ===\n"
+                            f"{web_ctx}\n"
+                            "=== END INTERNET CONTEXT ===\n"
+                            "**กฎเหล็ก**: ใช้ข้อมูลด้านบนตอบคำถาม ห้ามบอกว่าไม่มี internet/ไม่มีข้อมูล real-time "
+                            "เพราะระบบดึงข้อมูลให้แล้ว สรุปจากข้อมูลและอ้างอิงแหล่งที่มา"
                         )
+                        messages[0] = {
+                            "role": "system",
+                            "content": messages[0]["content"] + sys_extra,
+                        }
                         provider_used = "lmstudio"
                         logger.info(f"[Chat] web search injected ({len(web_ctx)} chars)")
                     else:
