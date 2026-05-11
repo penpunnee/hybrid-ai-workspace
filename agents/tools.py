@@ -16,9 +16,13 @@ logger = logging.getLogger(__name__)
 
 # ── Tool implementations ─────────────────────────────────────────────────────
 
-def _t_web_search(query: str, max_results: int = 5) -> str:
+def _t_web_search(query: str, max_results=5) -> str:
     """ค้น DDG + fetch top URLs + embedding rerank → คืน top 3"""
     from utils.websearch import search_web, _enrich_with_fetch, format_for_context
+    try:
+        max_results = int(max_results)
+    except (TypeError, ValueError):
+        max_results = 5
     # ดึง 2x แล้ว rerank เพื่อให้ได้ผลลัพธ์ที่ตรงประเด็นที่สุด
     initial_n = max(max_results, 6)
     results = search_web(query, max_results=initial_n)
@@ -83,18 +87,26 @@ def _t_calculator(expression: str) -> str:
         return f"❌ คำนวณไม่ได้: {e}"
 
 
-def _t_skill_search(query: str, n_results: int = 3) -> str:
+def _t_skill_search(query: str, n_results=3) -> str:
     """ค้น skills จาก vector DB"""
     try:
+        try:
+            n_results = int(n_results)
+        except (TypeError, ValueError):
+            n_results = 3
         from utils.skills import search_skills
         return search_skills(query, n_results=n_results) or "ไม่พบ skill ที่เกี่ยวข้อง"
     except Exception as e:
         return f"Skills error: {e}"
 
 
-def _t_obsidian_search(query: str, n: int = 3) -> str:
+def _t_obsidian_search(query: str, n=3) -> str:
     """ค้น Obsidian vault notes"""
     try:
+        try:
+            n = int(n)
+        except (TypeError, ValueError):
+            n = 3
         from utils.obsidian_sync import search_vault
         results = search_vault(query, n=n)
         if not results:
