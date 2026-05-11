@@ -38,12 +38,15 @@ def routing_preview(q: str):
 
 @router.get("/config")
 def get_config():
+    from core.config import LMSTUDIO_BASE_URL, LMSTUDIO_CHAT_MODEL
+    # ถ้าตั้ง LM Studio ไว้ → ใช้ model นั้นแสดงในหน้าแชทแทน Ollama
+    active_local_model = LMSTUDIO_CHAT_MODEL if LMSTUDIO_BASE_URL else OLLAMA_MODEL
     return {
         "assistants": [
             {"name": name, "slug": cfg["slug"], "templates": cfg.get("prompt_templates", [])}
             for name, cfg in ASSISTANTS.items()
         ],
-        "ollama_model": OLLAMA_MODEL,
+        "ollama_model": active_local_model,
         "gemini_model": GEMINI_MODEL,
     }
 
