@@ -154,8 +154,74 @@ def format_for_context(results: list[dict], query: str) -> str:
     return "\n".join(lines)
 
 
+_WEATHER_KEYWORDS = re.compile(
+    r"อากาศ|พยากรณ์|อุณหภูมิ|ฝนตก|ความชื้น|พรุ่งนี้|วันนี้|weather|forecast|temperature",
+    re.IGNORECASE,
+)
+
+
+def _extract_city(query: str) -> str:
+    """หาเมืองจากคำถาม — default Bangkok"""
+    cities = {
+        "กรุงเทพ": "Bangkok", "เชียงใหม่": "Chiang Mai", "ภูเก็ต": "Phuket",
+        "พัทยา": "Pattaya", "ขอนแก่น": "Khon Kaen", "หาดใหญ่": "Hat Yai",
+        "นครราชสีมา": "Nakhon Ratchasima", "ชลบุรี": "Chonburi",
+    }
+    for th, en in cities.items():
+        if th in query:
+            return en
+    return "Bangkok"
+
+
+def fetch_weather(query: str) -> str:
+    """ดึงข้อมูลอากาศจาก wttr.in — คืน text plain พร้อมตัวเลขจริง"""
+    try:
+        import requests
+        city = _extract_city(query)
+        url = f"https://wttr.in/{city}?lang=th&format=j1"
+        resp = requests.get(url, timeout=8, headers={"User-Agent": _UA})
+        if resp.status_code != 200:
+            return ""
+        import json as _json
+        d = _json.loads(resp.text)
+        cur = d.get("current_condition", [{}])[0]
+        forecast = d.get("weather", [])
+
+        lines = [f"📍 **สภาพอากาศจริงของ {city}** (จาก wttr.in)\n"]
+        lines.append(f"**ปัจจุบัน** ({cur.get('localObsDateTime','')})")
+        lines.append(f"- อุณหภูมิ: {cur.get('temp_C','-')}°C (รู้สึกเหมือน {cur.get('FeelsLikeC','-')}°C)")
+        lines.append(f"- สภาพ: {cur.get('lang_th',[{}])[0].get('value', cur.get('weatherDesc',[{}])[0].get('value',''))}")
+        lines.append(f"- ความชื้น: {cur.get('humidity','-')}% | ลม: {cur.get('windspeedKmph','-')} km/h")
+        lines.append(f"- ฝน: {cur.get('precipMM','-')} mm | เมฆ: {cur.get('cloudcover','-')}%")
+        lines.append("")
+
+        for day in forecast[:3]:
+            date = day.get("date", "")
+            avg = day.get("avgtempC", "-")
+            mx = day.get("maxtempC", "-")
+            mn = day.get("mintempC", "-")
+            sun = day.get("sunHour", "-")
+            noon = day.get("hourly", [{}])[4] if len(day.get("hourly", [])) > 4 else {}
+            desc = noon.get("lang_th", [{}])[0].get("value", "") if noon else ""
+            lines.append(f"**{date}**: {mn}-{mx}°C เฉลี่ย {avg}°C | {desc} | แดด {sun} ชม.")
+
+        return "\n".join(lines)
+    except Exception as e:
+        logger.warning(f"[Weather] wttr.in failed: {e}")
+        return ""
+
+
 def web_search_context(query: str, max_results: int = 5) -> str:
-    """API เดียวที่ router/chat ใช้ — คืน context string พร้อม inject"""
+    """API เดียวที่ router/chat ใช้ — คืน context string พร้อม inject
+
+    ถ้าเป็นคำถามอากาศ ใช้ wttr.in API (ตัวเลขจริง) แทน DDG
+    """
+    if _WEATHER_KEYWORDS.search(query):
+        weather = fetch_weather(query)
+        if weather:
+            logger.info(f"[WebSearch] weather query → wttr.in ({len(weather)} chars)")
+            return weather
+
     results = search_web(query, max_results=max_results)
     results = _enrich_with_fetch(results, top_n=_FETCH_TOP_N)
     return format_for_context(results, query)
