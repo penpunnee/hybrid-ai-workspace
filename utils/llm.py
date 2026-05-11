@@ -142,6 +142,17 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
     if not model:
         model = os.getenv("LMSTUDIO_CHAT_MODEL", "meta-llama-3.2-11b-vision-instruct")
 
+    # ถ้าใน system message มี grounded context → ลด temperature เพื่อให้ ground
+    # (ป้องกัน hallucinate เพิ่มเติมจากความจำ model)
+    sys_content = next((m["content"] for m in messages if m["role"] == "system"), "")
+    is_grounded = any(k in sys_content for k in
+                      ("INTERNET CONTEXT", "Wikipedia", "wttr.in", "ข้อมูลล่าสุดจากอินเตอร์เน็ต"))
+    if is_grounded:
+        temperature = 0.2
+        logger.info(f"[LMStudio] grounded context detected → temp=0.2")
+    else:
+        temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.7"))
+
     # ถ้ามีรูป → แทรก image content เข้าไปใน user message ล่าสุด
     if image_b64:
         msgs = []
@@ -166,7 +177,7 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
             model=model,
             messages=msgs,
             stream=True,
-            temperature=float(os.getenv("OLLAMA_TEMPERATURE", "0.7")),
+            temperature=temperature,
         )
         for chunk in stream:
             delta = chunk.choices[0].delta.content
