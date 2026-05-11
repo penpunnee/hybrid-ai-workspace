@@ -134,12 +134,14 @@ def route(
             return RouteDecision("lmstudio", LMSTUDIO_REASON_MODEL, complexity,
                                  "reasoning → DeepSeek R1")
         # reason model ไม่พร้อม → chat model + CoT prompt
+        chat_label = LMSTUDIO_CHAT_MODEL.split("/")[-1]
         return RouteDecision("lmstudio", LMSTUDIO_CHAT_MODEL, complexity,
-                             "reasoning → Llama 3.1 + CoT (DeepSeek unavailable)")
+                             f"reasoning → {chat_label} + CoT (DeepSeek unavailable)")
 
     # simple/normal → chat model
+    chat_label = LMSTUDIO_CHAT_MODEL.split("/")[-1]
     return RouteDecision("lmstudio", LMSTUDIO_CHAT_MODEL, complexity,
-                         f"{complexity.value} → Llama 3.1")
+                         f"{complexity.value} → {chat_label}")
 
 
 def get_cot_prompt(complexity: Complexity) -> str:
