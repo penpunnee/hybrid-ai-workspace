@@ -139,9 +139,11 @@ def format_for_context(results: list[dict], query: str) -> str:
         snippet = r.get("body", "").strip()[:300]
         fetched = r.get("fetched_text", "").strip()
         href = r.get("href", "").strip()
+        score = r.get("_rerank_score")
         if not (snippet or fetched):
             continue
-        lines.append(f"[{i}] **{title}**")
+        score_tag = f" _(relevance: {score})_" if score is not None else ""
+        lines.append(f"[{i}] **{title}**{score_tag}")
         if fetched:
             # ใช้ fetched text เป็นหลักเพราะมีเนื้อหาจริง
             lines.append(f"    {fetched[:1500]}")
@@ -317,13 +319,18 @@ def fetch_weather(query: str) -> str:
     return fetch_weather_by_city(city)
 
 
-def web_search_context(query: str, max_results: int = 5) -> str:
+def web_search_context(query: str, max_results: int = 5, top_k: int = 3) -> str:
     """API เดียวที่ router/chat ใช้ — คืน context string พร้อม inject
 
     Pipeline routing:
       - weather query → wttr.in (ตัวเลขจริง)
       - definitional/factual → Wikipedia summary
-      - อื่นๆ → DuckDuckGo + URL fetch
+      - อื่นๆ → DuckDuckGo + URL fetch + embedding rerank → top_k
+
+    Args:
+        query: คำค้น
+        max_results: ดึงผลลัพธ์ DDG ก่อน rerank (default 5)
+        top_k: เก็บกี่ผลลัพธ์หลัง rerank (default 3)
     """
     if _WEATHER_KEYWORDS.search(query):
         weather = fetch_weather(query)
@@ -337,6 +344,23 @@ def web_search_context(query: str, max_results: int = 5) -> str:
             logger.info(f"[WebSearch] wiki → Wikipedia ({len(wiki)} chars)")
             return wiki
 
-    results = search_web(query, max_results=max_results)
+    # ดึง 2x ก่อน rerank เพื่อให้มีตัวเลือก
+    initial_n = max(max_results, top_k * 2)
+    results = search_web(query, max_results=initial_n)
     results = _enrich_with_fetch(results, top_n=_FETCH_TOP_N)
+
+    # Embedding rerank — keep top_k ที่ตรงกับ query สุด
+    try:
+        from utils.embed import rerank_by_similarity
+        reranked = rerank_by_similarity(
+            query, results,
+            text_keys=("title", "fetched_text", "body"),
+            top_k=top_k,
+        )
+        if reranked:
+            results = reranked
+    except Exception as e:
+        logger.warning(f"[WebSearch] rerank failed, use top {top_k}: {e}")
+        results = results[:top_k]
+
     return format_for_context(results, query)

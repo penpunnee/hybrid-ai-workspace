@@ -17,10 +17,24 @@ logger = logging.getLogger(__name__)
 # ── Tool implementations ─────────────────────────────────────────────────────
 
 def _t_web_search(query: str, max_results: int = 5) -> str:
-    """ค้น DDG พร้อม fetch top URLs"""
+    """ค้น DDG + fetch top URLs + embedding rerank → คืน top 3"""
     from utils.websearch import search_web, _enrich_with_fetch, format_for_context
-    results = search_web(query, max_results=max_results)
+    # ดึง 2x แล้ว rerank เพื่อให้ได้ผลลัพธ์ที่ตรงประเด็นที่สุด
+    initial_n = max(max_results, 6)
+    results = search_web(query, max_results=initial_n)
     results = _enrich_with_fetch(results, top_n=2)
+    try:
+        from utils.embed import rerank_by_similarity
+        reranked = rerank_by_similarity(
+            query, results,
+            text_keys=("title", "fetched_text", "body"),
+            top_k=min(max_results, 3),
+        )
+        if reranked:
+            results = reranked
+    except Exception as e:
+        logger.warning(f"[Tool web_search] rerank failed: {e}")
+        results = results[:max_results]
     return format_for_context(results, query)
 
 
