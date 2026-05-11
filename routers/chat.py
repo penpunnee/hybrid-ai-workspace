@@ -136,18 +136,61 @@ async def chat(request: Request):
             logger.warning(f"[Chat] route failed: {e}")
 
     def generate():
+        nonlocal provider_used, model_used, messages
         full_response = ""
-        # ใช้ provider_used (หลัง routing decision) ไม่ใช่ provider ต้นฉบับ
         _provider = provider_used if provider_used and provider_used != "auto" else provider
+
+        def _try_stream(prov, mdl=""):
+            for ck in stream_response(messages, provider=prov, image_b64=image_b64,
+                                      image_mime=image_mime, agent_mode=agent_mode,
+                                      model_override=mdl):
+                yield ck
+
         try:
-            for chunk in stream_response(messages, provider=_provider, image_b64=image_b64,
-                                         image_mime=image_mime, agent_mode=agent_mode,
-                                         model_override=model_override):
+            for chunk in _try_stream(_provider, model_override):
                 full_response += chunk
                 yield f"data: {json.dumps({'chunk': chunk})}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-            return
+            from utils.llm import GeminiQuotaExhausted, GeminiUnavailable
+            # Gemini ล้ม → fallback ไป LM Studio + web search (ถ้าเป็น internet query)
+            # หรือ LM Studio chat (ถ้าไม่ใช่)
+            if isinstance(e, (GeminiQuotaExhausted, GeminiUnavailable)) and _provider in ("gemini", "gemini_agent"):
+                try:
+                    from core.config import LMSTUDIO_CHAT_MODEL
+                    from reasoning.classifier import needs_internet
+                    fallback_msg = ("⚠️ Gemini quota หมด — กำลังลอง local model + web search...\n\n"
+                                    if isinstance(e, GeminiQuotaExhausted)
+                                    else "⚠️ Gemini ใช้ไม่ได้ — fallback เป็น local model...\n\n")
+                    yield f"data: {json.dumps({'chunk': fallback_msg})}\n\n"
+                    full_response += fallback_msg
+
+                    if needs_internet(prompt):
+                        try:
+                            from utils.websearch import web_search_context
+                            web_ctx = web_search_context(prompt)
+                            if web_ctx:
+                                messages[0] = {
+                                    "role": "system",
+                                    "content": messages[0]["content"] + (
+                                        "\n\n=== INTERNET CONTEXT ===\n" + web_ctx +
+                                        "\n=== END ===\n**กฎเหล็ก**: ใช้ข้อมูลข้างบนตอบ ห้ามบอกว่าไม่มี internet"
+                                    )
+                                }
+                                logger.info(f"[Chat] Gemini fallback → web search injected ({len(web_ctx)} chars)")
+                        except Exception as ws_err:
+                            logger.warning(f"[Chat] fallback web search failed: {ws_err}")
+
+                    provider_used = "lmstudio"
+                    model_used = LMSTUDIO_CHAT_MODEL.split("/")[-1]
+                    for chunk in _try_stream("lmstudio", LMSTUDIO_CHAT_MODEL):
+                        full_response += chunk
+                        yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+                except Exception as e2:
+                    yield f"data: {json.dumps({'error': f'Fallback ล้มด้วย: {e2}'})}\n\n"
+                    return
+            else:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                return
 
         save_message(assistant, "assistant", full_response, provider_used, session_id)
 

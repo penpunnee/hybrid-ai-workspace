@@ -23,6 +23,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+class GeminiQuotaExhausted(Exception):
+    """Raised เมื่อ Gemini quota หมด — ให้ caller ลอง fallback provider"""
+    pass
+
+
+class GeminiUnavailable(Exception):
+    """Raised เมื่อ Gemini ไม่พร้อมใช้ (key ผิด, network, etc.)"""
+    pass
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -427,10 +437,10 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
         err = str(e)
         if "API_KEY_INVALID" in err or "401" in err:
             logger.error(f"Gemini API key invalid: {err}")
-            yield "❌ Gemini API Key ไม่ถูกต้อง กรุณาตรวจสอบใน `.env`"
-        elif "429" in err or "quota" in err.lower():
+            raise GeminiUnavailable("API key invalid") from e
+        elif "429" in err or "quota" in err.lower() or "resource_exhausted" in err.lower():
             logger.error(f"Gemini quota exceeded: {err}")
-            yield "❌ Gemini quota หมด กรุณารอสักครู่หรือเปลี่ยนมาใช้ Local LLM"
+            raise GeminiQuotaExhausted("quota exhausted") from e
         else:
             logger.error(f"Gemini stream error: {err}")
-            yield f"❌ Gemini error: {e}"
+            raise GeminiUnavailable(err) from e
