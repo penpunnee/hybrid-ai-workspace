@@ -1,95 +1,119 @@
-# 📋 บันทึกข้อมูลสำคัญ Hybrid AI Workspace
+# CLAUDE.md
 
-## 1️⃣ Persona & Style ที่ต้องรักษา
-- **ตอบภาษาไทยเสมอ** - ห้ามตอบอังกฤษโดยเด็ดขาด
-- **ขั้นตอนสั้นกระชับ** - 1, 2, 3 แบบเข้าใจง่าย
-- **กฎเหล็ก: ส่งโค้ดเต็มไฟล์เสมอ** - copy-paste-save-run ได้ทันที
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 2️⃣ Context ของระบบ
-- **ชื่อระบบ**: Hybrid AI Workspace ของพี่ปอย
-- **Tech Stack**: FastAPI + React + Docker + Gemini + Ollama
-- **ที่ติดตั้ง**: NAS (Synology DS923+) และ PC บ้าน
-- **URL**: https://ai.pawinhome.com
-- **เชื่อมต่อภายนอก**: Cloudflare Tunnel
+## System Overview
 
-## 3️⃣ 3 AI Assistants หลัก
-| 🩵 ฟ้า (UI) | 🧡 ขวัญ (Logic) | 💙 ขิม (Docs) |
-|---|---|---|
-| Frontend, React, Tailwind | Backend, Python, API | Planning, Docs, Writing |
-| เสียง: Kore | เสียง: Aoede | เสียง: Zephyr |
+**Hybrid AI Workspace** — a FastAPI backend serving a React SPA, deployed on a Synology NAS (DS923+) and exposed via Cloudflare Tunnel at `https://ai.pawinhome.com`.
 
-## 4️⃣ คำสั่ง Deploy บน NAS (สำคัญ)
+Stack: Python FastAPI + React (pre-built static) + SQLite + ChromaDB (optional) + Ollama (local LLM) + Gemini (cloud LLM).
+
+## Commands
+
+### Local Development
 ```bash
+# Install deps
+pip install -r requirements.txt
+
+# Run server (with hot reload)
+RELOAD=true python server.py
+# or
+uvicorn server:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### Tests
+```bash
+# All tests
+pytest tests/
+
+# Single test file
+pytest tests/test_main.py -v
+
+# Single test
+pytest tests/test_main.py::TestHealthEndpoints::test_root_endpoint -v
+```
+
+### Docker (NAS Deploy)
+```bash
+# Deploy on NAS
 cd /var/services/homes/pawin/ui
 sudo git pull
 sudo docker compose up -d hybrid-ai --force-recreate
+
+# View logs
+docker compose logs hybrid-ai -f
 ```
 
-## 5️⃣ IP & Port ที่ใช้
-- **NAS IP**: 192.168.51.49
-- **Ollama PC**: 192.168.51.235:1234
-- **ChromaDB**: port 8000
-- **AI Backend**: port 8080→8000
+### Frontend (pre-built)
+The `static/` folder is a pre-built React app mounted as a Docker volume. To update the frontend, build it separately and replace `static/`.
 
-## 6️⃣ Features หลักที่ต้องรู้
-- **Agent Mode** 🤖: Gemini + Google Search + Code
-- **Voice Mode** 🎙️: คุยเสียงสดแบบ real-time
-- **TTS** 🔊: AI อ่านข้อความ
-- **Multi-AI Debate** 🧩: 3 AI ตอบพร้อมกัน
-- **Obsidian Mode** 🌙: Inject notes เข้า context
-- **Memory System** 🧠: จำข้อมูลข้าม session
-- **Dream Cycle** 🌙: ปรับปรุง memory quality
-- **Skills Management** 🗂️: Knowledge Base ส่วนตัว (ไฟล์ .md ใน skills/)
-- **File Upload** 📤: อัปโหลดไฟล์รูป/ข้อความผ่าน `/api/upload`
-- **Vault Search** 🔍: ค้นหาใน Obsidian vault ผ่าน `/api/vault/search`
+## Architecture
 
-## 7️⃣ Environment Variables สำคัญ
-```env
-GEMINI_API_KEY=your_key
-GEMINI_MODEL=gemini-2.0-flash
-OLLAMA_MODEL=llama3
-CHROMA_PATH=/app/data/chroma
-OBSIDIAN_VAULT_PATH=/volume1/obsidian
-```
+### Request Flow
+1. All HTTP requests → FastAPI `server.py`
+2. Auth middleware checks `UI_PASSWORD` env var; LAN IPs (192.168.x, 10.x, 127.x) bypass auth; Cloudflare requests require `x-auth-token` header
+3. `/api/chat` → builds context from memory + skills + Obsidian vault → calls `utils/llm.py` → streams SSE chunks to client
+4. `/` → serves `static/index.html` (React SPA)
 
-## 8️⃣ Tech Stack ของพี่ปอย
-- **Frontend**: React, TypeScript, TailwindCSS, Vite
-- **Backend**: Python FastAPI, ChromaDB, SQLite
-- **AI**: Ollama (Local) + Gemini (Cloud)
-- **Infrastructure**: Synology NAS, Docker, Cloudflare Tunnel
-- **Scripting**: Google Apps Script, PowerShell
-- **Database**: Firebase Firestore, SQLite
+### Key Files
+- `server.py` — all FastAPI routes; the only entry point
+- `assistants/config.py` — 3 AI assistant definitions (ฟ้า/ขวัญ/ขิม): slugs, system prompts, prompt templates
+- `utils/llm.py` — `stream_response()` routes to `_stream_ollama()` or `_stream_gemini()`; Ollama uses OpenAI-compatible client, Gemini uses `google-genai` SDK
+- `utils/memory.py` — ChromaDB-backed long-term memory; auto-detects ChromaDB host; falls back gracefully if unavailable
+- `utils/history.py` — SQLite-backed per-session chat history (`chat_history.db`)
+- `utils/rag.py` — injects skills folder content + memory search results into system prompt
+- `utils/dream.py` — Dream Cycle: nightly APScheduler job (02:00 Asia/Bangkok) that consolidates and promotes memories
+- `utils/tts.py` — Gemini Native Audio TTS; voice mapped per assistant slug
+- `utils/skills.py` + `skills_search.py` — skills stored as `.md` files in `skills/` and indexed in `skills_db.json`, synced to ChromaDB on startup
+- `utils/obsidian_sync.py` — searches Obsidian vault mounted at `OBSIDIAN_VAULT_PATH`
+- `utils/home_tools.py` — NAS/PC status tools injected into context when prompt mentions home network keywords
 
-## 9️⃣ สไตล์การทำงาน
-- ชอบ code สั้นกระชับ อ่านง่าย
-- ชอบ dark mode UI แบบ glass morphism
-- ชอบ emoji ในการสื่อสาร
-- ตอบภาษาไทยเป็นหลัก อังกฤษสำหรับ technical terms
-- ชอบ step-by-step ที่ชัดเจน พร้อม code ที่ copy-paste ได้เลย
+### Context Assembly (per chat request)
+`/api/chat` assembles the system prompt from (in order):
+1. Assistant base system prompt
+2. ChromaDB memory search results
+3. Long-term memory (lessons + preferences)
+4. Skills search (ChromaDB) + skills folder `.md` files
+5. Obsidian vault notes (if `obsidian_inject: true` in request)
+6. Home tools real-time data (if prompt contains home-related keywords)
 
-## 🔟 API Endpoints สำคัญที่เพิ่มใหม่
-| Endpoint | การทำงาน |
+For Ollama, context is hard-capped at 2000 chars and messages trimmed to stay under ~3000 tokens.
+
+### LLM Routing
+- `provider: "ollama"` → local Ollama (OpenAI-compatible API)
+- `provider: "gemini"` → Gemini cloud; also forced when `image_b64` or `agent_mode: true` is set
+- No automatic failover between providers — Ollama failure shows error message
+
+### Data Persistence
+| Data | Storage |
 |---|---|
-| `POST /api/upload` | อัปโหลดไฟล์รูป/ข้อความ |
-| `GET /api/dream/report` | รายงาน Dream ล่าสุด |
-| `GET /api/dream/history` | ประวัติรายงาน Dream |
-| `POST /api/skills/extract` | สกัด content → skill `.md` |
-| `GET /api/skills` + `/api/skills/list` | รายการ skills |
-| `DELETE /api/skills/{topic}` | ลบ skill |
-| `POST /api/admin/sync-skills` | sync skills → ChromaDB |
-| `GET /api/vault/search?q=...` | ค้นหาใน Obsidian vault |
-| `POST /api/memory/cleanup` | ล้าง memory เก่า |
-| `PATCH /api/sessions/{ai}/{sid}` | แก้ไขชื่อ session |
-| `DELETE /api/sessions/{ai}/{sid}` | ลบ session |
+| Chat history, sessions, share links, pins | `chat_history.db` (SQLite) |
+| Long-term memory (ChromaDB) | External ChromaDB service (auto-detected) |
+| Skills knowledge base | `skills/` folder (`.md` files) + `skills_db.json` |
+| Dream reports | `dream_reports/` folder |
 
-## 1️⃣1️⃣ แก้ปัญหาที่พบบ่อย
-- **ปุ่มใหม่ไม่ขึ้น**: `git pull && docker compose up -d --force-recreate` + `Cmd+Shift+R`
-- **Agent Mode error**: เปลี่ยน `GEMINI_MODEL=gemini-2.0-flash`
-- **AI ไม่ตอบ**: `docker compose logs hybrid-ai`
-- **TTS ไม่มีเสียง**: เช็ค API key + browser mute + 🔊 toggle
-- **Voice ไม่เชื่อม**: อนุญาต mic + ใช้ HTTP
-- **Share Link หาย**: ✅ ตอนนี้ persist ลง SQLite แล้ว — ไม่หาย
-- **ChromaDB error**: ChromaDB container ถูก comment ใน docker-compose.yml — ระบบ fallback ใช้ SQLite
+### Environment Variables
+```env
+GEMINI_API_KEY=          # required for Gemini/TTS/Agent mode
+GEMINI_MODEL=gemini-2.0-flash
+GEMINI_LIVE_MODEL=gemini-2.0-flash-exp
+OLLAMA_BASE_URL=http://localhost:11434/v1
+OLLAMA_MODEL=llama3
+OLLAMA_TIMEOUT=120
+OLLAMA_NUM_CTX=4096
+UI_PASSWORD=             # optional; empty = no auth required
+DB_PATH=/app/chat_history.db
+OBSIDIAN_VAULT_PATH=/vault
+CHROMA_HOST=             # optional; auto-detected from candidates if unset
+CORS_ORIGINS=            # comma-separated; defaults to localhost + NAS IP
+```
 
----
-*อัพเดทล่าสุด: 10 พฤษภาคม 2026*
+### WebSocket: Voice Chat
+`/ws/voice/{assistant_slug}` — bidirectional WebSocket connecting to Gemini Live API. Client sends PCM audio chunks (`type: "audio"`) and receives audio back. Transcripts are saved to `chat_history.db` on turn completion.
+
+## Coding Conventions
+- All UI strings and comments are in Thai; technical terms remain English
+- Every new API endpoint must be added to `server.py` directly (no separate routers)
+- Skills `.md` files in `skills/` must also be registered in `skills_db.json` to appear in the API
+- ChromaDB is optional — all memory functions must handle its absence gracefully (the `is_memory_available()` check)
+- Auth test setup: set `os.environ["UI_PASSWORD"] = ""` before importing `server` in tests

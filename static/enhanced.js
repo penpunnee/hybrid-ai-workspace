@@ -100,7 +100,8 @@
     #login-overlay.open { display: flex; }
     #login-box {
       background: rgba(15,23,42,0.98); border: 1px solid rgba(99,102,241,0.4);
-      border-radius: 24px; padding: 40px; width: 360px; text-align: center;
+      border-radius: 24px; padding: 40px; width: min(360px, calc(100vw - 32px));
+      text-align: center; box-sizing: border-box;
       box-shadow: 0 32px 80px rgba(0,0,0,0.6);
     }
     #login-box h2 { color: #e2e8f0; font-size: 20px; margin: 0 0 6px; font-weight: 600; }
@@ -157,7 +158,7 @@
     .enh-box {
       background: rgba(15,23,42,0.97); backdrop-filter: blur(20px);
       border: 1px solid rgba(99,102,241,0.3); border-radius: 20px;
-      padding: 24px; width: 640px; max-height: 70vh;
+      padding: 24px; width: min(640px, calc(100vw - 24px)); max-height: 70vh;
       display: flex; flex-direction: column; gap: 12px;
       box-shadow: 0 24px 64px rgba(0,0,0,0.5);
     }
@@ -230,6 +231,46 @@
       z-index: 9999; opacity: 0; transition: opacity .3s; pointer-events: none;
     }
     #enh-toast.show { opacity: 1; }
+
+    /* ── Mobile responsive (< 640px) ───────────────────────────── */
+    @media (max-width: 639px) {
+      /* Login box */
+      #login-box { padding: 28px 20px; border-radius: 18px; }
+
+      /* Search / Vault overlay — nearly full-screen sheet */
+      .enh-overlay { padding-top: 16px; align-items: flex-start; }
+      .enh-box {
+        width: calc(100vw - 24px) !important;
+        max-height: 82vh; padding: 16px; border-radius: 16px;
+      }
+
+      /* Floating toolbar — icon-only, sit above token bar */
+      #enh-toolbar { bottom: 28px; right: 8px; gap: 4px; }
+      .enh-fab { padding: 7px 9px; }
+      .enh-fab span { display: none; }
+
+      /* Health widget — move to left so it doesn't clash with toolbar */
+      #hw-btn { bottom: 28px; right: auto; left: 8px; }
+      #hw-panel { bottom: 62px; left: 8px; right: 8px; min-width: 0; }
+
+      /* Home control button + panel */
+      #hw-home-btn { bottom: 70px; right: 8px; width: 36px; height: 36px; font-size: 18px; }
+      #hw-home-panel { width: calc(100vw - 24px); right: 12px; left: 12px; bottom: 114px; }
+
+      /* Scroll-to-bottom button */
+      #enh-scroll-btn { bottom: 70px; right: 52px; }
+
+      /* Pin button — inside bubble, always semi-visible (no hover on touch) */
+      .enh-pin-btn { right: 6px !important; top: 6px !important; opacity: 0.5 !important; }
+      [data-pinned="true"] .enh-pin-btn { opacity: 1 !important; }
+
+      /* Token bar */
+      #enh-token-bar { padding: 3px 10px; gap: 8px; }
+      #enh-token-text { min-width: 0; font-size: 10px; }
+
+      /* Typing indicator */
+      #enh-typing { bottom: 28px; }
+    }
   `;
   document.head.appendChild(css);
 
@@ -551,7 +592,6 @@
       btn.className = "enh-pin-btn";
       btn.textContent = "📌";
       btn.title = "Pin message";
-      btn.style.cssText = "position:absolute;top:6px;right:-32px;background:rgba(15,23,42,0.9);border:1px solid rgba(71,85,105,0.4);border-radius:8px;padding:3px 6px;cursor:pointer;font-size:12px;color:#94a3b8;opacity:0;transition:opacity .15s;z-index:10;";
 
       bubble.style.position = "relative";
       bubble.appendChild(btn);
@@ -1057,7 +1097,7 @@
     #hw-home-btn.active { border-color:#6366f1; background:rgba(99,102,241,0.25); }
     #hw-home-panel {
       position:fixed; bottom:122px; right:18px; z-index:9299;
-      width:308px; max-height:70vh; overflow-y:auto;
+      width:min(308px, calc(100vw - 32px)); max-height:70vh; overflow-y:auto;
       background:rgba(8,12,24,0.96); border:1px solid rgba(99,102,241,0.35);
       border-radius:16px; backdrop-filter:blur(20px);
       padding:14px 14px 12px; display:none; flex-direction:column; gap:9px;
