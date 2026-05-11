@@ -159,6 +159,68 @@ _WEATHER_KEYWORDS = re.compile(
     re.IGNORECASE,
 )
 
+_WIKI_KEYWORDS = re.compile(
+    r"คืออะไร|คือใคร|ใครคือ|อะไรคือ|ประวัติของ|ประวัติ\s|ความหมายของ"
+    r"|นิยามของ|หมายถึงอะไร|what is|who is|history of|definition of"
+    r"|เกิดเมื่อไหร่|เกิดอะไรขึ้น|มาจากไหน",
+    re.IGNORECASE,
+)
+
+
+def _wiki_search_title(query: str, lang: str = "th") -> str:
+    """ค้นชื่อบทความที่ตรงที่สุดใน Wikipedia"""
+    try:
+        import requests
+        resp = requests.get(
+            f"https://{lang}.wikipedia.org/w/api.php",
+            params={"action": "query", "list": "search", "srsearch": query,
+                    "format": "json", "srlimit": 1},
+            timeout=6,
+            headers={"User-Agent": _UA},
+        )
+        data = resp.json()
+        hits = data.get("query", {}).get("search", [])
+        return hits[0]["title"] if hits else ""
+    except Exception as e:
+        logger.debug(f"[Wiki] search failed ({lang}): {e}")
+        return ""
+
+
+def fetch_wikipedia(query: str) -> str:
+    """ดึงสรุปจาก Wikipedia ภาษาไทยก่อน → fallback English"""
+    try:
+        import requests
+        for lang in ("th", "en"):
+            title = _wiki_search_title(query, lang=lang)
+            if not title:
+                continue
+            resp = requests.get(
+                f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{title}",
+                timeout=6,
+                headers={"User-Agent": _UA},
+            )
+            if resp.status_code != 200:
+                continue
+            d = resp.json()
+            extract = d.get("extract", "").strip()
+            if not extract:
+                continue
+            page_url = d.get("content_urls", {}).get("desktop", {}).get("page", "")
+            lang_label = "ภาษาไทย" if lang == "th" else "ภาษาอังกฤษ"
+            lines = [
+                f"📚 **Wikipedia ({lang_label})**",
+                f"**{d.get('title', title)}**",
+                "",
+                extract[:1800],
+            ]
+            if page_url:
+                lines.append(f"\n🔗 {page_url}")
+            return "\n".join(lines)
+        return ""
+    except Exception as e:
+        logger.warning(f"[Wiki] fetch failed: {e}")
+        return ""
+
 
 def _extract_city(query: str) -> str:
     """หาเมืองจากคำถาม — default Bangkok"""
@@ -214,13 +276,22 @@ def fetch_weather(query: str) -> str:
 def web_search_context(query: str, max_results: int = 5) -> str:
     """API เดียวที่ router/chat ใช้ — คืน context string พร้อม inject
 
-    ถ้าเป็นคำถามอากาศ ใช้ wttr.in API (ตัวเลขจริง) แทน DDG
+    Pipeline routing:
+      - weather query → wttr.in (ตัวเลขจริง)
+      - definitional/factual → Wikipedia summary
+      - อื่นๆ → DuckDuckGo + URL fetch
     """
     if _WEATHER_KEYWORDS.search(query):
         weather = fetch_weather(query)
         if weather:
-            logger.info(f"[WebSearch] weather query → wttr.in ({len(weather)} chars)")
+            logger.info(f"[WebSearch] weather → wttr.in ({len(weather)} chars)")
             return weather
+
+    if _WIKI_KEYWORDS.search(query):
+        wiki = fetch_wikipedia(query)
+        if wiki:
+            logger.info(f"[WebSearch] wiki → Wikipedia ({len(wiki)} chars)")
+            return wiki
 
     results = search_web(query, max_results=max_results)
     results = _enrich_with_fetch(results, top_n=_FETCH_TOP_N)

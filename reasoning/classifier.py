@@ -52,7 +52,7 @@ _REASONING_PATTERNS = [
 
 _REASONING_MIN_WORDS = 15  # ถ้าคำถามยาวกว่านี้ = complex
 
-# Internet search patterns → ต้องใช้ Gemini Agent
+# Internet search patterns → ต้องใช้ web pipeline
 _SEARCH_PATTERNS = [
     r"หาในเน็ต|หาข้อมูลในเน็ต|ค้นในเน็ต|search.*net|ค้นหาข้อมูล.*ออนไลน์",
     r"ไปหาข้อมูล|ช่วยหาข้อมูล|หาข้อมูลให้|google.*หน่อย",
@@ -60,6 +60,10 @@ _SEARCH_PATTERNS = [
     r"ราคาทอง|ราคาหุ้น|ราคาน้ำมัน|ราคา.*วันนี้|ค้นหาข้อมูล.*ราคา",
     r"อากาศ.*พรุ่งนี้|พยากรณ์อากาศ|weather.*tomorrow",
     r"เปิดเว็บ|browse|ค้น.*web|search.*web",
+    # Wikipedia / definitional queries
+    r"คืออะไร|คือใคร|ใครคือ|อะไรคือ|ประวัติของ|ประวัติ\s|ความหมายของ",
+    r"นิยามของ|หมายถึงอะไร|what is|who is|history of|definition of",
+    r"เกิดเมื่อไหร่|เกิดอะไรขึ้น|มาจากไหน",
 ]
 
 
