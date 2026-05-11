@@ -37,6 +37,7 @@ async def chat(request: Request):
     image_b64   = data.get("image_b64", "")
     image_mime  = data.get("image_mime", "")
     agent_mode  = bool(data.get("agent_mode", False))
+    tool_agent  = bool(data.get("tool_agent", False))
     obsidian_inject = bool(data.get("obsidian_inject", False))
 
     config = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])
@@ -91,6 +92,46 @@ async def chat(request: Request):
             messages[0] = {"role": "system", "content": messages[0]["content"][:4000]}
         while len(messages) > 2 and count_tokens_approx(messages) > 3000:
             messages.pop(1)
+
+    # ── Tool Agent branch ───────────────────────────────────────────────────
+    # เปิดด้วย {"tool_agent": true} → route ไป agent orchestrator (multi-step tool use)
+    if tool_agent:
+        from agents.orchestrator import run_agent
+
+        def gen_agent():
+            full_response = ""
+            try:
+                for kind, payload in run_agent(messages):
+                    if kind == "event":
+                        # SSE event สำหรับ enhanced.js timeline — React อ่านแล้ว ignore
+                        yield f"data: {json.dumps({'agent': payload}, ensure_ascii=False)}\n\n"
+                    elif kind == "chunk":
+                        full_response += payload
+                        yield f"data: {json.dumps({'chunk': payload}, ensure_ascii=False)}\n\n"
+            except Exception as e:
+                logger.exception("[Chat/agent] run failed")
+                yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+                return
+
+            # persist เหมือน /api/chat ปกติ
+            try:
+                save_message(assistant, "assistant", full_response, "agent", session_id)
+                push_working(session_id, "user", prompt)
+                push_working(session_id, "assistant", full_response)
+                remember(assistant, prompt, full_response)
+            except Exception as e:
+                logger.warning(f"[Chat/agent] persist failed: {e}")
+
+            yield f"data: {json.dumps({'done': True, 'model': 'agent', 'provider': 'agent'}, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(gen_agent(), media_type="text/event-stream",
+                                 headers={
+                                     "Cache-Control": "no-cache",
+                                     "X-Accel-Buffering": "no",
+                                     "X-Model-Used": "agent",
+                                     "X-Provider-Used": "agent",
+                                     "Access-Control-Expose-Headers": "X-Model-Used, X-Provider-Used",
+                                 })
 
     # ── Get routing decision ก่อน stream เพื่อส่ง model info ─────────────────
     model_used = ""

@@ -12,8 +12,6 @@ POST /api/agent
 """
 import json
 import logging
-import queue
-import threading
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -62,49 +60,24 @@ async def agent_chat(request: Request):
     messages += [{"role": m["role"], "content": m["content"]} for m in history]
     messages.append({"role": "user", "content": prompt})
 
-    # event queue ระหว่าง agent thread กับ SSE generator
-    q: queue.Queue = queue.Queue()
-    SENTINEL = object()
-
-    def on_event(ev: dict):
-        q.put(("event", ev))
-
-    def runner():
+    def sse():
         full = ""
         try:
-            for chunk in run_agent(messages, max_steps=max_steps, on_event=on_event):
-                full += chunk
-                q.put(("chunk", chunk))
+            for kind, payload in run_agent(messages, max_steps=max_steps):
+                if kind == "event":
+                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                elif kind == "chunk":
+                    full += payload
+                    yield f"data: {json.dumps({'type': 'chunk', 'text': payload}, ensure_ascii=False)}\n\n"
         except Exception as e:
-            logger.exception("[Agent] runner failed")
-            q.put(("error", str(e)))
-        finally:
-            q.put(("done", full))
-            q.put((SENTINEL, None))
-
-    threading.Thread(target=runner, daemon=True).start()
-
-    def sse():
-        full_response = ""
-        while True:
-            kind, payload = q.get()
-            if kind is SENTINEL:
-                break
-            if kind == "event":
-                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-            elif kind == "chunk":
-                full_response += payload
-                yield f"data: {json.dumps({'type': 'chunk', 'text': payload}, ensure_ascii=False)}\n\n"
-            elif kind == "error":
-                yield f"data: {json.dumps({'type': 'error', 'message': payload}, ensure_ascii=False)}\n\n"
-            elif kind == "done":
-                # save assistant response
-                if payload:
-                    try:
-                        save_message(assistant, "assistant", payload, "agent", session_id)
-                    except Exception as e:
-                        logger.warning(f"[Agent] save failed: {e}")
-                yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+            logger.exception("[Agent] sse failed")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+        if full:
+            try:
+                save_message(assistant, "assistant", full, "agent", session_id)
+            except Exception as e:
+                logger.warning(f"[Agent] save failed: {e}")
+        yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         sse(),

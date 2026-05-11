@@ -1,22 +1,19 @@
 """Agent Orchestrator — Plan → Tool → Observe → Answer loop
 
-Flow:
-  user message
-    → LLM gets list of tools + user message
-    → LLM decides: call tool(s) OR answer directly
-    → ถ้า tool: รัน, ใส่ result เข้า messages, loop
-    → ถ้า answer: stream final response
+Yields tuples:
+  ("event", dict)  — agent events (thinking/tool_call/tool_result/answering)
+  ("chunk", str)   — text chunks ของคำตอบสุดท้าย
 
-ใช้ OpenAI function calling format (LM Studio รองรับ)
+ใช้ OpenAI function calling (LM Studio รองรับ)
 """
 import json
 import logging
 import os
-from typing import Callable, Generator
+from typing import Generator, Any
 
 from openai import OpenAI
 
-from .tools import TOOL_REGISTRY, execute_tool, get_openai_tools
+from .tools import execute_tool, get_openai_tools
 
 logger = logging.getLogger(__name__)
 
@@ -50,18 +47,17 @@ def run_agent(
     messages: list[dict],
     model: str = "",
     max_steps: int = 4,
-    on_event: Callable[[dict], None] = None,
-) -> Generator[str, None, None]:
+) -> Generator[tuple[str, Any], None, None]:
     """รัน agent loop
 
     Args:
         messages: chat history (รวม system prompt) — จะถูก mutate
         model: LM Studio model id
         max_steps: max tool-calling rounds
-        on_event: callback สำหรับ stream events ({"type": "...", ...})
 
     Yields:
-        text chunks ของคำตอบสุดท้าย
+        ("event", dict): agent event เช่น {"type": "tool_call", "name": "...", "args": {...}}
+        ("chunk", str): text chunk ของคำตอบสุดท้าย
     """
     if not model:
         model = os.getenv("LMSTUDIO_CHAT_MODEL", "meta-llama-3.1-8b-instruct")
@@ -74,15 +70,8 @@ def run_agent(
 
     tools_schema = get_openai_tools()
 
-    def _emit(event: dict):
-        if on_event:
-            try:
-                on_event(event)
-            except Exception:
-                pass
-
     for step in range(max_steps):
-        _emit({"type": "thinking", "step": step + 1})
+        yield ("event", {"type": "thinking", "step": step + 1})
         logger.info(f"[Agent] step {step+1}/{max_steps}")
 
         try:
@@ -96,7 +85,8 @@ def run_agent(
             )
         except Exception as e:
             logger.exception("[Agent] LLM call failed")
-            yield f"❌ Agent error: {e}"
+            yield ("event", {"type": "error", "message": str(e)})
+            yield ("chunk", f"❌ Agent error: {e}")
             return
 
         msg = response.choices[0].message
@@ -104,12 +94,12 @@ def run_agent(
 
         if not tool_calls:
             # ไม่ใช้ tool แล้ว → stream คำตอบสุดท้าย
-            _emit({"type": "answering"})
+            yield ("event", {"type": "answering"})
             final = (msg.content or "").strip()
             if final:
-                yield final
+                yield ("chunk", final)
             else:
-                yield "(agent ไม่มีคำตอบ)"
+                yield ("chunk", "(agent ไม่มีคำตอบ)")
             return
 
         # มี tool call → append assistant message + รัน tools
@@ -136,10 +126,15 @@ def run_agent(
             except json.JSONDecodeError:
                 args = {}
 
-            _emit({"type": "tool_call", "name": tool_name, "args": args, "id": tc.id})
+            yield ("event", {
+                "type": "tool_call",
+                "name": tool_name,
+                "args": args,
+                "id": tc.id,
+            })
 
             result = execute_tool(tool_name, args)
-            _emit({
+            yield ("event", {
                 "type": "tool_result",
                 "name": tool_name,
                 "id": tc.id,
@@ -155,7 +150,7 @@ def run_agent(
             })
 
     # ครบ max_steps แต่ยังไม่มี final answer → บังคับสรุป
-    _emit({"type": "max_steps_reached"})
+    yield ("event", {"type": "max_steps_reached"})
     messages.append({
         "role": "user",
         "content": "สรุปคำตอบสุดท้ายจากข้อมูล tools ที่ได้มาแล้ว ห้ามเรียก tool เพิ่ม",
@@ -170,6 +165,6 @@ def run_agent(
         for chunk in final_stream:
             delta = chunk.choices[0].delta.content
             if delta:
-                yield delta
+                yield ("chunk", delta)
     except Exception as e:
-        yield f"❌ Final synthesis failed: {e}"
+        yield ("chunk", f"❌ Final synthesis failed: {e}")
