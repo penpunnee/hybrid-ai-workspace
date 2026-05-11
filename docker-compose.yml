@@ -16,6 +16,10 @@ services:
       - ./static:/app/static
       - ./utils:/app/utils
       - ./assistants:/app/assistants
+      - ./core:/app/core
+      - ./routers:/app/routers
+      - ./memory:/app/memory
+      - ./reasoning:/app/reasoning
       - ./server.py:/app/server.py
       - ./app.py:/app/app.py
       - ./tests:/app/tests
