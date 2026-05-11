@@ -15,10 +15,8 @@ from utils.history import (
     save_message, load_history, delete_last_assistant_message,
     get_last_user_message,
 )
-from utils.memory import (
-    save_memory, search_memory, save_lesson, save_preference,
-    get_lessons, get_preferences, search_long_term_memory,
-)
+from utils.memory import save_lesson, save_preference, get_lessons, get_preferences
+from memory.operations import remember, recall, teach, push_working
 from utils.skills import search_skills
 from utils.obsidian_sync import search_vault
 from utils.home_tools import detect_home_tools, build_tool_context
@@ -44,11 +42,17 @@ async def chat(request: Request):
     config = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])
     base_prompt = config["system_prompt"]
 
+    # ── ตรวจจับ Teaching signal จาก user ────────────────────────────────────
+    teach(assistant, prompt)
+
+    # ── ดึง context จากทุก tier ──────────────────────────────────────────────
     lessons    = get_lessons(prompt)
     prefs      = get_preferences()
-    long_term  = search_long_term_memory(prompt)
     skills_dir = os.path.join(os.path.dirname(__file__), "..", "skills")
     skills_md  = load_skills_relevant(skills_dir, prompt)
+
+    # New: tiered memory recall (working + episodic + long-term)
+    memory_ctx = recall(assistant, prompt, session_id=session_id)
 
     vault_ctx = ""
     if obsidian_inject:
@@ -62,8 +66,7 @@ async def chat(request: Request):
         home_tool_ctx = build_tool_context(home_tools_needed)
 
     full_context = "\n\n".join(filter(None, [
-        search_memory(assistant, prompt),
-        long_term,
+        memory_ctx,
         search_skills(prompt, n_results=3),
         f"[Skills & Knowledge]\n{skills_md}" if skills_md else "",
         f"[บทเรียนสะสม]\n{lessons}" if lessons else "",
@@ -101,7 +104,14 @@ async def chat(request: Request):
             return
 
         save_message(assistant, "assistant", full_response, provider, session_id)
-        save_memory(assistant, prompt, full_response)
+
+        # บันทึกลง working memory + episodic memory (new system)
+        push_working(session_id, "user", prompt)
+        push_working(session_id, "assistant", full_response)
+        remember(assistant, prompt, full_response)
+
+        # ตรวจ teaching จาก context (user แก้ไข AI)
+        teach(assistant, prompt, ai_response=full_response)
 
         if len(full_response) > 100:
             def _learn(p=prompt, r=full_response, pv=provider):

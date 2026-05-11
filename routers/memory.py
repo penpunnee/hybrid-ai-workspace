@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Request
 
 from utils.memory import (
-    save_memory, get_memory_stats, cleanup_old_memories, save_lesson,
+    get_memory_stats, cleanup_old_memories, save_lesson,
     list_lessons, list_preferences, delete_lesson, delete_preference,
 )
+from memory.operations import get_memory_summary, recall, teach
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
 
@@ -11,6 +12,30 @@ router = APIRouter(prefix="/api/memory", tags=["memory"])
 @router.get("/stats")
 def memory_stats():
     return get_memory_stats()
+
+
+@router.get("/summary/{assistant}")
+def memory_summary(assistant: str):
+    """สรุป memory ทุก tier ของ assistant"""
+    return get_memory_summary(assistant)
+
+
+@router.get("/recall/{assistant}")
+def memory_recall(assistant: str, q: str, session_id: str = ""):
+    """ทดสอบ recall memory — debug endpoint"""
+    result = recall(assistant, q, session_id=session_id)
+    return {"query": q, "context": result}
+
+
+@router.post("/teach/{assistant}")
+async def memory_teach(assistant: str, request: Request):
+    """สอน AI โดยตรง — บันทึกเป็น verified memory"""
+    data = await request.json()
+    text = data.get("text", "").strip()
+    if not text:
+        return {"ok": False, "error": "ไม่มีข้อความ"}
+    saved = teach(assistant, text)
+    return {"ok": saved, "message": "บันทึกความรู้แล้ว" if saved else "ไม่พบ teaching pattern"}
 
 
 @router.get("/lessons")
