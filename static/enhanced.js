@@ -1339,5 +1339,30 @@
     return p;
   };
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 16. แทน "🦙 Llama" badge ด้วยชื่อ model จริงจาก /api/config
+  // ─────────────────────────────────────────────────────────────────────────────
+  (async () => {
+    try {
+      const cfg = await _origFetch("/api/config").then(r => r.json());
+      const modelName = cfg?.ollama_model || "";
+      if (!modelName || modelName === "llama3") return;
+      // ตัดเอาแค่ชื่อ model สั้นๆ เช่น gemma-4-e4b
+      const shortName = modelName.split("/").pop();
+
+      // Observer แทนที่ "🦙 Llama" ทุกครั้งที่ React render
+      const _labelObs = new MutationObserver(() => {
+        document.querySelectorAll("button, span, div").forEach(el => {
+          if (el.childNodes.length === 1 &&
+              el.childNodes[0].nodeType === 3 &&
+              el.childNodes[0].textContent.trim() === "🦙 Llama") {
+            el.childNodes[0].textContent = `🖥️ ${shortName}`;
+          }
+        });
+      });
+      _labelObs.observe(document.body, { childList: true, subtree: true, characterData: true });
+    } catch {}
+  })();
+
   console.log("[Enhanced UI] v6 — Model indicator + Thai token counter — loaded ✅");
 })();
