@@ -147,7 +147,13 @@ async def chat(request: Request):
         yield f"data: {json.dumps({'done': True, 'model': model_used, 'provider': provider_used})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+                             headers={
+                                 "Cache-Control": "no-cache",
+                                 "X-Accel-Buffering": "no",
+                                 "X-Model-Used": model_used,
+                                 "X-Provider-Used": provider_used,
+                                 "Access-Control-Expose-Headers": "X-Model-Used, X-Provider-Used",
+                             })
 
 
 @router.post("/regenerate")

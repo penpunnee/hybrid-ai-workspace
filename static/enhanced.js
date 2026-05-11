@@ -1293,80 +1293,50 @@
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 15. MODEL INDICATOR — แสดง badge ใต้ AI message ว่าใช้ model อะไร
+  // 15. MODEL INDICATOR — badge ใต้ AI message (อ่านจาก X-Model-Used header)
   // ─────────────────────────────────────────────────────────────────────────────
-  const _PROVIDER_ICONS = {
-    lmstudio: "🖥️", gemini: "☁️", ollama: "🦙", auto: "⚡",
-  };
+  const _PROVIDER_ICONS = { lmstudio: "🖥️", gemini: "☁️", ollama: "🦙" };
+  let _pendingModel = null;   // { model, provider } รอ inject หลัง response จบ
 
-  function _injectModelBadge(model, provider) {
-    if (!model && !provider) return;
-    // หา AI bubble ล่าสุด
+  function _injectModelBadge() {
+    if (!_pendingModel) return;
+    const { model, provider } = _pendingModel;
+    _pendingModel = null;
     const bubbles = document.querySelectorAll("div.flex.group.justify-start");
     if (!bubbles.length) return;
     const last = bubbles[bubbles.length - 1];
-    // ไม่ใส่ซ้ำ
     if (last.querySelector(".enh-model-badge")) return;
     const bubble = last.querySelector('[class*="rounded-3xl"]') || last;
-
     const icon = _PROVIDER_ICONS[provider] || "🤖";
-    const label = model || provider || "AI";
     const badge = document.createElement("div");
     badge.className = "enh-model-badge";
-    badge.innerHTML = `<span class="enh-model-dot"></span>${icon} ${label}`;
-    badge.title = `provider: ${provider || "?"}, model: ${model || "?"}`;
+    badge.innerHTML = `<span class="enh-model-dot"></span>${icon} ${model || provider}`;
+    badge.title = `provider: ${provider}, model: ${model}`;
     bubble.appendChild(badge);
   }
 
-  // Override fetch เพื่อดัก done event จาก /api/chat
-  const _origFetch2 = window.fetch.bind(window);
-  const _origFetchSaved = window.fetch;
-  // patch streaming reader เพื่อจับ done event
-  const _patchStream = (url, stream) => {
-    if (!url || !url.toString().includes("/api/chat")) return stream;
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    return new ReadableStream({
-      async pull(controller) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) { controller.close(); return; }
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop();
-          for (const line of lines) {
-            const t = line.trim();
-            if (t.startsWith("data: ")) {
-              try {
-                const d = JSON.parse(t.slice(6));
-                if (d.done && (d.model || d.provider)) {
-                  setTimeout(() => _injectModelBadge(d.model, d.provider), 100);
-                }
-              } catch {}
-            }
-          }
-          controller.enqueue(value);
-        }
-      },
-      cancel() { reader.cancel(); }
-    });
-  };
-
-  // wrap fetch response body สำหรับ chat endpoint
-  const _fetchOrig = window.fetch;
+  // อ่าน model จาก response header — ไม่ต้องแตะ stream body เลย
+  const _fetchForModel = window.fetch.bind(window);
   window.fetch = function(url, opts) {
-    return _fetchOrig(url, opts).then(resp => {
-      if (typeof url === "string" && url.includes("/api/chat") && resp.body) {
-        const patched = _patchStream(url, resp.body);
-        return new Response(patched, {
-          status: resp.status,
-          statusText: resp.statusText,
-          headers: resp.headers,
-        });
-      }
-      return resp;
-    });
+    const p = _fetchForModel(url, opts);
+    if (typeof url === "string" && url.includes("/api/chat")) {
+      p.then(resp => {
+        const model    = resp.headers.get("x-model-used") || "";
+        const provider = resp.headers.get("x-provider-used") || "";
+        if (model || provider) {
+          _pendingModel = { model, provider };
+          // inject badge หลัง streaming จบ (poll จาก stop button logic)
+          const iv = setInterval(() => {
+            if (!_stopBtnEl || _stopBtnEl.style.display === "none") {
+              clearInterval(iv);
+              setTimeout(_injectModelBadge, 200);
+            }
+          }, 300);
+          setTimeout(() => clearInterval(iv), 120000);
+        }
+      }).catch(() => {});
+    }
+    return p;
   };
 
   console.log("[Enhanced UI] v6 — Model indicator + Thai token counter — loaded ✅");
