@@ -54,6 +54,38 @@ def load_skills_folder(folder_path: str) -> str:
     return "\n\n---\n\n".join(texts)
 
 
+def load_skills_relevant(folder_path: str, query: str, max_files: int = 3) -> str:
+    """โหลดเฉพาะ skill files ที่เกี่ยวข้องกับ query โดย keyword scoring — ไม่โหลดทั้งหมด"""
+    if not os.path.isdir(folder_path) or not query:
+        return ""
+
+    query_words = set(query.lower().split())
+    scored = []
+
+    for filename in os.listdir(folder_path):
+        filepath = os.path.join(folder_path, filename)
+        if not (os.path.isfile(filepath) and filename.endswith((".txt", ".md", ".json", ".py"))):
+            continue
+        try:
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            # score = จำนวน query words ที่ match ใน filename + 500 chars แรกของไฟล์
+            haystack = (filename + " " + content[:500]).lower()
+            score = sum(1 for w in query_words if len(w) > 1 and w in haystack)
+            if score > 0:
+                scored.append((score, filename, content))
+        except Exception as e:
+            logger.warning(f"load_skills_relevant: failed to read '{filepath}': {e}")
+
+    if not scored:
+        return ""
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return "\n\n---\n\n".join(
+        f"[{fname}]\n{content}" for _, fname, content in scored[:max_files]
+    )
+
+
 def build_rag_context(uploaded_files: list, skills_folder: str = "") -> str:
     """รวม context จาก identity.json (auto), skills folder, และไฟล์ที่ upload"""
     parts = []

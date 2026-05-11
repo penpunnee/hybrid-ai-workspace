@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from assistants.config import ASSISTANTS
 from utils.llm import stream_response, OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health, _last_failover
-from utils.rag import inject_context_to_system, load_skills_folder
+from utils.rag import inject_context_to_system, load_skills_folder, load_skills_relevant
 from utils.history import (save_message, load_history, get_sessions, clear_session, export_history_md,
     search_messages, pin_message, get_pinned_messages,
     delete_last_assistant_message, truncate_from_db_id, get_last_user_message, rename_session)
@@ -1132,7 +1132,7 @@ async def chat(request: Request):
     prefs = get_preferences()
     long_term = search_long_term_memory(prompt)
     skills_folder_path = os.path.join(os.path.dirname(__file__), "skills")
-    skills_md = load_skills_folder(skills_folder_path)
+    skills_md = load_skills_relevant(skills_folder_path, prompt)
     vault_ctx = ""
     if obsidian_inject_flag:
         vault_results = search_vault(prompt, n=3)
