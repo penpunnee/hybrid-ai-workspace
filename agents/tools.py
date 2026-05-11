@@ -26,8 +26,8 @@ def _t_web_search(query: str, max_results: int = 5) -> str:
 
 def _t_weather(city: str = "Bangkok") -> str:
     """ดึงพยากรณ์อากาศจาก wttr.in"""
-    from utils.websearch import fetch_weather
-    result = fetch_weather(f"อากาศ {city}")
+    from utils.websearch import fetch_weather_by_city
+    result = fetch_weather_by_city(city)
     return result or f"ไม่พบข้อมูลอากาศของ {city}"
 
 

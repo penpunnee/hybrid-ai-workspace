@@ -274,11 +274,10 @@ def _extract_city(query: str) -> str:
     return "Bangkok"
 
 
-def fetch_weather(query: str) -> str:
-    """ดึงข้อมูลอากาศจาก wttr.in — คืน text plain พร้อมตัวเลขจริง"""
+def fetch_weather_by_city(city: str) -> str:
+    """ดึงข้อมูลอากาศจาก wttr.in ด้วยชื่อเมืองตรงๆ (ไม่ผ่าน text parsing)"""
     try:
         import requests
-        city = _extract_city(query)
         url = f"https://wttr.in/{city}?lang=th&format=j1"
         resp = requests.get(url, timeout=8, headers={"User-Agent": _UA})
         if resp.status_code != 200:
@@ -310,6 +309,12 @@ def fetch_weather(query: str) -> str:
     except Exception as e:
         logger.warning(f"[Weather] wttr.in failed: {e}")
         return ""
+
+
+def fetch_weather(query: str) -> str:
+    """Backward-compat wrapper — รับ text query แล้ว extract city"""
+    city = _extract_city(query)
+    return fetch_weather_by_city(city)
 
 
 def web_search_context(query: str, max_results: int = 5) -> str:
