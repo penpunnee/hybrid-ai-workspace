@@ -26,14 +26,14 @@ services:
     env_file:
       - .env
 
-  # chromadb:
-  #   image: chromadb/chroma:latest
-  #   container_name: chromadb
-  #   restart: unless-stopped
-  #   ports:
-  #     - "8000:8000"
-  #   volumes:
-  #     - chroma_data:/chroma/chroma
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: chromadb
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
 
   cloudflared:
     image: cloudflare/cloudflared:latest
