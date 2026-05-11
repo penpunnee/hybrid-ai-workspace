@@ -13,7 +13,7 @@ from core.auth import auth_middleware
 from core.scheduler import start_scheduler
 from utils.skills import _load_skills_db
 
-from routers import auth, chat, sessions, memory, skills, dream, vault, tools, system
+from routers import auth, chat, sessions, memory, skills, dream, vault, tools, system, agent
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -55,6 +55,7 @@ app.include_router(dream.router)
 app.include_router(vault.router)
 app.include_router(tools.router)
 app.include_router(system.router)
+app.include_router(agent.router)
 
 # ── Static files + SPA ───────────────────────────────────────────────────────
 os.makedirs("static", exist_ok=True)

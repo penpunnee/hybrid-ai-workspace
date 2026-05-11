@@ -20,6 +20,7 @@ services:
       - ./routers:/app/routers
       - ./memory:/app/memory
       - ./reasoning:/app/reasoning
+      - ./agents:/app/agents
       - ./server.py:/app/server.py
       - ./app.py:/app/app.py
       - ./tests:/app/tests
