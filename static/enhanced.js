@@ -22,9 +22,14 @@
   let _histIdx = -1;
   let _draftPrompt = "";
 
+  // ── Agent Mode state ────────────────────────────────────────────────────────
+  let _agentMode = localStorage.getItem("hw_agent_mode") === "1";
+  // queue ของ agent events ที่ยังรอ AI bubble ใหม่มา attach timeline
+  let _pendingAgentTimeline = null;  // { events: [], sessionToken: string }
+
   window.fetch = function (url, opts) {
     if (typeof url === "string") {
-      // 1. Track assistant + session + prompt history
+      // 1. Track assistant + session + prompt history + agent mode injection
       if (url === "/api/chat" && opts?.body) {
         try {
           const b = JSON.parse(opts.body);
@@ -34,6 +39,13 @@
             _promptHistory = [b.prompt, ..._promptHistory.filter(p => p !== b.prompt)].slice(0, 50);
             localStorage.setItem("hw_prompt_history", JSON.stringify(_promptHistory));
             _histIdx = -1;
+          }
+          // Inject tool_agent flag เมื่อเปิด Agent Mode
+          if (_agentMode && !b.tool_agent) {
+            b.tool_agent = true;
+            opts = { ...opts, body: JSON.stringify(b) };
+            // เปิด queue รอ events
+            _pendingAgentTimeline = { events: [], sessionToken: Date.now().toString(36) };
           }
         } catch {}
       }
@@ -83,6 +95,20 @@
         if (resp.status === 401) {
           loginOverlay.classList.add("open");
           setTimeout(() => document.getElementById("login-input")?.focus(), 100);
+        }
+        // Agent Mode: tee stream — React อ่านอันหนึ่ง, enhanced.js parse อีกอัน
+        if (typeof url === "string" && url === "/api/chat" && _agentMode && resp.body && _pendingAgentTimeline) {
+          try {
+            const [reactStream, ourStream] = resp.body.tee();
+            _parseAgentSSE(ourStream, _pendingAgentTimeline);
+            return new Response(reactStream, {
+              status: resp.status,
+              statusText: resp.statusText,
+              headers: resp.headers,
+            });
+          } catch (e) {
+            console.warn("[Agent] tee failed:", e);
+          }
         }
         return resp;
       });
@@ -728,6 +754,9 @@
     </button>
     <button class="enh-fab" id="fab-vault" title="Vault Search">
       🌿 <span>Vault</span>
+    </button>
+    <button class="enh-fab" id="fab-agent" title="Agent Mode — AI ใช้ tools อัตโนมัติ (weather, wiki, search, ฯลฯ)">
+      🤖 <span>Agent</span>
     </button>`;
   document.body.appendChild(toolbar);
 
@@ -741,6 +770,16 @@
     vaultOverlay.classList.toggle("open");
     if (vaultOverlay.classList.contains("open"))
       setTimeout(() => vsInput.focus(), 50);
+  });
+
+  // Agent Mode toggle
+  const _agentBtn = document.getElementById("fab-agent");
+  const _syncAgentBtn = () => _agentBtn.classList.toggle("enh-fab-active", _agentMode);
+  _syncAgentBtn();
+  _agentBtn.addEventListener("click", () => {
+    _agentMode = !_agentMode;
+    localStorage.setItem("hw_agent_mode", _agentMode ? "1" : "0");
+    _syncAgentBtn();
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1364,5 +1403,201 @@
     } catch {}
   })();
 
-  console.log("[Enhanced UI] v6 — Model indicator + Thai token counter — loaded ✅");
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 17. AGENT MODE — Timeline UI สำหรับ tool calls
+  // ─────────────────────────────────────────────────────────────────────────────
+  const _agentCSS = document.createElement("style");
+  _agentCSS.textContent = `
+    .enh-fab-active {
+      background: linear-gradient(135deg, rgba(168,85,247,0.4), rgba(236,72,153,0.3)) !important;
+      border-color: rgba(168,85,247,0.6) !important;
+      color: #f5d0fe !important;
+      box-shadow: 0 0 12px rgba(168,85,247,0.4);
+    }
+    .enh-agent-timeline {
+      margin: 8px 0 12px 0;
+      padding: 10px 14px;
+      background: linear-gradient(135deg, rgba(168,85,247,0.06), rgba(99,102,241,0.04));
+      border: 1px solid rgba(168,85,247,0.25);
+      border-radius: 12px;
+      font-size: 0.78rem;
+      line-height: 1.5;
+      color: #cbd5e1;
+      font-family: 'Sora', sans-serif;
+    }
+    .enh-agent-timeline-header {
+      display: flex; align-items: center; gap: 6px;
+      font-weight: 600; color: #c4b5fd;
+      margin-bottom: 8px; font-size: 0.72rem;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .enh-agent-step {
+      padding: 4px 0;
+      display: flex; gap: 8px; align-items: flex-start;
+      border-left: 2px solid rgba(168,85,247,0.2);
+      padding-left: 10px; margin-left: 4px;
+      transition: all .2s;
+    }
+    .enh-agent-step-icon { flex-shrink: 0; font-size: 0.9rem; }
+    .enh-agent-step-content { flex: 1; min-width: 0; }
+    .enh-agent-step-title { color: #e2e8f0; font-weight: 500; }
+    .enh-agent-step-meta { color: rgba(148,163,184,0.6); font-size: 0.7rem; margin-top: 2px; }
+    .enh-agent-tool-args {
+      color: #93c5fd; font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      background: rgba(0,0,0,0.25);
+      padding: 1px 6px; border-radius: 4px;
+      display: inline-block; margin-top: 2px;
+    }
+    .enh-agent-tool-result {
+      color: rgba(203,213,225,0.85);
+      background: rgba(0,0,0,0.2);
+      padding: 6px 10px; border-radius: 6px;
+      margin-top: 4px;
+      max-height: 80px; overflow: hidden;
+      position: relative;
+      cursor: pointer;
+      transition: max-height .25s ease;
+    }
+    .enh-agent-tool-result.expanded { max-height: 400px; overflow-y: auto; }
+    .enh-agent-tool-result:not(.expanded)::after {
+      content: ""; position: absolute; left:0; right:0; bottom:0; height: 28px;
+      background: linear-gradient(transparent, rgba(15,23,42,0.95));
+      pointer-events: none;
+    }
+    .enh-agent-step.error { border-left-color: #ef4444; }
+    .enh-agent-step.error .enh-agent-step-title { color: #fca5a5; }
+  `;
+  document.head.appendChild(_agentCSS);
+
+  // อ่าน SSE จาก stream — เก็บ agent events ลง _pendingAgentTimeline
+  async function _parseAgentSSE(stream, timelineRef) {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const d = JSON.parse(line.slice(6));
+            if (d.agent) {
+              timelineRef.events.push(d.agent);
+              _tryRenderTimeline(timelineRef);
+            } else if (d.done) {
+              // mark done — final render
+              timelineRef.done = true;
+              _tryRenderTimeline(timelineRef);
+            }
+          } catch {}
+        }
+      }
+    } catch (e) {
+      console.warn("[Agent] SSE parse error:", e);
+    } finally {
+      try { reader.releaseLock(); } catch {}
+    }
+  }
+
+  // หา AI bubble ล่าสุดที่ยังไม่มี timeline แล้ว inject
+  function _tryRenderTimeline(timelineRef) {
+    if (!timelineRef.events.length) return;
+    const bubbles = document.querySelectorAll("div.flex.group.justify-start");
+    if (!bubbles.length) {
+      // ยังไม่มี bubble — retry หลัง 200ms
+      if (!timelineRef._retryTimer) {
+        timelineRef._retryTimer = setTimeout(() => {
+          timelineRef._retryTimer = null;
+          _tryRenderTimeline(timelineRef);
+        }, 200);
+      }
+      return;
+    }
+    const last = bubbles[bubbles.length - 1];
+    const bubble = last.querySelector('[class*="rounded-3xl"]') || last;
+
+    // find or create timeline container
+    let card = bubble.querySelector(".enh-agent-timeline");
+    if (!card) {
+      card = document.createElement("div");
+      card.className = "enh-agent-timeline";
+      card.dataset.session = timelineRef.sessionToken;
+      card.innerHTML = `<div class="enh-agent-timeline-header">🤖 Agent Steps</div><div class="enh-agent-steps"></div>`;
+      // prepend ก่อน text content ใน bubble
+      bubble.insertBefore(card, bubble.firstChild);
+    } else if (card.dataset.session !== timelineRef.sessionToken) {
+      // bubble นี้เป็น session อื่น — skip
+      return;
+    }
+
+    const stepsEl = card.querySelector(".enh-agent-steps");
+    const rendered = parseInt(stepsEl.dataset.rendered || "0", 10);
+    for (let i = rendered; i < timelineRef.events.length; i++) {
+      const ev = timelineRef.events[i];
+      const stepEl = _renderAgentEvent(ev);
+      if (stepEl) stepsEl.appendChild(stepEl);
+    }
+    stepsEl.dataset.rendered = String(timelineRef.events.length);
+  }
+
+  function _renderAgentEvent(ev) {
+    const t = ev.type;
+    const el = document.createElement("div");
+    el.className = "enh-agent-step";
+    if (t === "thinking") {
+      el.innerHTML = `<span class="enh-agent-step-icon">🤔</span>
+        <div class="enh-agent-step-content">
+          <div class="enh-agent-step-title">คิดขั้นที่ ${ev.step}</div>
+        </div>`;
+    } else if (t === "tool_call") {
+      const argsStr = Object.keys(ev.args || {}).length
+        ? `(${Object.entries(ev.args).map(([k,v]) => `${k}=${JSON.stringify(v)}`).join(", ")})`
+        : "()";
+      el.innerHTML = `<span class="enh-agent-step-icon">🔧</span>
+        <div class="enh-agent-step-content">
+          <div class="enh-agent-step-title">เรียก <code>${_esc(ev.name)}</code></div>
+          <div class="enh-agent-tool-args">${_esc(argsStr)}</div>
+        </div>`;
+    } else if (t === "tool_result") {
+      el.innerHTML = `<span class="enh-agent-step-icon">📥</span>
+        <div class="enh-agent-step-content">
+          <div class="enh-agent-step-title">ผลจาก <code>${_esc(ev.name)}</code></div>
+          <div class="enh-agent-step-meta">${ev.length} ตัวอักษร — คลิกเพื่อดูเต็ม</div>
+          <div class="enh-agent-tool-result">${_esc(ev.preview || "")}</div>
+        </div>`;
+      const resEl = el.querySelector(".enh-agent-tool-result");
+      resEl.addEventListener("click", () => resEl.classList.toggle("expanded"));
+    } else if (t === "answering") {
+      el.innerHTML = `<span class="enh-agent-step-icon">💬</span>
+        <div class="enh-agent-step-content">
+          <div class="enh-agent-step-title">กำลังสรุปคำตอบ...</div>
+        </div>`;
+    } else if (t === "error") {
+      el.className = "enh-agent-step error";
+      el.innerHTML = `<span class="enh-agent-step-icon">❌</span>
+        <div class="enh-agent-step-content">
+          <div class="enh-agent-step-title">Error</div>
+          <div class="enh-agent-step-meta">${_esc(ev.message || "")}</div>
+        </div>`;
+    } else if (t === "max_steps_reached") {
+      el.innerHTML = `<span class="enh-agent-step-icon">⏱️</span>
+        <div class="enh-agent-step-content">
+          <div class="enh-agent-step-title">ใช้ครบ max steps — บังคับสรุป</div>
+        </div>`;
+    } else {
+      return null;
+    }
+    return el;
+  }
+
+  function _esc(s) {
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  console.log("[Enhanced UI] v7 — Agent Mode + Timeline — loaded ✅");
 })();
