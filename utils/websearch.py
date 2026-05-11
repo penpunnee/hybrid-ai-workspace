@@ -1,16 +1,68 @@
-"""Web Search — ค้นหาข้อมูลจาก DuckDuckGo แล้ว inject เป็น context ให้ local model
+"""Web Search — ค้นหาข้อมูลจาก DuckDuckGo + ดึง HTML จริงของ top result
 
 Flow:
   User ถามเรื่อง real-time
   → backend ค้น DuckDuckGo (ไม่ต้อง API key)
-  → เอาผล 5 อันแรกมา format เป็น context
+  → ดึง HTML 2 อันแรกมา extract text จริง (200-2000 chars)
   → inject เข้า system prompt
-  → local model (Gemma 4) อ่านข้อมูลจริงแล้วตอบ
+  → local model อ่านข้อมูลจริงแล้วตอบ
 """
 import logging
+import re
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
+
+_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+_FETCH_TIMEOUT = 6
+_FETCH_TOP_N = 2  # ดึง HTML แค่ 2 ผลแรก ที่เหลือใช้ snippet
+
+
+def _extract_text(html: str, max_chars: int = 1500) -> str:
+    """ดึง text จาก HTML แบบเร็ว (ไม่ใช้ BeautifulSoup)"""
+    html = re.sub(r"<script[^>]*>.*?</script>", " ", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<style[^>]*>.*?</style>", " ", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<nav[^>]*>.*?</nav>", " ", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<header[^>]*>.*?</header>", " ", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<footer[^>]*>.*?</footer>", " ", html, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", html)
+    text = re.sub(r"&nbsp;|&amp;|&quot;|&#\d+;", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:max_chars]
+
+
+def _fetch_url(url: str) -> str:
+    """ดึง HTML จาก URL แล้ว extract text — best effort"""
+    try:
+        import requests
+        resp = requests.get(url, timeout=_FETCH_TIMEOUT,
+                            headers={"User-Agent": _UA, "Accept-Language": "th,en;q=0.9"})
+        if resp.status_code != 200:
+            return ""
+        ct = resp.headers.get("content-type", "").lower()
+        if "html" not in ct and "text" not in ct:
+            return ""
+        return _extract_text(resp.text)
+    except Exception as e:
+        logger.debug(f"[WebSearch] fetch {url} failed: {e}")
+        return ""
+
+
+def _enrich_with_fetch(results: list[dict], top_n: int = _FETCH_TOP_N) -> list[dict]:
+    """ดึง HTML ของ top results ขนานกัน — เติม field 'fetched_text'"""
+    if not results:
+        return results
+    targets = results[:top_n]
+    with ThreadPoolExecutor(max_workers=top_n) as ex:
+        futures = {ex.submit(_fetch_url, r.get("href", "")): r for r in targets if r.get("href")}
+        for fut in as_completed(futures, timeout=_FETCH_TIMEOUT + 2):
+            r = futures[fut]
+            try:
+                r["fetched_text"] = fut.result() or ""
+            except Exception:
+                r["fetched_text"] = ""
+    return results
 
 
 def search_web(query: str, max_results: int = 5, region: str = "th-th") -> list[dict]:
@@ -77,17 +129,22 @@ def format_for_context(results: list[dict], query: str) -> str:
         "",
         "**คำสั่งสำคัญ:** ห้ามบอกว่า \"ไม่มี internet\" หรือ \"ไม่มีข้อมูล real-time\" "
         "เพราะระบบดึงข้อมูลด้านล่างให้แล้ว ตอบโดยใช้ข้อมูลด้านล่างนี้เท่านั้น "
-        "และอ้างอิงแหล่งที่มาทุกครั้ง:",
+        "สรุปข้อมูลที่เกี่ยวข้องและอ้างอิงแหล่งที่มา:",
         "",
     ]
     for i, r in enumerate(results, 1):
         title = r.get("title", "").strip()
-        body  = r.get("body", "").strip()[:500]
-        href  = r.get("href", "").strip()
-        if not body:
+        snippet = r.get("body", "").strip()[:300]
+        fetched = r.get("fetched_text", "").strip()
+        href = r.get("href", "").strip()
+        if not (snippet or fetched):
             continue
         lines.append(f"[{i}] **{title}**")
-        lines.append(f"    {body}")
+        if fetched:
+            # ใช้ fetched text เป็นหลักเพราะมีเนื้อหาจริง
+            lines.append(f"    {fetched[:1500]}")
+        elif snippet:
+            lines.append(f"    {snippet}")
         if href:
             lines.append(f"    🔗 {href}")
         lines.append("")
@@ -98,4 +155,5 @@ def format_for_context(results: list[dict], query: str) -> str:
 def web_search_context(query: str, max_results: int = 5) -> str:
     """API เดียวที่ router/chat ใช้ — คืน context string พร้อม inject"""
     results = search_web(query, max_results=max_results)
+    results = _enrich_with_fetch(results, top_n=_FETCH_TOP_N)
     return format_for_context(results, query)
