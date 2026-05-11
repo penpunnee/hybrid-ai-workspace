@@ -186,35 +186,56 @@ def _wiki_search_title(query: str, lang: str = "th") -> str:
         return ""
 
 
-def fetch_wikipedia(query: str) -> str:
-    """ดึงสรุปจาก Wikipedia ภาษาไทยก่อน → fallback English"""
+def _wiki_extract(title: str, lang: str = "th", max_chars: int = 3000) -> str:
+    """ดึง extract เต็มหน้าจาก MediaWiki API"""
     try:
         import requests
+        resp = requests.get(
+            f"https://{lang}.wikipedia.org/w/api.php",
+            params={
+                "action": "query", "prop": "extracts",
+                "titles": title, "explaintext": "true",
+                "exsectionformat": "plain",
+                "format": "json", "redirects": "1",
+            },
+            timeout=8,
+            headers={"User-Agent": _UA},
+        )
+        pages = resp.json().get("query", {}).get("pages", {})
+        for _, p in pages.items():
+            extract = (p.get("extract") or "").strip()
+            if extract:
+                return extract[:max_chars]
+        return ""
+    except Exception as e:
+        logger.debug(f"[Wiki] extract failed ({lang}): {e}")
+        return ""
+
+
+def fetch_wikipedia(query: str) -> str:
+    """ดึงเนื้อหาจาก Wikipedia ภาษาไทยก่อน → fallback English"""
+    try:
         for lang in ("th", "en"):
             title = _wiki_search_title(query, lang=lang)
             if not title:
                 continue
-            resp = requests.get(
-                f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{title}",
-                timeout=6,
-                headers={"User-Agent": _UA},
-            )
-            if resp.status_code != 200:
-                continue
-            d = resp.json()
-            extract = d.get("extract", "").strip()
+            extract = _wiki_extract(title, lang=lang)
             if not extract:
                 continue
-            page_url = d.get("content_urls", {}).get("desktop", {}).get("page", "")
+            page_url = f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}"
             lang_label = "ภาษาไทย" if lang == "th" else "ภาษาอังกฤษ"
             lines = [
-                f"📚 **Wikipedia ({lang_label})**",
-                f"**{d.get('title', title)}**",
+                f"📚 **Wikipedia ({lang_label}) — {title}**",
                 "",
-                extract[:1800],
+                "**คำสั่งสำคัญ**: ใช้ข้อมูลด้านล่างนี้เท่านั้นในการตอบ "
+                "ห้ามเพิ่มข้อมูลจากความจำของตัวเอง ห้ามคาดเดา "
+                "ถ้าข้อมูลไม่มีในนี้ ให้บอกว่า \"ไม่พบในข้อมูลที่มี\"",
+                "",
+                "--- เนื้อหาจาก Wikipedia ---",
+                extract,
+                "--- จบเนื้อหา ---",
+                f"\n🔗 {page_url}",
             ]
-            if page_url:
-                lines.append(f"\n🔗 {page_url}")
             return "\n".join(lines)
         return ""
     except Exception as e:
