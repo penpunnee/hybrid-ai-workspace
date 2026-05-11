@@ -200,6 +200,67 @@ def rem_sleep(memories: list[dict], provider: str = "ollama") -> dict:
     return {"themes": [], "insights": [], "connections": [], "raw": response[:500]}
 
 
+# ---------- Phase 2.5: Memory Decay ----------
+def memory_decay(decay_rate: float = 0.05, min_confidence: float = 0.2) -> dict:
+    """
+    ลด confidence ของ memories เก่าที่ไม่ถูก access นาน
+    รันหลัง REM ก่อน Deep Sleep
+
+    decay_rate: ลด confidence ลงเท่าไหร่ต่อรอบ (default 5%)
+    min_confidence: confidence ต่ำสุด (ไม่ลบ แค่ลดถึงระดับนี้)
+    """
+    from datetime import datetime, timedelta
+    client = _get_client()
+    if client is None:
+        return {"decayed": 0, "skipped": 0}
+
+    decayed = 0
+    skipped = 0
+    cutoff = (datetime.now() - timedelta(days=7)).isoformat()  # ไม่ถูก access > 7 วัน
+
+    try:
+        collections = client.list_collections()
+        for col_info in collections:
+            name = col_info.name if hasattr(col_info, "name") else str(col_info)
+            if not name.startswith("memory_"):
+                continue
+            try:
+                col = client.get_collection(name)
+                data = col.get()
+                ids = data.get("ids", [])
+                metas = data.get("metadatas", [])
+
+                updated_ids, updated_metas = [], []
+                for doc_id, meta in zip(ids, metas):
+                    if not meta:
+                        skipped += 1
+                        continue
+                    # ข้าม verified memories — ไม่ decay
+                    if meta.get("verified"):
+                        skipped += 1
+                        continue
+                    last = meta.get("last_accessed", meta.get("timestamp", ""))
+                    if last and last < cutoff:
+                        old_conf = float(meta.get("confidence", 0.7))
+                        new_conf = max(min_confidence, old_conf - decay_rate)
+                        if new_conf < old_conf:
+                            m = dict(meta)
+                            m["confidence"] = round(new_conf, 3)
+                            updated_ids.append(doc_id)
+                            updated_metas.append(m)
+                            decayed += 1
+
+                if updated_ids:
+                    col.update(ids=updated_ids, metadatas=updated_metas)
+            except Exception as e:
+                logger.debug(f"Decay collection {name} error: {e}")
+    except Exception as e:
+        logger.warning(f"memory_decay error: {e}")
+
+    logger.info(f"Dream/Decay: decayed={decayed}, skipped={skipped} (verified/no-meta)")
+    return {"decayed": decayed, "skipped": skipped}
+
+
 # ---------- Phase 3: Deep Sleep ----------
 def deep_sleep(memories: list[dict], themes: list[dict]) -> dict:
     """
@@ -332,6 +393,11 @@ def run_dream_cycle(provider: str = "ollama", hours: int = 24) -> dict:
     analysis = rem_sleep(memories, provider=provider)
     report["phase2_rem"] = analysis
     logger.info(f"Dream Phase 2 (REM): Analysis complete - {len(analysis.get('themes', []))} themes found")
+
+    # Phase 2.5 — Memory Decay
+    decay_result = memory_decay()
+    report["phase2_decay"] = decay_result
+    logger.info(f"Dream Phase 2.5 (Decay): {decay_result}")
 
     # Phase 3
     result = deep_sleep(memories, analysis.get("themes", []))
