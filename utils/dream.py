@@ -109,40 +109,95 @@ def rem_sleep(memories: list[dict], provider: str = "ollama") -> dict:
         logger.info("Dream/REM: No memories to analyze")
         return {"themes": [], "insights": [], "connections": []}
 
-    # รวมเนื้อหาทั้งหมดเป็น text สำหรับให้ AI สรุป
-    combined = "\n\n---\n\n".join(
-        f"[{m.get('timestamp','')}] {m['doc'][:500]}"
-        for m in memories[:50]  # จำกัดไม่ให้ context บาน
+    combined = "\n---\n".join(
+        f"[{m.get('timestamp', '')[:16]}] {m['doc'][:300]}"
+        for m in memories[:30]
     )
 
-    prompt = (
-        "นี่คือบทสนทนา/memory ของผู้ใช้ใน 24 ชั่วโมงที่ผ่านมา "
-        "กรุณาวิเคราะห์เป็น JSON ตามรูปแบบนี้เท่านั้น (ไม่ต้องมีข้อความอื่น):\n"
-        '{"themes":[{"name":"ชื่อธีม","summary":"สรุป 1-2 ประโยค","count":จำนวนครั้งที่ปรากฏ}],'
-        '"insights":["insight 1","insight 2"],'
-        '"connections":[{"from":"เรื่อง A","to":"เรื่อง B","reason":"เชื่อมโยงเพราะ..."}]}'
-        "\n\n=== ข้อมูล ===\n" + combined
+    # Few-shot prompt — แสดง output จริงไม่ใช่ placeholder
+    system_msg = (
+        "You are a memory consolidation system. "
+        "Analyze conversation memories and output ONLY valid JSON — no markdown, no explanation.\n\n"
+        "Output format example (use real content, not these placeholder words):\n"
+        '{"themes":[{"name":"Docker Deployment","summary":"User frequently deploys to NAS using docker compose","count":3}],'
+        '"insights":["User prefers concise Thai responses","System uses LM Studio for local inference"],'
+        '"connections":[{"from":"Docker","to":"NAS","reason":"All deployments target the Synology NAS"}]}'
+    )
+
+    user_msg = (
+        f"Analyze these {len(memories)} memories from the past {memories[0].get('timestamp','')[:10] if memories else 'N/A'}.\n"
+        "Find recurring themes, extract insights, and identify connections.\n"
+        "Respond with JSON only — no other text.\n\n"
+        f"=== MEMORIES ===\n{combined}"
     )
 
     messages = [
-        {"role": "system", "content": "คุณคือระบบวิเคราะห์ความจำ ตอบเป็น JSON เท่านั้น"},
-        {"role": "user", "content": prompt},
+        {"role": "system", "content": system_msg},
+        {"role": "user", "content": user_msg},
     ]
 
+    def _try_parse(raw: str) -> dict | None:
+        """พยายาม parse JSON จาก response ที่อาจมี markdown wrapper"""
+        raw = raw.strip()
+        # กรณี ```json ... ```
+        if "```" in raw:
+            import re
+            m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
+            if m:
+                raw = m.group(1)
+        # หา { ... } ที่ใหญ่สุด
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        try:
+            result = json.loads(raw[start:end + 1])
+            # ตรวจว่าไม่ใช่ template (ไม่มี placeholder)
+            themes = result.get("themes", [])
+            if themes and any(
+                t.get("name", "") in ("ชื่อธีม", "theme name", "Theme Name")
+                for t in themes
+            ):
+                logger.warning("Dream/REM: got template placeholder, retrying")
+                return None
+            return result
+        except json.JSONDecodeError:
+            return None
+
+    logger.info(f"Dream/REM: Analyzing {len(memories)} memories (provider={provider})")
+
+    # Attempt 1 — full prompt
     try:
-        logger.info(f"Dream/REM: Analyzing {len(memories)} memories with provider={provider}")
         response = "".join(stream_response(messages, provider=provider))
-        # หา JSON ในคำตอบ
-        start = response.find("{")
-        end = response.rfind("}")
-        if start >= 0 and end > start:
-            result = json.loads(response[start:end+1])
+        result = _try_parse(response)
+        if result:
             logger.info(f"Dream/REM: Found {len(result.get('themes', []))} themes")
             return result
+        logger.warning(f"Dream/REM: attempt 1 failed to parse, raw={response[:200]}")
     except Exception as e:
-        logger.error(f"Dream/REM parse error: {str(e)}")
+        logger.error(f"Dream/REM attempt 1 error: {e}")
+        response = ""
 
-    return {"themes": [], "insights": [], "connections": [], "raw": response if 'response' in dir() else ""}
+    # Attempt 2 — simplified prompt (fallback)
+    try:
+        simple_msgs = [
+            {"role": "system", "content": "Output only JSON. No markdown."},
+            {"role": "user", "content": (
+                f"Summarize these memories into JSON:\n{combined[:1000]}\n\n"
+                'Format: {"themes":[{"name":"<actual topic>","summary":"<actual summary>","count":1}],'
+                '"insights":["<actual insight>"],"connections":[]}'
+            )},
+        ]
+        response2 = "".join(stream_response(simple_msgs, provider=provider))
+        result = _try_parse(response2)
+        if result:
+            logger.info(f"Dream/REM: attempt 2 succeeded — {len(result.get('themes', []))} themes")
+            return result
+        logger.warning(f"Dream/REM: attempt 2 also failed, raw={response2[:200]}")
+    except Exception as e:
+        logger.error(f"Dream/REM attempt 2 error: {e}")
+
+    return {"themes": [], "insights": [], "connections": [], "raw": response[:500]}
 
 
 # ---------- Phase 3: Deep Sleep ----------
