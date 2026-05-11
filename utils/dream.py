@@ -179,7 +179,7 @@ def deep_sleep(memories: list[dict], themes: list[dict]) -> dict:
         if name and count >= PROMOTE_MIN_HITS:
             theme_counts[name] = count
 
-    # บันทึก theme ที่ผ่านเกณฑ์เข้า skills
+    # บันทึก theme ที่ผ่านเกณฑ์เข้า skills (sync=False เพื่อไม่ sync ทุกรายการ)
     for theme_name, count in theme_counts.items():
         matching = next((t for t in themes if t.get("name") == theme_name), {})
         summary = matching.get("summary", "")
@@ -188,8 +188,19 @@ def deep_sleep(memories: list[dict], themes: list[dict]) -> dict:
                 topic=f"[Dream] {theme_name}",
                 summary=f"{summary} (consolidated {count} times on {datetime.now().strftime('%Y-%m-%d')})",
                 source="dream_cycle",
+                sync=False,  # sync ครั้งเดียวหลัง loop จบ
             )
             promoted.append(theme_name)
+
+    # sync skills ครั้งเดียวหลังบันทึกครบทุก theme
+    if promoted:
+        try:
+            from utils.skills_search import sync_skills_to_search
+            from utils.skills import _load_skills_db
+            sync_skills_to_search(_load_skills_db())
+            logger.info(f"Dream/DeepSleep: Skills synced after promoting {len(promoted)} themes")
+        except Exception as e:
+            logger.warning(f"Dream/DeepSleep: Skills sync failed (non-critical): {e}")
 
     # บันทึกเข้า ChromaDB collection "long_term_memory"
     if client is not None and promoted:
@@ -244,11 +255,13 @@ def run_dream_cycle(provider: str = "ollama", hours: int = 24) -> dict:
         "started_at": start.isoformat(),
         "provider": provider,
         "hours_window": hours,
+        "memories_processed": 0,
     }
 
     # Phase 1
     memories = light_sleep(hours=hours)
     report["phase1_light"] = {"raw_count": len(memories)}
+    report["memories_processed"] = len(memories)
     logger.info(f"Dream Phase 1 (Light Sleep): Found {len(memories)} memories")
 
     if not memories:

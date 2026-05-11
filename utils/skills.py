@@ -27,7 +27,7 @@ def _save_skills_db(db: dict):
         pass
 
 
-def save_skill(topic: str, summary: str, source: str = "auto"):
+def save_skill(topic: str, summary: str, source: str = "auto", sync: bool = True):
     """บันทึก skill ใหม่ที่ AI เรียนรู้"""
     db = _load_skills_db()
     db[topic] = {
@@ -37,7 +37,10 @@ def save_skill(topic: str, summary: str, source: str = "auto"):
     }
     _save_skills_db(db)
 
-    # Sync to semantic search
+    if not sync:
+        return
+
+    # Sync to semantic search (sync=False เพื่อข้ามเมื่อบันทึกหลายรายการพร้อมกัน)
     try:
         from utils.skills_search import sync_skills_to_search
         sync_skills_to_search(db)
