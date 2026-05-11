@@ -35,11 +35,12 @@ OBSIDIAN_VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH", "")
 NAS_DATA_PATH       = os.getenv("NAS_DATA_PATH", "./data")
 
 # ── LM Studio (Local LLM — OpenAI compatible) ────────────────────────────────
-LMSTUDIO_BASE_URL    = os.getenv("LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
-LMSTUDIO_CHAT_MODEL  = os.getenv("LMSTUDIO_CHAT_MODEL", "meta-llama-3.1-8b-instruct")
+LMSTUDIO_BASE_URL     = os.getenv("LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
+LMSTUDIO_CHAT_MODEL   = os.getenv("LMSTUDIO_CHAT_MODEL", "google/gemma-4-e4b")
 LMSTUDIO_REASON_MODEL = os.getenv("LMSTUDIO_REASON_MODEL", "deepseek/deepseek-r1-0528-qwen3-8b")
-LMSTUDIO_TIMEOUT     = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
-SHOW_THINKING        = os.getenv("SHOW_THINKING", "false").lower() == "true"
+LMSTUDIO_VISION_MODEL = os.getenv("LMSTUDIO_VISION_MODEL", "llama-3.2-11b-vision-instruct")
+LMSTUDIO_TIMEOUT      = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
+SHOW_THINKING         = os.getenv("SHOW_THINKING", "false").lower() == "true"
 
 # ── CORS list ────────────────────────────────────────────────────────────────
 CORS_ORIGINS_LIST = (

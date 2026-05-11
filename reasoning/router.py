@@ -92,8 +92,8 @@ def route(
         agent_mode: เปิด agent mode ไหม
     """
     from core.config import (
-        LMSTUDIO_CHAT_MODEL, LMSTUDIO_REASON_MODEL, LMSTUDIO_BASE_URL,
-        OLLAMA_MODEL, GEMINI_API_KEY,
+        LMSTUDIO_CHAT_MODEL, LMSTUDIO_REASON_MODEL, LMSTUDIO_VISION_MODEL,
+        LMSTUDIO_BASE_URL, OLLAMA_MODEL, GEMINI_API_KEY,
     )
 
     # ── Forced providers ────────────────────────────────────────────────────
@@ -101,13 +101,14 @@ def route(
         return RouteDecision("gemini", "", Complexity.NORMAL, "agent mode → Gemini")
 
     if has_image:
-        # ถ้า LM Studio มี vision model → ใช้ local แทน Gemini
-        if LMSTUDIO_BASE_URL and LMSTUDIO_CHAT_MODEL and _is_model_available(
-            LMSTUDIO_BASE_URL, LMSTUDIO_CHAT_MODEL
+        # ใช้ vision model โดยเฉพาะถ้าพร้อม → ไม่ต้องใช้ Gemini
+        vision_model = LMSTUDIO_VISION_MODEL or LMSTUDIO_CHAT_MODEL
+        if LMSTUDIO_BASE_URL and vision_model and _is_model_available(
+            LMSTUDIO_BASE_URL, vision_model
         ):
-            return RouteDecision("lmstudio", LMSTUDIO_CHAT_MODEL, Complexity.NORMAL,
-                                 "vision → LM Studio (local)")
-        return RouteDecision("gemini", "", Complexity.NORMAL, "vision → Gemini (LM Studio unavailable)")
+            return RouteDecision("lmstudio", vision_model, Complexity.NORMAL,
+                                 f"vision → {vision_model.split('/')[-1]} (local)")
+        return RouteDecision("gemini", "", Complexity.NORMAL, "vision → Gemini (vision model unavailable)")
 
     if provider_hint == "gemini":
         return RouteDecision("gemini", "", Complexity.NORMAL, "user เลือก Gemini")
