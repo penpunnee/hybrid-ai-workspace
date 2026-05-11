@@ -223,6 +223,22 @@
       padding: 2px 8px; font-size: 11px; color: #34d399; margin-right: 6px;
     }
 
+    /* Model indicator badge */
+    .enh-model-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 10px; color: rgba(148,163,184,0.5);
+      margin-top: 6px; padding: 2px 8px;
+      background: rgba(99,102,241,0.06);
+      border: 1px solid rgba(99,102,241,0.15);
+      border-radius: 20px; user-select: none;
+      transition: opacity .2s;
+    }
+    .enh-model-badge:hover { color: rgba(148,163,184,0.85); }
+    .enh-model-badge .enh-model-dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: #6366f1; flex-shrink: 0;
+    }
+
     /* Toast */
     #enh-toast {
       position: fixed; bottom: 64px; left: 50%; transform: translateX(-50%);
@@ -876,25 +892,36 @@
     <span id="enh-token-text">— / —</span>`;
   document.body.appendChild(tokenBar);
 
-  // นับ token จาก DOM (ไม่ต้องรอ API) — 1 char ≈ 0.35 token (Thai/English mix)
+  // นับ token แยก Thai / CJK / ASCII เพื่อความแม่นยำ
+  function _countTokens(text) {
+    let tokens = 0;
+    for (const ch of text) {
+      const cp = ch.codePointAt(0);
+      if (cp >= 0x0E00 && cp <= 0x0E7F) tokens += 0.65;      // Thai
+      else if (cp > 0x00FF)              tokens += 0.5;       // CJK / Unicode
+      else                               tokens += 0.3;       // ASCII
+    }
+    return Math.round(tokens);
+  }
+
   function _updateTokenBar() {
     try {
       const msgs = document.querySelectorAll("p.whitespace-pre-wrap, p[class*='whitespace-pre']");
       if (!msgs.length) return;
-      let chars = 0;
-      msgs.forEach(p => { chars += (p.innerText || "").length; });
-      const estimated = Math.round(chars * 0.35);
+      let text = "";
+      msgs.forEach(p => { text += (p.innerText || ""); });
+      const estimated = _countTokens(text);
       // ดึง limit จาก /api/status ที่ React เคย load (หรือ fallback)
       const statusRaw = localStorage.getItem("hw_status_cache");
       const limit = statusRaw ? (JSON.parse(statusRaw).context_limit || 4096) : 4096;
       const pct = Math.min(100, Math.round(estimated / limit * 100));
       const fill = document.getElementById("enh-token-fill");
-      const text = document.getElementById("enh-token-text");
+      const textEl = document.getElementById("enh-token-text");
       if (fill) {
         fill.style.width = pct + "%";
         fill.style.background = pct > 85 ? "#ef4444" : pct > 65 ? "#f59e0b" : "#6366f1";
       }
-      if (text) text.textContent = `~${estimated.toLocaleString()} / ${limit.toLocaleString()} tokens`;
+      if (textEl) textEl.textContent = `~${estimated.toLocaleString()} / ${limit.toLocaleString()} tokens`;
     } catch {}
   }
 
@@ -1265,5 +1292,82 @@
     setTimeout(() => { if(btn){btn.textContent="📡 Ping NAS";btn.disabled=false;} }, 4000);
   }
 
-  console.log("[Enhanced UI] v5 — Home Control rewritten — loaded ✅");
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 15. MODEL INDICATOR — แสดง badge ใต้ AI message ว่าใช้ model อะไร
+  // ─────────────────────────────────────────────────────────────────────────────
+  const _PROVIDER_ICONS = {
+    lmstudio: "🖥️", gemini: "☁️", ollama: "🦙", auto: "⚡",
+  };
+
+  function _injectModelBadge(model, provider) {
+    if (!model && !provider) return;
+    // หา AI bubble ล่าสุด
+    const bubbles = document.querySelectorAll("div.flex.group.justify-start");
+    if (!bubbles.length) return;
+    const last = bubbles[bubbles.length - 1];
+    // ไม่ใส่ซ้ำ
+    if (last.querySelector(".enh-model-badge")) return;
+    const bubble = last.querySelector('[class*="rounded-3xl"]') || last;
+
+    const icon = _PROVIDER_ICONS[provider] || "🤖";
+    const label = model || provider || "AI";
+    const badge = document.createElement("div");
+    badge.className = "enh-model-badge";
+    badge.innerHTML = `<span class="enh-model-dot"></span>${icon} ${label}`;
+    badge.title = `provider: ${provider || "?"}, model: ${model || "?"}`;
+    bubble.appendChild(badge);
+  }
+
+  // Override fetch เพื่อดัก done event จาก /api/chat
+  const _origFetch2 = window.fetch.bind(window);
+  const _origFetchSaved = window.fetch;
+  // patch streaming reader เพื่อจับ done event
+  const _patchStream = (url, stream) => {
+    if (!url || !url.toString().includes("/api/chat")) return stream;
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    return new ReadableStream({
+      async pull(controller) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) { controller.close(); return; }
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop();
+          for (const line of lines) {
+            const t = line.trim();
+            if (t.startsWith("data: ")) {
+              try {
+                const d = JSON.parse(t.slice(6));
+                if (d.done && (d.model || d.provider)) {
+                  setTimeout(() => _injectModelBadge(d.model, d.provider), 100);
+                }
+              } catch {}
+            }
+          }
+          controller.enqueue(value);
+        }
+      },
+      cancel() { reader.cancel(); }
+    });
+  };
+
+  // wrap fetch response body สำหรับ chat endpoint
+  const _fetchOrig = window.fetch;
+  window.fetch = function(url, opts) {
+    return _fetchOrig(url, opts).then(resp => {
+      if (typeof url === "string" && url.includes("/api/chat") && resp.body) {
+        const patched = _patchStream(url, resp.body);
+        return new Response(patched, {
+          status: resp.status,
+          statusText: resp.statusText,
+          headers: resp.headers,
+        });
+      }
+      return resp;
+    });
+  };
+
+  console.log("[Enhanced UI] v6 — Model indicator + Thai token counter — loaded ✅");
 })();

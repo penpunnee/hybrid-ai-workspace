@@ -92,29 +92,43 @@ async def chat(request: Request):
         while len(messages) > 2 and count_tokens_approx(messages) > 3000:
             messages.pop(1)
 
+    # ── Get routing decision ก่อน stream เพื่อส่ง model info ─────────────────
+    model_used = ""
+    provider_used = provider
+    model_override = ""
+    if provider == "auto":
+        try:
+            from reasoning.router import route
+            decision = route(prompt, provider_hint="auto",
+                             has_image=bool(image_b64), agent_mode=agent_mode)
+            provider_used = decision.provider
+            model_override = decision.model
+            model_used = decision.model.split("/")[-1] if decision.model else decision.provider
+            logger.info(f"[Chat] route → {decision.provider}/{decision.model} ({decision.reason})")
+        except Exception as e:
+            logger.warning(f"[Chat] route failed: {e}")
+
     def generate():
         full_response = ""
         try:
             for chunk in stream_response(messages, provider=provider, image_b64=image_b64,
-                                         image_mime=image_mime, agent_mode=agent_mode):
+                                         image_mime=image_mime, agent_mode=agent_mode,
+                                         model_override=model_override):
                 full_response += chunk
                 yield f"data: {json.dumps({'chunk': chunk})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
             return
 
-        save_message(assistant, "assistant", full_response, provider, session_id)
+        save_message(assistant, "assistant", full_response, provider_used, session_id)
 
-        # บันทึกลง working memory + episodic memory (new system)
         push_working(session_id, "user", prompt)
         push_working(session_id, "assistant", full_response)
         remember(assistant, prompt, full_response)
-
-        # ตรวจ teaching จาก context (user แก้ไข AI)
         teach(assistant, prompt, ai_response=full_response)
 
         if len(full_response) > 100:
-            def _learn(p=prompt, r=full_response, pv=provider):
+            def _learn(p=prompt, r=full_response, pv=provider_used):
                 try:
                     msgs = [
                         {"role": "system", "content": "สรุปบทเรียนเป็นภาษาไทย 1-2 ประโยค ถ้าไม่มีตอบว่า SKIP"},
@@ -130,7 +144,7 @@ async def chat(request: Request):
                     logger.debug(f"Auto-learn failed: {e}")
             threading.Thread(target=_learn, daemon=True).start()
 
-        yield f"data: {json.dumps({'done': True})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'model': model_used, 'provider': provider_used})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
