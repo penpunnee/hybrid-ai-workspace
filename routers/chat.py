@@ -22,6 +22,7 @@ from utils.obsidian_sync import search_vault
 from utils.home_tools import detect_home_tools, build_tool_context
 from utils.tts import VOICE_MAP, DEFAULT_VOICE
 from utils.tokens import count_tokens_approx
+from core.observability import log_timing, current_request_id, get_timings
 
 router = APIRouter(prefix="/api", tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -75,13 +76,14 @@ async def chat(request: Request):
     from utils.citations import CitationTracker
     citations = CitationTracker()
 
-    lessons    = get_lessons(prompt)
-    prefs      = get_preferences()
-    skills_dir = os.path.join(os.path.dirname(__file__), "..", "skills")
-    skills_md  = load_skills_relevant(skills_dir, prompt)
+    with log_timing("context_assembly"):
+        lessons    = get_lessons(prompt)
+        prefs      = get_preferences()
+        skills_dir = os.path.join(os.path.dirname(__file__), "..", "skills")
+        skills_md  = load_skills_relevant(skills_dir, prompt)
 
-    # New: tiered memory recall (working + episodic + long-term)
-    memory_ctx = recall(assistant, prompt, session_id=session_id)
+        # New: tiered memory recall (working + episodic + long-term)
+        memory_ctx = recall(assistant, prompt, session_id=session_id)
 
     vault_ctx = ""
     if obsidian_inject:
@@ -102,25 +104,26 @@ async def chat(request: Request):
     # ใช้ per-session cache — ถ้า topic เดิม ไม่ต้องเรียก ChromaDB ใหม่
     docs_ctx = ""
     doc_chunks: list[dict] = []
-    try:
-        from utils.retrieval_cache import get_cached as _retr_get, store as _retr_store
-        from utils.documents import retrieve_chunks, format_for_context as _doc_fmt
+    with log_timing("retrieval"):
+        try:
+            from utils.retrieval_cache import get_cached as _retr_get, store as _retr_store
+            from utils.documents import retrieve_chunks, format_for_context as _doc_fmt
 
-        cached = _retr_get(session_id, prompt)
-        if cached:
-            doc_chunks = cached["chunks"]
-            logger.info(f"[Chat] retrieval cache hit (sim={cached['similarity']})")
-        else:
-            doc_chunks = retrieve_chunks(prompt, top_k=3, min_score=0.3)
+            cached = _retr_get(session_id, prompt)
+            if cached:
+                doc_chunks = cached["chunks"]
+                logger.info(f"[Chat] retrieval cache hit (sim={cached['similarity']})")
+            else:
+                doc_chunks = retrieve_chunks(prompt, top_k=3, min_score=0.3)
+                if doc_chunks:
+                    _retr_store(session_id, prompt, doc_chunks)
+
             if doc_chunks:
-                _retr_store(session_id, prompt, doc_chunks)
-
-        if doc_chunks:
-            docs_ctx = _doc_fmt(doc_chunks, max_chars=1500)
-            citations.add_doc_chunks(doc_chunks)
-            logger.info(f"[Chat] retrieved {len(doc_chunks)} doc chunks")
-    except Exception as e:
-        logger.debug(f"[Chat] doc retrieval skipped: {e}")
+                docs_ctx = _doc_fmt(doc_chunks, max_chars=1500)
+                citations.add_doc_chunks(doc_chunks)
+                logger.info(f"[Chat] retrieved {len(doc_chunks)} doc chunks")
+        except Exception as e:
+            logger.debug(f"[Chat] doc retrieval skipped: {e}")
 
     # ── Prefix-stable context ordering ─────────────────────────────────────
     # หลักการ: ส่วนที่เปลี่ยนน้อย (prefs/lessons) ขึ้นก่อน — llama.cpp KV cache hit
@@ -267,7 +270,10 @@ async def chat(request: Request):
 
     def generate():
         nonlocal provider_used, model_used, messages
+        import time as _time
+        from core.observability import record_timing
         full_response = ""
+        llm_start = _time.perf_counter()
         _provider = provider_used if provider_used and provider_used != "auto" else provider
 
         # ส่ง citations event ก่อน stream chunks (ถ้ามี) — frontend แสดง source list ได้ก่อนตอบ
@@ -338,6 +344,7 @@ async def chat(request: Request):
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
                 return
 
+        record_timing("llm_stream", (_time.perf_counter() - llm_start) * 1000)
         message_id = save_message(assistant, "assistant", full_response, provider_used, session_id)
 
         # ── Reflection: ตรวจคำตอบหลัง stream เสร็จ → ส่ง revision เป็น SSE event ─
@@ -379,7 +386,14 @@ async def chat(request: Request):
                     logger.debug(f"Auto-learn failed: {e}")
             threading.Thread(target=_learn, daemon=True).start()
 
-        yield f"data: {json.dumps({'done': True, 'model': model_used, 'provider': provider_used, 'message_id': message_id})}\n\n"
+        # ใส่ timing + request_id ใน done event เพื่อ debug / metrics
+        done_payload = {
+            "done": True, "model": model_used, "provider": provider_used,
+            "message_id": message_id,
+            "request_id": current_request_id(),
+            "timings": get_timings(),
+        }
+        yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream",
                              headers={

@@ -1,23 +1,24 @@
 import os
 import logging
 import threading
+import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import CORS_ORIGINS_LIST, RELOAD
 from core.auth import auth_middleware
+from core.observability import install_logging, start_request, current_request_id, timing_summary
 from core.scheduler import start_scheduler
 from utils.skills import _load_skills_db
 
 from routers import auth, chat, sessions, memory, skills, dream, vault, tools, system, agent, documents, feedback, sandbox
 
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-                    handlers=[logging.FileHandler("server.log"), logging.StreamHandler()])
+# install logging ก่อน import อื่นๆ ที่ใช้ logger — กัน duplicate handlers
+install_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -43,6 +44,31 @@ app = FastAPI(title="Hybrid AI Workspace", lifespan=lifespan)
 
 app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS_LIST,
                    allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+
+@app.middleware("http")
+async def _request_id_middleware(request: Request, call_next):
+    """กำหนด request_id + log start/end + timing"""
+    # respect client-provided ID (สำหรับ end-to-end tracing) ไม่งั้น generate ใหม่
+    rid = request.headers.get("x-request-id") or start_request()
+    if request.headers.get("x-request-id"):
+        from core.observability import _request_id_var
+        _request_id_var.set(rid)
+
+    start = time.perf_counter()
+    method, path = request.method, request.url.path
+    response = await call_next(request)
+    elapsed = round((time.perf_counter() - start) * 1000, 1)
+
+    # log บางอันเท่านั้น (กัน noise จาก static)
+    if not path.startswith(("/static", "/assets")):
+        ts = timing_summary()
+        logger.info(f"{method} {path} → {response.status_code} ({elapsed}ms) {ts}")
+
+    response.headers["X-Request-Id"] = rid
+    return response
+
+
 app.middleware("http")(auth_middleware)
 
 # ── Routers ───────────────────────────────────────────────────────────────────

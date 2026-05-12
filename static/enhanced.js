@@ -96,18 +96,20 @@
           loginOverlay.classList.add("open");
           setTimeout(() => document.getElementById("login-input")?.focus(), 100);
         }
-        // Agent Mode: tee stream — React อ่านอันหนึ่ง, enhanced.js parse อีกอัน
-        if (typeof url === "string" && url === "/api/chat" && _agentMode && resp.body && _pendingAgentTimeline) {
+        // Tee stream — React อ่านอันหนึ่ง, enhanced.js parse อีกอัน
+        // ทำเสมอสำหรับ /api/chat เพื่อ render citations/reflection/cache_hit/feedback
+        if (typeof url === "string" && (url === "/api/chat" || url.includes("/api/regenerate")) && resp.body) {
           try {
             const [reactStream, ourStream] = resp.body.tee();
-            _parseAgentSSE(ourStream, _pendingAgentTimeline);
+            // start chat-event parser (citations, reflection, cache_hit, active_learning, message_id)
+            _parseChatSSE(ourStream, _agentMode ? _pendingAgentTimeline : null);
             return new Response(reactStream, {
               status: resp.status,
               statusText: resp.statusText,
               headers: resp.headers,
             });
           } catch (e) {
-            console.warn("[Agent] tee failed:", e);
+            console.warn("[Chat] tee failed:", e);
           }
         }
         return resp;
@@ -1599,5 +1601,283 @@
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   }
 
-  console.log("[Enhanced UI] v7 — Agent Mode + Timeline — loaded ✅");
+  // ────────────────────────────────────────────────────────────────────────────
+  // F2 — Frontend SSE event handlers
+  // citations / reflection / cache_hit / active_learning / feedback
+  // ────────────────────────────────────────────────────────────────────────────
+
+  const _chatCSS = document.createElement("style");
+  _chatCSS.textContent = `
+    .enh-bubble-meta { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .enh-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 8px; border-radius: 999px;
+      font-size: 11px; font-weight: 500; line-height: 1;
+      border: 1px solid transparent; cursor: default; user-select: none;
+    }
+    .enh-badge.cache  { background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.35); color: #4ade80; }
+    .enh-badge.refl-ok{ background: rgba(99,102,241,0.10); border-color: rgba(99,102,241,0.30); color: #a5b4fc; }
+    .enh-badge.refl-warn{ background: rgba(251,191,36,0.10); border-color: rgba(251,191,36,0.35); color: #fbbf24; }
+    .enh-badge.al     { background: rgba(168,85,247,0.10); border-color: rgba(168,85,247,0.30); color: #c4b5fd; }
+    .enh-badge.timing { background: rgba(100,116,139,0.10); border-color: rgba(100,116,139,0.30); color: #94a3b8; font-family: ui-monospace, monospace; }
+
+    .enh-citations {
+      margin-top: 12px; padding: 10px 12px;
+      background: rgba(15,23,42,0.45); border: 1px solid rgba(99,102,241,0.20);
+      border-radius: 12px; font-size: 12px; color: #cbd5e1;
+    }
+    .enh-citations-title { font-weight: 600; color: #818cf8; margin-bottom: 6px; }
+    .enh-cite-row { display: flex; gap: 6px; padding: 4px 0; align-items: baseline; }
+    .enh-cite-id { color: #818cf8; font-weight: 700; flex-shrink: 0; }
+    .enh-cite-source { color: #e2e8f0; }
+    .enh-cite-source a { color: #60a5fa; text-decoration: none; }
+    .enh-cite-source a:hover { text-decoration: underline; }
+    .enh-cite-snippet { color: #94a3b8; margin-top: 2px; font-size: 11px; line-height: 1.4; }
+    .enh-cite-score { color: #64748b; font-family: ui-monospace, monospace; font-size: 10px; }
+
+    .enh-reflection {
+      margin-top: 10px; padding: 10px 12px; border-radius: 12px;
+      background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.30);
+      font-size: 12px; color: #fcd34d;
+    }
+    .enh-reflection-title { font-weight: 600; margin-bottom: 4px; }
+    .enh-reflection-revised {
+      margin-top: 8px; padding: 8px 10px; border-radius: 8px;
+      background: rgba(255,255,255,0.04); color: #e2e8f0;
+      white-space: pre-wrap;
+    }
+
+    .enh-feedback { margin-top: 8px; display: flex; gap: 6px; }
+    .enh-fb-btn {
+      padding: 4px 10px; border-radius: 8px; font-size: 12px; cursor: pointer;
+      background: rgba(30,41,59,0.6); border: 1px solid rgba(99,102,241,0.20);
+      color: #94a3b8; transition: all .15s; user-select: none;
+    }
+    .enh-fb-btn:hover { color: #e2e8f0; border-color: rgba(99,102,241,0.45); }
+    .enh-fb-btn.active.up   { color: #4ade80; border-color: rgba(34,197,94,0.5); background: rgba(34,197,94,0.12); }
+    .enh-fb-btn.active.down { color: #f87171; border-color: rgba(248,113,113,0.5); background: rgba(248,113,113,0.12); }
+    .enh-fb-btn:disabled { opacity: 0.6; cursor: wait; }
+  `;
+  document.head.appendChild(_chatCSS);
+
+  // หา bubble AI ล่าสุด (รอจนกว่า React จะ render)
+  function _findLatestAIBubble(retries = 12) {
+    return new Promise((resolve) => {
+      const tick = (n) => {
+        const bubbles = document.querySelectorAll("div.flex.group.justify-start");
+        if (bubbles.length) {
+          const last = bubbles[bubbles.length - 1];
+          const bubble = last.querySelector('[class*="rounded-3xl"]') || last;
+          resolve(bubble);
+        } else if (n > 0) {
+          setTimeout(() => tick(n - 1), 250);
+        } else {
+          resolve(null);
+        }
+      };
+      tick(retries);
+    });
+  }
+
+  function _getOrCreateMeta(bubble) {
+    let meta = bubble.querySelector(".enh-bubble-meta");
+    if (!meta) {
+      meta = document.createElement("div");
+      meta.className = "enh-bubble-meta";
+      bubble.appendChild(meta);
+    }
+    return meta;
+  }
+
+  function _renderCacheHit(bubble, hit) {
+    const meta = _getOrCreateMeta(bubble);
+    if (meta.querySelector(".enh-badge.cache")) return; // dedupe
+    const b = document.createElement("span");
+    b.className = "enh-badge cache";
+    b.title = `จาก cache (sim=${hit.similarity}) ของคำถาม: ${hit.source_prompt}`;
+    b.textContent = `⚡ cached (${Math.round(hit.similarity * 100)}%)`;
+    meta.appendChild(b);
+  }
+
+  function _renderActiveLearning(bubble, al) {
+    const meta = _getOrCreateMeta(bubble);
+    if (meta.querySelector(".enh-badge.al")) return;
+    const b = document.createElement("span");
+    b.className = "enh-badge al";
+    b.title = al.reason || "AI ต้องการข้อมูลเพิ่ม";
+    b.textContent = "💭 ถามกลับ";
+    meta.appendChild(b);
+  }
+
+  function _renderTiming(bubble, timings, model) {
+    if (!timings || !Object.keys(timings).length) return;
+    const meta = _getOrCreateMeta(bubble);
+    if (meta.querySelector(".enh-badge.timing")) return;
+    const b = document.createElement("span");
+    b.className = "enh-badge timing";
+    const parts = Object.entries(timings).map(([k, v]) => `${k}:${v}ms`).join(" ");
+    b.title = parts;
+    const total = Object.values(timings).reduce((a, v) => a + v, 0);
+    b.textContent = `⏱ ${Math.round(total)}ms`;
+    meta.appendChild(b);
+  }
+
+  function _renderCitations(bubble, items) {
+    if (!items || !items.length) return;
+    let card = bubble.querySelector(".enh-citations");
+    if (card) card.remove(); // re-render ใหม่ทุกครั้ง
+    card = document.createElement("div");
+    card.className = "enh-citations";
+    const rows = items.map((c) => {
+      const url = c.url ? `<a href="${_esc(c.url)}" target="_blank" rel="noopener">${_esc(c.source)}</a>` : _esc(c.source);
+      const scoreStr = c.score ? `<span class="enh-cite-score">${c.score}</span>` : "";
+      return `<div class="enh-cite-row">
+        <span class="enh-cite-id">[${c.id}]</span>
+        <div style="flex:1;min-width:0;">
+          <div><span class="enh-cite-source">${url}</span> ${scoreStr}</div>
+          <div class="enh-cite-snippet">${_esc(c.snippet || "")}</div>
+        </div>
+      </div>`;
+    }).join("");
+    card.innerHTML = `<div class="enh-citations-title">📎 แหล่งอ้างอิง (${items.length})</div>${rows}`;
+    bubble.appendChild(card);
+  }
+
+  function _renderReflection(bubble, refl) {
+    if (!refl || refl.verdict === "ok") {
+      // ไม่ render badge สำหรับ ok เพราะ noise
+      return;
+    }
+    let card = bubble.querySelector(".enh-reflection");
+    if (card) card.remove();
+    card = document.createElement("div");
+    card.className = "enh-reflection";
+    const issues = (refl.issues || []).map((i) => `<li>${_esc(i)}</li>`).join("");
+    const revised = refl.revised
+      ? `<div class="enh-reflection-revised">${_esc(refl.revised)}</div>`
+      : "";
+    card.innerHTML = `
+      <div class="enh-reflection-title">⚠️ Reflection (score: ${refl.score})</div>
+      ${issues ? `<ul style="margin:4px 0 0 16px;padding:0">${issues}</ul>` : ""}
+      ${revised}
+    `;
+    bubble.appendChild(card);
+  }
+
+  function _renderFeedback(bubble, messageId, assistant, sessionId) {
+    if (!messageId || messageId <= 0) return;
+    if (bubble.querySelector(".enh-feedback")) return;
+    const wrap = document.createElement("div");
+    wrap.className = "enh-feedback";
+    wrap.innerHTML = `
+      <button class="enh-fb-btn up" data-r="up" title="ตอบดี">👍</button>
+      <button class="enh-fb-btn down" data-r="down" title="ตอบไม่ดี">👎</button>
+    `;
+    bubble.appendChild(wrap);
+
+    wrap.addEventListener("click", async (ev) => {
+      const btn = ev.target.closest(".enh-fb-btn");
+      if (!btn) return;
+      const rating = btn.dataset.r;
+      const all = wrap.querySelectorAll(".enh-fb-btn");
+      all.forEach((b) => { b.disabled = true; b.classList.remove("active"); });
+      try {
+        const r = await fetch("/api/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            assistant, session_id: sessionId, message_id: messageId, rating,
+          }),
+        });
+        if (r.ok) {
+          btn.classList.add("active");
+        } else {
+          console.warn("[Feedback] POST failed:", r.status);
+        }
+      } catch (e) {
+        console.warn("[Feedback] error:", e);
+      } finally {
+        all.forEach((b) => { b.disabled = false; });
+      }
+    });
+  }
+
+  // อ่าน chat SSE — handle ทุก event types
+  async function _parseChatSSE(stream, agentTimelineRef) {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    const collected = {
+      citations: null, reflection: null, cache_hit: null,
+      active_learning: null, message_id: 0, timings: null, model: "",
+      assistant: _getAssistantFromUrl(),
+      session_id: _getSessionId(),
+    };
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          let d;
+          try { d = JSON.parse(line.slice(6)); } catch { continue; }
+
+          // agent timeline (delegate to existing handler)
+          if (d.agent && agentTimelineRef) {
+            agentTimelineRef.events.push(d.agent);
+            _tryRenderTimeline(agentTimelineRef);
+            continue;
+          }
+
+          // new event types — render immediately if bubble exists, else collect
+          if (d.cache_hit) collected.cache_hit = d.cache_hit;
+          if (d.citations) collected.citations = d.citations;
+          if (d.reflection) collected.reflection = d.reflection;
+          if (d.active_learning) collected.active_learning = d.active_learning;
+          if (d.done) {
+            collected.message_id = d.message_id || 0;
+            collected.timings = d.timings || null;
+            collected.model = d.model || "";
+            if (agentTimelineRef) { agentTimelineRef.done = true; _tryRenderTimeline(agentTimelineRef); }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[Chat SSE] parse error:", e);
+    } finally {
+      try { reader.releaseLock(); } catch {}
+    }
+
+    // หลัง stream จบ → render UI ทั้งหมดลง bubble ล่าสุด
+    const bubble = await _findLatestAIBubble();
+    if (!bubble) return;
+    if (collected.cache_hit) _renderCacheHit(bubble, collected.cache_hit);
+    if (collected.active_learning) _renderActiveLearning(bubble, collected.active_learning);
+    if (collected.citations) _renderCitations(bubble, collected.citations);
+    if (collected.reflection) _renderReflection(bubble, collected.reflection);
+    if (collected.timings) _renderTiming(bubble, collected.timings, collected.model);
+    _renderFeedback(bubble, collected.message_id, collected.assistant, collected.session_id);
+  }
+
+  function _getAssistantFromUrl() {
+    // หา assistant จาก React state — fallback อ่านจาก URL ถ้ามี
+    try {
+      const m = location.hash.match(/assistant=([^&]+)/);
+      if (m) return decodeURIComponent(m[1]);
+    } catch {}
+    return "kwan"; // sensible default
+  }
+
+  function _getSessionId() {
+    try {
+      const m = location.hash.match(/session=([^&]+)/);
+      if (m) return decodeURIComponent(m[1]);
+    } catch {}
+    return "default";
+  }
+
+  console.log("[Enhanced UI] v8 — Agent + Citations + Reflection + Feedback — loaded ✅");
 })();
