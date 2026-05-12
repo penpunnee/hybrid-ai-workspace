@@ -116,6 +116,76 @@ def _t_obsidian_search(query: str, n=3) -> str:
         return f"Vault error: {e}"
 
 
+def _t_run_python(code: str, timeout: int = 10) -> str:
+    """รัน Python code ใน sandbox"""
+    from utils.code_sandbox import run_python
+    try:
+        timeout = int(timeout)
+    except (TypeError, ValueError):
+        timeout = 10
+    r = run_python(code, timeout=timeout)
+    if not r.ok:
+        err_block = (r.stderr or r.error or "unknown error").strip()
+        return f"❌ exit_code={r.exit_code} ({r.mode}, {r.runtime_ms}ms)\n{err_block}"
+    out = (r.stdout or "(no output)").rstrip()
+    return f"✅ ran in {r.mode} ({r.runtime_ms}ms)\n```\n{out}\n```"
+
+
+def _t_fs_list(path: str = "") -> str:
+    """รายชื่อไฟล์/โฟลเดอร์ในตำแหน่ง path"""
+    from utils.fs_tools import list_dir
+    r = list_dir(path)
+    if not r.get("ok"):
+        return f"❌ {r.get('error', 'unknown')}"
+    lines = [f"📁 {r['path']} ({r['count']} entries):"]
+    for e in r["entries"][:50]:
+        mark = "📂" if e["type"] == "dir" else "📄"
+        size = f" ({e['size']}b)" if "size" in e else ""
+        lines.append(f"  {mark} {e['name']}{size}")
+    if r["count"] > 50:
+        lines.append(f"  ...({r['count'] - 50} more)")
+    return "\n".join(lines)
+
+
+def _t_fs_read(path: str, max_bytes: int = 0) -> str:
+    """อ่านไฟล์ในตำแหน่ง path"""
+    from utils.fs_tools import read_file
+    try:
+        max_bytes = int(max_bytes) if max_bytes else 0
+    except (TypeError, ValueError):
+        max_bytes = 0
+    r = read_file(path, max_bytes=max_bytes or None)
+    if not r.get("ok"):
+        return f"❌ {r.get('error', 'unknown')}"
+    suffix = "\n[...TRUNCATED]" if r.get("truncated") else ""
+    return f"📄 {r['path']} ({r['size']}b)\n```\n{r['content']}{suffix}\n```"
+
+
+def _t_fs_write(path: str, content: str, overwrite: bool = False) -> str:
+    """เขียนไฟล์ — overwrite=true เพื่อทับของเดิม"""
+    from utils.fs_tools import write_file
+    if isinstance(overwrite, str):
+        overwrite = overwrite.lower() in ("true", "1", "yes")
+    r = write_file(path, content, overwrite=bool(overwrite))
+    if not r.get("ok"):
+        return f"❌ {r.get('error', 'unknown')}"
+    return f"✅ wrote {r['bytes_written']}b → {r['path']}"
+
+
+def _t_fs_search(pattern: str, path: str = "", file_glob: str = "*") -> str:
+    """grep-like — หา pattern ในไฟล์ใต้ path"""
+    from utils.fs_tools import search_files
+    r = search_files(pattern, path=path, file_glob=file_glob)
+    if not r.get("ok"):
+        return f"❌ {r.get('error', 'unknown')}"
+    if not r["matches"]:
+        return f"🔍 no matches for {pattern!r} ใน {r['files_scanned']} files"
+    lines = [f"🔍 {r['count']} matches for {pattern!r}:"]
+    for m in r["matches"][:30]:
+        lines.append(f"  {m['file']}:{m['line']}: {m['text']}")
+    return "\n".join(lines)
+
+
 # ── Registry ─────────────────────────────────────────────────────────────────
 
 TOOL_REGISTRY: dict[str, dict[str, Any]] = {
@@ -226,6 +296,71 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
             "required": ["query"],
         },
         "fn": _t_obsidian_search,
+    },
+    "run_python": {
+        "description": (
+            "รัน Python code ใน sandbox (Docker ถ้ามี, fallback subprocess) "
+            "ใช้สำหรับ: คำนวณซับซ้อน, จัดการข้อมูล, demo code, parse JSON/CSV "
+            "ห้าม: network call, file I/O นอก /work, sleep ยาว"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "Python source code"},
+                "timeout": {"type": "integer", "description": "วินาที (1-60)", "default": 10},
+            },
+            "required": ["code"],
+        },
+        "fn": _t_run_python,
+    },
+    "fs_list": {
+        "description": "รายชื่อไฟล์/โฟลเดอร์ในตำแหน่ง path (จำกัดอยู่ใน sandbox root)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "relative หรือ absolute path", "default": ""},
+            },
+            "required": [],
+        },
+        "fn": _t_fs_list,
+    },
+    "fs_read": {
+        "description": "อ่านเนื้อหาไฟล์ (text, max 1MB)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "max_bytes": {"type": "integer", "description": "limit bytes (default 1MB)", "default": 0},
+            },
+            "required": ["path"],
+        },
+        "fn": _t_fs_read,
+    },
+    "fs_write": {
+        "description": "เขียนไฟล์ใหม่ (ปฏิเสธถ้ามีอยู่แล้ว ใส่ overwrite=true เพื่อทับ)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "content": {"type": "string"},
+                "overwrite": {"type": "boolean", "default": False},
+            },
+            "required": ["path", "content"],
+        },
+        "fn": _t_fs_write,
+    },
+    "fs_search": {
+        "description": "grep-like — หา pattern ในไฟล์ใต้ path (regex หรือ literal substring)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "description": "regex หรือ string"},
+                "path": {"type": "string", "default": ""},
+                "file_glob": {"type": "string", "description": "เช่น '*.py'", "default": "*"},
+            },
+            "required": ["pattern"],
+        },
+        "fn": _t_fs_search,
     },
 }
 
