@@ -90,19 +90,33 @@ async def skills_extract(request: Request):
 
 
 @router.delete("/skills/{skill_id}")
-def skills_delete(skill_id: str):
+def skills_delete(skill_id: str, delete_file: bool = False):
+    """ลบ skill entry จาก skills_db.json (+ optional .md file)
+
+    Args:
+        skill_id: topic หรือ filename
+        delete_file: ถ้า true ลบ .md file ด้วย (default false — safe)
+                     SAFETY: ก่อนหน้านี้ default ลบ .md เสมอ — เปลี่ยนเป็น opt-in
+                     กัน data loss จาก cleanup
+    """
+    import logging
+    logger = logging.getLogger(__name__)
     from urllib.parse import unquote
     skill_id = unquote(skill_id)
     deleted_file = False
     deleted_db = False
     skills_dir = os.path.join(os.path.dirname(__file__), "..", "skills")
-    if ".." not in skill_id and "/" not in skill_id:
-        for fname in [skill_id, f"{skill_id}.md"]:
-            fp = os.path.join(skills_dir, fname)
-            if os.path.exists(fp):
-                os.remove(fp)
-                deleted_file = True
-                break
+
+    if delete_file:
+        if ".." not in skill_id and "/" not in skill_id:
+            for fname in [skill_id, f"{skill_id}.md"]:
+                fp = os.path.join(skills_dir, fname)
+                if os.path.exists(fp):
+                    os.remove(fp)
+                    deleted_file = True
+                    logger.warning(f"[skills_delete] removed file {fp} (delete_file=true)")
+                    break
+
     db = _load_skills_db()
     for key in [skill_id, skill_id.replace(".md", "")]:
         if key in db:
