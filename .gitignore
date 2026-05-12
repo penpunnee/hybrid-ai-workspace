@@ -5,3 +5,8 @@ Icon?
 Icon
 *.pyc
 .DS_Store
+
+# Phase E caches + runtime artifacts
+data/
+dream_reports/
+server.log

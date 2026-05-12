@@ -319,6 +319,15 @@ def fetch_weather(query: str) -> str:
     return fetch_weather_by_city(city)
 
 
+def web_search_with_results(query: str, max_results: int = 5, top_k: int = 3) -> tuple[str, list[dict]]:
+    """เหมือน web_search_context แต่คืน (context_string, raw_results) สำหรับ citation tracking
+
+    weather/wiki → ไม่มี raw_results (คืน [])
+    """
+    ctx, results = _web_search_impl(query, max_results, top_k)
+    return ctx, results
+
+
 def web_search_context(query: str, max_results: int = 5, top_k: int = 3) -> str:
     """API เดียวที่ router/chat ใช้ — คืน context string พร้อม inject
 
@@ -332,24 +341,55 @@ def web_search_context(query: str, max_results: int = 5, top_k: int = 3) -> str:
         max_results: ดึงผลลัพธ์ DDG ก่อน rerank (default 5)
         top_k: เก็บกี่ผลลัพธ์หลัง rerank (default 3)
     """
+    ctx, _ = _web_search_impl(query, max_results, top_k)
+    return ctx
+
+
+def _web_search_impl(query: str, max_results: int = 5, top_k: int = 3) -> tuple[str, list[dict]]:
+    """internal — รวม logic ทั้งหมดและคืน (context, raw_results สำหรับ citations)"""
     if _WEATHER_KEYWORDS.search(query):
         weather = fetch_weather(query)
         if weather:
             logger.info(f"[WebSearch] weather → wttr.in ({len(weather)} chars)")
-            return weather
+            return weather, []
 
     if _WIKI_KEYWORDS.search(query):
         wiki = fetch_wikipedia(query)
         if wiki:
             logger.info(f"[WebSearch] wiki → Wikipedia ({len(wiki)} chars)")
-            return wiki
+            return wiki, []
 
-    # ดึง 2x ก่อน rerank เพื่อให้มีตัวเลือก
+    # ── Query rewriting ──────────────────────────────────────────────────
+    # ขยาย/ปรับ query → ค้นด้วย rewritten + sub_queries แล้วรวม
+    try:
+        from utils.query_rewrite import rewrite_query
+        rw = rewrite_query(query)
+        search_queries = rw.all_queries or [query]
+        if rw.used_llm and rw.rewritten != query:
+            logger.info(f"[WebSearch] rewrite: {query!r} → {rw.rewritten!r} "
+                        f"(+{len(rw.sub_queries)} sub)")
+    except Exception as e:
+        logger.warning(f"[WebSearch] rewrite failed: {e}")
+        search_queries = [query]
+
+    # ดึง 2x ก่อน rerank เพื่อให้มีตัวเลือก — search หลาย query แล้ว dedupe ตาม URL
     initial_n = max(max_results, top_k * 2)
-    results = search_web(query, max_results=initial_n)
+    seen_urls: set[str] = set()
+    results: list[dict] = []
+    per_query = max(2, initial_n // max(1, len(search_queries)))
+    for sq in search_queries:
+        for r in search_web(sq, max_results=per_query):
+            url = (r.get("href") or "").strip()
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            results.append(r)
+        if len(results) >= initial_n:
+            break
+
     results = _enrich_with_fetch(results, top_n=_FETCH_TOP_N)
 
-    # Embedding rerank — keep top_k ที่ตรงกับ query สุด
+    # Embedding rerank กับ original query (ตัวที่ user ถามจริง)
     try:
         from utils.embed import rerank_by_similarity
         reranked = rerank_by_similarity(
@@ -363,4 +403,4 @@ def web_search_context(query: str, max_results: int = 5, top_k: int = 3) -> str:
         logger.warning(f"[WebSearch] rerank failed, use top {top_k}: {e}")
         results = results[:top_k]
 
-    return format_for_context(results, query)
+    return format_for_context(results, query), results
