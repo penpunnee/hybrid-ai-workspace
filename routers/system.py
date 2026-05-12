@@ -18,6 +18,28 @@ from utils.history import search_messages
 router = APIRouter(prefix="/api", tags=["system"])
 
 
+@router.get("/cache/stats")
+def cache_stats():
+    """รายงาน hit/size ของ cache layers ทั้งหมด — Phase E"""
+    out = {}
+    try:
+        from utils.embed import cache_stats as _e
+        out["embed"] = _e()
+    except Exception as e:
+        out["embed"] = {"error": str(e)}
+    try:
+        from utils.retrieval_cache import stats as _r
+        out["retrieval"] = _r()
+    except Exception as e:
+        out["retrieval"] = {"error": str(e)}
+    try:
+        from utils.response_cache import stats as _rs
+        out["response"] = _rs()
+    except Exception as e:
+        out["response"] = {"error": str(e)}
+    return out
+
+
 @router.get("/routing/preview")
 def routing_preview(q: str):
     """ดูว่าคำถามนี้จะถูก route ไป model ไหน"""

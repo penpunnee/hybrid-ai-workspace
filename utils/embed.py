@@ -1,10 +1,18 @@
 """Embedding utilities — ใช้ nomic-embed-text-v1.5 ผ่าน LM Studio
 
 LM Studio รองรับ OpenAI-compatible /v1/embeddings endpoint
+
+Cache:
+  - Persistent sqlite cache (รอด server restart)
+  - In-memory LRU on top (fast path)
 """
+import hashlib
 import logging
 import math
 import os
+import sqlite3
+import struct
+import threading
 from functools import lru_cache
 from typing import Sequence
 
@@ -15,23 +23,122 @@ logger = logging.getLogger(__name__)
 _LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
 _EMBED_MODEL = os.getenv("LMSTUDIO_EMBED_MODEL", "text-embedding-nomic-embed-text-v1.5")
 _EMBED_TIMEOUT = int(os.getenv("LMSTUDIO_EMBED_TIMEOUT", "30"))
+_CACHE_DB = os.getenv("EMBED_CACHE_DB",
+                      os.path.join(os.path.dirname(__file__), "..", "data", "embed_cache.db"))
+_CACHE_ENABLED = os.getenv("EMBED_CACHE_ENABLED", "true").lower() == "true"
 
 _client = OpenAI(base_url=_LMSTUDIO_BASE_URL, api_key="lmstudio", timeout=_EMBED_TIMEOUT)
 
+# ── Persistent cache (sqlite) ────────────────────────────────────────────────
+_cache_lock = threading.Lock()
+_cache_conn: sqlite3.Connection | None = None
 
+
+def _cache_init() -> sqlite3.Connection | None:
+    """Lazy-init sqlite cache — None ถ้าปิด/ล้ม"""
+    global _cache_conn
+    if not _CACHE_ENABLED:
+        return None
+    if _cache_conn is not None:
+        return _cache_conn
+    with _cache_lock:
+        if _cache_conn is not None:
+            return _cache_conn
+        try:
+            os.makedirs(os.path.dirname(_CACHE_DB), exist_ok=True)
+            conn = sqlite3.connect(_CACHE_DB, check_same_thread=False, isolation_level=None)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS embed_cache (
+                    key TEXT PRIMARY KEY,
+                    model TEXT NOT NULL,
+                    dim INTEGER NOT NULL,
+                    vec BLOB NOT NULL,
+                    created_at REAL DEFAULT (strftime('%s','now'))
+                )
+            """)
+            _cache_conn = conn
+            return conn
+        except Exception as e:
+            logger.warning(f"[Embed] cache init failed (running w/o persistent cache): {e}")
+            return None
+
+
+def _cache_key(text: str) -> str:
+    """SHA256 ของ text — กัน collision ระหว่างข้อความยาว"""
+    return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _pack(vec: list[float]) -> bytes:
+    """encode vec → bytes (float32 LE) สำหรับเก็บ sqlite"""
+    return struct.pack(f"<{len(vec)}f", *vec)
+
+
+def _unpack(blob: bytes, dim: int) -> list[float]:
+    return list(struct.unpack(f"<{dim}f", blob))
+
+
+def _cache_get(text: str) -> list[float] | None:
+    conn = _cache_init()
+    if conn is None:
+        return None
+    try:
+        row = conn.execute(
+            "SELECT dim, vec FROM embed_cache WHERE key=? AND model=?",
+            (_cache_key(text), _EMBED_MODEL),
+        ).fetchone()
+        return _unpack(row[1], row[0]) if row else None
+    except Exception as e:
+        logger.debug(f"[Embed] cache get failed: {e}")
+        return None
+
+
+def _cache_set(text: str, vec: list[float]) -> None:
+    conn = _cache_init()
+    if conn is None or not vec:
+        return
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO embed_cache (key, model, dim, vec) VALUES (?,?,?,?)",
+            (_cache_key(text), _EMBED_MODEL, len(vec), _pack(vec)),
+        )
+    except Exception as e:
+        logger.debug(f"[Embed] cache set failed: {e}")
+
+
+def cache_stats() -> dict:
+    """รายงาน hit/size — สำหรับ /api/system"""
+    conn = _cache_init()
+    if conn is None:
+        return {"enabled": False}
+    try:
+        n = conn.execute("SELECT COUNT(*) FROM embed_cache").fetchone()[0]
+        size = os.path.getsize(_CACHE_DB) if os.path.exists(_CACHE_DB) else 0
+        return {"enabled": True, "entries": n, "db_bytes": size, "model": _EMBED_MODEL}
+    except Exception:
+        return {"enabled": True, "entries": 0}
+
+
+# ── Embedding API ─────────────────────────────────────────────────────────────
 @lru_cache(maxsize=512)
 def _embed_one_cached(text: str) -> tuple:
-    """Cache hits ใน-memory สำหรับ query ที่เคยถาม (max 512 entries)"""
+    """Two-tier cache: LRU (hot) → sqlite (warm) → LMStudio (cold)"""
+    cached = _cache_get(text)
+    if cached:
+        return tuple(cached)
     try:
         resp = _client.embeddings.create(model=_EMBED_MODEL, input=[text])
-        return tuple(resp.data[0].embedding)
+        vec = list(resp.data[0].embedding)
+        _cache_set(text, vec)
+        return tuple(vec)
     except Exception as e:
         logger.warning(f"[Embed] failed for text {text[:40]!r}: {e}")
         return tuple()
 
 
 def embed_texts(texts: Sequence[str]) -> list[list[float]]:
-    """Batch embed (ไม่ cache เพราะ batching ที่ LM Studio จะเร็วกว่า)
+    """Batch embed — ใช้ persistent cache ก่อน แล้ว fetch เฉพาะที่ miss
 
     Args:
         texts: list ของ strings
@@ -41,12 +148,38 @@ def embed_texts(texts: Sequence[str]) -> list[list[float]]:
     texts = [t for t in texts if t and t.strip()]
     if not texts:
         return []
+
+    # check cache แต่ละตัว
+    cached: list[list[float] | None] = []
+    miss_idx: list[int] = []
+    miss_texts: list[str] = []
+    for i, t in enumerate(texts):
+        c = _cache_get(t)
+        if c:
+            cached.append(c)
+        else:
+            cached.append(None)
+            miss_idx.append(i)
+            miss_texts.append(t)
+
+    if not miss_texts:
+        return [c for c in cached if c]
+
+    # fetch missing batch
     try:
-        resp = _client.embeddings.create(model=_EMBED_MODEL, input=list(texts))
-        return [list(d.embedding) for d in resp.data]
+        resp = _client.embeddings.create(model=_EMBED_MODEL, input=miss_texts)
+        new_vecs = [list(d.embedding) for d in resp.data]
     except Exception as e:
-        logger.warning(f"[Embed] batch failed ({len(texts)} items): {e}")
-        return []
+        logger.warning(f"[Embed] batch failed ({len(miss_texts)} items): {e}")
+        # คืนเฉพาะที่มี cache (เพื่อไม่ให้ pipeline พัง)
+        return [c for c in cached if c]
+
+    # save new + reconstruct order
+    for idx, vec in zip(miss_idx, new_vecs):
+        cached[idx] = vec
+        _cache_set(texts[idx], vec)
+
+    return [c for c in cached if c]
 
 
 def embed_query(query: str) -> list[float]:

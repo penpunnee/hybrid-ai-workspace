@@ -39,14 +39,42 @@ async def chat(request: Request):
     agent_mode  = bool(data.get("agent_mode", False))
     tool_agent  = bool(data.get("tool_agent", False))
     obsidian_inject = bool(data.get("obsidian_inject", False))
+    reflect     = bool(data.get("reflect", False))
+    active_learning = data.get("active_learning", True)  # default ON
 
     config = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])
     base_prompt = config["system_prompt"]
+    use_response_cache = bool(data.get("response_cache", True)) and not (tool_agent or agent_mode or image_b64)
 
     # ── ตรวจจับ Teaching signal จาก user ────────────────────────────────────
     teach(assistant, prompt)
 
+    # ── Semantic response cache (short-circuit ถ้า Q ใกล้ของที่ thumbs-up) ─
+    if use_response_cache and prompt:
+        try:
+            from utils.response_cache import lookup as _rc_lookup
+            hit = _rc_lookup(assistant, prompt)
+            if hit:
+                cached_resp = hit["response"]
+                cached_mid = save_message(assistant, "user", prompt, "cache", session_id)
+                cached_aid = save_message(assistant, "assistant", cached_resp, "cache", session_id)
+
+                def gen_cached():
+                    yield f"data: {json.dumps({'cache_hit': {'similarity': hit['similarity'], 'source_prompt': hit['source_prompt']}}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'chunk': cached_resp}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'done': True, 'model': hit.get('model','cache'), 'provider': 'cache', 'message_id': cached_aid}, ensure_ascii=False)}\n\n"
+
+                logger.info(f"[Chat] response cache hit (sim={hit['similarity']}) — bypass LLM")
+                return StreamingResponse(gen_cached(), media_type="text/event-stream",
+                                         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+                                                  "X-Provider-Used": "cache"})
+        except Exception as e:
+            logger.debug(f"[Chat] response cache lookup skipped: {e}")
+
     # ── ดึง context จากทุก tier ──────────────────────────────────────────────
+    from utils.citations import CitationTracker
+    citations = CitationTracker()
+
     lessons    = get_lessons(prompt)
     prefs      = get_preferences()
     skills_dir = os.path.join(os.path.dirname(__file__), "..", "skills")
@@ -60,27 +88,79 @@ async def chat(request: Request):
         vault_results = search_vault(prompt, n=3)
         if vault_results:
             vault_ctx = "\n\n".join([f"[Note: {r['title']}]\n{r['content'][:500]}" for r in vault_results])
+            try:
+                citations.add_vault_notes(vault_results)
+            except Exception as e:
+                logger.debug(f"[Chat] vault citations skipped: {e}")
 
     home_tool_ctx = ""
     home_tools_needed = detect_home_tools(prompt)
     if home_tools_needed:
         home_tool_ctx = build_tool_context(home_tools_needed)
 
-    full_context = "\n\n".join(filter(None, [
+    # ── Document retrieval (RAG จาก uploaded docs) ──────────────────────────
+    # ใช้ per-session cache — ถ้า topic เดิม ไม่ต้องเรียก ChromaDB ใหม่
+    docs_ctx = ""
+    doc_chunks: list[dict] = []
+    try:
+        from utils.retrieval_cache import get_cached as _retr_get, store as _retr_store
+        from utils.documents import retrieve_chunks, format_for_context as _doc_fmt
+
+        cached = _retr_get(session_id, prompt)
+        if cached:
+            doc_chunks = cached["chunks"]
+            logger.info(f"[Chat] retrieval cache hit (sim={cached['similarity']})")
+        else:
+            doc_chunks = retrieve_chunks(prompt, top_k=3, min_score=0.3)
+            if doc_chunks:
+                _retr_store(session_id, prompt, doc_chunks)
+
+        if doc_chunks:
+            docs_ctx = _doc_fmt(doc_chunks, max_chars=1500)
+            citations.add_doc_chunks(doc_chunks)
+            logger.info(f"[Chat] retrieved {len(doc_chunks)} doc chunks")
+    except Exception as e:
+        logger.debug(f"[Chat] doc retrieval skipped: {e}")
+
+    # ── Prefix-stable context ordering ─────────────────────────────────────
+    # หลักการ: ส่วนที่เปลี่ยนน้อย (prefs/lessons) ขึ้นก่อน — llama.cpp KV cache hit
+    # ส่วน volatile (memory/skill search/docs/home tools) ลงท้าย — miss แค่ตอนท้าย
+    stable_block = "\n\n".join(filter(None, [
+        f"[ความชอบของผู้ใช้]\n{prefs}" if prefs else "",
+        f"[บทเรียนสะสม]\n{lessons}" if lessons else "",
+        f"[Skills & Knowledge]\n{skills_md}" if skills_md else "",
+    ]))
+    volatile_block = "\n\n".join(filter(None, [
         memory_ctx,
         search_skills(prompt, n_results=3),
-        f"[Skills & Knowledge]\n{skills_md}" if skills_md else "",
-        f"[บทเรียนสะสม]\n{lessons}" if lessons else "",
-        f"[ความชอบ]\n{prefs}" if prefs else "",
         f"[Obsidian Vault Notes]\n{vault_ctx}" if vault_ctx else "",
         f"[ข้อมูลจากบ้านแบบ Real-time]\n{home_tool_ctx}" if home_tool_ctx else "",
+        docs_ctx,
+        citations.format_inline_legend(),
     ]))
+    full_context = "\n\n".join(filter(None, [stable_block, volatile_block]))
 
     if provider == "ollama" and len(full_context) > 2000:
         full_context = full_context[:2000]
     system_prompt = inject_context_to_system(base_prompt, full_context)
 
     history = load_history(assistant, session_id)
+
+    # ── Active Learning: ตรวจว่าควรให้ AI ถามกลับก่อนตอบไหม ─────────────────
+    al_decision = None
+    try:
+        from reasoning.active_learning import decide as _al_decide
+        retrieval_scores = [c.score for c in citations._items if c.score > 0]
+        al_decision = _al_decide(
+            prompt, retrieval_scores=retrieval_scores,
+            history_length=len(history),
+            enabled=bool(active_learning),
+        )
+        if al_decision.should_ask:
+            system_prompt = system_prompt + al_decision.instruction
+            logger.info(f"[Chat/AL] {al_decision.reason}")
+    except Exception as e:
+        logger.debug(f"[Chat/AL] skipped: {e}")
     save_message(assistant, "user", prompt, provider, session_id)
 
     messages = [{"role": "system", "content": system_prompt}]
@@ -100,6 +180,8 @@ async def chat(request: Request):
 
         def gen_agent():
             full_response = ""
+            if citations:
+                yield f"data: {json.dumps({'citations': citations.to_list()}, ensure_ascii=False)}\n\n"
             try:
                 for kind, payload in run_agent(messages):
                     if kind == "event":
@@ -114,15 +196,16 @@ async def chat(request: Request):
                 return
 
             # persist เหมือน /api/chat ปกติ
+            agent_msg_id = 0
             try:
-                save_message(assistant, "assistant", full_response, "agent", session_id)
+                agent_msg_id = save_message(assistant, "assistant", full_response, "agent", session_id)
                 push_working(session_id, "user", prompt)
                 push_working(session_id, "assistant", full_response)
                 remember(assistant, prompt, full_response)
             except Exception as e:
                 logger.warning(f"[Chat/agent] persist failed: {e}")
 
-            yield f"data: {json.dumps({'done': True, 'model': 'agent', 'provider': 'agent'}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'done': True, 'model': 'agent', 'provider': 'agent', 'message_id': agent_msg_id}, ensure_ascii=False)}\n\n"
 
         return StreamingResponse(gen_agent(), media_type="text/event-stream",
                                  headers={
@@ -150,23 +233,29 @@ async def chat(request: Request):
             # ── Web search: ค้น DDG แล้ว inject context ─────────────────────
             if decision.provider == "lmstudio_web":
                 try:
-                    from utils.websearch import web_search_context
-                    web_ctx = web_search_context(prompt)
+                    from utils.websearch import web_search_with_results
+                    web_ctx, web_results = web_search_with_results(prompt)
                     if web_ctx:
+                        try:
+                            citations.add_web_results(web_results)
+                        except Exception as ce:
+                            logger.debug(f"[Chat] web citations skipped: {ce}")
+                        legend = citations.format_inline_legend()
                         # inject เป็น system instruction + user prompt
                         sys_extra = (
                             "\n\n=== INTERNET CONTEXT (real-time data) ===\n"
                             f"{web_ctx}\n"
                             "=== END INTERNET CONTEXT ===\n"
+                            f"{legend}\n"
                             "**กฎเหล็ก**: ใช้ข้อมูลด้านบนตอบคำถาม ห้ามบอกว่าไม่มี internet/ไม่มีข้อมูล real-time "
-                            "เพราะระบบดึงข้อมูลให้แล้ว สรุปจากข้อมูลและอ้างอิงแหล่งที่มา"
+                            "เพราะระบบดึงข้อมูลให้แล้ว สรุปจากข้อมูลและอ้างอิงแหล่งที่มาด้วยเลข [n]"
                         )
                         messages[0] = {
                             "role": "system",
                             "content": messages[0]["content"] + sys_extra,
                         }
                         provider_used = "lmstudio"
-                        logger.info(f"[Chat] web search injected ({len(web_ctx)} chars)")
+                        logger.info(f"[Chat] web search injected ({len(web_ctx)} chars, {len(web_results)} sources)")
                     else:
                         provider_used = "lmstudio"
                 except Exception as e:
@@ -180,6 +269,13 @@ async def chat(request: Request):
         nonlocal provider_used, model_used, messages
         full_response = ""
         _provider = provider_used if provider_used and provider_used != "auto" else provider
+
+        # ส่ง citations event ก่อน stream chunks (ถ้ามี) — frontend แสดง source list ได้ก่อนตอบ
+        if citations:
+            yield f"data: {json.dumps({'citations': citations.to_list()}, ensure_ascii=False)}\n\n"
+        # ส่ง active learning signal (เผื่อ frontend แสดง badge "AI กำลังถามกลับ")
+        if al_decision and al_decision.should_ask:
+            yield f"data: {json.dumps({'active_learning': al_decision.to_dict()}, ensure_ascii=False)}\n\n"
 
         def _try_stream(prov, mdl=""):
             for ck in stream_response(messages, provider=prov, image_b64=image_b64,
@@ -207,16 +303,25 @@ async def chat(request: Request):
 
                     if needs_internet(prompt):
                         try:
-                            from utils.websearch import web_search_context
-                            web_ctx = web_search_context(prompt)
+                            from utils.websearch import web_search_with_results
+                            web_ctx, web_results = web_search_with_results(prompt)
                             if web_ctx:
+                                try:
+                                    citations.add_web_results(web_results)
+                                except Exception as ce:
+                                    logger.debug(f"[Chat] fallback web citations skipped: {ce}")
+                                legend = citations.format_inline_legend()
                                 messages[0] = {
                                     "role": "system",
                                     "content": messages[0]["content"] + (
                                         "\n\n=== INTERNET CONTEXT ===\n" + web_ctx +
-                                        "\n=== END ===\n**กฎเหล็ก**: ใช้ข้อมูลข้างบนตอบ ห้ามบอกว่าไม่มี internet"
+                                        f"\n=== END ===\n{legend}\n"
+                                        "**กฎเหล็ก**: ใช้ข้อมูลข้างบนตอบ ห้ามบอกว่าไม่มี internet อ้างอิงด้วยเลข [n]"
                                     )
                                 }
+                                # ส่ง citations event ระหว่าง fallback ด้วย
+                                if citations:
+                                    yield f"data: {json.dumps({'citations': citations.to_list()}, ensure_ascii=False)}\n\n"
                                 logger.info(f"[Chat] Gemini fallback → web search injected ({len(web_ctx)} chars)")
                         except Exception as ws_err:
                             logger.warning(f"[Chat] fallback web search failed: {ws_err}")
@@ -233,7 +338,24 @@ async def chat(request: Request):
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
                 return
 
-        save_message(assistant, "assistant", full_response, provider_used, session_id)
+        message_id = save_message(assistant, "assistant", full_response, provider_used, session_id)
+
+        # ── Reflection: ตรวจคำตอบหลัง stream เสร็จ → ส่ง revision เป็น SSE event ─
+        if reflect and full_response:
+            try:
+                from utils.reflection import reflect_answer, should_reflect
+                if should_reflect(prompt, full_response):
+                    refl = reflect_answer(prompt, full_response, context=full_context)
+                    payload = {"reflection": {
+                        "score": refl.score,
+                        "verdict": refl.verdict,
+                        "issues": refl.issues,
+                        "revised": refl.revised if refl.needs_revision else "",
+                    }}
+                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                    logger.info(f"[Chat/reflect] verdict={refl.verdict} score={refl.score}")
+            except Exception as e:
+                logger.warning(f"[Chat/reflect] failed: {e}")
 
         push_working(session_id, "user", prompt)
         push_working(session_id, "assistant", full_response)
@@ -257,7 +379,7 @@ async def chat(request: Request):
                     logger.debug(f"Auto-learn failed: {e}")
             threading.Thread(target=_learn, daemon=True).start()
 
-        yield f"data: {json.dumps({'done': True, 'model': model_used, 'provider': provider_used})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'model': model_used, 'provider': provider_used, 'message_id': message_id})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream",
                              headers={
