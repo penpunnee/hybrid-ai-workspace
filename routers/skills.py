@@ -114,6 +114,38 @@ def skills_delete(skill_id: str):
     return {"ok": False, "error": "ไม่พบ skill นี้"}
 
 
+@router.get("/skills/discover")
+def skills_discover(days: int = 30, min_cluster: int = 3, threshold: float = 0.72):
+    """สแกน chat history หา topic ที่ user ถามบ่อย → return proposals"""
+    from utils.skill_discovery import discover_skills
+    proposals = discover_skills(
+        days=days, min_cluster=min_cluster, threshold=threshold,
+    )
+    return {"proposals": [p.to_dict() for p in proposals], "count": len(proposals)}
+
+
+@router.post("/skills/discover/accept")
+async def skills_discover_accept(request: Request):
+    """รับ proposal_id → สร้าง .md ใน skills/"""
+    from utils.skill_discovery import accept_proposal
+    data = await request.json()
+    pid = (data.get("proposal_id") or "").strip()
+    if not pid:
+        return {"ok": False, "error": "proposal_id required"}
+    return accept_proposal(
+        pid,
+        custom_topic=data.get("topic"),
+        custom_content=data.get("content"),
+    )
+
+
+@router.get("/skills/discover/cached")
+def skills_discover_cached():
+    """proposals ที่รอ accept อยู่ใน memory"""
+    from utils.skill_discovery import list_cached_proposals
+    return {"proposals": list_cached_proposals()}
+
+
 @router.post("/admin/cleanup-skills")
 def cleanup_skills_endpoint():
     """ลบ junk skills ออกจาก db + re-sync ChromaDB"""

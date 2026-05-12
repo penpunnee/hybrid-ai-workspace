@@ -44,15 +44,17 @@ def _get_conn():
     return conn
 
 
-def save_message(assistant: str, role: str, content: str, provider: str = "ollama", session_id: str = "default"):
-    """บันทึกข้อความลง SQLite พร้อม session_id"""
+def save_message(assistant: str, role: str, content: str, provider: str = "ollama", session_id: str = "default") -> int:
+    """บันทึกข้อความลง SQLite พร้อม session_id — คืน id ของ row ที่เพิ่งบันทึก"""
     conn = _get_conn()
-    conn.execute(
+    cur = conn.execute(
         "INSERT INTO messages (assistant, role, content, provider, created_at, session_id) VALUES (?, ?, ?, ?, ?, ?)",
         (assistant, role, content, provider, datetime.now().isoformat(), session_id),
     )
     conn.commit()
+    new_id = cur.lastrowid
     conn.close()
+    return int(new_id) if new_id else 0
 
 
 def load_history(assistant: str, session_id: str = "default", include_meta: bool = False) -> list[dict]:
