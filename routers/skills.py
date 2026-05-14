@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 from fastapi import APIRouter, Request, UploadFile, File
 
+from core.config import SKILLS_DIR
 from utils.skills import (
     get_skill_count, auto_extract_skills, _load_skills_db, _save_skills_db,
     search_skills, cleanup_junk_skills,
@@ -14,7 +15,7 @@ router = APIRouter(prefix="/api", tags=["skills"])
 @router.get("/skills")
 def list_skills():
     db = _load_skills_db()
-    skills_dir = os.path.join(os.path.dirname(__file__), "..", "skills")
+    skills_dir = SKILLS_DIR
     md_files = [f for f in os.listdir(skills_dir) if f.endswith(".md")] if os.path.isdir(skills_dir) else []
     chroma_count = get_skill_count()
     return {"skills": db, "count": len(db), "md_files": len(md_files), "chroma_count": chroma_count}
@@ -22,7 +23,7 @@ def list_skills():
 
 @router.get("/skills/list")
 def skills_list():
-    skills_dir = os.path.join(os.path.dirname(__file__), "..", "skills")
+    skills_dir = SKILLS_DIR
     if not os.path.isdir(skills_dir):
         return {"files": []}
     files = [
@@ -46,7 +47,7 @@ async def skills_extract(request: Request):
         topic = f"skill-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     safe_topic = "".join(c if c.isalnum() or c in "-_" else "-" for c in topic.lower()).strip("-")
     filename = f"{safe_topic}.md"
-    skills_dir = os.path.join(os.path.dirname(__file__), "..", "skills")
+    skills_dir = SKILLS_DIR
     os.makedirs(skills_dir, exist_ok=True)
     filepath = os.path.join(skills_dir, filename)
 
@@ -105,7 +106,7 @@ def skills_delete(skill_id: str, delete_file: bool = False):
     skill_id = unquote(skill_id)
     deleted_file = False
     deleted_db = False
-    skills_dir = os.path.join(os.path.dirname(__file__), "..", "skills")
+    skills_dir = SKILLS_DIR
 
     if delete_file:
         if ".." not in skill_id and "/" not in skill_id:

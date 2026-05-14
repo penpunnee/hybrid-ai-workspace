@@ -18,13 +18,14 @@ from typing import Sequence
 
 from openai import OpenAI
 
+from core.config import EMBED_CACHE_DB as _DEFAULT_CACHE_DB
+
 logger = logging.getLogger(__name__)
 
 _LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
 _EMBED_MODEL = os.getenv("LMSTUDIO_EMBED_MODEL", "text-embedding-nomic-embed-text-v1.5")
 _EMBED_TIMEOUT = int(os.getenv("LMSTUDIO_EMBED_TIMEOUT", "30"))
-_CACHE_DB = os.getenv("EMBED_CACHE_DB",
-                      os.path.join(os.path.dirname(__file__), "..", "data", "embed_cache.db"))
+_CACHE_DB = os.getenv("EMBED_CACHE_DB", _DEFAULT_CACHE_DB)
 _CACHE_ENABLED = os.getenv("EMBED_CACHE_ENABLED", "true").lower() == "true"
 
 _client = OpenAI(base_url=_LMSTUDIO_BASE_URL, api_key="lmstudio", timeout=_EMBED_TIMEOUT)

@@ -22,13 +22,11 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from typing import Optional
 
+from core.config import SKILLS_DIR as _SKILLS_DIR, SKILLS_DB_PATH as _SKILLS_DB
 from utils.embed import embed_texts, cosine_similarity, embed_query
 from utils.history import _get_conn
 
 logger = logging.getLogger(__name__)
-
-_SKILLS_DIR = os.path.join(os.path.dirname(__file__), "..", "skills")
-_SKILLS_DB = os.path.join(os.path.dirname(__file__), "..", "skills_db.json")
 
 # in-memory cache สำหรับ accept (proposal_id → proposal)
 _proposals_cache: dict[str, "SkillProposal"] = {}

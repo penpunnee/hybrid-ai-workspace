@@ -2,9 +2,9 @@ import os
 import json
 import logging
 
-logger = logging.getLogger(__name__)
+from core.config import SKILLS_DB_PATH
 
-SKILLS_DB_PATH = os.path.join(os.path.dirname(__file__), "..", "skills_db.json")
+logger = logging.getLogger(__name__)
 
 
 def _load_skills_db() -> dict:

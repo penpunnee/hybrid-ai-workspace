@@ -235,7 +235,7 @@ LOG_FILE=server.log
 - ⚠️ **DELETE `/api/skills/{id}`**: lebt `delete_file` query param (default false). ส่ง `?delete_file=true` ถ้าต้องลบ .md ด้วย — กัน data loss
 
 ## Known Quirks / Bugs
-- `/api/memory/stats` returns `total: 0` even when data exists (counter bug; data is fine — verify via `/api/dream/report` raw_count)
-- ChromaDB uses `/api/v2/heartbeat` (not v1)
+- ChromaDB uses `/api/v2/heartbeat` (not v1 — returns 410 Gone)
 - Cloudflare tunnel returns 530 when origin down → check `cloudflared` container
 - `static/skills/` (git) ≠ `data/skills/` (container mount) — copy needed after `git pull`
+- **Container name**: docker-compose service `hybrid-ai` → actual container `ai-backend-1` (project name prefix). Use `docker restart ai-backend-1` not `hybrid-ai`

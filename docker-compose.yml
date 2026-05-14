@@ -13,6 +13,8 @@ services:
       - ${NAS_DATA_PATH:-./data}/skills_db.json:/app/skills_db.json
       # BUG FIX: mount skills/ folder ไม่งั้นไฟล์ .md หายทุกครั้งที่ recreate
       - ${NAS_DATA_PATH:-./data}/skills:/app/skills
+      # mount logs dir → ดู server.log จาก host ได้ + persist หลัง restart
+      - ${NAS_DATA_PATH:-./data}/logs:/app/logs
       - ./static:/app/static
       - ./utils:/app/utils
       - ./assistants:/app/assistants
@@ -28,6 +30,7 @@ services:
     environment:
       - DB_PATH=/app/chat_history.db
       - OBSIDIAN_VAULT_PATH=/vault
+      - LOG_FILE=/app/logs/server.log
     env_file:
       - .env
 

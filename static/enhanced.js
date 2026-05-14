@@ -2028,5 +2028,4 @@
     return "default";
   }
 
-  console.log("[Enhanced UI] v8 — Agent + Citations + Reflection + Feedback — loaded ✅");
 })();

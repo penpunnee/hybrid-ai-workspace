@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
 from assistants.config import ASSISTANTS
-from core.config import GEMINI_API_KEY, GEMINI_LIVE_MODEL
+from core.config import GEMINI_API_KEY, GEMINI_LIVE_MODEL, SKILLS_DIR
 from utils.llm import stream_response
 from utils.rag import inject_context_to_system, load_skills_relevant
 from utils.history import (
@@ -79,7 +79,7 @@ async def chat(request: Request):
     with log_timing("context_assembly"):
         lessons    = get_lessons(prompt)
         prefs      = get_preferences()
-        skills_dir = os.path.join(os.path.dirname(__file__), "..", "skills")
+        skills_dir = SKILLS_DIR
         skills_md  = load_skills_relevant(skills_dir, prompt)
 
         # New: tiered memory recall (working + episodic + long-term)

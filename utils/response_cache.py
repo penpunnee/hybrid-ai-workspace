@@ -16,12 +16,12 @@ import threading
 import time
 from typing import Optional
 
+from core.config import RESPONSE_CACHE_DB as _DEFAULT_DB
 from utils.embed import embed_query, cosine_similarity
 
 logger = logging.getLogger(__name__)
 
-_DB_PATH = os.getenv("RESPONSE_CACHE_DB",
-                     os.path.join(os.path.dirname(__file__), "..", "data", "response_cache.db"))
+_DB_PATH = os.getenv("RESPONSE_CACHE_DB", _DEFAULT_DB)
 _ENABLED = os.getenv("RESPONSE_CACHE_ENABLED", "true").lower() == "true"
 _SIM_THRESHOLD = float(os.getenv("RESPONSE_CACHE_THRESHOLD", "0.92"))
 _TTL_DAYS = int(os.getenv("RESPONSE_CACHE_TTL_DAYS", "30"))

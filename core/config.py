@@ -31,8 +31,16 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", "")
 RELOAD       = os.getenv("RELOAD", "false").lower() == "true"
 
 # ── Paths ────────────────────────────────────────────────────────────────────
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SKILLS_DIR = os.path.join(PROJECT_ROOT, "skills")
+SKILLS_DB_PATH = os.path.join(PROJECT_ROOT, "skills_db.json")
+
 OBSIDIAN_VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH", "")
-NAS_DATA_PATH       = os.getenv("NAS_DATA_PATH", "./data")
+NAS_DATA_PATH       = os.getenv("NAS_DATA_PATH", os.path.join(PROJECT_ROOT, "data"))
+
+# Cache databases (under NAS_DATA_PATH for persistence)
+RESPONSE_CACHE_DB = os.path.join(NAS_DATA_PATH, "response_cache.db")
+EMBED_CACHE_DB = os.path.join(NAS_DATA_PATH, "embed_cache.db")
 
 # ── LM Studio (Local LLM — OpenAI compatible) ────────────────────────────────
 LMSTUDIO_BASE_URL     = os.getenv("LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
