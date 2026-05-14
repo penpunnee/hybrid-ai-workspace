@@ -82,7 +82,7 @@ class TestChatEndpoint:
 
     def test_chat_stream_ollama(self, mock_env):
         """Test /api/chat with Ollama provider"""
-        with patch('server.stream_response') as mock_stream:
+        with patch('routers.chat.stream_response') as mock_stream:
             mock_stream.return_value = iter(["Hello", " world"])
 
             response = client.post(
@@ -100,7 +100,7 @@ class TestChatEndpoint:
 
     def test_chat_stream_gemini(self, mock_env):
         """Test /api/chat with Gemini provider"""
-        with patch('server.stream_response') as mock_stream:
+        with patch('routers.chat.stream_response') as mock_stream:
             mock_stream.return_value = iter(["Hello", " world"])
 
             response = client.post(
@@ -177,8 +177,8 @@ class TestMemoryEndpoints:
 
     def test_save_memory(self, mock_env):
         """Test POST /api/memory/{assistant} — endpoint ที่มีอยู่จริง"""
-        with patch('server.save_memory') as mock_mem, \
-             patch('server.save_lesson') as mock_lesson:
+        with patch('routers.memory.save_memory') as mock_mem, \
+             patch('routers.memory.save_lesson') as mock_lesson:
             mock_mem.return_value = None
             mock_lesson.return_value = None
             response = client.post(
@@ -190,7 +190,7 @@ class TestMemoryEndpoints:
 
     def test_list_lessons(self, mock_env):
         """Test GET /api/memory/lessons"""
-        with patch('server.list_lessons') as mock_list:
+        with patch('routers.memory.list_lessons') as mock_list:
             mock_list.return_value = []
             response = client.get("/api/memory/lessons")
             assert response.status_code == 200
@@ -199,7 +199,7 @@ class TestMemoryEndpoints:
 
     def test_list_preferences(self, mock_env):
         """Test GET /api/memory/preferences"""
-        with patch('server.list_preferences') as mock_list:
+        with patch('routers.memory.list_preferences') as mock_list:
             mock_list.return_value = []
             response = client.get("/api/memory/preferences")
             assert response.status_code == 200
@@ -208,7 +208,7 @@ class TestMemoryEndpoints:
 
     def test_delete_lesson(self, mock_env):
         """Test DELETE /api/memory/lessons/{doc_id}"""
-        with patch('server.delete_lesson') as mock_delete:
+        with patch('routers.memory.delete_lesson') as mock_delete:
             mock_delete.return_value = True
             response = client.delete("/api/memory/lessons/test_doc_id")
             assert response.status_code == 200
@@ -216,7 +216,7 @@ class TestMemoryEndpoints:
 
     def test_delete_preference(self, mock_env):
         """Test DELETE /api/memory/preferences/{doc_id}"""
-        with patch('server.delete_preference') as mock_delete:
+        with patch('routers.memory.delete_preference') as mock_delete:
             mock_delete.return_value = True
             response = client.delete("/api/memory/preferences/test_doc_id")
             assert response.status_code == 200
@@ -224,7 +224,7 @@ class TestMemoryEndpoints:
 
     def test_memory_stats(self, mock_env):
         """Test GET /api/memory/stats"""
-        with patch('server.get_memory_stats') as mock_stats:
+        with patch('routers.memory.get_memory_stats') as mock_stats:
             mock_stats.return_value = {"lessons": 0, "preferences": 0}
             response = client.get("/api/memory/stats")
             assert response.status_code == 200
@@ -241,7 +241,7 @@ class TestStatsEndpoint:
 
     def test_get_stats(self, mock_env):
         """Test GET /api/stats — ตรวจ fields ที่มีจริง"""
-        with patch('server.get_memory_stats') as mock_stats:
+        with patch('routers.system.get_memory_stats') as mock_stats:
             mock_stats.return_value = {"lessons": 10, "preferences": 5}
             response = client.get("/api/stats")
             assert response.status_code == 200

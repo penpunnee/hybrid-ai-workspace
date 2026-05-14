@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request
 
 from utils.memory import (
-    get_memory_stats, cleanup_old_memories, save_lesson,
+    get_memory_stats, cleanup_old_memories, save_lesson, save_memory,
     list_lessons, list_preferences, delete_lesson, delete_preference,
 )
 from memory.operations import get_memory_summary, recall, teach
