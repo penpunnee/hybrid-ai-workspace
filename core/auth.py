@@ -1,3 +1,4 @@
+import ipaddress
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from core.config import UI_PASSWORD
@@ -8,21 +9,35 @@ _WRITE_METHODS = {"POST", "PATCH", "DELETE", "PUT"}
 _PROTECTED_GET_PREFIXES = (
     "/api/history/", "/api/export/", "/api/pinned/",
     "/api/memory/", "/api/sessions/", "/api/dream/",
-    "/api/tools/home/",
+    "/api/tools/home/", "/api/cache/", "/api/routing/",
+    "/api/digest", "/api/search", "/api/stats",
 )
 
 
+def _ip_is_private(ip_str: str) -> bool:
+    """True ถ้า IP เป็น LAN/loopback — ใช้ ipaddress lib แทน prefix match"""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        return ip.is_private or ip.is_loopback
+    except (ValueError, TypeError):
+        return False
+
+
 def is_local_request(request: Request) -> bool:
-    """LAN request ไม่ผ่าน Cloudflare → bypass auth"""
+    """LAN request bypass auth — ตรวจ TCP peer IP (spoof-resistant)
+
+    Why: เดิมตรวจ host header — spoof ได้ง่ายผ่าน proxy reverse
+    How: ใช้ request.client.host (TCP socket peer) — proxy ไม่สามารถปลอม
+    Cloudflare กรณีพิเศษ: cf-connecting-ip header → not local (public client)
+    """
+    # ถ้ามาผ่าน Cloudflare tunnel → ไม่ใช่ local ไม่ว่า peer IP จะเป็นอะไร
     if request.headers.get("cf-connecting-ip"):
         return False
-    host = request.headers.get("host", "")
-    return (
-        host.startswith("192.168.")
-        or host.startswith("10.")
-        or host.startswith("127.")
-        or host.startswith("localhost")
-    )
+    # ตรวจ TCP peer IP (เชื่อถือได้กว่า host header)
+    client = request.client
+    if client and _ip_is_private(client.host):
+        return True
+    return False
 
 
 async def auth_middleware(request: Request, call_next):

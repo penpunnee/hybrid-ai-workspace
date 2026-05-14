@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import logging
+import threading
 from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
 
@@ -11,36 +12,52 @@ load_dotenv()
 _default_db = os.path.join(os.path.dirname(__file__), "..", "chat_history.db")
 DB_PATH = os.getenv("DB_PATH", _default_db)
 
+_schema_lock = threading.Lock()
+_schema_ready = False
+
+
+def _init_schema(conn: sqlite3.Connection) -> None:
+    """รัน DDL ครั้งเดียวต่อ process (idempotent, thread-safe)."""
+    global _schema_ready
+    if _schema_ready:
+        return
+    with _schema_lock:
+        if _schema_ready:
+            return
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                assistant TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                provider TEXT DEFAULT 'ollama',
+                created_at TEXT NOT NULL,
+                session_id TEXT DEFAULT 'default',
+                pinned INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS session_names (
+                assistant TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                PRIMARY KEY (assistant, session_id)
+            )
+        """)
+        # backward-compat ALTER (สำหรับ DB เก่าก่อนเพิ่ม columns)
+        for col, default in [("session_id", "'default'"), ("pinned", "0")]:
+            try:
+                col_type = "TEXT" if col == "session_id" else "INTEGER"
+                conn.execute(f"ALTER TABLE messages ADD COLUMN {col} {col_type} DEFAULT {default}")
+            except sqlite3.OperationalError:
+                pass  # column มีอยู่แล้ว — ปกติ
+        conn.commit()
+        _schema_ready = True
+
 
 def _get_conn():
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            assistant TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            provider TEXT DEFAULT 'ollama',
-            created_at TEXT NOT NULL,
-            session_id TEXT DEFAULT 'default',
-            pinned INTEGER DEFAULT 0
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS session_names (
-            assistant TEXT NOT NULL,
-            session_id TEXT NOT NULL,
-            name TEXT NOT NULL,
-            PRIMARY KEY (assistant, session_id)
-        )
-    """)
-    for col, default in [("session_id", "'default'"), ("pinned", "0")]:
-        try:
-            conn.execute(f"ALTER TABLE messages ADD COLUMN {col} {'TEXT' if col=='session_id' else 'INTEGER'} DEFAULT {default}")
-        except Exception as e:
-            logger.debug(f"ALTER TABLE messages column '{col}' already exists or failed: {e}")
-            pass
-    conn.commit()
+    _init_schema(conn)
     return conn
 
 
