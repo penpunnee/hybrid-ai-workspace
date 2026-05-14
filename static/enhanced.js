@@ -299,6 +299,34 @@
       /* Login box */
       #login-box { padding: 28px 20px; border-radius: 18px; }
 
+      /* Header — กัน item ล้นเกินจอ */
+      /* header icons (🧩🌙🔗🤖🎙️📌): w-7 h-7 → 24x24 */
+      h1[class*="text-sm"] ~ * button[class*="w-7"][class*="h-7"],
+      .flex.items-center.gap-1 > button[class*="w-7"][class*="h-7"] {
+        width: 24px !important;
+        height: 24px !important;
+        font-size: 11px !important;
+      }
+      /* header model badge: ห้ามล้น + ellipsis */
+      .flex.items-center button[class*="text-\\[10px\\]"][class*="rounded-full"] {
+        max-width: 100px !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+        font-size: 9px !important;
+        padding: 2px 6px !important;
+      }
+      /* status text ออนไลน์: ย่อ */
+      .flex.items-center span[class*="text-\\[11px\\]"][class*="text-gray-500"] {
+        font-size: 10px !important;
+      }
+      /* header icons row: gap เล็กลง */
+      .flex.items-center.gap-1.flex-shrink-0 {
+        gap: 2px !important;
+      }
+      /* outer header padding: ลดด้านข้าง */
+      h1 + div, h1 ~ div { min-width: 0 !important; }
+
       /* Search / Vault overlay — nearly full-screen sheet */
       .enh-overlay { padding-top: 16px; align-items: flex-start; }
       .enh-box {
@@ -1503,8 +1531,14 @@
       const cfg = await _origFetch("/api/config").then(r => r.json());
       const modelName = cfg?.ollama_model || "";
       if (!modelName || modelName === "llama3") return;
-      // ตัดเอาแค่ชื่อ model สั้นๆ เช่น gemma-4-e4b
-      const shortName = modelName.split("/").pop();
+      // ตัดเอาแค่ชื่อ model สั้นๆ — รองรับมือถือ max 12 chars
+      let shortName = modelName.split("/").pop();
+      // ถ้า meta-llama-3.1-8b-instruct → llama-3.1-8b
+      shortName = shortName
+        .replace(/^meta-/, "")
+        .replace(/-instruct$/i, "")
+        .replace(/-chat$/i, "");
+      if (shortName.length > 14) shortName = shortName.slice(0, 12) + "…";
 
       // Observer แทนที่ "🦙 Llama" ทุกครั้งที่ React render
       const _labelObs = new MutationObserver(() => {
