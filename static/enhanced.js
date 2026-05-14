@@ -308,21 +308,24 @@
 
       /* Floating toolbar — ย้ายไปซ้ายมือ เรียงแนวตั้ง กลางหน้าจอ */
       #enh-toolbar {
-        left: 6px !important;
+        left: 4px !important;
         right: auto !important;
         bottom: auto !important;
         top: 50% !important;
         transform: translateY(-50%) !important;
         flex-direction: column !important;
-        gap: 5px !important;
+        gap: 4px !important;
       }
       .enh-fab {
-        padding: 8px 7px !important;
-        border-radius: 12px !important;
-        font-size: 16px !important;
+        padding: 0 !important;
+        border-radius: 10px !important;
+        font-size: 15px !important;
+        line-height: 1 !important;
         justify-content: center !important;
-        width: 36px !important;
-        height: 36px !important;
+        align-items: center !important;
+        width: 32px !important;
+        height: 32px !important;
+        min-width: 32px !important;
       }
       .enh-fab span { display: none !important; }
 
@@ -378,27 +381,38 @@
       /* action buttons row → เปลี่ยนเป็น column ด้านข้าง */
       .group > div.flex-col > div.flex.items-center {
         flex-direction: column !important;
-        gap: 4px !important;
+        gap: 3px !important;
         align-items: center !important;
         justify-content: flex-start !important;
         flex-shrink: 0 !important;
         flex: 0 0 auto !important;
         align-self: flex-start !important;
-        margin-top: 6px !important;
-        width: 26px !important;
+        margin-top: 4px !important;
+        width: 28px !important;
         order: 99 !important;
       }
 
-      /* ปุ่มแต่ละอัน: แสดงตลอดบนมือถือ (ไม่ต้อง hover) */
+      /* ปุ่มแต่ละอัน: ขนาดเท่ากันทุกปุ่ม แสดงตลอด ไม่มี text ส่วนเกิน */
       .group > div.flex-col > div.flex.items-center > button {
-        opacity: 0.65 !important;
-        padding: 4px 3px !important;
+        opacity: 0.6 !important;
+        padding: 0 !important;
         font-size: 13px !important;
-        border-radius: 8px !important;
+        line-height: 1 !important;
+        border-radius: 50% !important;
         width: 26px !important;
+        height: 26px !important;
+        min-width: 26px !important;
+        max-width: 26px !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
+        overflow: hidden !important;
+        white-space: nowrap !important;
+        text-indent: 0 !important;
+        flex-shrink: 0 !important;
+        text-align: center !important;
+        box-sizing: border-box !important;
+        letter-spacing: -2px !important;  /* บีบให้ "📌 Pin" → โชว์แค่ emoji */
       }
 
       /* user message: ปุ่มอยู่ซ้ายมือ */
