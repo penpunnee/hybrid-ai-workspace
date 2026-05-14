@@ -276,6 +276,24 @@
     }
     #enh-toast.show { opacity: 1; }
 
+    /* ── Chat bubble — global (all screen sizes) ───────────────── */
+    /* ป้องกัน Thai text ล้นและ overflow */
+    [class*="rounded-3xl"] {
+      overflow-wrap: break-word !important;
+      word-break: break-word !important;
+      word-wrap: break-word !important;
+    }
+    [class*="rounded-3xl"] p,
+    [class*="rounded-3xl"] div,
+    [class*="rounded-3xl"] span {
+      overflow-wrap: break-word !important;
+      word-break: break-word !important;
+    }
+    /* leading สำหรับ Thai vowel marks — ป้องกันข้อความทับกัน */
+    [class*="leading-relaxed"] {
+      line-height: 1.75 !important;
+    }
+
     /* ── Mobile responsive (< 640px) ───────────────────────────── */
     @media (max-width: 639px) {
       /* Login box */
@@ -304,9 +322,34 @@
       /* Scroll-to-bottom button */
       #enh-scroll-btn { bottom: 70px; right: 52px; }
 
-      /* Pin button — inside bubble, always semi-visible (no hover on touch) */
-      .enh-pin-btn { right: 6px !important; top: 6px !important; opacity: 0.5 !important; }
+      /* Pin button — ย้ายออกไปนอก bubble เพื่อไม่ให้ทับข้อความ */
+      .enh-pin-btn {
+        position: static !important;
+        display: inline-flex !important;
+        margin-top: 6px !important;
+        opacity: 0.5 !important;
+        right: auto !important;
+        top: auto !important;
+        align-self: flex-start;
+      }
       [data-pinned="true"] .enh-pin-btn { opacity: 1 !important; }
+
+      /* Chat bubble — mobile adjustments */
+      [class*="max-w-\\[85\\%\\]"] {
+        max-width: 90% !important;
+      }
+      /* bubble wrapper: กัน content ล้น */
+      [class*="rounded-3xl"] {
+        min-width: 0 !important;
+        max-width: 100% !important;
+        overflow: visible !important;
+        box-sizing: border-box !important;
+      }
+      /* ขนาด font เล็กลงนิดเพื่อให้ข้อความในบรรทัดเดียวกันพอดี */
+      [class*="text-\\[15px\\]"] {
+        font-size: 14px !important;
+        line-height: 1.8 !important;
+      }
 
       /* Token bar */
       #enh-token-bar { padding: 3px 10px; gap: 8px; }
