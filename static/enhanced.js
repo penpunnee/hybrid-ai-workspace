@@ -306,21 +306,36 @@
         max-height: 82vh; padding: 16px; border-radius: 16px;
       }
 
-      /* Floating toolbar — icon-only, sit above token bar */
-      #enh-toolbar { bottom: 28px; right: 8px; gap: 4px; }
-      .enh-fab { padding: 7px 9px; }
-      .enh-fab span { display: none; }
+      /* Floating toolbar — ย้ายไปซ้ายมือ เรียงแนวตั้ง กลางหน้าจอ */
+      #enh-toolbar {
+        left: 6px !important;
+        right: auto !important;
+        bottom: auto !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+        flex-direction: column !important;
+        gap: 5px !important;
+      }
+      .enh-fab {
+        padding: 8px 7px !important;
+        border-radius: 12px !important;
+        font-size: 16px !important;
+        justify-content: center !important;
+        width: 36px !important;
+        height: 36px !important;
+      }
+      .enh-fab span { display: none !important; }
 
-      /* Health widget — move to left so it doesn't clash with toolbar */
-      #hw-btn { bottom: 28px; right: auto; left: 8px; }
-      #hw-panel { bottom: 62px; left: 8px; right: 8px; min-width: 0; }
+      /* Health widget — ย้ายลงล่างซ้าย ใต้ toolbar */
+      #hw-btn { bottom: 16px !important; left: 6px !important; right: auto !important; padding: 5px 8px !important; }
+      #hw-panel { bottom: 50px !important; left: 6px !important; right: 8px !important; min-width: 0; }
 
       /* Home control button + panel */
-      #hw-home-btn { bottom: 70px; right: 8px; width: 36px; height: 36px; font-size: 18px; }
-      #hw-home-panel { width: calc(100vw - 24px); right: 12px; left: 12px; bottom: 114px; }
+      #hw-home-btn { bottom: 16px !important; right: 6px !important; width: 36px; height: 36px; font-size: 18px; }
+      #hw-home-panel { width: calc(100vw - 24px); right: 12px; left: 12px; bottom: 60px; }
 
       /* Scroll-to-bottom button */
-      #enh-scroll-btn { bottom: 70px; right: 52px; }
+      #enh-scroll-btn { bottom: 60px !important; right: 6px !important; }
 
       /* ── Pin button (enh-js) — ซ่อนไว้ ใช้ React pin button แทน ── */
       .enh-pin-btn {
