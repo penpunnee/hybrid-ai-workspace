@@ -322,33 +322,76 @@
       /* Scroll-to-bottom button */
       #enh-scroll-btn { bottom: 70px; right: 52px; }
 
-      /* Pin button — ย้ายออกไปนอก bubble เพื่อไม่ให้ทับข้อความ */
+      /* ── Pin button (enh-js) — ซ่อนไว้ ใช้ React pin button แทน ── */
       .enh-pin-btn {
-        position: static !important;
-        display: inline-flex !important;
-        margin-top: 6px !important;
-        opacity: 0.5 !important;
-        right: auto !important;
-        top: auto !important;
-        align-self: flex-start;
+        display: none !important;
       }
-      [data-pinned="true"] .enh-pin-btn { opacity: 1 !important; }
 
-      /* Chat bubble — mobile adjustments */
+      /* ── Chat bubble — layout ── */
+      /* bubble wrapper max-width */
       [class*="max-w-\\[85\\%\\]"] {
-        max-width: 90% !important;
+        max-width: 88% !important;
       }
-      /* bubble wrapper: กัน content ล้น */
+      /* bubble กัน content ล้น */
       [class*="rounded-3xl"] {
         min-width: 0 !important;
         max-width: 100% !important;
         overflow: visible !important;
         box-sizing: border-box !important;
       }
-      /* ขนาด font เล็กลงนิดเพื่อให้ข้อความในบรรทัดเดียวกันพอดี */
+      /* font */
       [class*="text-\\[15px\\]"] {
         font-size: 14px !important;
         line-height: 1.8 !important;
+      }
+
+      /* ── Action buttons: เปลี่ยนจาก row ใต้ bubble → column ข้างๆ ── */
+
+      /* content column (bubble + buttons): เปลี่ยนเป็น flex-row */
+      .group > div.flex-col {
+        flex-direction: row !important;
+        align-items: flex-start !important;
+        gap: 4px !important;
+      }
+
+      /* bubble div: ขยายเต็มพื้นที่ที่เหลือ */
+      .group > div.flex-col > div[class*="rounded-3xl"] {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+      }
+
+      /* action buttons row → เปลี่ยนเป็น column ด้านข้าง */
+      .group > div.flex-col > div.flex.items-center {
+        flex-direction: column !important;
+        gap: 4px !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        flex-shrink: 0 !important;
+        flex: 0 0 auto !important;
+        align-self: flex-start !important;
+        margin-top: 6px !important;
+        width: 26px !important;
+        order: 99 !important;
+      }
+
+      /* ปุ่มแต่ละอัน: แสดงตลอดบนมือถือ (ไม่ต้อง hover) */
+      .group > div.flex-col > div.flex.items-center > button {
+        opacity: 0.65 !important;
+        padding: 4px 3px !important;
+        font-size: 13px !important;
+        border-radius: 8px !important;
+        width: 26px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+      }
+
+      /* user message: ปุ่มอยู่ซ้ายมือ */
+      .group.justify-end > div.flex-col {
+        flex-direction: row-reverse !important;
+      }
+      .group.justify-end > div.flex-col > div.flex.items-center {
+        margin-right: 0 !important;
       }
 
       /* Token bar */
