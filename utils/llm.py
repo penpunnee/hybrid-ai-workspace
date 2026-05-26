@@ -64,11 +64,14 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 # --- LM Studio (OpenAI-compatible local server) ---
-_LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
+# opt-in: default ว่าง — ถ้าไม่ตั้ง LMSTUDIO_BASE_URL จะไม่ถูกใช้ (local หลักคือ Ollama)
+_LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "")
 _LMSTUDIO_TIMEOUT  = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
 
+# client สร้างไว้เสมอ แต่จะถูกเรียกเฉพาะเมื่อ provider="lmstudio" เท่านั้น
+# ถ้า base_url ว่าง ใช้ localhost (ถ้าเผลอเรียกจะ refuse แบบ clean ไม่ leak ไป api.openai.com)
 lmstudio_client = OpenAI(
-    base_url=_LMSTUDIO_BASE_URL,
+    base_url=_LMSTUDIO_BASE_URL or "http://localhost:1234/v1",
     api_key="lmstudio",
     timeout=_LMSTUDIO_TIMEOUT,
 )
@@ -102,12 +105,8 @@ def stream_response(messages: list[dict], provider: str = "ollama",
                                     image_b64=image_b64, image_mime=image_mime)
         return
 
-    # provider == "ollama" แต่มี LM Studio ตั้งค่า → redirect ไป LM Studio
-    if provider == "ollama" and _LMSTUDIO_BASE_URL:
-        _last_failover["active"] = False
-        yield from _stream_lmstudio(messages, image_b64=image_b64, image_mime=image_mime)
-        return
-
+    # provider == "ollama" → ใช้ Ollama เสมอ (ไม่ redirect ไป LM Studio อีกต่อไป)
+    # ปุ่มแยกชัด: Ollama=Ollama, LM Studio=LM Studio, Gemini=Gemini
     if provider == "auto":
         # ดึงจาก reasoning router
         try:

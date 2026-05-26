@@ -17,11 +17,12 @@ from .tools import execute_tool, get_openai_tools
 
 logger = logging.getLogger(__name__)
 
-_LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
+# Agent (function calling) ต้องการ LM Studio — opt-in ผ่าน LMSTUDIO_BASE_URL
+_LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "")
 _LMSTUDIO_TIMEOUT = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
 
 _client = OpenAI(
-    base_url=_LMSTUDIO_BASE_URL,
+    base_url=_LMSTUDIO_BASE_URL or "http://localhost:1234/v1",
     api_key="lmstudio",
     timeout=_LMSTUDIO_TIMEOUT,
 )

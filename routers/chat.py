@@ -295,12 +295,18 @@ async def chat(request: Request):
                 yield f"data: {json.dumps({'chunk': chunk})}\n\n"
         except Exception as e:
             from utils.llm import GeminiQuotaExhausted, GeminiUnavailable
-            # Gemini ล้ม → fallback ไป LM Studio + web search (ถ้าเป็น internet query)
-            # หรือ LM Studio chat (ถ้าไม่ใช่)
+            # Gemini ล้ม → fallback ไป local model + web search (ถ้าเป็น internet query)
+            # เลือก local provider: LM Studio ถ้าตั้งค่าไว้ ไม่งั้นใช้ Ollama
             if isinstance(e, (GeminiQuotaExhausted, GeminiUnavailable)) and _provider in ("gemini", "gemini_agent"):
                 try:
-                    from core.config import LMSTUDIO_CHAT_MODEL
+                    from core.config import LMSTUDIO_BASE_URL, LMSTUDIO_CHAT_MODEL, OLLAMA_MODEL
                     from reasoning.classifier import needs_internet
+                    if LMSTUDIO_BASE_URL:
+                        fb_provider, fb_model = "lmstudio", LMSTUDIO_CHAT_MODEL
+                        fb_model_label = LMSTUDIO_CHAT_MODEL.split("/")[-1]
+                    else:
+                        fb_provider, fb_model = "ollama", ""
+                        fb_model_label = OLLAMA_MODEL
                     fallback_msg = ("⚠️ Gemini quota หมด — กำลังลอง local model + web search...\n\n"
                                     if isinstance(e, GeminiQuotaExhausted)
                                     else "⚠️ Gemini ใช้ไม่ได้ — fallback เป็น local model...\n\n")
@@ -332,9 +338,9 @@ async def chat(request: Request):
                         except Exception as ws_err:
                             logger.warning(f"[Chat] fallback web search failed: {ws_err}")
 
-                    provider_used = "lmstudio"
-                    model_used = LMSTUDIO_CHAT_MODEL.split("/")[-1]
-                    for chunk in _try_stream("lmstudio", LMSTUDIO_CHAT_MODEL):
+                    provider_used = fb_provider
+                    model_used = fb_model_label
+                    for chunk in _try_stream(fb_provider, fb_model):
                         full_response += chunk
                         yield f"data: {json.dumps({'chunk': chunk})}\n\n"
                 except Exception as e2:

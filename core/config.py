@@ -43,7 +43,9 @@ RESPONSE_CACHE_DB = os.path.join(NAS_DATA_PATH, "response_cache.db")
 EMBED_CACHE_DB = os.path.join(NAS_DATA_PATH, "embed_cache.db")
 
 # ── LM Studio (Local LLM — OpenAI compatible) ────────────────────────────────
-LMSTUDIO_BASE_URL     = os.getenv("LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
+# LM Studio เป็น opt-in: เปิดใช้เฉพาะเมื่อ set LMSTUDIO_BASE_URL ใน .env
+# (default ว่าง — local LLM หลักของระบบนี้คือ Ollama ดู OLLAMA_BASE_URL ด้านบน)
+LMSTUDIO_BASE_URL     = os.getenv("LMSTUDIO_BASE_URL", "")
 LMSTUDIO_CHAT_MODEL   = os.getenv("LMSTUDIO_CHAT_MODEL", "google/gemma-4-e4b")
 LMSTUDIO_REASON_MODEL = os.getenv("LMSTUDIO_REASON_MODEL", "deepseek/deepseek-r1-0528-qwen3-8b")
 LMSTUDIO_VISION_MODEL = os.getenv("LMSTUDIO_VISION_MODEL", "llama-3.2-11b-vision-instruct")

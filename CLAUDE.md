@@ -64,11 +64,13 @@ docker compose logs hybrid-ai -f
 Ollama branch: context cap 2000 chars; trim history to <3000 tokens.
 
 ### LLM Routing
-- `provider: "ollama"` → Ollama OR redirect ไป LMStudio ถ้า `LMSTUDIO_BASE_URL` ตั้ง
+**ปุ่มแยกชัด — แต่ละ provider ไปตัวเดียวกันเสมอ (ไม่มี redirect ข้ามตัว)**
+- `provider: "ollama"` → **Ollama เสมอ** (`OLLAMA_BASE_URL`, model `llama3`) — ไม่ redirect ไป LM Studio อีกต่อไป
 - `provider: "lmstudio"` / `"lmstudio_web"` → LM Studio (รองรับ vision via `LMSTUDIO_VISION_MODEL`)
 - `provider: "gemini"` / `"gemini_agent"` → Gemini (force ถ้ามี `image_b64` หรือ `agent_mode: true`)
-- `provider: "auto"` → `reasoning/router.py:route()` decides
-- Fallback: Gemini quota exhausted → LMStudio + web search
+- `provider: "auto"` → `reasoning/router.py:route()` decides (LM Studio ถ้า `LMSTUDIO_BASE_URL` ตั้ง, internet/vision → Gemini, ไม่งั้น Ollama)
+- ⚠️ **ค่า address ทั้งหมดมาจาก `.env`** (`OLLAMA_BASE_URL`, `LMSTUDIO_BASE_URL`) — source ไม่ hardcode IP. default ของ `LMSTUDIO_BASE_URL` = `""` (ต้องตั้งใน `.env` ถ้าจะใช้ LM Studio/embeddings/vision/agent)
+- Fallback: Gemini quota exhausted → local model + web search (LM Studio ถ้าตั้ง `LMSTUDIO_BASE_URL`, ไม่งั้น **Ollama**)
 
 ### Data Persistence
 | Data | Storage |
@@ -173,7 +175,7 @@ OLLAMA_BASE_URL=http://localhost:11434/v1
 OLLAMA_MODEL=llama3
 OLLAMA_TIMEOUT=120
 OLLAMA_NUM_CTX=4096
-LMSTUDIO_BASE_URL=http://192.168.51.235:1234/v1
+LMSTUDIO_BASE_URL=          # opt-in: ปล่อยว่าง=ปิด (local หลักคือ Ollama). ใส่ค่าเฉพาะเมื่อรัน LM Studio จริง
 LMSTUDIO_CHAT_MODEL=google/gemma-4-e4b
 LMSTUDIO_REASON_MODEL=deepseek/deepseek-r1-0528-qwen3-8b
 LMSTUDIO_VISION_MODEL=llama-3.2-11b-vision-instruct
