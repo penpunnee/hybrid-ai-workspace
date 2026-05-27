@@ -41,7 +41,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - chroma_data:/chroma/chroma
+      # chroma :latest persist ที่ /data (เดิม mount /chroma/chroma → image รุ่นใหม่ไม่ใช้ → data ไม่ persist หายตอน recreate)
+      - chroma_data:/data
 
   cloudflared:
     image: cloudflare/cloudflared:latest
