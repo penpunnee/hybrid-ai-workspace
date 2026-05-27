@@ -1,0 +1,10 @@
+# Training-only deps — ติดตั้งบน PC GPU (RTX 3060) ใน WSL/Linux + CUDA เท่านั้น
+# แยกจาก requirements.txt ของ app (อันนั้นไม่ต้องมี — กัน app/CI บวม + ไม่ต้อง GPU)
+# pip install -r requirements-train.txt
+unsloth
+trl>=0.9
+transformers>=4.44
+datasets>=2.20
+peft>=0.12
+accelerate>=0.33
+bitsandbytes>=0.43
