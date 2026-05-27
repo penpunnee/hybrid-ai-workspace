@@ -47,14 +47,16 @@ class TestHealthEndpoints:
         assert "application/json" not in response.headers.get("content-type", "")
 
     # ─────────────────────────────────────────────────────────
-    # Bug #2 FIX: mock path ผิด
-    #   เดิม: patch('server.check_ollama_health')
-    #   แก้:  patch('utils.llm.check_ollama_health') ← import จาก utils.llm
+    # Bug #2 FIX: mock path ผิด → ค้าง (real func ต่อ ChromaDB จริง)
+    #   system.py ทำ `from utils.llm import check_ollama_health` →
+    #   ชื่อผูกใน routers.system แล้ว ต้อง patch ที่ใช้งานจริง ไม่ใช่ต้นทาง
+    #   เดิม patch('utils.llm.check_ollama_health') ← ไม่มีผล → /api/status
+    #   เรียก func จริง → connect NAS → ThreadPoolExecutor shutdown ค้าง
     # ─────────────────────────────────────────────────────────
     def test_status_endpoint(self, mock_env):
         """Test /api/status endpoint"""
-        with patch('utils.llm.check_ollama_health') as mock_ollama, \
-             patch('utils.memory.is_memory_available') as mock_mem:
+        with patch('routers.system.check_ollama_health') as mock_ollama, \
+             patch('routers.system.is_memory_available') as mock_mem:
             mock_ollama.return_value = (True, "")
             mock_mem.return_value = True
             response = client.get("/api/status")
