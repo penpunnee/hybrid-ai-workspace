@@ -170,7 +170,11 @@ def test_safe_slug(name, slug):
 
 
 def _fake_client(res):
-    col = SimpleNamespace(query=lambda **k: res)
+    col = SimpleNamespace(
+        query=lambda **k: res,
+        get=lambda ids=None, **k: {"metadatas": []},   # สำหรับ bump_access_count
+        update=lambda **k: None,
+    )
     return SimpleNamespace(get_collection=lambda name: col)
 
 
@@ -181,6 +185,7 @@ def test_search_entries_no_client_returns_empty(monkeypatch):
 
 def test_search_entries_filters_and_sorts(monkeypatch):
     res = {
+        "ids": [["a", "b", "c"]],
         "documents": [["a", "b", "c"]],
         "metadatas": [[
             {"confidence": 0.9, "verified": True, "type": "fact"},
@@ -198,6 +203,7 @@ def test_search_entries_filters_and_sorts(monkeypatch):
 
 def test_search_entries_verified_only(monkeypatch):
     res = {
+        "ids": [["a", "b"]],
         "documents": [["a", "b"]],
         "metadatas": [[
             {"confidence": 0.9, "verified": True},
@@ -208,6 +214,41 @@ def test_search_entries_verified_only(monkeypatch):
     monkeypatch.setattr(store, "_get_chroma_client", lambda: _fake_client(res))
     out = search_entries("logic", "q", verified_only=True)
     assert [r["content"] for r in out] == ["a"]
+
+
+def test_search_entries_bumps_access_count(monkeypatch):
+    """Step 0: recall/search → access_count++ + last_accessed refresh
+    (เดิม bump_access_count ไม่เคยถูกเรียก → usage signal ตาย)"""
+    query_res = {
+        "ids": [["m1"]],
+        "documents": [["hello"]],
+        "metadatas": [[{"confidence": 0.8, "verified": False, "access_count": 0}]],
+        "distances": [[0.1]],
+    }
+    get_res = {"metadatas": [{"confidence": 0.8, "verified": False, "access_count": 0}]}
+    updates = []
+
+    class _Col:
+        def query(self, **k):
+            return query_res
+
+        def get(self, ids=None, **k):
+            return get_res
+
+        def update(self, ids=None, metadatas=None, **k):
+            updates.append((ids, metadatas))
+
+    client = SimpleNamespace(get_collection=lambda name: _Col())
+    monkeypatch.setattr(store, "_get_chroma_client", lambda: client)
+
+    out = search_entries("logic", "q")
+    assert out and out[0]["content"] == "hello"
+    assert out[0].get("id") == "m1", "ผลลัพธ์ควรมี doc id"
+    assert updates, "search ต้อง bump access_count (ยังไม่ถูก wire)"
+    _ids, _metas = updates[0]
+    assert _ids == ["m1"]
+    assert _metas[0]["access_count"] == 1
+    assert _metas[0]["last_accessed"], "ต้อง refresh last_accessed"
 
 
 # ════════════════════════ operations.py ════════════════════════

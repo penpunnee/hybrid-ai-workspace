@@ -74,12 +74,13 @@ def search_entries(assistant: str, query: str, n_results: int = 5,
         logger.error(f"search_entries query failed: {e}")
         return []
 
+    ids   = res.get("ids", [[]])[0]
     docs  = res.get("documents", [[]])[0]
     metas = res.get("metadatas", [[]])[0]
     dists = res.get("distances", [[]])[0]
 
     results = []
-    for doc, meta, dist in zip(docs, metas, dists):
+    for doc_id, doc, meta, dist in zip(ids, docs, metas, dists):
         confidence = meta.get("confidence", 0.7) if meta else 0.7
         verified   = meta.get("verified", False) if meta else False
 
@@ -89,6 +90,7 @@ def search_entries(assistant: str, query: str, n_results: int = 5,
             continue
 
         results.append({
+            "id":         doc_id,
             "content":    doc,
             "confidence": confidence,
             "verified":   verified,
@@ -100,7 +102,18 @@ def search_entries(assistant: str, query: str, n_results: int = 5,
 
     # เรียงตาม verified ก่อน แล้วตาม confidence
     results.sort(key=lambda x: (x["verified"], x["confidence"]), reverse=True)
-    return results[:n_results]
+    results = results[:n_results]
+
+    # Step 0: บันทึกการใช้งาน — bump access_count + refresh last_accessed
+    # ของ memory ที่ถูก surface จริง (top-k) → ให้ retention policy มีข้อมูล recency/frequency
+    bumped_ids = [r["id"] for r in results if r.get("id")]
+    if bumped_ids:
+        try:
+            bump_access_count(assistant, bumped_ids)
+        except Exception as e:
+            logger.debug(f"bump on search skipped: {e}")
+
+    return results
 
 
 def update_confidence(assistant: str, content_snippet: str, new_confidence: float) -> bool:
