@@ -299,6 +299,10 @@
       /* Login box */
       #login-box { padding: 28px 20px; border-radius: 18px; }
 
+      /* root height: 100vh → 100dvh — กัน iOS Safari toolbar ดัน layout ล้นจอ
+         (header sticky + ช่องแชทอยู่กับที่, เลื่อนเฉพาะ messages) เหมือน sidebar ที่ใช้ 100dvh */
+      .flex.h-screen { height: 100dvh !important; }
+
       /* Header — กัน item ล้นเกินจอ */
       /* header icons (🧩🌙🔗🤖🎙️📌): w-7 h-7 → 24x24 */
       h1[class*="text-sm"] ~ * button[class*="w-7"][class*="h-7"],
