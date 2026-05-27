@@ -299,9 +299,11 @@
       /* Login box */
       #login-box { padding: 28px 20px; border-radius: 18px; }
 
-      /* root height: 100vh → 100dvh — กัน iOS Safari toolbar ดัน layout ล้นจอ
-         (header sticky + ช่องแชทอยู่กับที่, เลื่อนเฉพาะ messages) เหมือน sidebar ที่ใช้ 100dvh */
-      .flex.h-screen { height: 100dvh !important; }
+      /* main chat messages list ขาด min-h-0 (sidebar มี แต่ main ไม่มี) →
+         flex item หดไม่ได้ → column ล้น viewport → header/input เลื่อนตาม.
+         ใส่ min-h-0 → messages หด+scroll ภายในตัวเอง, header/input อยู่กับที่
+         (ไม่แตะ root height = ไม่เกิดช่องว่างดำ) */
+      .overflow-y-auto.space-y-5 { min-height: 0 !important; }
 
       /* Header — กัน item ล้นเกินจอ */
       /* header icons (🧩🌙🔗🤖🎙️📌): w-7 h-7 → 24x24 */
