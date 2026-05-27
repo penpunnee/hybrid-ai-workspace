@@ -13,6 +13,23 @@ import re
 from typing import Generator, Iterator
 
 
+_OPEN_TAG = "<think>"
+_CLOSE_TAG = "</think>"
+
+
+def _partial_tag_suffix_len(buffer: str, tag: str) -> int:
+    """คืนความยาวส่วนท้าย buffer ที่ "อาจ" เป็นจุดเริ่มของ tag (prefix ของ tag)
+
+    ใช้กันกรณี tag ถูกแบ่งข้าม chunk เช่น "<thi" + "nk>" — เราต้องเก็บ "<thi" ไว้
+    รอ chunk ถัดไปแทนที่จะ flush เป็น answer ทันที (ซึ่งทำให้ tag รั่ว)
+    """
+    max_k = min(len(tag) - 1, len(buffer))
+    for k in range(max_k, 0, -1):
+        if buffer.endswith(tag[:k]):
+            return k
+    return 0
+
+
 def parse_think_stream(chunks: Iterator[str]) -> Generator[dict, None, None]:
     """
     รับ stream chunks จาก DeepSeek R1
@@ -20,6 +37,8 @@ def parse_think_stream(chunks: Iterator[str]) -> Generator[dict, None, None]:
 
     think = reasoning process (แสดงหรือซ่อนก็ได้)
     answer = คำตอบสุดท้าย
+
+    รองรับ tag ที่ถูกแบ่งข้าม chunk boundary (เก็บส่วนท้ายที่อาจเป็น tag ครึ่งไว้รอ)
     """
     buffer = ""
     in_think = False
@@ -27,40 +46,46 @@ def parse_think_stream(chunks: Iterator[str]) -> Generator[dict, None, None]:
 
     for chunk in chunks:
         buffer += chunk
-
-        while buffer:
+        progressed = True
+        while progressed and buffer:
+            progressed = False
             if not in_think:
-                think_start = buffer.find("<think>")
-                if think_start == -1:
-                    # ไม่มี <think> tag — yield ทุกอย่างเป็น answer
-                    if buffer:
-                        yield {"type": "answer", "text": buffer}
-                    buffer = ""
-                else:
-                    # yield ส่วนก่อน <think>
-                    if think_start > 0:
-                        yield {"type": "answer", "text": buffer[:think_start]}
-                    buffer = buffer[think_start + 7:]  # ข้าม <think>
+                idx = buffer.find(_OPEN_TAG)
+                if idx != -1:
+                    if idx > 0:
+                        yield {"type": "answer", "text": buffer[:idx]}
+                    buffer = buffer[idx + len(_OPEN_TAG):]
                     in_think = True
                     think_buffer = ""
-            else:
-                think_end = buffer.find("</think>")
-                if think_end == -1:
-                    # ยังอยู่ใน think block — สะสมต่อ
-                    think_buffer += buffer
-                    buffer = ""
+                    progressed = True
                 else:
-                    # พบ </think>
-                    think_buffer += buffer[:think_end]
+                    # ยังไม่เจอ <think> เต็ม — emit ส่วนที่ปลอดภัย เก็บ tail ที่อาจเป็น tag ครึ่ง
+                    hold = _partial_tag_suffix_len(buffer, _OPEN_TAG)
+                    emit = buffer[:len(buffer) - hold]
+                    if emit:
+                        yield {"type": "answer", "text": emit}
+                    buffer = buffer[len(buffer) - hold:]
+            else:
+                idx = buffer.find(_CLOSE_TAG)
+                if idx != -1:
+                    think_buffer += buffer[:idx]
                     if think_buffer.strip():
                         yield {"type": "think", "text": think_buffer.strip()}
-                    buffer = buffer[think_end + 8:]  # ข้าม </think>
+                    buffer = buffer[idx + len(_CLOSE_TAG):]
                     in_think = False
                     think_buffer = ""
+                    progressed = True
+                else:
+                    # ยังไม่เจอ </think> เต็ม — สะสม think เก็บ tail ที่อาจเป็น tag ครึ่ง
+                    hold = _partial_tag_suffix_len(buffer, _CLOSE_TAG)
+                    think_buffer += buffer[:len(buffer) - hold]
+                    buffer = buffer[len(buffer) - hold:]
 
-    # flush ที่เหลือ
-    if in_think and think_buffer.strip():
-        yield {"type": "think", "text": think_buffer.strip()}
+    # flush ที่เหลือ (tail ที่ค้างถือว่าเป็น literal text แล้ว)
+    if in_think:
+        think_buffer += buffer
+        if think_buffer.strip():
+            yield {"type": "think", "text": think_buffer.strip()}
     elif buffer.strip():
         yield {"type": "answer", "text": buffer}
 
