@@ -2028,7 +2028,8 @@
     if (collected.citations) _renderCitations(bubble, collected.citations);
     if (collected.reflection) _renderReflection(bubble, collected.reflection);
     if (collected.timings) _renderTiming(bubble, collected.timings, collected.model);
-    _renderFeedback(bubble, collected.message_id, collected.assistant, collected.session_id);
+    // feedback 👍/👎 ย้ายไป render ใน React แล้ว (always-visible, กดได้บนมือถือ) — เลิก inject ที่นี่ กันปุ่มซ้ำ
+    // _renderFeedback(bubble, collected.message_id, collected.assistant, collected.session_id);
   }
 
   function _getAssistantFromUrl() {
