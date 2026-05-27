@@ -365,16 +365,16 @@
       }
       .enh-fab span { display: none !important; }
 
-      /* Health widget — ย้ายลงล่างซ้าย ใต้ toolbar */
-      #hw-btn { bottom: 16px !important; left: 6px !important; right: auto !important; padding: 5px 8px !important; }
-      #hw-panel { bottom: 50px !important; left: 6px !important; right: 8px !important; min-width: 0; }
+      /* Health widget — ยกขึ้นเหนือ input + token bar (เดิม 16px ทับกัน) */
+      #hw-btn { bottom: 100px !important; left: 6px !important; right: auto !important; padding: 5px 8px !important; }
+      #hw-panel { bottom: 140px !important; left: 6px !important; right: 8px !important; min-width: 0; }
 
-      /* Home control button + panel */
-      #hw-home-btn { bottom: 16px !important; right: 6px !important; width: 36px; height: 36px; font-size: 18px; }
-      #hw-home-panel { width: calc(100vw - 24px); right: 12px; left: 12px; bottom: 60px; }
+      /* Home control button + panel — ยกขึ้นเหนือ input */
+      #hw-home-btn { bottom: 100px !important; right: 6px !important; width: 36px; height: 36px; font-size: 18px; }
+      #hw-home-panel { width: calc(100vw - 24px); right: 12px; left: 12px; bottom: 144px; }
 
-      /* Scroll-to-bottom button */
-      #enh-scroll-btn { bottom: 60px !important; right: 6px !important; }
+      /* Scroll-to-bottom button — เหนือปุ่มอื่น */
+      #enh-scroll-btn { bottom: 148px !important; right: 6px !important; }
 
       /* ── Pin button (enh-js) — ซ่อนไว้ ใช้ React pin button แทน ── */
       .enh-pin-btn {
