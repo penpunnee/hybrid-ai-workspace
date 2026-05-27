@@ -299,10 +299,12 @@
       /* Login box */
       #login-box { padding: 28px 20px; border-radius: 18px; }
 
-      /* main chat messages list ขาด min-h-0 (sidebar มี แต่ main ไม่มี) →
-         flex item หดไม่ได้ → column ล้น viewport → header/input เลื่อนตาม.
-         ใส่ min-h-0 → messages หด+scroll ภายในตัวเอง, header/input อยู่กับที่
-         (ไม่แตะ root height = ไม่เกิดช่องว่างดำ) */
+      /* ── iOS viewport lock — กัน 100vh ล้นจอ (header เลื่อน/input โดนตัด) ──
+         body สูง = จอจริง (ตั้งโดย JS _fitMobileVH ด้านล่าง) แล้วไล่ chain
+         body → #root → .h-screen ให้พอดีเป๊ะ, ล็อก overflow กัน pan ทั้งหน้า */
+      html, body { overflow: hidden !important; }
+      #root, .flex.h-screen { height: 100% !important; }
+      /* main chat messages list ขาด min-h-0 → หดไม่ได้ → ล้น; ใส่ให้ scroll ในตัวเอง */
       .overflow-y-auto.space-y-5 { min-height: 0 !important; }
 
       /* Header — กัน item ล้นเกินจอ */
@@ -466,6 +468,18 @@
     }
   `;
   document.head.appendChild(css);
+
+  // ── iOS mobile viewport fit: body สูง = window.innerHeight จริง (กัน 100vh pan) ──
+  function _fitMobileVH() {
+    const h = window.innerWidth < 640 ? window.innerHeight + "px" : "";
+    document.documentElement.style.height = h;
+    document.body.style.height = h;
+  }
+  ["resize", "orientationchange", "pageshow"].forEach(function (ev) {
+    window.addEventListener(ev, _fitMobileVH);
+  });
+  _fitMobileVH();
+  setTimeout(_fitMobileVH, 300);  // เผื่อ React mount/toolbar settle
 
   // ── Toast helper ────────────────────────────────────────────────────────────
   const toast = document.createElement("div");
