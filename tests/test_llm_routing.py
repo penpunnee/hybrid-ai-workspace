@@ -69,3 +69,45 @@ def test_auto_route_falls_back_to_ollama_when_no_lmstudio(monkeypatch):
     assert decision.provider == "ollama", (
         f"คาดว่า auto-route → ollama แต่ได้ {decision.provider} ({decision.reason})"
     )
+
+
+# ─────────────────────────────────────────────────────────────
+# Fallback cascade: LM Studio ต่อไม่ได้ → ต้องไล่ต่อ Ollama อัตโนมัติ
+#   bug (session 2026-05-27): _stream_lmstudio ดัก connection error แล้ว yield
+#   string "เชื่อมต่อ LM Studio ไม่ได้" แทนการ raise → caller จับไม่ได้ →
+#   fallback chain หยุดที่ LM Studio ตอบไม่ได้ ทั้งที่ Ollama ยังขึ้นอยู่
+# ─────────────────────────────────────────────────────────────
+def _mock_lmstudio_dead(monkeypatch, llm):
+    """จำลอง LM Studio server ล่ม: create() โยน connection refused"""
+    class _Boom:
+        def create(self, *a, **k):
+            raise Exception("Connection refused")
+    fake_chat = type("Chat", (), {})()
+    fake_chat.completions = _Boom()
+    monkeypatch.setattr(llm.lmstudio_client, "chat", fake_chat)
+
+
+def test_lmstudio_connection_failure_cascades_to_ollama(monkeypatch):
+    """provider='lmstudio' แต่ server ต่อไม่ได้ → cascade ไป Ollama อัตโนมัติ"""
+    import utils.llm as llm
+    monkeypatch.setattr(llm, "_LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
+    _mock_lmstudio_dead(monkeypatch, llm)
+    monkeypatch.setattr(llm, "_stream_ollama", lambda m: iter(["OLLAMA_ANSWER"]))
+
+    out = "".join(llm.stream_response(
+        [{"role": "user", "content": "hi"}], provider="lmstudio"))
+    assert "OLLAMA_ANSWER" in out, f"ควร cascade ไป Ollama แต่ได้: {out!r}"
+
+
+def test_lmstudio_failure_with_image_does_not_cascade_to_ollama(monkeypatch):
+    """โหมดรูปภาพ: Ollama (llama3) ดูรูปไม่ได้ → ห้าม cascade เงียบๆ ต้องแจ้ง error"""
+    import utils.llm as llm
+    monkeypatch.setattr(llm, "_LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
+    _mock_lmstudio_dead(monkeypatch, llm)
+    monkeypatch.setattr(llm, "_stream_ollama", lambda m: iter(["OLLAMA_ANSWER"]))
+
+    out = "".join(llm.stream_response(
+        [{"role": "user", "content": "นี่รูปอะไร"}],
+        provider="lmstudio", image_b64="ZmFrZQ==", image_mime="image/png"))
+    assert "OLLAMA_ANSWER" not in out, f"โหมดรูปไม่ควร cascade ไป Ollama: {out!r}"
+    assert "LM Studio" in out, f"ควรแจ้ง error LM Studio แต่ได้: {out!r}"

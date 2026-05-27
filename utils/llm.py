@@ -33,6 +33,12 @@ class GeminiUnavailable(Exception):
     """Raised เมื่อ Gemini ไม่พร้อมใช้ (key ผิด, network, etc.)"""
     pass
 
+
+class LMStudioUnavailable(Exception):
+    """Raised เมื่อ LM Studio server ต่อไม่ได้ (PC ปิด/ยังไม่ Start Server)
+    — ให้ caller cascade ไป Ollama ได้ (raise ก่อน yield chunk แรกเสมอ จึง cascade ปลอดภัย)"""
+    pass
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -101,8 +107,8 @@ def stream_response(messages: list[dict], provider: str = "ollama",
 
     if provider in ("lmstudio", "lmstudio_web"):
         _last_failover["active"] = False
-        yield from _stream_lmstudio(messages, model=model_override,
-                                    image_b64=image_b64, image_mime=image_mime)
+        yield from _stream_lmstudio_or_ollama(messages, model=model_override,
+                                              image_b64=image_b64, image_mime=image_mime)
         return
 
     # provider == "ollama" → ใช้ Ollama เสมอ (ไม่ redirect ไป LM Studio อีกต่อไป)
@@ -121,9 +127,18 @@ def stream_response(messages: list[dict], provider: str = "ollama",
                 yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=use_agent)
             elif decision.provider == "lmstudio":
                 show = os.getenv("SHOW_THINKING", "false").lower() == "true"
-                raw_chunks = _stream_lmstudio(messages, model=decision.model,
-                                              image_b64=image_b64, image_mime=image_mime)
-                yield from stream_with_thinking(raw_chunks, show_thinking=show)
+                try:
+                    raw_chunks = _stream_lmstudio(messages, model=decision.model,
+                                                  image_b64=image_b64, image_mime=image_mime)
+                    yield from stream_with_thinking(raw_chunks, show_thinking=show)
+                except LMStudioUnavailable as e:
+                    if image_b64:
+                        yield (f"❌ เชื่อมต่อ LM Studio ไม่ได้ ({_LMSTUDIO_BASE_URL}) — "
+                               f"โหมดรูปภาพใช้ Ollama แทนไม่ได้ กรุณาเปิด PC + Start Server")
+                    else:
+                        logger.warning(f"LM Studio ต่อไม่ได้ → cascade ไป Ollama ({e})")
+                        yield "⚠️ LM Studio ต่อไม่ได้ — สลับไป Ollama ให้อัตโนมัติ\n\n"
+                        yield from _stream_ollama(messages)
             else:
                 yield from _stream_ollama(messages)
         except Exception as e:
@@ -185,8 +200,11 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
         logger.info(f"LM Studio stream OK (model={model}, vision={'yes' if image_b64 else 'no'})")
     except Exception as e:
         err = str(e).lower()
-        if "connection" in err or "refused" in err:
-            yield f"❌ เชื่อมต่อ LM Studio ไม่ได้ ({_LMSTUDIO_BASE_URL})"
+        if "connection" in err or "refused" in err or "connect" in err:
+            # raise แทน yield → ให้ caller (stream_response) cascade ไป Ollama ได้
+            # connection error เกิดที่ create() ก่อน yield chunk แรกเสมอ → cascade ปลอดภัย
+            logger.warning(f"LM Studio connection failed ({_LMSTUDIO_BASE_URL}): {e}")
+            raise LMStudioUnavailable(str(e)) from e
         elif "model" in err or "not found" in err:
             yield f"❌ ไม่พบ model `{model}` ใน LM Studio — ตรวจสอบว่าโหลดแล้ว"
         elif "resources" in err or "memory" in err:
@@ -195,6 +213,25 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
             logger.error(f"LM Studio error: {e}")
             yield f"❌ LM Studio error: {e}"
 
+
+def _stream_lmstudio_or_ollama(messages: list[dict], model: str = "",
+                               image_b64: str = "", image_mime: str = ""):
+    """LM Studio ก่อน; ถ้า server ต่อไม่ได้ (connection) → cascade ไป Ollama อัตโนมัติ
+
+    ยกเว้นโหมดรูปภาพ — Ollama (llama3) ดูรูปไม่ได้ → แจ้ง error ตรงๆ ดีกว่า cascade เงียบๆ
+    """
+    try:
+        yield from _stream_lmstudio(messages, model=model,
+                                    image_b64=image_b64, image_mime=image_mime)
+    except LMStudioUnavailable as e:
+        if image_b64:
+            yield (f"❌ เชื่อมต่อ LM Studio ไม่ได้ ({_LMSTUDIO_BASE_URL}) — "
+                   f"โหมดรูปภาพใช้ Ollama แทนไม่ได้ (ดูรูปไม่ได้) "
+                   f"กรุณาเปิด PC + Start Server")
+            return
+        logger.warning(f"LM Studio ต่อไม่ได้ → cascade ไป Ollama อัตโนมัติ ({e})")
+        yield "⚠️ LM Studio ต่อไม่ได้ — สลับไป Ollama ให้อัตโนมัติ\n\n"
+        yield from _stream_ollama(messages)
 
 
 def check_ollama_health(force: bool = False) -> tuple[bool, str]:
