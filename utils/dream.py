@@ -261,6 +261,102 @@ def memory_decay(decay_rate: float = 0.05, min_confidence: float = 0.2) -> dict:
     return {"decayed": decayed, "skipped": skipped}
 
 
+# ---------- Phase 3.5: Memory Prune (hard delete — กันบวม) ----------
+def _retention_score(meta: dict, now=None) -> float:
+    """คะแนน 'ความควรเก็บ' 0-1 (สูง=เก็บ, ต่ำ=ลบก่อน)
+
+    retention = 0.5·confidence + 0.3·recency + 0.2·frequency
+      recency   = exp decay (half-life ~14 วัน นับจาก last_accessed)
+      frequency = access_count saturate ที่ 5 ครั้ง
+    verified/user_taught → 1.0 (ไม่ลบเด็ดขาด)
+    """
+    import math
+    if meta.get("verified") or meta.get("source") == "user_taught":
+        return 1.0
+    now = now or datetime.now()
+    conf = float(meta.get("confidence", 0.7))
+    last = meta.get("last_accessed") or meta.get("created_at") or meta.get("timestamp") or ""
+    days = 999.0
+    try:
+        days = max(0.0, (now - datetime.fromisoformat(last)).total_seconds() / 86400)
+    except Exception:
+        pass
+    recency = math.exp(-days / 14.0)
+    freq = min(1.0, float(meta.get("access_count", 0)) / 5.0)
+    return round(0.5 * conf + 0.3 * recency + 0.2 * freq, 4)
+
+
+def memory_prune(cap: int = None, max_age_days: int = 30, min_confidence: float = 0.2) -> dict:
+    """ลบ episodic memory จริงเพื่อกัน ChromaDB บวม (รันหลัง Deep Sleep)
+
+    2 เกณฑ์การลบ (ข้าม verified/user_taught เสมอ):
+      1. floor-prune — memory ตายจริง: confidence ≤ min_confidence + อายุ > max_age_days
+         + access_count == 0 (ไม่เคยถูก recall ใช้เลย)
+      2. capacity cap — ถ้า non-verified เกิน cap → ลบตัว retention ต่ำสุดจนเหลือ cap
+
+    cap default จาก env MEMORY_EPISODIC_CAP (500)
+    """
+    if cap is None:
+        cap = int(os.getenv("MEMORY_EPISODIC_CAP", "500"))
+    client = _get_client()
+    if client is None:
+        return {"pruned": 0, "kept": 0, "cap": cap}
+
+    now = datetime.now()
+    pruned = 0
+    kept = 0
+    try:
+        for col_info in client.list_collections():
+            name = col_info.name if hasattr(col_info, "name") else str(col_info)
+            if not name.startswith("memory_"):
+                continue
+            try:
+                col = client.get_collection(name)
+                data = col.get()
+                ids = data.get("ids", [])
+                metas = data.get("metadatas", [])
+
+                to_delete: list[str] = []
+                prunable: list[tuple[str, float]] = []  # (id, retention) ของตัวที่ไม่ตาย
+                for doc_id, meta in zip(ids, metas):
+                    meta = meta or {}
+                    if meta.get("verified") or meta.get("source") == "user_taught":
+                        kept += 1
+                        continue
+                    conf = float(meta.get("confidence", 0.7))
+                    acc = int(meta.get("access_count", 0))
+                    created = meta.get("created_at") or meta.get("timestamp") or ""
+                    age = 0.0
+                    try:
+                        age = (now - datetime.fromisoformat(created)).total_seconds() / 86400
+                    except Exception:
+                        pass
+                    if conf <= min_confidence and age > max_age_days and acc == 0:
+                        to_delete.append(doc_id)   # ตายจริง
+                    else:
+                        prunable.append((doc_id, _retention_score(meta, now)))
+
+                # capacity cap → ลบ retention ต่ำสุด
+                if len(prunable) > cap:
+                    prunable.sort(key=lambda x: x[1])  # asc
+                    overflow = len(prunable) - cap
+                    to_delete += [pid for pid, _ in prunable[:overflow]]
+                    kept += cap
+                else:
+                    kept += len(prunable)
+
+                if to_delete:
+                    col.delete(ids=to_delete)
+                    pruned += len(to_delete)
+            except Exception as e:
+                logger.debug(f"Prune collection {name} error: {e}")
+    except Exception as e:
+        logger.warning(f"memory_prune error: {e}")
+
+    logger.info(f"Dream/Prune: pruned={pruned}, kept={kept} (cap={cap})")
+    return {"pruned": pruned, "kept": kept, "cap": cap}
+
+
 # ---------- Phase 3: Deep Sleep ----------
 def deep_sleep(memories: list[dict], themes: list[dict]) -> dict:
     """
@@ -403,6 +499,11 @@ def run_dream_cycle(provider: str = "ollama", hours: int = 24) -> dict:
     result = deep_sleep(memories, analysis.get("themes", []))
     report["phase3_deep"] = result
     logger.info(f"Dream Phase 3 (Deep Sleep): Promoted {result.get('count', 0)} themes to long-term memory")
+
+    # Phase 3.5 — Memory Prune (ลบ episodic ที่ตาย/เกิน cap จริง — หลัง consolidate แล้วปลอดภัย)
+    prune_result = memory_prune()
+    report["phase3_prune"] = prune_result
+    logger.info(f"Dream Phase 3.5 (Prune): {prune_result}")
 
     end = datetime.now()
     report["finished_at"] = end.isoformat()
