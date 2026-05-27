@@ -1,0 +1,148 @@
+"""Tests สำหรับ utils/llm.py internals — retry, error-mapping, health check
+
+ครอบส่วนที่ test_llm_routing.py ยังไม่แตะ:
+  - _stream_ollama: retry + exponential backoff + error classification
+  - _stream_gemini: map error → GeminiQuotaExhausted / GeminiUnavailable
+  - check_ollama_health: connection / model-not-found / ok (+ cache bypass)
+"""
+import os
+import sys
+import json
+import urllib.request
+import urllib.error
+from types import SimpleNamespace
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import pytest
+import utils.llm as llm
+from utils.llm import GeminiQuotaExhausted, GeminiUnavailable
+
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+def _mk_stream(texts):
+    """fake OpenAI-style stream: chunk.choices[0].delta.content"""
+    return [SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=t))])
+            for t in texts]
+
+
+class _FakeCompletions:
+    """create() เล่นตาม behaviors ทีละครั้ง (Exception=raise, list=stream)"""
+    def __init__(self, behaviors):
+        self._behaviors = behaviors
+        self._i = 0
+
+    def create(self, **kwargs):
+        b = self._behaviors[min(self._i, len(self._behaviors) - 1)]
+        self._i += 1
+        if isinstance(b, Exception):
+            raise b
+        return _mk_stream(b)
+
+
+def _patch_ollama(monkeypatch, behaviors):
+    monkeypatch.setattr(llm.ollama_client, "chat",
+                        SimpleNamespace(completions=_FakeCompletions(behaviors)))
+    monkeypatch.setattr(llm.time, "sleep", lambda *a, **k: None)  # ไม่หน่วงจริง
+
+
+# ── _stream_ollama ────────────────────────────────────────────────────────────
+def test_ollama_success_yields_content(monkeypatch):
+    _patch_ollama(monkeypatch, [["hello", " world"]])
+    out = "".join(llm._stream_ollama([{"role": "user", "content": "hi"}]))
+    assert out == "hello world"
+
+
+def test_ollama_model_not_found_no_retry(monkeypatch):
+    _patch_ollama(monkeypatch, [Exception("model 'llama3' not found")])
+    out = "".join(llm._stream_ollama([{"role": "user", "content": "hi"}]))
+    assert "ไม่พบ" in out or "ollama pull" in out
+
+
+def test_ollama_connection_retries_then_succeeds(monkeypatch):
+    _patch_ollama(monkeypatch, [ConnectionError("connection refused"), ["recovered"]])
+    out = "".join(llm._stream_ollama([{"role": "user", "content": "hi"}]))
+    assert "ลองใหม่" in out         # แจ้ง retry ครั้งแรก
+    assert "recovered" in out        # สำเร็จหลัง retry
+
+
+def test_ollama_connection_all_retries_fail(monkeypatch):
+    _patch_ollama(monkeypatch, [ConnectionError("connection refused")])
+    out = "".join(llm._stream_ollama([{"role": "user", "content": "hi"}]))
+    assert "ครั้งแล้ว" in out        # "ลอง N ครั้งแล้ว"
+    assert "ollama serve" in out
+
+
+# ── _stream_gemini error mapping ──────────────────────────────────────────────
+class _FakeModels:
+    def __init__(self, exc):
+        self._exc = exc
+
+    def generate_content_stream(self, **k):
+        raise self._exc
+
+
+def _patch_gemini(monkeypatch, exc):
+    monkeypatch.setattr(llm, "gemini_client", SimpleNamespace(models=_FakeModels(exc)))
+
+
+def test_gemini_quota_maps_to_quota_exhausted(monkeypatch):
+    _patch_gemini(monkeypatch, Exception("429 RESOURCE_EXHAUSTED: quota"))
+    with pytest.raises(GeminiQuotaExhausted):
+        list(llm._stream_gemini([{"role": "user", "content": "hi"}]))
+
+
+def test_gemini_invalid_key_maps_to_unavailable(monkeypatch):
+    _patch_gemini(monkeypatch, Exception("API_KEY_INVALID: bad key"))
+    with pytest.raises(GeminiUnavailable):
+        list(llm._stream_gemini([{"role": "user", "content": "hi"}]))
+
+
+def test_gemini_generic_error_maps_to_unavailable(monkeypatch):
+    _patch_gemini(monkeypatch, Exception("some network blip"))
+    with pytest.raises(GeminiUnavailable):
+        list(llm._stream_gemini([{"role": "user", "content": "hi"}]))
+
+
+def test_gemini_no_client_yields_setup_hint(monkeypatch):
+    monkeypatch.setattr(llm, "gemini_client", None)
+    out = "".join(llm._stream_gemini([{"role": "user", "content": "hi"}]))
+    assert "GEMINI_API_KEY" in out
+
+
+# ── check_ollama_health ───────────────────────────────────────────────────────
+class _FakeResp:
+    def __init__(self, payload):
+        self._b = json.dumps(payload).encode()
+
+    def read(self):
+        return self._b
+
+
+@pytest.fixture
+def fresh_health(monkeypatch):
+    """reset health cache + บังคับ OLLAMA_MODEL=llama3 ให้ deterministic"""
+    monkeypatch.setattr(llm, "_health_cache", {"ok": None, "ts": 0.0, "msg": ""})
+    monkeypatch.setattr(llm, "OLLAMA_MODEL", "llama3")
+
+
+def test_health_ok_when_model_present(monkeypatch, fresh_health):
+    monkeypatch.setattr(urllib.request, "urlopen",
+                        lambda *a, **k: _FakeResp({"models": [{"name": "llama3:latest"}]}))
+    ok, msg = llm.check_ollama_health(force=True)
+    assert ok is True and msg == ""
+
+
+def test_health_model_not_found(monkeypatch, fresh_health):
+    monkeypatch.setattr(urllib.request, "urlopen",
+                        lambda *a, **k: _FakeResp({"models": [{"name": "mistral:latest"}]}))
+    ok, msg = llm.check_ollama_health(force=True)
+    assert ok is False and "ไม่พบ" in msg
+
+
+def test_health_connection_error(monkeypatch, fresh_health):
+    def _boom(*a, **k):
+        raise urllib.error.URLError("refused")
+    monkeypatch.setattr(urllib.request, "urlopen", _boom)
+    ok, msg = llm.check_ollama_health(force=True)
+    assert ok is False and "เชื่อมต่อ Ollama" in msg
