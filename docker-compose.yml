@@ -35,7 +35,9 @@ services:
       - .env
 
   chromadb:
-    image: chromadb/chroma:latest
+    # pin ด้วย digest (image 2026-05-05) — เดิม :latest เปลี่ยน persist path เงียบๆ (/chroma/chroma→/data) จนเกือบเสีย data
+    # อัปเดตเมื่อจะขึ้น version ใหม่เท่านั้น (ทดสอบ persist path ก่อน)
+    image: chromadb/chroma@sha256:1e0b73a187a28757c572acba508c46f48c9e8b0acaf5c20e6d95cdedce1acdf6
     container_name: chromadb
     restart: unless-stopped
     ports:
