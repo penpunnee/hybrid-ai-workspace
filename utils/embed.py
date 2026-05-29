@@ -23,12 +23,37 @@ from core.config import EMBED_CACHE_DB as _DEFAULT_CACHE_DB
 logger = logging.getLogger(__name__)
 
 _LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
+# LM Studio รุ่นใหม่บังคับ API token — ตั้ง LMSTUDIO_API_KEY ให้ตรง (default dummy)
+_LMSTUDIO_API_KEY = os.getenv("LMSTUDIO_API_KEY", "lmstudio")
 _EMBED_MODEL = os.getenv("LMSTUDIO_EMBED_MODEL", "text-embedding-nomic-embed-text-v1.5")
 _EMBED_TIMEOUT = int(os.getenv("LMSTUDIO_EMBED_TIMEOUT", "30"))
+# Ollama fallback — ใช้เมื่อ LM Studio ล่ม/ติด token/ปิด (ต้อง `ollama pull nomic-embed-text`)
+_OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+_OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 _CACHE_DB = os.getenv("EMBED_CACHE_DB", _DEFAULT_CACHE_DB)
 _CACHE_ENABLED = os.getenv("EMBED_CACHE_ENABLED", "true").lower() == "true"
 
-_client = OpenAI(base_url=_LMSTUDIO_BASE_URL, api_key="lmstudio", timeout=_EMBED_TIMEOUT)
+_client = OpenAI(base_url=_LMSTUDIO_BASE_URL or "http://localhost:1234/v1",
+                 api_key=_LMSTUDIO_API_KEY, timeout=_EMBED_TIMEOUT)
+_ollama_client = OpenAI(base_url=_OLLAMA_BASE_URL, api_key="ollama", timeout=_EMBED_TIMEOUT)
+
+
+def _create_embeddings(inputs: list[str]) -> list[list[float]]:
+    """embed ผ่าน LM Studio → fallback Ollama เมื่อ LM Studio fail. raise ถ้าทั้งคู่ fail"""
+    try:
+        resp = _client.embeddings.create(model=_EMBED_MODEL, input=inputs)
+        vecs = [list(d.embedding) for d in resp.data]
+        with _metrics_lock:
+            _metrics["api_calls"] += 1
+        return vecs
+    except Exception as e:
+        logger.warning(f"[Embed] LM Studio embed fail ({e}) → fallback Ollama ({_OLLAMA_EMBED_MODEL})")
+        resp = _ollama_client.embeddings.create(model=_OLLAMA_EMBED_MODEL, input=inputs)
+        vecs = [list(d.embedding) for d in resp.data]
+        with _metrics_lock:
+            _metrics["api_calls"] += 1
+            _metrics["ollama_fallback"] += 1
+        return vecs
 
 # ── Persistent cache (sqlite) ────────────────────────────────────────────────
 _cache_lock = threading.Lock()
@@ -37,13 +62,13 @@ _cache_conn: sqlite3.Connection | None = None
 # hit-rate metrics (Phase G4): LRU hits/misses ดึงจาก _embed_one_cached.cache_info()
 # ส่วน sqlite_hits (warm) + api_calls (cold round-trips) นับเอง
 _metrics_lock = threading.Lock()
-_metrics = {"sqlite_hits": 0, "api_calls": 0}
+_metrics = {"sqlite_hits": 0, "api_calls": 0, "ollama_fallback": 0}
 
 
 def reset_metrics() -> None:
     """รีเซ็ตตัวนับ + ล้าง LRU (ใช้ตอน bench/test)"""
     with _metrics_lock:
-        _metrics.update(sqlite_hits=0, api_calls=0)
+        _metrics.update(sqlite_hits=0, api_calls=0, ollama_fallback=0)
     _embed_one_cached.cache_clear()
 
 
@@ -130,6 +155,7 @@ def _metrics_block() -> dict:
     with _metrics_lock:
         sqlite_hits = _metrics["sqlite_hits"]
         api_calls = _metrics["api_calls"]
+        ollama_fallback = _metrics["ollama_fallback"]
     # embed_query (hot path) ผ่าน LRU: total = hits + misses
     lru_total = info.hits + info.misses
     return {
@@ -138,7 +164,8 @@ def _metrics_block() -> dict:
         "lru_size": info.currsize,
         "lru_maxsize": info.maxsize,
         "sqlite_hits": sqlite_hits,     # warm hits (LRU miss → sqlite ใช้ได้)
-        "api_calls": api_calls,         # cold round-trips ไป LM Studio
+        "api_calls": api_calls,         # cold round-trips (LM Studio หรือ Ollama)
+        "ollama_fallback": ollama_fallback,   # กี่ครั้งที่ตก fallback ไป Ollama (LM Studio fail)
         # hit rate ของ hot path embed_query
         "lru_hit_rate": round(info.hits / lru_total, 3) if lru_total else None,
     }
@@ -162,15 +189,12 @@ def cache_stats() -> dict:
 # ── Embedding API ─────────────────────────────────────────────────────────────
 @lru_cache(maxsize=512)
 def _embed_one_cached(text: str) -> tuple:
-    """Two-tier cache: LRU (hot) → sqlite (warm) → LMStudio (cold)"""
+    """Two-tier cache: LRU (hot) → sqlite (warm) → LMStudio/Ollama (cold)"""
     cached = _cache_get(text)
     if cached:
         return tuple(cached)
     try:
-        resp = _client.embeddings.create(model=_EMBED_MODEL, input=[text])
-        vec = list(resp.data[0].embedding)
-        with _metrics_lock:
-            _metrics["api_calls"] += 1
+        vec = _create_embeddings([text])[0]   # LM Studio → fallback Ollama
         _cache_set(text, vec)
         return tuple(vec)
     except Exception as e:
@@ -206,12 +230,9 @@ def embed_texts(texts: Sequence[str]) -> list[list[float]]:
     if not miss_texts:
         return [c for c in cached if c]
 
-    # fetch missing batch
+    # fetch missing batch (LM Studio → fallback Ollama)
     try:
-        resp = _client.embeddings.create(model=_EMBED_MODEL, input=miss_texts)
-        new_vecs = [list(d.embedding) for d in resp.data]
-        with _metrics_lock:
-            _metrics["api_calls"] += 1
+        new_vecs = _create_embeddings(miss_texts)
     except Exception as e:
         logger.warning(f"[Embed] batch failed ({len(miss_texts)} items): {e}")
         # คืนเฉพาะที่มี cache (เพื่อไม่ให้ pipeline พัง)

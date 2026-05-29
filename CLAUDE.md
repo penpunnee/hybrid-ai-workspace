@@ -187,7 +187,9 @@ OLLAMA_BASE_URL=http://localhost:11434/v1
 OLLAMA_MODEL=llama3
 OLLAMA_TIMEOUT=120
 OLLAMA_NUM_CTX=4096
+OLLAMA_EMBED_MODEL=nomic-embed-text   # ใช้เป็น fallback embeddings เมื่อ LM Studio ล่ม (ต้อง `ollama pull nomic-embed-text`)
 LMSTUDIO_BASE_URL=          # opt-in: ปล่อยว่าง=ปิด (local หลักคือ Ollama). ใส่ค่าเฉพาะเมื่อรัน LM Studio จริง
+LMSTUDIO_API_KEY=lmstudio   # ⚠️ LM Studio รุ่นใหม่บังคับ token — ใส่ให้ตรง (หรือปิด "Require API key" ใน LM Studio)
 LMSTUDIO_CHAT_MODEL=google/gemma-4-e4b
 LMSTUDIO_REASON_MODEL=deepseek/deepseek-r1-0528-qwen3-8b
 LMSTUDIO_VISION_MODEL=llama-3.2-11b-vision-instruct

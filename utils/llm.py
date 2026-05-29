@@ -78,12 +78,14 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 # opt-in: default ว่าง — ถ้าไม่ตั้ง LMSTUDIO_BASE_URL จะไม่ถูกใช้ (local หลักคือ Ollama)
 _LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "")
 _LMSTUDIO_TIMEOUT  = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
+# LM Studio รุ่นใหม่บังคับ API token — ตั้ง LMSTUDIO_API_KEY ให้ตรง (default dummy)
+_LMSTUDIO_API_KEY  = os.getenv("LMSTUDIO_API_KEY", "lmstudio")
 
 # client สร้างไว้เสมอ แต่จะถูกเรียกเฉพาะเมื่อ provider="lmstudio" เท่านั้น
 # ถ้า base_url ว่าง ใช้ localhost (ถ้าเผลอเรียกจะ refuse แบบ clean ไม่ leak ไป api.openai.com)
 lmstudio_client = OpenAI(
     base_url=_LMSTUDIO_BASE_URL or "http://localhost:1234/v1",
-    api_key="lmstudio",
+    api_key=_LMSTUDIO_API_KEY,
     timeout=_LMSTUDIO_TIMEOUT,
 )
 

@@ -171,3 +171,26 @@ def test_rerank_embed_fail_fallback_to_original(monkeypatch, tmp_path):
 
 def test_rerank_empty_items_returns_empty(fake_client):
     assert embed.rerank_by_similarity("q", []) == []
+
+
+# ── Ollama fallback เมื่อ LM Studio ล่ม/ติด token ─────────────────────────────
+def test_embed_falls_back_to_ollama(monkeypatch, tmp_path):
+    monkeypatch.setattr(embed, "_CACHE_DB", str(tmp_path / "c.db"))
+    monkeypatch.setattr(embed, "_cache_conn", None)
+    embed.reset_metrics()
+    # LM Studio fail (เช่น ติด token), Ollama ตอบได้
+    monkeypatch.setattr(embed._client, "embeddings", FakeEmbeddings(fail=True))
+    monkeypatch.setattr(embed._ollama_client, "embeddings",
+                        FakeEmbeddings(mapping={"x": [9.0, 9.0]}))
+    vec = embed.embed_query("x")
+    assert vec == [9.0, 9.0]                     # ได้ vector จาก Ollama
+    assert embed.cache_stats()["ollama_fallback"] >= 1
+
+
+def test_embed_both_down_returns_empty(monkeypatch, tmp_path):
+    monkeypatch.setattr(embed, "_CACHE_DB", str(tmp_path / "c.db"))
+    monkeypatch.setattr(embed, "_cache_conn", None)
+    embed.reset_metrics()
+    monkeypatch.setattr(embed._client, "embeddings", FakeEmbeddings(fail=True))
+    monkeypatch.setattr(embed._ollama_client, "embeddings", FakeEmbeddings(fail=True))
+    assert embed.embed_query("x") == []          # ทั้งคู่ล่ม → [] (pipeline ไม่พัง)
