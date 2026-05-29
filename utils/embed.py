@@ -34,6 +34,18 @@ _client = OpenAI(base_url=_LMSTUDIO_BASE_URL, api_key="lmstudio", timeout=_EMBED
 _cache_lock = threading.Lock()
 _cache_conn: sqlite3.Connection | None = None
 
+# hit-rate metrics (Phase G4): LRU hits/misses ดึงจาก _embed_one_cached.cache_info()
+# ส่วน sqlite_hits (warm) + api_calls (cold round-trips) นับเอง
+_metrics_lock = threading.Lock()
+_metrics = {"sqlite_hits": 0, "api_calls": 0}
+
+
+def reset_metrics() -> None:
+    """รีเซ็ตตัวนับ + ล้าง LRU (ใช้ตอน bench/test)"""
+    with _metrics_lock:
+        _metrics.update(sqlite_hits=0, api_calls=0)
+    _embed_one_cached.cache_clear()
+
 
 def _cache_init() -> sqlite3.Connection | None:
     """Lazy-init sqlite cache — None ถ้าปิด/ล้ม"""
@@ -89,7 +101,11 @@ def _cache_get(text: str) -> list[float] | None:
             "SELECT dim, vec FROM embed_cache WHERE key=? AND model=?",
             (_cache_key(text), _EMBED_MODEL),
         ).fetchone()
-        return _unpack(row[1], row[0]) if row else None
+        if row:
+            with _metrics_lock:
+                _metrics["sqlite_hits"] += 1
+            return _unpack(row[1], row[0])
+        return None
     except Exception as e:
         logger.debug(f"[Embed] cache get failed: {e}")
         return None
@@ -108,17 +124,39 @@ def _cache_set(text: str, vec: list[float]) -> None:
         logger.debug(f"[Embed] cache set failed: {e}")
 
 
+def _metrics_block() -> dict:
+    """รวม LRU cache_info + counters → hit-rate (Phase G4)"""
+    info = _embed_one_cached.cache_info()
+    with _metrics_lock:
+        sqlite_hits = _metrics["sqlite_hits"]
+        api_calls = _metrics["api_calls"]
+    # embed_query (hot path) ผ่าน LRU: total = hits + misses
+    lru_total = info.hits + info.misses
+    return {
+        "lru_hits": info.hits,
+        "lru_misses": info.misses,
+        "lru_size": info.currsize,
+        "lru_maxsize": info.maxsize,
+        "sqlite_hits": sqlite_hits,     # warm hits (LRU miss → sqlite ใช้ได้)
+        "api_calls": api_calls,         # cold round-trips ไป LM Studio
+        # hit rate ของ hot path embed_query
+        "lru_hit_rate": round(info.hits / lru_total, 3) if lru_total else None,
+    }
+
+
 def cache_stats() -> dict:
-    """รายงาน hit/size — สำหรับ /api/system"""
+    """รายงาน hit/size + hit-rate — สำหรับ /api/cache/stats"""
+    metrics = _metrics_block()
     conn = _cache_init()
     if conn is None:
-        return {"enabled": False}
+        return {"enabled": False, **metrics}
     try:
         n = conn.execute("SELECT COUNT(*) FROM embed_cache").fetchone()[0]
         size = os.path.getsize(_CACHE_DB) if os.path.exists(_CACHE_DB) else 0
-        return {"enabled": True, "entries": n, "db_bytes": size, "model": _EMBED_MODEL}
+        return {"enabled": True, "entries": n, "db_bytes": size,
+                "model": _EMBED_MODEL, **metrics}
     except Exception:
-        return {"enabled": True, "entries": 0}
+        return {"enabled": True, "entries": 0, **metrics}
 
 
 # ── Embedding API ─────────────────────────────────────────────────────────────
@@ -131,6 +169,8 @@ def _embed_one_cached(text: str) -> tuple:
     try:
         resp = _client.embeddings.create(model=_EMBED_MODEL, input=[text])
         vec = list(resp.data[0].embedding)
+        with _metrics_lock:
+            _metrics["api_calls"] += 1
         _cache_set(text, vec)
         return tuple(vec)
     except Exception as e:
@@ -170,6 +210,8 @@ def embed_texts(texts: Sequence[str]) -> list[list[float]]:
     try:
         resp = _client.embeddings.create(model=_EMBED_MODEL, input=miss_texts)
         new_vecs = [list(d.embedding) for d in resp.data]
+        with _metrics_lock:
+            _metrics["api_calls"] += 1
     except Exception as e:
         logger.warning(f"[Embed] batch failed ({len(miss_texts)} items): {e}")
         # คืนเฉพาะที่มี cache (เพื่อไม่ให้ pipeline พัง)

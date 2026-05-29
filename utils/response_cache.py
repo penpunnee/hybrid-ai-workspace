@@ -30,6 +30,21 @@ _MAX_ENTRIES = int(os.getenv("RESPONSE_CACHE_MAX", "1000"))
 _lock = threading.Lock()
 _conn: sqlite3.Connection | None = None
 
+# runtime hit-rate metrics (Phase G4) — แยกจาก hit_count column ที่เป็นค่าสะสมถาวร
+_metrics_lock = threading.Lock()
+_runtime = {"lookups": 0, "hits": 0, "misses": 0}
+
+
+def _bump(key: str) -> None:
+    with _metrics_lock:
+        _runtime[key] += 1
+
+
+def reset_metrics() -> None:
+    """รีเซ็ตตัวนับ runtime (ใช้ตอน bench/test)"""
+    with _metrics_lock:
+        _runtime.update(lookups=0, hits=0, misses=0)
+
 
 def _init() -> sqlite3.Connection | None:
     global _conn
@@ -131,8 +146,10 @@ def lookup(assistant: str, prompt: str, threshold: float = _SIM_THRESHOLD) -> Op
     if conn is None or not prompt.strip():
         return None
 
+    _bump("lookups")
     vec = embed_query(prompt)
     if not vec:
+        _bump("misses")
         return None
 
     # ดึง entries ของ assistant (ภายใน TTL) แล้วเทียบใน Python
@@ -146,6 +163,7 @@ def lookup(assistant: str, prompt: str, threshold: float = _SIM_THRESHOLD) -> Op
         ).fetchall()
     except Exception as e:
         logger.debug(f"[ResponseCache] lookup query failed: {e}")
+        _bump("misses")
         return None
 
     best = None
@@ -161,8 +179,10 @@ def lookup(assistant: str, prompt: str, threshold: float = _SIM_THRESHOLD) -> Op
             best_sim, best = sim, (rid, src_prompt, resp, model)
 
     if not best or best_sim < threshold:
+        _bump("misses")
         return None
 
+    _bump("hits")
     rid, src_prompt, resp, model = best
     # bump hit_count async (ไม่ critical)
     try:
@@ -205,14 +225,22 @@ def stats() -> dict:
             "SELECT assistant, COUNT(*) FROM response_cache GROUP BY assistant"
         ).fetchall())
         size = os.path.getsize(_DB_PATH) if os.path.exists(_DB_PATH) else 0
+        with _metrics_lock:
+            lookups = _runtime["lookups"]
+            rt_hits = _runtime["hits"]
+            rt_misses = _runtime["misses"]
         return {
             "enabled": True,
             "entries": total,
-            "total_hits": hits,
+            "total_hits": hits,                 # สะสมถาวร (hit_count column)
             "by_assistant": by_assistant,
             "db_bytes": size,
             "threshold": _SIM_THRESHOLD,
             "ttl_days": _TTL_DAYS,
+            "lookups": lookups,                 # runtime (reset ได้)
+            "runtime_hits": rt_hits,
+            "misses": rt_misses,
+            "hit_rate": round(rt_hits / lookups, 3) if lookups else None,
         }
     except Exception as e:
         return {"enabled": True, "error": str(e)}

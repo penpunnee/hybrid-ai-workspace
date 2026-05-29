@@ -33,6 +33,15 @@ _SIM_THRESHOLD = 0.85
 _lock = threading.Lock()
 _cache: dict[str, _Entry] = {}
 
+# hit-rate metrics (Phase G4) — นับใต้ _lock
+_metrics = {"lookups": 0, "hits": 0, "misses": 0}
+
+
+def reset_metrics() -> None:
+    """รีเซ็ตตัวนับ (ใช้ตอน bench/test)"""
+    with _lock:
+        _metrics.update(lookups=0, hits=0, misses=0)
+
 
 def _evict_old(now: float) -> None:
     """ลบ entry ที่หมดอายุ — call ใต้ _lock"""
@@ -58,22 +67,31 @@ def get_cached(session_id: str, prompt: str, threshold: float = _SIM_THRESHOLD) 
         return None
 
     with _lock:
+        _metrics["lookups"] += 1
         entry = _cache.get(session_id)
         if not entry:
+            _metrics["misses"] += 1
             return None
         if time.time() - entry.ts > _TTL:
             _cache.pop(session_id, None)
+            _metrics["misses"] += 1
             return None
 
     # embed นอก lock (อาจช้า)
     new_vec = embed_query(prompt)
     if not new_vec or not entry.vec:
+        with _lock:
+            _metrics["misses"] += 1
         return None
 
     sim = cosine_similarity(new_vec, entry.vec)
     if sim < threshold:
+        with _lock:
+            _metrics["misses"] += 1
         return None
 
+    with _lock:
+        _metrics["hits"] += 1
     logger.info(f"[RetrCache] hit session={session_id} sim={sim:.3f} (vs {entry.prompt[:40]!r})")
     return {
         "chunks": list(entry.chunks),
@@ -116,9 +134,15 @@ def invalidate(session_id: str) -> None:
 
 def stats() -> dict:
     with _lock:
+        lookups = _metrics["lookups"]
+        hits = _metrics["hits"]
         return {
             "sessions": len(_cache),
             "ttl_seconds": _TTL,
             "max_sessions": _MAX_SESSIONS,
             "threshold": _SIM_THRESHOLD,
+            "lookups": lookups,
+            "hits": hits,
+            "misses": _metrics["misses"],
+            "hit_rate": round(hits / lookups, 3) if lookups else None,
         }
