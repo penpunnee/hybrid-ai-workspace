@@ -41,6 +41,8 @@
             _promptHistory = [b.prompt, ..._promptHistory.filter(p => p !== b.prompt)].slice(0, 50);
             localStorage.setItem("hw_prompt_history", JSON.stringify(_promptHistory));
             _histIdx = -1;
+            // ส่งแล้ว → เคลียร์ draft ที่ค้างของ session นั้น
+            try { localStorage.removeItem("hw_draft_" + (b.session_id || "default")); } catch {}
           }
           // Claude Mode ชนะ Agent Mode — override provider=claude ส่งไป Claude API
           if (_claudeMode) {
@@ -2141,6 +2143,63 @@
     };
     window.addEventListener("scroll", _reposition, true);
     window.addEventListener("resize", _reposition);
+  })();
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // DRAFT AUTOSAVE — เก็บข้อความที่พิมพ์ค้างต่อ session, กู้คืนตอน reload/สลับ
+  //   save: localStorage (ทำงานแน่นอน). restore: เขียนกลับเข้า React composer ผ่าน
+  //   native value setter + input event (มาตรฐาน React-controlled input)
+  // ─────────────────────────────────────────────────────────────────────────────
+  (function initDraftAutosave() {
+    const KEY = (sid) => "hw_draft_" + (sid || "default");
+    const _isComposer = (el) => el && el.tagName === "TEXTAREA";
+
+    // เขียนค่ากลับเข้า controlled input ของ React (ไม่งั้น state ไม่อัปเดต)
+    function _reactSet(el, val) {
+      try {
+        const desc = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
+        desc.set.call(el, val);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      } catch {
+        el.value = val;   // fallback (อาจไม่ sync React state แต่ไม่พัง)
+      }
+    }
+
+    // ── save (debounced) ──
+    let _t = null;
+    document.addEventListener("input", (e) => {
+      if (!_isComposer(e.target)) return;
+      const val = e.target.value;
+      clearTimeout(_t);
+      _t = setTimeout(() => {
+        const k = KEY(_getSessionId());
+        if (val && val.trim()) localStorage.setItem(k, val);
+        else localStorage.removeItem(k);
+      }, 400);
+    }, true);
+
+    // ── restore — รอ composer mount (React async) แล้วเติม draft ถ้ากล่องว่าง ──
+    let _lastSid = null;
+    function _restoreInto(ta) {
+      const sid = _getSessionId();
+      if (sid === _lastSid) return;          // session เดิม + เคยเช็คแล้ว → ข้าม
+      _lastSid = sid;
+      const draft = localStorage.getItem(KEY(sid));
+      if (draft && !ta.value) _reactSet(ta, draft);
+    }
+    // observe จนเจอ composer ครั้งแรกแล้ว disconnect (กัน fire ทุก token ตอน stream)
+    const mo = new MutationObserver(() => {
+      const ta = document.querySelector("textarea");
+      if (ta) { mo.disconnect(); _restoreInto(ta); }
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => { const ta = document.querySelector("textarea"); if (ta) { mo.disconnect(); _restoreInto(ta); } }, 800);
+    setTimeout(() => mo.disconnect(), 10000);   // safety: เลิก observe หลัง 10s ไม่ว่ายังไง
+    // สลับ session ผ่าน hash → ลองกู้ draft ของ session ใหม่
+    window.addEventListener("hashchange", () => {
+      _lastSid = null;
+      setTimeout(() => { const ta = document.querySelector("textarea"); if (ta) _restoreInto(ta); }, 200);
+    });
   })();
 
 })();
