@@ -7,6 +7,7 @@ Provider mapping:
   ollama         →  Ollama fallback
 """
 import logging
+import os
 from dataclasses import dataclass
 from .classifier import Complexity, classify
 
@@ -70,7 +71,7 @@ def _ping_model(base_url: str, model: str) -> bool:
 
 @dataclass
 class RouteDecision:
-    provider: str          # "lmstudio" | "gemini" | "ollama"
+    provider: str          # "lmstudio" | "gemini" | "ollama" | "claude"
     model: str             # ชื่อ model จริง
     complexity: Complexity
     reason: str            # เหตุผลที่เลือก (สำหรับ debug)
@@ -139,6 +140,18 @@ def route(
 
     # ── Auto routing ────────────────────────────────────────────────────────
     complexity = classify(prompt)
+
+    # Claude (opt-in) — CLAUDE_AUTO=reasoning ใช้ Claude เฉพาะคำถามยาก, =all ใช้ทุก text
+    # ต้องมี ANTHROPIC_API_KEY. ปิด default → พฤติกรรมเดิมไม่เปลี่ยน + ไม่เปลือง cost เงียบๆ
+    # หมายเหตุ: internet/vision ถูกจัดการไปก่อนหน้าแล้ว (Claude ที่นี่ไม่มี web/search tool)
+    claude_auto = os.getenv("CLAUDE_AUTO", "off").lower()
+    if os.getenv("ANTHROPIC_API_KEY", "") and (
+        claude_auto == "all"
+        or (claude_auto == "reasoning" and complexity == Complexity.REASONING)
+    ):
+        claude_model = os.getenv("CLAUDE_MODEL", "claude-opus-4-8")
+        return RouteDecision("claude", claude_model, complexity,
+                             f"{complexity.value} → Claude (CLAUDE_AUTO={claude_auto})")
 
     # ถ้า LM Studio ไม่ได้ตั้งค่า → fallback Ollama
     if not LMSTUDIO_BASE_URL:

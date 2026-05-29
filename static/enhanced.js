@@ -24,6 +24,8 @@
 
   // ── Agent Mode state ────────────────────────────────────────────────────────
   let _agentMode = localStorage.getItem("hw_agent_mode") === "1";
+  // ── Claude Mode state — override provider=claude บน /api/chat ────────────────
+  let _claudeMode = localStorage.getItem("hw_claude_mode") === "1";
   // queue ของ agent events ที่ยังรอ AI bubble ใหม่มา attach timeline
   let _pendingAgentTimeline = null;  // { events: [], sessionToken: string }
 
@@ -40,8 +42,12 @@
             localStorage.setItem("hw_prompt_history", JSON.stringify(_promptHistory));
             _histIdx = -1;
           }
-          // Inject tool_agent flag เมื่อเปิด Agent Mode
-          if (_agentMode && !b.tool_agent) {
+          // Claude Mode ชนะ Agent Mode — override provider=claude ส่งไป Claude API
+          if (_claudeMode) {
+            b.provider = "claude";
+            opts = { ...opts, body: JSON.stringify(b) };
+          } else if (_agentMode && !b.tool_agent) {
+            // Inject tool_agent flag เมื่อเปิด Agent Mode
             b.tool_agent = true;
             opts = { ...opts, body: JSON.stringify(b) };
             // เปิด queue รอ events
@@ -922,6 +928,9 @@
     </button>
     <button class="enh-fab" id="fab-agent" title="Agent Mode — AI ใช้ tools อัตโนมัติ (weather, wiki, search, ฯลฯ)">
       🤖 <span>Agent</span>
+    </button>
+    <button class="enh-fab" id="fab-claude" title="Claude (Anthropic) — ส่งคำถามไป Claude API (ต้องตั้ง ANTHROPIC_API_KEY บนเซิร์ฟเวอร์)">
+      ✨ <span>Claude</span>
     </button>`;
   document.body.appendChild(toolbar);
 
@@ -940,11 +949,32 @@
   // Agent Mode toggle
   const _agentBtn = document.getElementById("fab-agent");
   const _syncAgentBtn = () => _agentBtn.classList.toggle("enh-fab-active", _agentMode);
+  // Claude Mode toggle
+  const _claudeBtn = document.getElementById("fab-claude");
+  const _syncClaudeBtn = () => _claudeBtn.classList.toggle("enh-fab-active", _claudeMode);
   _syncAgentBtn();
+  _syncClaudeBtn();
   _agentBtn.addEventListener("click", () => {
     _agentMode = !_agentMode;
     localStorage.setItem("hw_agent_mode", _agentMode ? "1" : "0");
     _syncAgentBtn();
+    // Agent กับ Claude ใช้พร้อมกันไม่ได้ — เปิด Agent → ปิด Claude
+    if (_agentMode && _claudeMode) {
+      _claudeMode = false;
+      localStorage.setItem("hw_claude_mode", "0");
+      _syncClaudeBtn();
+    }
+  });
+  _claudeBtn.addEventListener("click", () => {
+    _claudeMode = !_claudeMode;
+    localStorage.setItem("hw_claude_mode", _claudeMode ? "1" : "0");
+    _syncClaudeBtn();
+    // เปิด Claude → ปิด Agent
+    if (_claudeMode && _agentMode) {
+      _agentMode = false;
+      localStorage.setItem("hw_agent_mode", "0");
+      _syncAgentBtn();
+    }
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1499,7 +1529,7 @@
   // ─────────────────────────────────────────────────────────────────────────────
   // 15. MODEL INDICATOR — badge ใต้ AI message (อ่านจาก X-Model-Used header)
   // ─────────────────────────────────────────────────────────────────────────────
-  const _PROVIDER_ICONS = { lmstudio: "🖥️", gemini: "☁️", ollama: "🦙" };
+  const _PROVIDER_ICONS = { lmstudio: "🖥️", gemini: "☁️", ollama: "🦙", claude: "✨" };
   let _pendingModel = null;   // { model, provider } รอ inject หลัง response จบ
 
   function _injectModelBadge() {

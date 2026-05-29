@@ -111,3 +111,73 @@ def test_lmstudio_failure_with_image_does_not_cascade_to_ollama(monkeypatch):
         provider="lmstudio", image_b64="ZmFrZQ==", image_mime="image/png"))
     assert "OLLAMA_ANSWER" not in out, f"โหมดรูปไม่ควร cascade ไป Ollama: {out!r}"
     assert "LM Studio" in out, f"ควรแจ้ง error LM Studio แต่ได้: {out!r}"
+
+
+# ─────────────────────────────────────────────────────────────
+# Claude auto-routing (opt-in via CLAUDE_AUTO) — session 2026-05-29
+#   off (default) → ไม่แตะ Claude; reasoning → เฉพาะคำถามยาก; all → ทุก text
+#   ต้องมี ANTHROPIC_API_KEY; internet/vision ยังไปทางเดิม (Claude ไม่มี web tool)
+# ─────────────────────────────────────────────────────────────
+def _claude_env(monkeypatch, mode, key="sk-ant-x"):
+    import reasoning.router as router
+    from reasoning.classifier import Complexity
+    if key is None:
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", key)
+    if mode is None:
+        monkeypatch.delenv("CLAUDE_AUTO", raising=False)
+    else:
+        monkeypatch.setenv("CLAUDE_AUTO", mode)
+    monkeypatch.setattr("reasoning.classifier.needs_internet", lambda p: False)
+    return router, Complexity
+
+
+def test_auto_claude_off_by_default(monkeypatch):
+    router, Complexity = _claude_env(monkeypatch, mode=None)
+    monkeypatch.setattr(router, "classify", lambda p: Complexity.REASONING)
+    monkeypatch.setattr("core.config.LMSTUDIO_BASE_URL", "", raising=False)
+    monkeypatch.setattr("core.config.GEMINI_API_KEY", "", raising=False)
+    d = router.route("ปัญหายากมาก คิดเยอะ", provider_hint="auto")
+    assert d.provider != "claude"
+
+
+def test_auto_claude_reasoning_picks_claude(monkeypatch):
+    router, Complexity = _claude_env(monkeypatch, mode="reasoning")
+    monkeypatch.setattr(router, "classify", lambda p: Complexity.REASONING)
+    d = router.route("พิสูจน์ทฤษฎีบทนี้ทีละขั้น", provider_hint="auto")
+    assert d.provider == "claude"
+    assert d.model == "claude-opus-4-8"
+
+
+def test_auto_claude_reasoning_skips_simple(monkeypatch):
+    router, Complexity = _claude_env(monkeypatch, mode="reasoning")
+    monkeypatch.setattr(router, "classify", lambda p: Complexity.NORMAL)
+    monkeypatch.setattr("core.config.LMSTUDIO_BASE_URL", "", raising=False)
+    monkeypatch.setattr("core.config.GEMINI_API_KEY", "", raising=False)
+    d = router.route("สวัสดีครับ", provider_hint="auto")
+    assert d.provider != "claude"      # NORMAL ไม่เข้าเกณฑ์ reasoning
+
+
+def test_auto_claude_all_picks_claude_for_any_text(monkeypatch):
+    router, Complexity = _claude_env(monkeypatch, mode="all")
+    monkeypatch.setattr(router, "classify", lambda p: Complexity.NORMAL)
+    d = router.route("เล่าเรื่องตลกให้ฟังหน่อย", provider_hint="auto")
+    assert d.provider == "claude"
+
+
+def test_auto_claude_requires_key(monkeypatch):
+    router, Complexity = _claude_env(monkeypatch, mode="all", key=None)
+    monkeypatch.setattr(router, "classify", lambda p: Complexity.NORMAL)
+    monkeypatch.setattr("core.config.LMSTUDIO_BASE_URL", "", raising=False)
+    monkeypatch.setattr("core.config.GEMINI_API_KEY", "", raising=False)
+    d = router.route("อะไรก็ได้", provider_hint="auto")
+    assert d.provider != "claude"      # ไม่มี key → ไม่ใช้ Claude
+
+
+def test_auto_claude_does_not_steal_internet(monkeypatch):
+    router, Complexity = _claude_env(monkeypatch, mode="all")
+    monkeypatch.setattr("reasoning.classifier.needs_internet", lambda p: True)
+    monkeypatch.setattr("core.config.GEMINI_API_KEY", "gkey", raising=False)
+    d = router.route("ข่าวล่าสุดวันนี้", provider_hint="auto")
+    assert d.provider == "gemini_agent"   # internet → Gemini ก่อนถึง Claude
