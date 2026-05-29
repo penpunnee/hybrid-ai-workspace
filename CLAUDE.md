@@ -85,6 +85,10 @@ Ollama branch: context cap 2000 chars; trim history to <3000 tokens.
 | Embedding cache (Phase E) | `data/embed_cache.db` (SQLite WAL, float32 blobs) |
 | Response cache (Phase E) | `data/response_cache.db` (SQLite WAL) |
 
+**Backups (DSM Task Scheduler รายวัน, user=root):**
+- `scripts/db_backup.sh` — `chat_history.db` (sessions/messages/**feedback**/pins) + `data/*.db` → `sqlite3 .backup` (online, WAL-safe) → tar.gz เก็บ 7 วัน ที่ `$DB_BACKUP_DEST` (default `/volume1/homes/pawin/db_backups`). แนะนำ **03:30** (ก่อน chroma 04:00)
+- `chroma_backup.sh` — ChromaDB volume `ui_chroma_data` (อยู่บน NAS, 04:00)
+
 ### Key Files
 
 **Core**
