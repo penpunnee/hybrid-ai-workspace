@@ -45,7 +45,12 @@ EOF
 ollama create kwan-ft -f Modelfile.kwan-ft
 # 3) ชี้ NAS .env → OLLAMA_MODEL=kwan-ft → recreate hybrid-ai
 ```
-**Eval gate ก่อนใช้จริง:** ทดสอบ kwan-ft กับ kwan เดิมด้วยชุดคำถาม → ถ้าไม่ดีกว่า อย่าสลับ. เก็บตัวเก่าไว้ rollback
+**Eval gate ก่อนใช้จริง (อัตโนมัติ):** `scripts/eval_kwan.py` — Claude เป็นกรรมการเทียบ kwan-ft กับรุ่นเดิม (pairwise, สลับตำแหน่งกัน bias) → win rate → PASS/FAIL กัน model collapse:
+```bash
+ANTHROPIC_API_KEY=sk-ant-... python scripts/eval_kwan.py --candidate kwan-ft --baseline llama3
+# exit 0 = PASS (deploy ได้), exit 1 = FAIL/inconclusive (อย่าสลับ). เก็บตัวเก่าไว้ rollback
+```
+(เฟส 2 ของ self-improvement loop — ดู memory hybrid_ai_status)
 
 ---
 
