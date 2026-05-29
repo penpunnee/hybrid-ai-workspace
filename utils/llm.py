@@ -39,6 +39,11 @@ class LMStudioUnavailable(Exception):
     — ให้ caller cascade ไป Ollama ได้ (raise ก่อน yield chunk แรกเสมอ จึง cascade ปลอดภัย)"""
     pass
 
+
+class ClaudeUnavailable(Exception):
+    """Raised เมื่อ Claude (Anthropic) ไม่พร้อมใช้ (key ผิด / network)"""
+    pass
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -82,6 +87,25 @@ lmstudio_client = OpenAI(
     timeout=_LMSTUDIO_TIMEOUT,
 )
 
+# --- Claude (Anthropic Cloud LLM) ---
+# opt-in: ตั้ง ANTHROPIC_API_KEY ใน .env ถึงจะใช้ได้ (provider="claude")
+try:
+    import anthropic
+except ImportError:          # ยังไม่ได้ pip install — provider claude จะแจ้ง error ชัดเจน
+    anthropic = None
+
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+CLAUDE_MODEL      = os.getenv("CLAUDE_MODEL", "claude-opus-4-8")
+CLAUDE_MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "8192"))
+# adaptive thinking: ปิดเป็น default เพื่อความเร็วของแชต — ตั้ง CLAUDE_THINKING=adaptive ถ้าอยากให้คิดลึก
+CLAUDE_THINKING   = os.getenv("CLAUDE_THINKING", "off").lower()
+CLAUDE_EFFORT     = os.getenv("CLAUDE_EFFORT", "high").lower()   # low|medium|high|xhigh|max (ใช้คู่ adaptive)
+
+anthropic_client = (
+    anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    if anthropic and ANTHROPIC_API_KEY else None
+)
+
 
 _last_failover: dict = {"active": False}  # track failover state
 _health_cache: dict = {"ok": None, "ts": 0.0, "msg": ""}  # cache health check 30s
@@ -100,7 +124,13 @@ def stream_response(messages: list[dict], provider: str = "ollama",
         yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=True)
         return
 
-    if provider == "gemini" or agent_mode or (image_b64 and provider not in ("lmstudio", "auto")):
+    # Claude ต้องมาก่อน gemini catch-all — Claude จัดการ vision ของตัวเอง
+    if provider in ("claude", "claude_agent"):
+        _last_failover["active"] = False
+        yield from _stream_claude(messages, image_b64, image_mime)
+        return
+
+    if provider == "gemini" or agent_mode or (image_b64 and provider not in ("lmstudio", "auto", "claude", "claude_agent")):
         _last_failover["active"] = False
         yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode)
         return
@@ -491,3 +521,94 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
         else:
             logger.error(f"Gemini stream error: {err}")
             raise GeminiUnavailable(err) from e
+
+
+def _stream_claude(messages: list[dict], image_b64: str = "", image_mime: str = ""):
+    """Stream จาก Claude (Anthropic) ด้วย official SDK + prompt caching
+
+    - system prompt → cached block (cache_control ephemeral, stable-first) ลด cost เมื่อ context ซ้ำ
+    - vision: image_b64 → image block ใน user message ล่าสุด
+    - adaptive thinking: เปิดด้วย CLAUDE_THINKING=adaptive (default off เพื่อความเร็วของแชต)
+    Yields: text delta (str) หรือ error message ที่อ่านเข้าใจ
+    """
+    if anthropic_client is None:
+        if anthropic is None:
+            yield "⚠️ ยังไม่ได้ติดตั้ง anthropic SDK — รัน `pip install anthropic`"
+        else:
+            yield ("⚠️ ยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY\n\n"
+                   "เปิด `.env` แล้วใส่:\n```\nANTHROPIC_API_KEY=sk-ant-...\n```\n"
+                   "ขอ key ที่ https://console.anthropic.com/")
+        return
+
+    # แยก system ออก + map เป็น user/assistant ของ Claude
+    system_text = next((m["content"] for m in messages if m["role"] == "system"), "")
+    claude_messages: list[dict] = []
+    for m in messages:
+        if m["role"] == "system":
+            continue
+        role = "assistant" if m["role"] == "assistant" else "user"
+        claude_messages.append({"role": role, "content": m["content"]})
+
+    # vision: แทรก image ลง user message ล่าสุด (content → list ของ content blocks)
+    if image_b64 and claude_messages and claude_messages[-1]["role"] == "user":
+        last = claude_messages[-1]
+        claude_messages[-1] = {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": last["content"]},
+                {"type": "image", "source": {
+                    "type": "base64",
+                    "media_type": image_mime or "image/jpeg",
+                    "data": image_b64,
+                }},
+            ],
+        }
+
+    # Claude ต้องเริ่มด้วย user message เสมอ
+    if not claude_messages or claude_messages[0]["role"] != "user":
+        claude_messages.insert(0, {"role": "user", "content": "(เริ่มสนทนา)"})
+
+    kwargs: dict = {
+        "model": CLAUDE_MODEL,
+        "max_tokens": CLAUDE_MAX_TOKENS,
+        "messages": claude_messages,
+    }
+    if system_text:
+        kwargs["system"] = [{
+            "type": "text",
+            "text": system_text,
+            "cache_control": {"type": "ephemeral"},
+        }]
+    if CLAUDE_THINKING == "adaptive":
+        kwargs["thinking"] = {"type": "adaptive"}
+        kwargs["output_config"] = {"effort": CLAUDE_EFFORT}
+
+    try:
+        with anthropic_client.messages.stream(**kwargs) as stream:
+            for text in stream.text_stream:
+                yield text
+            # log cache hit เพื่อ verify prompt caching ทำงาน (cache_read > 0 = ประหยัด)
+            try:
+                u = stream.get_final_message().usage
+                logger.info(
+                    f"[Claude] {CLAUDE_MODEL} ok | in={u.input_tokens} "
+                    f"cache_write={getattr(u, 'cache_creation_input_tokens', 0)} "
+                    f"cache_read={getattr(u, 'cache_read_input_tokens', 0)} "
+                    f"out={u.output_tokens}"
+                )
+            except Exception:
+                pass
+    except Exception as e:
+        # typed exceptions (ไม่ string-match) ตาม guideline
+        if anthropic and isinstance(e, anthropic.AuthenticationError):
+            logger.error(f"Claude auth error: {e}")
+            yield "❌ ANTHROPIC_API_KEY ไม่ถูกต้อง — ตรวจสอบใน .env"
+        elif anthropic and isinstance(e, anthropic.RateLimitError):
+            logger.error(f"Claude rate limited: {e}")
+            yield "⏳ Claude โดน rate limit — รอสักครู่แล้วลองใหม่ หรือสลับ provider"
+        elif anthropic and isinstance(e, anthropic.APIStatusError) and e.status_code >= 500:
+            logger.error(f"Claude server error: {e}")
+            yield f"❌ Claude server error ({e.status_code}) — ลองใหม่ภายหลัง"
+        else:
+            logger.error(f"Claude stream error: {e}")
+            yield f"❌ Claude error: {e}"
