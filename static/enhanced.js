@@ -2079,4 +2079,68 @@
     return "default";
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // TOKEN / CHAR COUNTER — pill ลอยมุมขวาบนของ textarea ที่กำลังพิมพ์
+  //   event delegation → ทนต่อ React re-render; ~4 ตัวอักษร ≈ 1 token (ตาม approx_tokens)
+  //   รองรับทั้ง <textarea> และ contenteditable
+  // ─────────────────────────────────────────────────────────────────────────────
+  (function initTokenCounter() {
+    const tcCss = `
+      #enh-tokcount {
+        position: fixed; z-index: 9999; pointer-events: none;
+        font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+        background: rgba(15,23,42,0.85); border: 1px solid rgba(99,102,241,0.35);
+        color: #94a3b8; opacity: 0; transition: opacity .12s; backdrop-filter: blur(4px);
+      }
+      #enh-tokcount.show { opacity: 1; }
+      #enh-tokcount.warn { color: #fbbf24; border-color: rgba(251,191,36,0.5); }
+      #enh-tokcount.hot  { color: #f87171; border-color: rgba(248,113,113,0.6); }
+    `;
+    document.head.appendChild(Object.assign(document.createElement("style"), { textContent: tcCss }));
+
+    const pill = document.createElement("div");
+    pill.id = "enh-tokcount";
+    document.body.appendChild(pill);
+
+    let _activeTA = null;
+
+    const _isComposer = (el) =>
+      el && (el.tagName === "TEXTAREA" || el.isContentEditable);
+
+    const _textOf = (el) =>
+      el.value != null ? el.value : (el.innerText || "");
+
+    function _update(el) {
+      const len = _textOf(el).length;
+      if (!len) { pill.classList.remove("show"); return; }
+      const toks = Math.max(1, Math.ceil(len / 4));   // ~4 ตัวอักษร/token
+      pill.textContent = `${len} ตัวอักษร · ~${toks} tokens`;
+      pill.classList.toggle("warn", toks > 1500 && toks <= 3000);
+      pill.classList.toggle("hot", toks > 3000);
+      const r = el.getBoundingClientRect();
+      pill.style.left = Math.max(8, r.right - pill.offsetWidth - 6) + "px";
+      pill.style.top  = Math.max(8, r.top - pill.offsetHeight - 4) + "px";
+      pill.classList.add("show");
+    }
+
+    document.addEventListener("input", (e) => {
+      if (!_isComposer(e.target)) return;
+      _activeTA = e.target; _update(e.target);
+    }, true);
+    document.addEventListener("focusin", (e) => {
+      if (!_isComposer(e.target)) return;
+      _activeTA = e.target;
+      if (_textOf(e.target)) _update(e.target);
+    }, true);
+    document.addEventListener("focusout", (e) => {
+      if (_isComposer(e.target)) pill.classList.remove("show");
+    }, true);
+    const _reposition = () => {
+      if (_activeTA && pill.classList.contains("show")) _update(_activeTA);
+    };
+    window.addEventListener("scroll", _reposition, true);
+    window.addEventListener("resize", _reposition);
+  })();
+
 })();
