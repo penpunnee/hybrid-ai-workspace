@@ -97,8 +97,8 @@ except ImportError:          # ยังไม่ได้ pip install — provi
     anthropic = None
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-CLAUDE_MODEL      = os.getenv("CLAUDE_MODEL", "claude-opus-4-8")
-CLAUDE_MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "8192"))
+CLAUDE_MODEL      = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")   # คุ้มกว่า opus; เปลี่ยนเป็น claude-opus-4-8 ถ้าอยากฉลาดสุด
+CLAUDE_MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "4096"))      # เพดานความยาวคำตอบ = คุม cost
 # adaptive thinking: ปิดเป็น default เพื่อความเร็วของแชต — ตั้ง CLAUDE_THINKING=adaptive ถ้าอยากให้คิดลึก
 CLAUDE_THINKING   = os.getenv("CLAUDE_THINKING", "off").lower()
 CLAUDE_EFFORT     = os.getenv("CLAUDE_EFFORT", "high").lower()   # low|medium|high|xhigh|max (ใช้คู่ adaptive)

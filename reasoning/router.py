@@ -149,7 +149,7 @@ def route(
         claude_auto == "all"
         or (claude_auto == "reasoning" and complexity == Complexity.REASONING)
     ):
-        claude_model = os.getenv("CLAUDE_MODEL", "claude-opus-4-8")
+        claude_model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
         return RouteDecision("claude", claude_model, complexity,
                              f"{complexity.value} → Claude (CLAUDE_AUTO={claude_auto})")
 

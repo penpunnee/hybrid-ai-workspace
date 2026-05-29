@@ -147,7 +147,7 @@ def test_auto_claude_reasoning_picks_claude(monkeypatch):
     monkeypatch.setattr(router, "classify", lambda p: Complexity.REASONING)
     d = router.route("พิสูจน์ทฤษฎีบทนี้ทีละขั้น", provider_hint="auto")
     assert d.provider == "claude"
-    assert d.model == "claude-opus-4-8"
+    assert d.model == "claude-sonnet-4-6"   # default คุ้ม (เปลี่ยนได้ผ่าน CLAUDE_MODEL)
 
 
 def test_auto_claude_reasoning_skips_simple(monkeypatch):

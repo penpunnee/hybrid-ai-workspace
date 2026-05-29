@@ -178,8 +178,8 @@ GEMINI_MODEL=gemini-2.5-flash
 GEMINI_LIVE_MODEL=gemini-2.0-flash-exp
 # Claude (Anthropic) — provider "claude"; ปล่อยว่าง=ปิด
 ANTHROPIC_API_KEY=
-CLAUDE_MODEL=claude-opus-4-8
-CLAUDE_MAX_TOKENS=8192
+CLAUDE_MODEL=claude-sonnet-4-6   # default คุ้ม; claude-opus-4-8 = ฉลาดสุด/แพงสุด, claude-haiku-4-5 = ถูกสุด
+CLAUDE_MAX_TOKENS=4096           # เพดานคำตอบ = คุม cost
 CLAUDE_THINKING=off            # off | adaptive (adaptive=คิดลึกขึ้น แต่ช้าลง)
 CLAUDE_EFFORT=high             # low|medium|high|xhigh|max (ใช้คู่ adaptive)
 CLAUDE_AUTO=off                # off | reasoning | all — ให้ provider=auto เลือก Claude (ต้องมี key)

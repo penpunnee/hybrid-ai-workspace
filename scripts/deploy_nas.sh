@@ -26,6 +26,8 @@ _ensure() {   # _ensure KEY VALUE — เพิ่มถ้ายังไม่
 }
 _ensure LMSTUDIO_BASE_URL   "http://192.168.51.235:1234/v1"
 _ensure LMSTUDIO_CHAT_MODEL "meta-llama-3.1-8b-instruct"
+_ensure CLAUDE_MODEL        "claude-sonnet-4-6"   # คุ้ม; เปลี่ยนเป็น claude-opus-4-8 ถ้าอยากฉลาดสุด
+_ensure CLAUDE_MAX_TOKENS   "4096"                # เพดานคำตอบ = คุม cost
 grep -q "^ANTHROPIC_API_KEY=" .env \
   && echo "  • ANTHROPIC_API_KEY มีอยู่แล้ว (Claude พร้อม)" \
   || echo "  ⚠️ ยังไม่มี ANTHROPIC_API_KEY — Claude จะยังใช้ไม่ได้ (เพิ่มเองใน .env ภายหลังถ้าต้องการ)"
