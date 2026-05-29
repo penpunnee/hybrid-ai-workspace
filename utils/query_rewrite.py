@@ -57,9 +57,11 @@ class RewriteResult:
 
 # ── Rule-based helpers (ไม่ต้องเรียก LLM) ───────────────────────────────────
 _TIME_PATTERNS = [
-    (re.compile(r"\bวันนี้\b"),     lambda: f"วันนี้ ({datetime.now().strftime('%d %B %Y')})"),
-    (re.compile(r"\bพรุ่งนี้\b"),    lambda: f"พรุ่งนี้"),
-    (re.compile(r"\bเมื่อวาน\b"),    lambda: f"เมื่อวาน"),
+    # คำไทยไม่ใช้ \b — วรรณยุกต์ท้ายคำ (เช่น ้ ใน "วันนี้") เป็น combining mark ไม่ใช่ \w
+    # → \b ท้ายไม่ match ทำให้ inject ไม่ทำงาน. ไทยไม่มีขอบคำอยู่แล้ว จึง match แบบ substring
+    (re.compile(r"วันนี้"),          lambda: f"วันนี้ ({datetime.now().strftime('%d %B %Y')})"),
+    (re.compile(r"พรุ่งนี้"),         lambda: f"พรุ่งนี้"),
+    (re.compile(r"เมื่อวาน"),         lambda: f"เมื่อวาน"),
     (re.compile(r"\btoday\b", re.I), lambda: f"today ({datetime.now().strftime('%Y-%m-%d')})"),
     (re.compile(r"\btomorrow\b", re.I), lambda: f"tomorrow"),
 ]

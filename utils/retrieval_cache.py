@@ -98,11 +98,13 @@ def store(
 
     now = time.time()
     with _lock:
-        _evict_old(now)
+        # insert ก่อน แล้วค่อย evict → cache ไม่เกิน _MAX_SESSIONS (เดิม evict ก่อน insert
+        # ทำให้ค้างที่ _MAX_SESSIONS+1). entry ใหม่ ts ล่าสุด → ไม่ถูก evict เอง
         _cache[session_id] = _Entry(
             prompt=prompt, vec=vec, chunks=list(chunks),
             citations=list(citations or []), ts=now,
         )
+        _evict_old(now)
     logger.debug(f"[RetrCache] store session={session_id} chunks={len(chunks)}")
 
 
