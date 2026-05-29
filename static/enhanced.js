@@ -2202,4 +2202,113 @@
     });
   })();
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // SLASH / QUICK PROMPTS — พิมพ์ "/" ต้นกล่อง → เมนู template → เลือกแล้วเติมเข้า composer
+  // ─────────────────────────────────────────────────────────────────────────────
+  (function initSlashPrompts() {
+    const PROMPTS = [
+      { cmd: "review",    label: "🔍 Review โค้ด",  text: "ช่วย review โค้ดนี้ แล้วชี้จุดที่ควรปรับปรุง:\n\n" },
+      { cmd: "bug",       label: "🐛 หา bug",       text: "ช่วยหา bug ในโค้ดนี้ และเสนอวิธีแก้:\n\n" },
+      { cmd: "explain",   label: "💡 อธิบาย",        text: "อธิบายสิ่งนี้แบบเข้าใจง่าย ทีละขั้น:\n\n" },
+      { cmd: "summary",   label: "📝 สรุป",          text: "สรุปใจความสำคัญของข้อความนี้:\n\n" },
+      { cmd: "translate", label: "🌐 แปลเป็น EN",    text: "แปลข้อความนี้เป็นภาษาอังกฤษ:\n\n" },
+      { cmd: "improve",   label: "✨ ปรับสำนวน",     text: "ช่วยปรับสำนวนข้อความนี้ให้กระชับ ชัดเจน:\n\n" },
+      { cmd: "plan",      label: "🗺️ วางแผน",        text: "ช่วยวางแผนทีละขั้นสำหรับ:\n\n" },
+    ];
+
+    const css = `
+      #enh-slash {
+        position: fixed; z-index: 10000; display: none; min-width: 220px; max-width: 320px;
+        background: rgba(15,23,42,0.96); border: 1px solid rgba(99,102,241,0.45);
+        border-radius: 12px; padding: 5px; box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+        backdrop-filter: blur(8px); font-size: 13px;
+      }
+      #enh-slash.show { display: block; }
+      .enh-slash-item {
+        padding: 8px 10px; border-radius: 8px; cursor: pointer; color: #cbd5e1;
+        display: flex; gap: 8px; align-items: center; white-space: nowrap;
+      }
+      .enh-slash-item .cmd { color: #64748b; font-size: 11px; margin-left: auto; }
+      .enh-slash-item.sel, .enh-slash-item:hover {
+        background: rgba(99,102,241,0.22); color: #fff;
+      }
+    `;
+    document.head.appendChild(Object.assign(document.createElement("style"), { textContent: css }));
+
+    const menu = document.createElement("div");
+    menu.id = "enh-slash";
+    document.body.appendChild(menu);
+
+    let _open = false, _items = [], _sel = 0, _ta = null;
+
+    function _reactSet(el, val) {
+      try {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(el, val);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      } catch { el.value = val; }
+    }
+
+    function _close() { _open = false; menu.classList.remove("show"); }
+
+    function _render() {
+      menu.innerHTML = _items.map((p, i) =>
+        `<div class="enh-slash-item${i === _sel ? " sel" : ""}" data-i="${i}">` +
+        `<span>${p.label}</span><span class="cmd">/${p.cmd}</span></div>`
+      ).join("");
+    }
+
+    function _position() {
+      const r = _ta.getBoundingClientRect();
+      menu.style.left = Math.max(8, r.left) + "px";
+      menu.style.top = Math.max(8, r.top - menu.offsetHeight - 6) + "px";   // ลอยเหนือ composer
+    }
+
+    function _select(item) {
+      if (!item || !_ta) return;
+      _reactSet(_ta, item.text);
+      _close();
+      _ta.focus();
+      setTimeout(() => { try { const n = _ta.value.length; _ta.setSelectionRange(n, n); } catch {} }, 0);
+    }
+
+    // เปิด/กรองเมนูจากสิ่งที่พิมพ์
+    document.addEventListener("input", (e) => {
+      const ta = e.target;
+      if (!ta || ta.tagName !== "TEXTAREA") return;
+      const v = ta.value;
+      if (v.startsWith("/") && !v.includes(" ") && !v.includes("\n")) {
+        const f = v.slice(1).toLowerCase();
+        _items = PROMPTS.filter(p => p.cmd.startsWith(f) || !f);
+        if (_items.length) {
+          _ta = ta; _open = true; _sel = 0; _render();
+          menu.classList.add("show"); _position();
+          return;
+        }
+      }
+      _close();
+    }, true);
+
+    // คีย์บอร์ด — เมื่อเมนูเปิด ดักก่อน React (กัน Enter ส่งข้อความ)
+    document.addEventListener("keydown", (e) => {
+      if (!_open || e.target !== _ta) return;
+      if (e.key === "ArrowDown") { _sel = (_sel + 1) % _items.length; _render(); e.preventDefault(); e.stopPropagation(); }
+      else if (e.key === "ArrowUp") { _sel = (_sel - 1 + _items.length) % _items.length; _render(); e.preventDefault(); e.stopPropagation(); }
+      else if (e.key === "Enter") { _select(_items[_sel]); e.preventDefault(); e.stopPropagation(); }
+      else if (e.key === "Escape") { _close(); e.preventDefault(); e.stopPropagation(); }
+      else if (e.key === "Tab") { _select(_items[_sel]); e.preventDefault(); e.stopPropagation(); }
+    }, true);
+
+    menu.addEventListener("mousedown", (e) => {
+      const item = e.target.closest(".enh-slash-item");
+      if (!item) return;
+      e.preventDefault();   // กัน blur ก่อนคลิกติด
+      _select(_items[+item.dataset.i]);
+    });
+
+    document.addEventListener("focusout", (e) => {
+      if (e.target === _ta) setTimeout(_close, 150);   // delay ให้ mousedown ของเมนูทำงานก่อน
+    }, true);
+    window.addEventListener("scroll", () => { if (_open) _position(); }, true);
+  })();
+
 })();
