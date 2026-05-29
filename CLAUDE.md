@@ -186,6 +186,11 @@ SHOW_THINKING=false
 # Auth + Network
 UI_PASSWORD=
 CORS_ORIGINS=
+# Rate limiting (public exposure) — LAN/loopback bypass; ปิดด้วย false
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_RPM=120            # req/นาที/IP
+AUTH_FAIL_MAX=8              # 401 กี่ครั้งใน window ก่อน lock IP
+AUTH_FAIL_WINDOW=300        # วินาที
 NAS_IP=192.168.51.49
 NAS_USER=
 NAS_PASS=

@@ -17,6 +17,9 @@ os.environ["UI_PASSWORD"] = ""
 os.environ["CHROMA_HOST"] = "localhost"
 os.environ["OLLAMA_BASE_URL"] = "http://localhost:11434/v1"
 os.environ["LMSTUDIO_BASE_URL"] = ""        # ปิด LM Studio ใน test
+# ปิด rate limit เป็น default — กัน state สะสมข้ามเทสต์ทำ 429 ปลอม
+# (test_ratelimit.py เปิดเอง + monkeypatch limit เล็ก + reset)
+os.environ["RATE_LIMIT_ENABLED"] = "false"
 # temp FILE (ไม่ใช่ :memory:) — _get_conn() เปิด connection ใหม่ทุกครั้ง
 # :memory: จะได้ db แยกกันทุก connection → table ไม่ share → "no such table"
 _test_db = os.path.join(tempfile.gettempdir(), "hybrid_ai_test.db")

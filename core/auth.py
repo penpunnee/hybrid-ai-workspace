@@ -1,7 +1,18 @@
+import hmac
 import ipaddress
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from core.config import UI_PASSWORD
+
+
+def token_matches(provided: str) -> bool:
+    """เทียบ token/password แบบ constant-time (กัน timing attack)
+
+    คืน False ถ้า UI_PASSWORD ว่าง (auth ปิด) — caller จัดการกรณีนั้นเอง
+    """
+    if not UI_PASSWORD:
+        return False
+    return hmac.compare_digest(str(provided or ""), str(UI_PASSWORD))
 
 _OPEN_PATHS = {"/", "/api/config", "/api/status", "/api/auth/check", "/api/auth/login"}
 _OPEN_PREFIXES = ("/static", "/assets", "/shared", "/ws")
@@ -52,6 +63,6 @@ async def auth_middleware(request: Request, call_next):
         if not any(path.startswith(p) for p in _PROTECTED_GET_PREFIXES):
             return await call_next(request)
     token = request.headers.get("x-auth-token", "")
-    if token == UI_PASSWORD:
+    if token_matches(token):
         return await call_next(request)
     return JSONResponse({"error": "Unauthorized"}, status_code=401)

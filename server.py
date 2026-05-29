@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import CORS_ORIGINS_LIST, RELOAD
 from core.auth import auth_middleware
+from core.ratelimit import rate_limit_middleware
 from core.observability import install_logging, start_request, current_request_id, timing_summary
 from core.scheduler import start_scheduler
 from utils.skills import _load_skills_db
@@ -69,6 +70,9 @@ async def _request_id_middleware(request: Request, call_next):
     return response
 
 
+# ลำดับ (outer→inner): request_id → rate_limit → auth → route
+# rate_limit อยู่นอก auth เพื่อ gate ก่อน + เห็น 401 ของ auth (ไป feed lockout)
+app.middleware("http")(rate_limit_middleware)
 app.middleware("http")(auth_middleware)
 
 # ── Routers ───────────────────────────────────────────────────────────────────
