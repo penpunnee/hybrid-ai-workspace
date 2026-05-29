@@ -6,6 +6,8 @@
 
 Prereq (บน PC, ใน WSL/Linux + CUDA):
   pip install -r requirements-train.txt   # unsloth, trl, transformers, datasets, ...
+  # GGUF export (ขั้น 5) ต้องมี build tools ของ llama.cpp ด้วย:
+  #   sudo apt install build-essential cmake   (unsloth จะ build llama.cpp ครั้งแรกให้)
 
 Usage:
   python scripts/train_qlora.py data/finetune_sft.jsonl
@@ -35,7 +37,7 @@ GGUF_QUANT   = "q4_k_m"
 
 
 def main(jsonl_path: str):
-    from unsloth import FastLanguageModel
+    from unsloth import FastLanguageModel, is_bfloat16_supported
     from datasets import load_dataset
     from trl import SFTTrainer, SFTConfig
 
@@ -65,17 +67,33 @@ def main(jsonl_path: str):
         print("⚠️ data < 50 ตัวอย่าง — fine-tune อาจ overfit/ไม่คุ้ม แนะนำสะสมเพิ่ม")
 
     # 4) เทรน
+    # หมายเหตุ: dataset_text_field + max_seq_length ต้องอยู่ใน SFTConfig (TRL รุ่นใหม่
+    #   ย้ายออกจาก SFTTrainer kwargs แล้ว — ใส่ที่ SFTTrainer จะ TypeError)
     trainer = SFTTrainer(
         model=model, tokenizer=tokenizer, train_dataset=ds,
-        dataset_text_field="text", max_seq_length=MAX_SEQ_LEN,
         args=SFTConfig(
+            dataset_text_field="text",
+            max_seq_length=MAX_SEQ_LEN,
             per_device_train_batch_size=BATCH_SIZE,
             gradient_accumulation_steps=GRAD_ACCUM,
             num_train_epochs=EPOCHS, learning_rate=LR,
             warmup_ratio=0.05, logging_steps=5,
-            optim="adamw_8bit", output_dir="outputs", seed=42,
+            optim="adamw_8bit", weight_decay=0.01, lr_scheduler_type="linear",
+            # 3060 = Ampere → bf16; ไม่งั้น fp16 (กัน fp32 ที่ช้า/OOM)
+            bf16=is_bfloat16_supported(), fp16=not is_bfloat16_supported(),
+            output_dir="outputs", seed=42,
         ),
     )
+
+    # (ออปชัน) เทรนเฉพาะส่วนคำตอบของ assistant — ไม่ให้โมเดลเลียนคำถาม user
+    #   ช่วยคุณภาพ behavior tuning. เปิดได้ถ้า markers ตรงกับ Llama-3.1 template:
+    # from unsloth.chat_templates import train_on_responses_only
+    # trainer = train_on_responses_only(
+    #     trainer,
+    #     instruction_part="<|start_header_id|>user<|end_header_id|>\n\n",
+    #     response_part="<|start_header_id|>assistant<|end_header_id|>\n\n",
+    # )
+
     trainer.train()
 
     # 5) export GGUF (Stage 3) → พร้อม ollama create

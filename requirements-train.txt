@@ -1,8 +1,12 @@
 # Training-only deps — ติดตั้งบน PC GPU (RTX 3060) ใน WSL/Linux + CUDA เท่านั้น
 # แยกจาก requirements.txt ของ app (อันนั้นไม่ต้องมี — กัน app/CI บวม + ไม่ต้อง GPU)
-# pip install -r requirements-train.txt
+#
+# ⚠️ `unsloth` ดึง torch/trl/transformers/peft เวอร์ชันที่เข้ากันมาเอง — ถ้าเจอ conflict
+#   ให้ติดตั้ง unsloth ก่อนตัวเดียว แล้วค่อยเสริมที่ขาด หรือทำตามคำสั่งล่าสุดที่
+#   https://github.com/unslothai/unsloth (แนะนำสุด — กัน version ชนกับ CUDA)
+# GGUF export ต้องมี build-essential + cmake (apt) — unsloth build llama.cpp ครั้งแรก
 unsloth
-trl>=0.9
+trl>=0.11          # SFTConfig ต้องรับ dataset_text_field/max_seq_length (API ที่ script ใช้)
 transformers>=4.44
 datasets>=2.20
 peft>=0.12
