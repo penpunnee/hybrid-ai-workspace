@@ -31,8 +31,9 @@
 
   window.fetch = function (url, opts) {
     if (typeof url === "string") {
-      // 1. Track assistant + session + prompt history + agent mode injection
-      if (url === "/api/chat" && opts?.body) {
+      // 1. Track assistant + session + prompt history + agent/claude injection
+      //    N2: ครอบ /api/regenerate ด้วย → กด regenerate ก็ใช้ Claude/Agent ตามโหมด
+      if ((url === "/api/chat" || url.includes("/api/regenerate")) && opts?.body) {
         try {
           const b = JSON.parse(opts.body);
           if (b.assistant) ctx.assistant = b.assistant;
@@ -2082,9 +2083,23 @@
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // composer detector ใช้ร่วมกัน (token counter / draft / slash)
+  //   N1 fix: เดิมจับ textarea ตัวไหนก็ได้ → หน้าที่มีหลาย textarea (settings) ทำงานผิดช่อง
+  //   จับเฉพาะกล่องแชตหลัก: placeholder ของทุก assistant มี "ส่งความคิด...ได้เลย"
+  //   fallback: ถ้าเป็น textarea เดียวในหน้า (กัน placeholder เปลี่ยน)
+  // ─────────────────────────────────────────────────────────────────────────────
+  function _isComposerEl(el) {
+    if (!el) return false;
+    const isTA = el.tagName === "TEXTAREA";
+    if (!isTA && !el.isContentEditable) return false;
+    const ph = (el.getAttribute && el.getAttribute("placeholder")) || el.placeholder || "";
+    if (/ส่งความคิด|ได้เลย/.test(ph)) return true;
+    return isTA && document.querySelectorAll("textarea").length === 1;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // TOKEN / CHAR COUNTER — pill ลอยมุมขวาบนของ textarea ที่กำลังพิมพ์
   //   event delegation → ทนต่อ React re-render; ~4 ตัวอักษร ≈ 1 token (ตาม approx_tokens)
-  //   รองรับทั้ง <textarea> และ contenteditable
   // ─────────────────────────────────────────────────────────────────────────────
   (function initTokenCounter() {
     const tcCss = `
@@ -2107,8 +2122,7 @@
 
     let _activeTA = null;
 
-    const _isComposer = (el) =>
-      el && (el.tagName === "TEXTAREA" || el.isContentEditable);
+    const _isComposer = _isComposerEl;   // N1: เฉพาะกล่องแชตหลัก
 
     const _textOf = (el) =>
       el.value != null ? el.value : (el.innerText || "");
@@ -2152,7 +2166,7 @@
   // ─────────────────────────────────────────────────────────────────────────────
   (function initDraftAutosave() {
     const KEY = (sid) => "hw_draft_" + (sid || "default");
-    const _isComposer = (el) => el && el.tagName === "TEXTAREA";
+    const _isComposer = _isComposerEl;   // N1: เฉพาะกล่องแชตหลัก
 
     // เขียนค่ากลับเข้า controlled input ของ React (ไม่งั้น state ไม่อัปเดต)
     function _reactSet(el, val) {
@@ -2274,7 +2288,7 @@
     // เปิด/กรองเมนูจากสิ่งที่พิมพ์
     document.addEventListener("input", (e) => {
       const ta = e.target;
-      if (!ta || ta.tagName !== "TEXTAREA") return;
+      if (!_isComposerEl(ta) || ta.tagName !== "TEXTAREA") return;   // N1: เฉพาะกล่องแชตหลัก
       const v = ta.value;
       if (v.startsWith("/") && !v.includes(" ") && !v.includes("\n")) {
         const f = v.slice(1).toLowerCase();

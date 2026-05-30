@@ -61,7 +61,8 @@ class SlidingWindowLimiter:
             self._hits.popitem()   # O(1), drop arbitrary — bound memory
 
     def hit(self, key: str) -> tuple[bool, int]:
-        """บันทึก hit ถ้ายังไม่เกิน limit → (allowed, retry_after_sec)"""
+        """บันทึก 1 hit → (allowed, retry_after_sec). allowed=True = "ผ่าน" (ยังไม่เกิน limit)
+        ⚠️ N3: bool กลับด้านกับ over_limit — hit คืน allowed(True=ดี), over_limit คืน is_over(True=แย่)"""
         now = time.time()
         with self._lock:
             self._maybe_sweep(now)
@@ -74,7 +75,8 @@ class SlidingWindowLimiter:
             return True, 0
 
     def over_limit(self, key: str) -> tuple[bool, int]:
-        """peek — เกิน limit ไหม (ไม่บันทึก, ไม่สร้าง key ใหม่)"""
+        """peek (ไม่บันทึก/ไม่สร้าง key) → (is_over, retry_after_sec). is_over=True = "เกิน/ควร block"
+        ⚠️ N3: bool กลับด้านกับ hit (ดู hit). call site ใช้ตัวแปร `blocked` ให้ชัด"""
         now = time.time()
         with self._lock:
             dq = self._hits.get(key)        # ไม่ใช้ [] เพื่อไม่สร้าง key ว่างทิ้งไว้
