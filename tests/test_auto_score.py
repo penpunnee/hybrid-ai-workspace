@@ -115,6 +115,24 @@ def test_run_auto_score_skips_already_processed(clean_msgs, tmp_path):
     assert r2["scored"] == 0          # รอบสองไม่มีใหม่
 
 
+def test_w3_state_persists_per_item_on_crash(clean_msgs, tmp_path):
+    # crash กลาง batch → item ที่ผ่านแล้ว state ถูกบันทึก → re-run ไม่ score ซ้ำ
+    _add("user", "q1"); a1 = _add("assistant", "a1")
+    _add("user", "q2"); _add("assistant", "a2")
+    out = str(tmp_path / "auto.jsonl"); state = str(tmp_path / "state.json")
+    n = {"i": 0}
+
+    def boom(u, ans):
+        n["i"] += 1
+        if n["i"] == 2:
+            raise RuntimeError("crash on 2nd item")
+        return {"score": 9.0, "reason": ""}
+
+    with pytest.raises(RuntimeError):
+        a.run_auto_score(threshold=7.5, out_path=out, state_path=state, score_fn=boom)
+    assert a._load_state(state) == a1        # item1 บันทึกแล้ว (ไม่ใช่ 0/ทั้ง batch หาย)
+
+
 def test_run_auto_score_skips_orphan_assistant(clean_msgs, tmp_path):
     _add("assistant", "no preceding user")   # ไม่มี user นำหน้า
     out = str(tmp_path / "auto.jsonl"); state = str(tmp_path / "state.json")

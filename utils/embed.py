@@ -38,14 +38,18 @@ _client = OpenAI(base_url=_LMSTUDIO_BASE_URL or "http://localhost:1234/v1",
 _ollama_client = OpenAI(base_url=_OLLAMA_BASE_URL, api_key="ollama", timeout=_EMBED_TIMEOUT)
 
 
-def _create_embeddings(inputs: list[str]) -> list[list[float]]:
-    """embed ผ่าน LM Studio → fallback Ollama เมื่อ LM Studio fail. raise ถ้าทั้งคู่ fail"""
+def _create_embeddings(inputs: list[str]) -> tuple[list[list[float]], str]:
+    """embed ผ่าน LM Studio → fallback Ollama. คืน (vecs, model_ที่ใช้จริง). raise ถ้าทั้งคู่ fail
+
+    คืนชื่อ model ด้วยเพื่อให้ cache เก็บแยกตาม provider (W2) — กัน vec ของ Ollama
+    ถูกอ่านกลับมาตอน LM Studio กลับมา (dim/space อาจต่างกันเล็กน้อย → cosine เพี้ยน)
+    """
     try:
         resp = _client.embeddings.create(model=_EMBED_MODEL, input=inputs)
         vecs = [list(d.embedding) for d in resp.data]
         with _metrics_lock:
             _metrics["api_calls"] += 1
-        return vecs
+        return vecs, _EMBED_MODEL
     except Exception as e:
         logger.warning(f"[Embed] LM Studio embed fail ({e}) → fallback Ollama ({_OLLAMA_EMBED_MODEL})")
         resp = _ollama_client.embeddings.create(model=_OLLAMA_EMBED_MODEL, input=inputs)
@@ -53,7 +57,7 @@ def _create_embeddings(inputs: list[str]) -> list[list[float]]:
         with _metrics_lock:
             _metrics["api_calls"] += 1
             _metrics["ollama_fallback"] += 1
-        return vecs
+        return vecs, _OLLAMA_EMBED_MODEL
 
 # ── Persistent cache (sqlite) ────────────────────────────────────────────────
 _cache_lock = threading.Lock()
@@ -136,14 +140,16 @@ def _cache_get(text: str) -> list[float] | None:
         return None
 
 
-def _cache_set(text: str, vec: list[float]) -> None:
+def _cache_set(text: str, vec: list[float], model: str | None = None) -> None:
     conn = _cache_init()
     if conn is None or not vec:
         return
     try:
+        # เก็บใต้ชื่อ model ที่ผลิต vec จริง (W2) — _cache_get อ่านด้วย _EMBED_MODEL
+        # เท่านั้น → vec จาก Ollama-fallback (ใต้ชื่ออื่น) จะไม่ถูกอ่านปนกับ LM Studio
         conn.execute(
             "INSERT OR REPLACE INTO embed_cache (key, model, dim, vec) VALUES (?,?,?,?)",
-            (_cache_key(text), _EMBED_MODEL, len(vec), _pack(vec)),
+            (_cache_key(text), model or _EMBED_MODEL, len(vec), _pack(vec)),
         )
     except Exception as e:
         logger.debug(f"[Embed] cache set failed: {e}")
@@ -194,8 +200,9 @@ def _embed_one_cached(text: str) -> tuple:
     if cached:
         return tuple(cached)
     try:
-        vec = _create_embeddings([text])[0]   # LM Studio → fallback Ollama
-        _cache_set(text, vec)
+        vecs, used_model = _create_embeddings([text])   # LM Studio → fallback Ollama
+        vec = vecs[0]
+        _cache_set(text, vec, used_model)
         return tuple(vec)
     except Exception as e:
         logger.warning(f"[Embed] failed for text {text[:40]!r}: {e}")
@@ -232,7 +239,7 @@ def embed_texts(texts: Sequence[str]) -> list[list[float]]:
 
     # fetch missing batch (LM Studio → fallback Ollama)
     try:
-        new_vecs = _create_embeddings(miss_texts)
+        new_vecs, used_model = _create_embeddings(miss_texts)
     except Exception as e:
         logger.warning(f"[Embed] batch failed ({len(miss_texts)} items): {e}")
         # คืนเฉพาะที่มี cache (เพื่อไม่ให้ pipeline พัง)
@@ -241,7 +248,7 @@ def embed_texts(texts: Sequence[str]) -> list[list[float]]:
     # save new + reconstruct order
     for idx, vec in zip(miss_idx, new_vecs):
         cached[idx] = vec
-        _cache_set(texts[idx], vec)
+        _cache_set(texts[idx], vec, used_model)
 
     return [c for c in cached if c]
 

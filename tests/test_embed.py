@@ -194,3 +194,16 @@ def test_embed_both_down_returns_empty(monkeypatch, tmp_path):
     monkeypatch.setattr(embed._client, "embeddings", FakeEmbeddings(fail=True))
     monkeypatch.setattr(embed._ollama_client, "embeddings", FakeEmbeddings(fail=True))
     assert embed.embed_query("x") == []          # ทั้งคู่ล่ม → [] (pipeline ไม่พัง)
+
+
+def test_w2_fallback_vec_not_contaminate_lmstudio_cache(monkeypatch, tmp_path):
+    # vec จาก Ollama-fallback ต้องเก็บใต้ชื่อ model ของ Ollama → _cache_get (LM Studio) ไม่อ่านปน
+    monkeypatch.setattr(embed, "_CACHE_DB", str(tmp_path / "c.db"))
+    monkeypatch.setattr(embed, "_cache_conn", None)
+    embed.reset_metrics()
+    monkeypatch.setattr(embed._client, "embeddings", FakeEmbeddings(fail=True))   # LM Studio ล่ม
+    monkeypatch.setattr(embed._ollama_client, "embeddings",
+                        FakeEmbeddings(mapping={"x": [9.0, 9.0]}))
+    embed.embed_query("x")                        # fallback → เก็บใต้ Ollama model
+    embed._embed_one_cached.cache_clear()         # ทิ้ง LRU เหลือแต่ sqlite
+    assert embed._cache_get("x") is None          # อ่านด้วย _EMBED_MODEL → ไม่เจอ vec ของ Ollama

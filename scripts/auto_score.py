@@ -105,24 +105,24 @@ def run_auto_score(threshold: float = 7.5, limit: int = 100,
     scored = qualified = 0
     max_id = last_id
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    # บันทึก state ต่อ item (W3): ถ้า crash กลางทาง รัน-ใหม่ score ซ้ำ ≤1 item ไม่ใช่ทั้ง batch
     with open(out_path, "a", encoding="utf-8") as f:
         for it in items:
-            max_id = max(max_id, it["id"])
-            if not it["user"] or not it["answer"].strip():
-                continue
-            scored += 1
-            res = score_fn(it["user"], it["answer"])
-            if _qualifies(res["score"], threshold):
-                ex = {"messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": it["user"]},
-                    {"role": "assistant", "content": it["answer"]},
-                ]}
-                f.write(json.dumps(ex, ensure_ascii=False) + "\n")
-                qualified += 1
+            if it["user"] and it["answer"].strip():
+                scored += 1
+                res = score_fn(it["user"], it["answer"])
+                if _qualifies(res["score"], threshold):
+                    ex = {"messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": it["user"]},
+                        {"role": "assistant", "content": it["answer"]},
+                    ]}
+                    f.write(json.dumps(ex, ensure_ascii=False) + "\n")
+                    f.flush()                    # ให้บรรทัดลงดิสก์ก่อนเลื่อน state
+                    qualified += 1
+            max_id = it["id"]
+            _save_state(state_path, max_id)      # progress ต่อ item (id ASC → monotonic)
 
-    if max_id > last_id:
-        _save_state(state_path, max_id)
     return {"scored": scored, "qualified": qualified, "last_id": max_id,
             "threshold": threshold, "out": out_path}
 

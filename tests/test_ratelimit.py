@@ -33,6 +33,37 @@ def clock(monkeypatch):
     return c
 
 
+# ── C1: memory DoS guards ─────────────────────────────────────────────────────
+def test_over_limit_does_not_create_key(clock):
+    lim = rl.SlidingWindowLimiter(limit=2, window=60)
+    lim.over_limit("ip-never-seen")          # peek IP ที่ไม่เคยมี
+    assert "ip-never-seen" not in lim._hits  # ต้องไม่สร้าง key ทิ้งไว้ (กัน leak)
+
+
+def test_sweep_removes_expired_keys(clock):
+    lim = rl.SlidingWindowLimiter(limit=5, window=60)
+    lim.hit("a")
+    assert "a" in lim._hits
+    clock.t += 61                            # หมดอายุ
+    lim.hit("b")                             # trigger _maybe_sweep (ผ่าน window)
+    assert "a" not in lim._hits              # key เก่าที่ว่างถูกกวาดทิ้ง
+
+
+def test_cap_bounds_dict_size(clock):
+    lim = rl.SlidingWindowLimiter(limit=5, window=60, max_keys=10)
+    for i in range(100):
+        lim.hit(f"ip{i}")                    # 100 IP ต่างกัน
+    assert len(lim._hits) <= 10              # cap กัน memory บวมจาก IP spoof
+
+
+def test_over_limit_cleans_emptied_key(clock):
+    lim = rl.SlidingWindowLimiter(limit=2, window=60)
+    lim.record("ip")
+    clock.t += 61
+    lim.over_limit("ip")                     # prune → ว่าง → ต้องลบ key
+    assert "ip" not in lim._hits
+
+
 # ── SlidingWindowLimiter ──────────────────────────────────────────────────────
 def test_limiter_allows_up_to_limit(clock):
     lim = rl.SlidingWindowLimiter(limit=3, window=60)
