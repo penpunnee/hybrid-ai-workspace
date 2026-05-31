@@ -16,6 +16,16 @@ logger = logging.getLogger(__name__)
 _model_cache: dict[str, bool] = {}
 
 
+def _lmstudio_headers() -> dict:
+    """header สำหรับยิง LM Studio — แนบ Authorization ถ้าตั้ง LMSTUDIO_API_KEY
+    (LM Studio รุ่นใหม่บังคับ token; ไม่งั้น probe 401 → auto-route หลบ lmstudio)"""
+    headers = {"Content-Type": "application/json"}
+    key = os.getenv("LMSTUDIO_API_KEY", "")
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    return headers
+
+
 def _is_model_available(base_url: str, model: str) -> bool:
     """ตรวจว่า model พร้อมใช้งานจริง (cache 60s)"""
     import time, urllib.request, json
@@ -29,7 +39,7 @@ def _is_model_available(base_url: str, model: str) -> bool:
     try:
         req = urllib.request.Request(
             f"{base_url.rstrip('/v1').rstrip('/')}/v1/models",
-            headers={"Content-Type": "application/json"},
+            headers=_lmstudio_headers(),
         )
         resp = urllib.request.urlopen(req, timeout=3)
         data = json.loads(resp.read())
@@ -59,7 +69,7 @@ def _ping_model(base_url: str, model: str) -> bool:
         req = urllib.request.Request(
             f"{base_url}/chat/completions",
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers=_lmstudio_headers(),
             method="POST",
         )
         urllib.request.urlopen(req, timeout=8)

@@ -181,3 +181,30 @@ def test_auto_claude_does_not_steal_internet(monkeypatch):
     monkeypatch.setattr("core.config.GEMINI_API_KEY", "gkey", raising=False)
     d = router.route("ข่าวล่าสุดวันนี้", provider_hint="auto")
     assert d.provider == "gemini_agent"   # internet → Gemini ก่อนถึง Claude
+
+
+# ── Fix #5: LM Studio probe ต้องส่ง LMSTUDIO_API_KEY (รุ่นใหม่บังคับ token) ──
+def test_lmstudio_headers_includes_token(monkeypatch):
+    import reasoning.router as router
+    monkeypatch.setenv("LMSTUDIO_API_KEY", "sk-xyz")
+    assert router._lmstudio_headers().get("Authorization") == "Bearer sk-xyz"
+
+
+def test_lmstudio_headers_no_token(monkeypatch):
+    import reasoning.router as router
+    monkeypatch.delenv("LMSTUDIO_API_KEY", raising=False)
+    assert "Authorization" not in router._lmstudio_headers()
+
+
+def test_ping_model_sends_token(monkeypatch):
+    """ไม่งั้น probe 401 → _is_model_available=False → auto-route หลบ lmstudio เสมอ"""
+    import reasoning.router as router
+    import urllib.request
+    monkeypatch.setenv("LMSTUDIO_API_KEY", "sk-test")
+    captured = {}
+    def fake_urlopen(req, *a, **k):
+        captured["auth"] = req.get_header("Authorization")
+        raise OSError("stop after capture")
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    router._ping_model("http://localhost:1234/v1", "m")
+    assert captured["auth"] == "Bearer sk-test"
