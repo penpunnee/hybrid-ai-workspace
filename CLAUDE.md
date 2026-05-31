@@ -287,4 +287,12 @@ LOG_FILE=server.log
 5. 🧹 **(optional) เพิ่ม quality gate ที่ฝั่ง recall** — ปัจจุบัน gate กันตอน *save*; อาจเสริมกรอง lesson ปนเปื้อนตอน *recall* ด้วย
 6. 🌐 **(optional) detect_home_tools** — แก้ "รัน" ใน `_DOCKER_KW` ให้เจาะจงขึ้น (เช่น "docker รัน", "container รัน")
 
-**Deploy:** ทุก commit อยู่บน `utils/`/`reasoning/`/`assistants/`/`static/` (volume mount) → DSM Task Scheduler `deploy-hybrid-ai` → Run (git fetch + recreate, ไม่ต้อง build). HEAD ล่าสุด = `b9d745d`
+## ✅ Security hardening — scrutinize audit (2026-06-01, deployed+verified prod)
+รัน skill `scrutinize` ทั้งโปรเจกต์ → เจอ+แก้ 5 จุด (TDD, suite 509). **ตรวจแล้วสะอาด:** dream prune (ลบถูกทาง ข้าม verified), code_sandbox (Docker --network none --read-only; local block by default), fs_tools (resolve+relative_to กัน traversal), CORS (specific origins):
+1. 🔴 **fail-closed auth** (`core/auth.py`) — เดิม GET fail-open → vault/documents/skills/feedback/sandbox หลุด public (verified curl 200). แก้เป็น fail-closed (ดู Request Flow). **เพิ่ม endpoint sensitive ใหม่ = ปลอดภัย default ไม่ต้องแก้ denylist**
+2. 🟠 **middleware order** (`server.py`) — register `auth→rate_limit→request_id` (add ทีหลัง=outer) → rate_limit wrap auth เห็น 401 feed lockout. ถ้าเพิ่ม middleware ใหม่ ระวังลำดับนี้
+3. 🟠 **`/api/regenerate`** (`routers/chat.py`) — เคย NameError (`search_memory` ไม่ import) + ลบคำตอบทิ้งก่อน crash. fix import แล้ว + มี test
+4. 🟡 **recall ranking** (`memory/store.py:_rank_results`) — blend `0.5·confidence + 0.5·score` (verified ยัง primary) แทน confidence ล้วน
+5. 🟡 **LM Studio token** (`reasoning/router.py:_lmstudio_headers`) — probe แนบ `LMSTUDIO_API_KEY` (เหมือน orchestrator/embed/llm). **ทุกจุดที่ยิง LM Studio ต้องส่ง token นี้**
+
+**Deploy:** ทุก commit อยู่บน `core/`/`utils/`/`reasoning/`/`routers/`/`memory/`/`agents/`/`server.py`/`static/` (volume mount) → DSM Task Scheduler `deploy-hybrid-ai` → Run (git fetch + recreate, ไม่ต้อง build). HEAD ล่าสุด = `9630d6c`
