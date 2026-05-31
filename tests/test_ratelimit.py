@@ -204,3 +204,20 @@ def test_token_matches_wrong(monkeypatch):
 def test_token_matches_false_when_password_unset(monkeypatch):
     monkeypatch.setattr(auth, "UI_PASSWORD", "")
     assert auth.token_matches("anything") is False
+
+
+# ── middleware ordering (Fix #2) — rate_limit ต้อง wrap auth → เห็น 401 feed lockout ──
+def test_server_middleware_order_outer_to_inner():
+    """server wiring: outer→inner = request_id → rate_limit → auth
+    (Starlette: user_middleware[0] = outermost / เลข index น้อย = outer กว่า).
+    ถ้า auth outer กว่า rate_limit → auth คืน 401 ก่อน rate_limit ถูกเรียก
+    → brute-force lockout + rate-limit ใช้ไม่ได้กับ protected endpoint"""
+    import server
+    dispatches = [getattr(m, "kwargs", {}).get("dispatch") for m in server.app.user_middleware]
+    ri = dispatches.index(server._request_id_middleware)
+    rl_i = dispatches.index(rl.rate_limit_middleware)
+    au = dispatches.index(auth.auth_middleware)
+    assert ri < rl_i < au, (
+        f"middleware order ผิด (เลขน้อย=outer): "
+        f"request_id={ri} rate_limit={rl_i} auth={au}"
+    )

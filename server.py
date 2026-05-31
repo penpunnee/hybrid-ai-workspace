@@ -47,7 +47,6 @@ app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS_LIST,
                    allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 
-@app.middleware("http")
 async def _request_id_middleware(request: Request, call_next):
     """กำหนด request_id + log start/end + timing"""
     # respect client-provided ID (สำหรับ end-to-end tracing) ไม่งั้น generate ใหม่
@@ -71,9 +70,12 @@ async def _request_id_middleware(request: Request, call_next):
 
 
 # ลำดับ (outer→inner): request_id → rate_limit → auth → route
-# rate_limit อยู่นอก auth เพื่อ gate ก่อน + เห็น 401 ของ auth (ไป feed lockout)
-app.middleware("http")(rate_limit_middleware)
-app.middleware("http")(auth_middleware)
+# Starlette: middleware ที่ register ทีหลัง = outermost → register ย้อนลำดับ (inner ก่อน)
+# rate_limit ต้องอยู่ "นอก" auth เพื่อเห็น 401 ของ auth (auth คืน 401 ตรงๆ ไม่เรียก inner)
+# → feed brute-force lockout ได้จริง. request_id นอกสุด → tag ทุก response รวม 401
+app.middleware("http")(auth_middleware)         # innermost
+app.middleware("http")(rate_limit_middleware)   # middle (wrap auth)
+app.middleware("http")(_request_id_middleware)  # outermost
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(auth.router)
