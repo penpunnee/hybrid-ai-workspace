@@ -296,6 +296,24 @@ _PING_KW    = {"ping", "ออนไลน์", "online", "pc ออน", "pc �
 _NAS_KW     = {"nas", "synology", "เนส", "เซิร์ฟเวอร์บ้าน"}
 
 
+# guard กันโมเดล (โดยเฉพาะตัวเล็ก) เอาข้อมูลจริงไปห่อเป็น 'ผล ping ปลอม'
+# วางติดท้ายข้อมูลที่ฉีด → ใกล้ attention โมเดลกว่า system prompt ที่อยู่ไกล
+_TOOL_GUARD = (
+    "\n\n⚠️ [กติกาเหล็กของข้อมูลด้านบน] นี่คือผลจริงทั้งหมดที่ระบบดึงได้ ณ ตอนนี้ — "
+    "ห้ามแต่ง/เดา IP, response time, ผล ping, ชื่ออุปกรณ์ หรือสถานะอื่นที่ไม่มีด้านบนเด็ดขาด. "
+    "อุปกรณ์ที่พี่ปอยถามแต่ไม่มีข้อมูลด้านบน (เช่น router/modem) = ระบบยังไม่ได้เช็ค "
+    "ให้บอกตรงๆ ว่า 'ยังไม่ได้เช็ค <อุปกรณ์>' อย่าสร้างผล ping ปลอมขึ้นมา. "
+    "ตอบโดยอ้างอิงเฉพาะตัวเลขด้านบนเท่านั้น"
+)
+
+
+def _join_with_guard(parts: list[str]) -> str:
+    """รวม parts + แนบ guard ท้ายสุด (ถ้ามีข้อมูล) — แยกเป็น pure fn เพื่อเทสได้"""
+    if not parts:
+        return ""
+    return "\n\n".join(parts) + _TOOL_GUARD
+
+
 def detect_home_tools(prompt: str) -> list[str]:
     """คืน list ของ tools ที่ควรเรียกตาม prompt"""
     p = prompt.lower()
@@ -352,4 +370,4 @@ def build_tool_context(tools: list[str]) -> str:
             lat = f" ({r['latency_ms']:.1f}ms)" if r.get("latency_ms") else ""
             parts.append(f"[PC Status — {PC_IP}] {status}{lat}")
 
-    return "\n\n".join(parts)
+    return _join_with_guard(parts)
