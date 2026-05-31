@@ -100,9 +100,7 @@ def search_entries(assistant: str, query: str, n_results: int = 5,
             "timestamp":  meta.get("timestamp", "") if meta else "",
         })
 
-    # เรียงตาม verified ก่อน แล้วตาม confidence
-    results.sort(key=lambda x: (x["verified"], x["confidence"]), reverse=True)
-    results = results[:n_results]
+    results = _rank_results(results, n_results)
 
     # Step 0: บันทึกการใช้งาน — bump access_count + refresh last_accessed
     # ของ memory ที่ถูก surface จริง (top-k) → ให้ retention policy มีข้อมูล recency/frequency
@@ -114,6 +112,16 @@ def search_entries(assistant: str, query: str, n_results: int = 5,
             logger.debug(f"bump on search skipped: {e}")
 
     return results
+
+
+def _rank_results(results: list[dict], n_results: int) -> list[dict]:
+    """จัดอันดับผลค้นหา: verified ก่อนเสมอ แล้วผสม confidence + semantic score
+    (เดิมเรียง confidence ล้วน → memory มั่นใจสูงแต่ไม่เกี่ยวกับ query เด้งทับตัวที่ relevant จริง)"""
+    results.sort(
+        key=lambda x: (x["verified"], 0.5 * x.get("confidence", 0.0) + 0.5 * x.get("score", 0.0)),
+        reverse=True,
+    )
+    return results[:n_results]
 
 
 def update_confidence(assistant: str, content_snippet: str, new_confidence: float) -> bool:

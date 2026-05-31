@@ -299,3 +299,27 @@ def test_get_memory_summary_no_client(monkeypatch):
     monkeypatch.setattr(store, "_get_chroma_client", lambda: None)
     summary = ops.get_memory_summary("logic")
     assert summary["available"] is False and summary["episodic"] == 0
+
+
+# ── _rank_results (Fix #4) — ranking ต้องผสม semantic score ไม่ใช่ confidence ล้วน ──
+def test_rank_results_blends_semantic_score():
+    """เดิม sort confidence ล้วน → memory มั่นใจสูงแต่ไม่ relevant เด้งทับ relevant"""
+    results = [
+        {"id": "hi_conf", "verified": False, "confidence": 0.95, "score": 0.10},
+        {"id": "relevant", "verified": False, "confidence": 0.60, "score": 0.95},
+    ]
+    ranked = store._rank_results(list(results), n_results=2)
+    assert ranked[0]["id"] == "relevant"   # blended score สูงชนะ (เดิม hi_conf ชนะ)
+
+
+def test_rank_results_verified_always_first():
+    results = [
+        {"id": "unv", "verified": False, "confidence": 0.9, "score": 0.9},
+        {"id": "ver", "verified": True, "confidence": 0.5, "score": 0.2},
+    ]
+    assert store._rank_results(list(results), 2)[0]["id"] == "ver"
+
+
+def test_rank_results_truncates_to_n():
+    results = [{"id": str(i), "verified": False, "confidence": 0.5, "score": 0.5} for i in range(5)]
+    assert len(store._rank_results(results, 3)) == 3
