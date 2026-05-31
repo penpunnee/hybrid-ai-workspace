@@ -20,6 +20,7 @@ from memory.operations import remember, recall, teach, push_working
 from utils.skills import search_skills
 from utils.obsidian_sync import search_vault
 from utils.home_tools import detect_home_tools, build_tool_context
+from reasoning.learn_gate import should_auto_learn
 from utils.tts import VOICE_MAP, DEFAULT_VOICE
 from utils.tokens import count_tokens_approx
 from core.observability import log_timing, current_request_id, get_timings
@@ -375,7 +376,10 @@ async def chat(request: Request):
         remember(assistant, prompt, full_response)
         teach(assistant, prompt, ai_response=full_response)
 
-        if len(full_response) > 100:
+        _learn_ok, _learn_reason = should_auto_learn(prompt)
+        if not _learn_ok:
+            logger.info(f"[Chat/auto-learn] skip lesson — reason={_learn_reason}")
+        if len(full_response) > 100 and _learn_ok:
             def _learn(p=prompt, r=full_response, pv=provider_used):
                 try:
                     msgs = [
