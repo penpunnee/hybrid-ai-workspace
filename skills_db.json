@@ -70,5 +70,29 @@
     "summary": "คู่มือการใช้งานระบบ Hybrid AI Workspace - รวมการตั้งค่าและการใช้งาน",
     "source": "system-manual",
     "created_at": "2026-05-07"
+  },
+  "Anti-Hallucination Local LLM": {
+    "topic": "Anti-Hallucination Local LLM",
+    "summary": "กันโมเดลเล็ก (llama3) กุข้อมูล real-time — 4 ชั้น: system prompt guard (_NO_FABRICATION), tool-adjacent guard (_TOOL_GUARD), quality gate (should_auto_learn), ป้อนข้อมูลจริง. prompt-based มีเพดาน ปิดสนิทต้อง Agent mode (narration→execution)",
+    "source": "anti-hallucination-local-llm",
+    "created_at": "2026-05-31"
+  },
+  "Memory Contamination Quality Gate": {
+    "topic": "Memory Contamination Quality Gate",
+    "summary": "self-learning ที่ไม่มี gate = ยิ่งใช้ยิ่งโง่: คำตอบกุถูก auto-save เป็น lesson → recall กลับมา prime กุซ้ำ (feedback loop). แก้ด้วย reasoning/learn_gate.py:should_auto_learn() กัน negative_feedback + realtime_home_tool",
+    "source": "anti-hallucination-local-llm",
+    "created_at": "2026-05-31"
+  },
+  "Agent Mode vs Narration": {
+    "topic": "Agent Mode vs Narration",
+    "summary": "สถาปัตยกรรม 2 แบบ: narration (โมเดลเล่าผล=กุได้) vs execution/Agent (รัน tool จริง โชว์ผลดิบ=กุไม่ได้). งานต้องการความถูกต้องเป๊ะ (ping/ราคา) ใช้ Agent mode. ต้อง wire home tools เข้า agents/tools.py:TOOL_REGISTRY",
+    "source": "anti-hallucination-local-llm",
+    "created_at": "2026-05-31"
+  },
+  "Home Network Ping Real": {
+    "topic": "Home Network Ping Real",
+    "summary": "ping_network tool ใน utils/home_tools.py: ping Router(_default_gateway=.1)+NAS+PC จริงด้วย TCP check เมื่อ prompt มี router/เครือข่าย/network. build_tool_context แนบ _TOOL_GUARD กันแต่งผล. endpoint จริง prefix /api/tools/home/ping/{ip}",
+    "source": "home-network-tools-nas-wol",
+    "created_at": "2026-05-31"
   }
 }

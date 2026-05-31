@@ -11,6 +11,7 @@ NAS_USER=...
 NAS_PASS=...
 PC_IP=192.168.51.235
 PC_MAC=xx:xx:xx:xx:xx:xx   # สำหรับ Wake-on-LAN
+ROUTER_IP=             # ไม่ตั้ง = เดาจาก subnet ของ NAS_IP (x.y.z.1) ผ่าน _default_gateway()
 ```
 
 ## ฟังก์ชันหลัก
@@ -22,7 +23,9 @@ PC_MAC=xx:xx:xx:xx:xx:xx   # สำหรับ Wake-on-LAN
 | `nas_system_info()` | CPU, RAM, uptime, temp | DSM `SYNO.Core.System` |
 | `home_status_all()` | รวมทุกอย่างใน 1 call | combined |
 | `wol_pc()` | ปลุก PC ผ่าน WOL magic packet | UDP broadcast :9 |
-| `ping_device(ip)` | ping/jitter check | `subprocess: ping` |
+| `ping_device(ip)` | online check (generic, ใช้ IP ไหนก็ได้) | **TCP port check** (3389/445/80/22/443/135) — ไม่ใช้ ICMP (ไม่ต้อง CAP_NET_RAW) |
+| `ping_network` (tool) | ping **Router+NAS+PC พร้อมกัน** จริง | เรียก `ping_device` ×3 → `_format_ping_results()` |
+| `_default_gateway(ip)` | เดา router IP จาก subnet (x.y.z.1) | pure |
 
 ## Auto-injection ใน Chat
 
@@ -33,20 +36,30 @@ PC_MAC=xx:xx:xx:xx:xx:xx   # สำหรับ Wake-on-LAN
 | nas, ดิสก์, disk, storage, volume | `nas_disk_usage` |
 | docker, container | `nas_docker_status` |
 | ระบบ, system, cpu, ram | `nas_system_info` |
-| pc, คอม, เปิดเครื่อง, wake | `wol_pc` หรือ `ping` |
-| ping, ตอบไหม, online | `ping_device` |
+| pc, คอม, เปิดเครื่อง, wake | `wol` |
+| **router, เราเตอร์, เครือข่าย, network, modem, gateway** | **`ping_network`** (ping router+NAS+PC จริง) |
+| ping, ออนไลน์, online (ไม่มี network kw) | `ping_pc` (PC อย่างเดียว) |
 
 → ถ้าตรวจเจอ → `build_tool_context()` รวมผลลัพธ์ → inject เข้า system prompt ก่อนเรียก AI
+
+## ⚠️ Anti-fabrication guard (สำคัญ — session 2026-05-31)
+`build_tool_context()` ต่อท้ายข้อมูลที่ฉีดทุกครั้งด้วย **`_TOOL_GUARD`** (ผ่าน `_join_with_guard`):
+> "นี่คือผลจริงทั้งหมด — ห้ามแต่ง IP/ping/คำสั่ง/output สมมติ, อุปกรณ์ที่ไม่มีข้อมูล = 'ยังไม่ได้เช็ค'"
+
+เพราะโมเดลเล็กชอบเอาข้อมูลจริงไป **ห่อเป็นผล ping ปลอม** (เช่น `time=0.048ms` สมมติ).
+guard ติดข้อมูล (ใกล้ attention) ได้ผลกว่า system prompt. **แต่ปิดไม่ได้ 100%** บนโมเดลเล็ก
+→ งานที่ต้องการเป๊ะ ใช้ Agent mode (ดู `anti-hallucination-local-llm`)
 
 ## REST Endpoints
 
 ```
-GET  /api/tools/disk        → nas_disk_usage()
-GET  /api/tools/docker      → nas_docker_status()
-GET  /api/tools/sysinfo     → nas_system_info()
-GET  /api/tools/ping/{ip}   → ping_device(ip)
-POST /api/tools/wol         → wol_pc()
+GET  /api/tools/home/disk        → nas_disk_usage()
+GET  /api/tools/home/docker      → nas_docker_status()
+GET  /api/tools/home/sysinfo     → nas_system_info()
+GET  /api/tools/home/ping/{ip}   → ping_device(ip)   ← มีอยู่แล้ว! ใช้ wire เข้า Agent ได้เลย
+POST /api/tools/home/wol         → wol_pc()
 ```
+(prefix จริง = `/api/tools/home` — เดิม doc เขียน `/api/tools` ผิด)
 
 ## Error Handling
 
