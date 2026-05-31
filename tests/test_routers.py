@@ -98,3 +98,21 @@ def test_documents_list_degrades_gracefully():
 def test_config_endpoint():
     r = client.get("/api/config")
     assert r.status_code == 200
+
+
+# ── POST /api/regenerate (Fix #3) — เดิม NameError(search_memory) + ลบคำตอบทิ้ง ──
+def test_regenerate_no_nameerror(monkeypatch):
+    """เดิม /api/regenerate เรียก search_memory ที่ไม่ถูก import → NameError 500
+    + delete_last_assistant_message รันไปแล้ว = คำตอบหายถาวร. ต้อง regen ได้จริง"""
+    import routers.chat as chat
+    from utils.history import save_message
+    save_message("kwan", "user", "q-regen", "ollama", "regen_sess")
+    save_message("kwan", "assistant", "old-answer", "ollama", "regen_sess")
+    # mock LLM อย่างเดียว — search_memory ปลอดภัยเองเมื่อไม่มี ChromaDB (คืน "")
+    monkeypatch.setattr(chat, "stream_response", lambda *a, **k: iter(["REGEN_OK"]))
+    r = client.post("/api/regenerate", json={
+        "assistant": "kwan", "session_id": "regen_sess", "provider": "ollama",
+    })
+    assert r.status_code == 200
+    assert "REGEN_OK" in r.text
+    assert "NameError" not in r.text and '"error"' not in r.text

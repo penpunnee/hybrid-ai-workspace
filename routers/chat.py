@@ -15,7 +15,7 @@ from utils.history import (
     save_message, load_history, delete_last_assistant_message,
     get_last_user_message,
 )
-from utils.memory import save_lesson, save_preference, get_lessons, get_preferences
+from utils.memory import save_lesson, save_preference, get_lessons, get_preferences, search_memory
 from memory.operations import remember, recall, teach, push_working
 from utils.skills import search_skills
 from utils.obsidian_sync import search_vault
