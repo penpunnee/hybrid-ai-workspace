@@ -14,6 +14,17 @@ PC_IP    = os.getenv("PC_IP",    "192.168.51.235")
 PC_MAC   = os.getenv("PC_MAC",   "")   # xx:xx:xx:xx:xx:xx
 
 
+def _default_gateway(ip: str) -> str:
+    """เดา router/gateway จาก subnet (x.y.z.1) — ใช้เมื่อไม่ตั้ง ROUTER_IP"""
+    parts = ip.split(".")
+    if len(parts) == 4 and all(p.isdigit() for p in parts):
+        return ".".join(parts[:3] + ["1"])
+    return ip
+
+
+ROUTER_IP = os.getenv("ROUTER_IP", _default_gateway(NAS_IP))
+
+
 # ── Synology DSM Session ──────────────────────────────────────────────────────
 
 def _nas_login() -> str | None:
@@ -294,6 +305,8 @@ _DOCKER_KW  = {"docker", "container", "คอนเทนเนอร์", "serv
 _WOL_KW     = {"เปิด pc", "เปิดpc", "wake", "wol", "ปลุก", "เปิดคอม"}
 _PING_KW    = {"ping", "ออนไลน์", "online", "pc ออน", "pc เปิด", "pcเปิด", "pc อยู่ไหม"}
 _NAS_KW     = {"nas", "synology", "เนส", "เซิร์ฟเวอร์บ้าน"}
+# ถามถึงเครือข่าย/router → ping ทั้ง router+NAS+PC จริง (แทนการให้โมเดลเดา)
+_NETWORK_KW = {"router", "เราเตอร์", "เครือข่าย", "network", "modem", "โมเด็ม", "gateway", "อุปกรณ์ในเครือข่าย"}
 
 
 # guard กันโมเดล (โดยเฉพาะตัวเล็ก) เอาข้อมูลจริงไปห่อเป็น 'ผล ping ปลอม'
@@ -305,6 +318,18 @@ _TOOL_GUARD = (
     "ให้บอกตรงๆ ว่า 'ยังไม่ได้เช็ค <อุปกรณ์>' อย่าสร้างผล ping ปลอมขึ้นมา. "
     "ตอบโดยอ้างอิงเฉพาะตัวเลขด้านบนเท่านั้น"
 )
+
+
+def _format_ping_results(results: list[dict]) -> str:
+    """format ผล ping จริงเป็น context (results = [{name, ip, online, latency_ms?}])"""
+    lines = ["[ผล ping จริง — TCP check ณ ตอนนี้]"]
+    for r in results:
+        if r.get("online"):
+            lat = f" ({r['latency_ms']}ms)" if r.get("latency_ms") is not None else ""
+            lines.append(f"• {r['name']} ({r['ip']}): 🟢 Online{lat}")
+        else:
+            lines.append(f"• {r['name']} ({r['ip']}): 🔴 ไม่ตอบสนอง (offline หรือ block port)")
+    return "\n".join(lines)
 
 
 def _join_with_guard(parts: list[str]) -> str:
@@ -324,7 +349,10 @@ def detect_home_tools(prompt: str) -> list[str]:
         tools.append("docker")
     if any(kw in p for kw in _WOL_KW):
         tools.append("wol")
-    if any(kw in p for kw in _PING_KW):
+    # network → ping router+NAS+PC จริง; ไม่งั้น ping PC อย่างเดียว (กัน ping ซ้ำ)
+    if any(kw in p for kw in _NETWORK_KW):
+        tools.append("ping_network")
+    elif any(kw in p for kw in _PING_KW):
         tools.append("ping_pc")
     return tools
 
@@ -369,5 +397,15 @@ def build_tool_context(tools: list[str]) -> str:
             status = "🟢 Online" if r["online"] else "🔴 Offline"
             lat = f" ({r['latency_ms']:.1f}ms)" if r.get("latency_ms") else ""
             parts.append(f"[PC Status — {PC_IP}] {status}{lat}")
+
+        elif tool == "ping_network":
+            results = []
+            for name, ip in [("Router", ROUTER_IP), ("NAS", NAS_IP), ("PC", PC_IP)]:
+                r = ping_device(ip)
+                results.append({
+                    "name": name, "ip": ip,
+                    "online": r.get("online", False), "latency_ms": r.get("latency_ms"),
+                })
+            parts.append(_format_ping_results(results))
 
     return _join_with_guard(parts)
