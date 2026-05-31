@@ -26,6 +26,12 @@ def test_guard_forbids_fabrication_and_points_to_honesty():
     assert "ยังไม่ได้เช็ค" in _TOOL_GUARD
 
 
+def test_guard_forbids_example_commands_and_output():
+    """guard ต้องห้ามโชว์คำสั่ง/ตัวอย่าง output สมมติ (กัน 'ping -c 3 ... time=0.048ms' ปลอม)"""
+    assert "ตัวอย่าง" in _TOOL_GUARD
+    assert "คำสั่ง" in _TOOL_GUARD or "output" in _TOOL_GUARD or "โค้ด" in _TOOL_GUARD
+
+
 def test_multiple_parts_joined_then_guard():
     parts = ["[NAS Disk — 192.168.51.49] ...", "[PC Status — 192.168.51.235] 🟢"]
     out = _join_with_guard(parts)
