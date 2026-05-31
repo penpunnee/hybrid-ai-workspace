@@ -45,7 +45,7 @@ docker compose logs hybrid-ai -f
 
 ### Request Flow (`/api/chat`)
 1. Middleware ใน `server.py` → gen `X-Request-Id` + log timing
-2. Auth middleware: LAN IPs (192.168.x, 10.x, 127.x) bypass; Cloudflare requires `x-auth-token`
+2. Auth middleware (`core/auth.py`): **fail-closed** — ทุก request ต้อง `x-auth-token` เว้นแต่อยู่ใน `_OPEN_PATHS`/`_OPEN_PREFIXES` (/, config, status, health, auth/*, /static, /shared, /api/shared, /ws). LAN/loopback peer IP bypass (`is_local_request`, spoof-resistant). **เพิ่ม endpoint sensitive ใหม่ = ปลอดภัยโดย default** (ไม่ต้องไป maintain denylist). middleware order (outer→inner): request_id → rate_limit → auth (rate_limit wrap auth เพื่อเห็น 401 → feed brute-force lockout)
 3. `routers/chat.py:chat()` builds context (ดู Context Assembly ด้านล่าง)
 4. Stream SSE: `chunk` (incremental) + `citations` + `reflection` + `cache_hit` + `active_learning` + `done`
 

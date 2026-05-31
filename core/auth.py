@@ -14,15 +14,12 @@ def token_matches(provided: str) -> bool:
         return False
     return hmac.compare_digest(str(provided or ""), str(UI_PASSWORD))
 
-_OPEN_PATHS = {"/", "/api/config", "/api/status", "/api/auth/check", "/api/auth/login"}
-_OPEN_PREFIXES = ("/static", "/assets", "/shared", "/ws")
-_WRITE_METHODS = {"POST", "PATCH", "DELETE", "PUT"}
-_PROTECTED_GET_PREFIXES = (
-    "/api/history/", "/api/export/", "/api/pinned/",
-    "/api/memory/", "/api/sessions/", "/api/dream/",
-    "/api/tools/home/", "/api/cache/", "/api/routing/",
-    "/api/digest", "/api/search", "/api/stats",
-)
+# fail-closed: ทุก request ต้อง token เว้นแต่อยู่ใน open allowlist นี้
+# (เดิม fail-open สำหรับ GET ที่ไม่ตรง denylist → endpoint ใหม่/ที่ตกหล่นหลุด public)
+# /api/shared = public share link (token อยู่ใน URL), /api/health = monitoring probe
+_OPEN_PATHS = {"/", "/api/config", "/api/status", "/api/health",
+               "/api/auth/check", "/api/auth/login"}
+_OPEN_PREFIXES = ("/static", "/assets", "/shared", "/api/shared", "/ws")
 
 
 def _ip_is_private(ip_str: str) -> bool:
@@ -59,9 +56,6 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
     if is_local_request(request):
         return await call_next(request)
-    if request.method not in _WRITE_METHODS:
-        if not any(path.startswith(p) for p in _PROTECTED_GET_PREFIXES):
-            return await call_next(request)
     token = request.headers.get("x-auth-token", "")
     if token_matches(token):
         return await call_next(request)

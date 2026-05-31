@@ -134,8 +134,31 @@ def test_middleware_protected_get_requires_token(monkeypatch):
     assert getattr(resp, "status_code", None) == 401
 
 
-def test_middleware_unprotected_get_allowed_for_public(monkeypatch):
-    """GET ที่ไม่อยู่ใน protected prefixes → public อ่านได้โดยไม่ต้อง token"""
+def test_middleware_sensitive_get_requires_token_failclosed(monkeypatch):
+    """fail-closed: GET ที่ไม่ใช่ open path จาก public → ต้องมี token
+    (เดิม fail-open: vault/documents/skills/feedback/sandbox หลุดโดยไม่ต้อง token = ช่องโหว่)"""
     monkeypatch.setattr(auth, "UI_PASSWORD", "secret")
-    req = _FakeRequest(path="/api/skills", method="GET", host="8.8.8.8")
+    for path in ("/api/skills", "/api/vault/stats", "/api/vault/search",
+                 "/api/documents", "/api/feedback/low-rated", "/api/sandbox/info",
+                 "/api/agent/tools"):
+        req = _FakeRequest(path=path, method="GET", host="8.8.8.8")
+        resp = _run_mw(req)
+        assert getattr(resp, "status_code", None) == 401, f"{path} ควร 401 (fail-closed)"
+
+
+def test_middleware_open_get_paths_allowed_public(monkeypatch):
+    """open allowlist ยังเปิด public ได้ (bootstrap UI + public share link)"""
+    monkeypatch.setattr(auth, "UI_PASSWORD", "secret")
+    for path in ("/", "/api/status", "/api/config", "/api/health",
+                 "/api/auth/check", "/api/shared/abc123", "/shared/abc123",
+                 "/static/index.js"):
+        req = _FakeRequest(path=path, method="GET", host="8.8.8.8")
+        assert _run_mw(req) == "PASSED", f"{path} ควรเปิด public"
+
+
+def test_middleware_sensitive_get_with_token_ok(monkeypatch):
+    """GET sensitive + token ถูก → ผ่าน"""
+    monkeypatch.setattr(auth, "UI_PASSWORD", "secret")
+    req = _FakeRequest(path="/api/vault/search", method="GET", host="8.8.8.8",
+                       headers={"x-auth-token": "secret"})
     assert _run_mw(req) == "PASSED"
