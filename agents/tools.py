@@ -186,6 +186,65 @@ def _t_fs_search(pattern: str, path: str = "", file_glob: str = "*") -> str:
     return "\n".join(lines)
 
 
+def _t_nas_disk() -> str:
+    """พื้นที่ดิสก์ NAS จริง (Synology API)"""
+    from utils.home_tools import nas_disk_usage
+    r = nas_disk_usage()
+    if r.get("error"):
+        return f"❌ {r['error']}"
+    vols = r.get("volumes", [])
+    if not vols:
+        return f"NAS {r.get('nas_ip', '')} ตอบ แต่ไม่มีข้อมูล volume"
+    lines = [f"NAS Disk ({r.get('nas_ip', '')}):"]
+    for v in vols:
+        lines.append(
+            f"• {v['path']}: ใช้ {v['used_gb']}/{v['total_gb']}GB "
+            f"({v['percent']}%) | เหลือ {v['free_gb']}GB | {v['status']}"
+        )
+    return "\n".join(lines)
+
+
+def _t_nas_docker() -> str:
+    """รายการ container บน NAS จริง (Synology Docker API / docker ps)"""
+    from utils.home_tools import nas_docker_status
+    r = nas_docker_status()
+    if r.get("error"):
+        return f"❌ {r['error']}"
+    cs = r.get("containers", [])
+    if not cs:
+        return f"NAS {r.get('nas_ip', '')} ตอบ แต่ไม่พบ container"
+    lines = [f"Docker บน NAS ({r.get('nas_ip', '')}):"]
+    for c in cs:
+        icon = "🟢" if c["running"] else "🔴"
+        lines.append(f"• {icon} {c['name']} ({c['status']})")
+    return "\n".join(lines)
+
+
+def _t_ping_network() -> str:
+    """ping Router+NAS+PC จริง (TCP check) — คืนผลดิบ ไม่ให้โมเดลเดา"""
+    from utils.home_tools import ping_network, _format_ping_results
+    return _format_ping_results(ping_network())
+
+
+def _t_ping_device(ip: str) -> str:
+    """ping device ตาม IP จริง (TCP check)"""
+    from utils.home_tools import ping_device
+    r = ping_device(ip)
+    if r.get("online"):
+        lat = f" ({r['latency_ms']}ms, port {r.get('port')})" if r.get("latency_ms") is not None else ""
+        return f"🟢 {ip} online{lat}"
+    return f"🔴 {ip} ไม่ตอบสนอง (offline หรือ block port)"
+
+
+def _t_wol_pc() -> str:
+    """ส่ง Wake-on-LAN ปลุก PC"""
+    from utils.home_tools import wol_pc
+    r = wol_pc()
+    if r.get("error"):
+        return f"❌ {r['error']}"
+    return f"✅ {r.get('message', 'ส่ง WoL แล้ว')}"
+
+
 # ── Registry ─────────────────────────────────────────────────────────────────
 
 TOOL_REGISTRY: dict[str, dict[str, Any]] = {
@@ -361,6 +420,49 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
             "required": ["pattern"],
         },
         "fn": _t_fs_search,
+    },
+    "nas_disk": {
+        "description": (
+            "ดึงพื้นที่ดิสก์ NAS Synology จริง (used/total/free/percent ต่อ volume) "
+            "ใช้เมื่อถามพื้นที่/ดิสก์/storage เต็ม-เหลือ ของ NAS — คืนตัวเลขจริง"
+        ),
+        "parameters": {"type": "object", "properties": {}, "required": []},
+        "fn": _t_nas_disk,
+    },
+    "nas_docker": {
+        "description": (
+            "ดึงรายการ Docker container บน NAS จริง (ชื่อ + สถานะ running/stopped) "
+            "ใช้เมื่อถามว่า container/service ตัวไหนรันอยู่บน NAS"
+        ),
+        "parameters": {"type": "object", "properties": {}, "required": []},
+        "fn": _t_nas_docker,
+    },
+    "ping_network": {
+        "description": (
+            "ping Router + NAS + PC จริงพร้อมกัน (TCP check) คืนสถานะ online/offline + latency จริง "
+            "ใช้เมื่อถามว่าเครือข่าย/router/อุปกรณ์ในบ้าน online ไหม — อย่าเดาเอง เรียกอันนี้"
+        ),
+        "parameters": {"type": "object", "properties": {}, "required": []},
+        "fn": _t_ping_network,
+    },
+    "ping_device": {
+        "description": (
+            "ping device ตาม IP ที่ระบุจริง (TCP check) คืน online/offline + latency "
+            "ใช้เมื่อถามว่าเครื่องที่ IP หนึ่งๆ ออนไลน์ไหม"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ip": {"type": "string", "description": "IP address เช่น 192.168.51.49"},
+            },
+            "required": ["ip"],
+        },
+        "fn": _t_ping_device,
+    },
+    "wol_pc": {
+        "description": "ส่ง Wake-on-LAN ปลุก PC ให้เปิดเครื่อง (ต้องตั้ง PC_MAC ใน .env)",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+        "fn": _t_wol_pc,
     },
 }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """mcp_server.py — expose Hybrid AI Workspace tools ผ่าน MCP (stdio)
 
-wrap `agents.tools.TOOL_REGISTRY` (13 tools) เป็น MCP tools ให้ Claude Code / IDE
+wrap `agents.tools.TOOL_REGISTRY` (18 tools) เป็น MCP tools ให้ Claude Code / IDE
 อื่นเรียกใช้ — ไม่เขียน tool ซ้ำ, dispatch ไป `execute_tool()` เดิมตรงๆ
 
 รัน (Claude Code จะ launch เป็น subprocess ผ่าน stdio):

@@ -20,10 +20,13 @@ logger = logging.getLogger(__name__)
 # Agent (function calling) ต้องการ LM Studio — opt-in ผ่าน LMSTUDIO_BASE_URL
 _LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "")
 _LMSTUDIO_TIMEOUT = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
+# LM Studio รุ่นใหม่บังคับ token — อ่านจาก env ให้ตรงกับ utils/llm.py + embed.py
+# (ไม่งั้น dummy "lmstudio" โดน reject "API token required" → agent path ตายก่อนเรียก tool)
+_LMSTUDIO_API_KEY = os.getenv("LMSTUDIO_API_KEY", "lmstudio")
 
 _client = OpenAI(
     base_url=_LMSTUDIO_BASE_URL or "http://localhost:1234/v1",
-    api_key="lmstudio",
+    api_key=_LMSTUDIO_API_KEY,
     timeout=_LMSTUDIO_TIMEOUT,
 )
 
@@ -36,11 +39,16 @@ AGENT_SYSTEM_HINT = (
     "- memory_recall: ค้นความทรงจำเก่า\n"
     "- current_time: เวลาปัจจุบัน\n"
     "- calculator: คำนวณตัวเลข\n"
-    "- skill_search / obsidian_search: ค้นความรู้ส่วนตัว\n\n"
+    "- skill_search / obsidian_search: ค้นความรู้ส่วนตัว\n"
+    "- run_python / fs_list / fs_read / fs_write / fs_search: รันโค้ด + จัดการไฟล์ใน sandbox\n"
+    "- ping_network: ping Router+NAS+PC จริง | ping_device: ping IP จริง\n"
+    "- nas_disk: พื้นที่ดิสก์ NAS | nas_docker: container บน NAS | wol_pc: ปลุก PC\n\n"
     "**กฎ:**\n"
     "1. ถ้าต้องการข้อมูลปัจจุบัน/จริง → เรียก tool\n"
     "2. ถ้าเป็นคำถามทั่วไปที่รู้อยู่แล้ว → ตอบตรงๆ ไม่ต้อง tool\n"
-    "3. หลังได้ผลจาก tool → สรุปคำตอบจากข้อมูลจริงเท่านั้น ห้ามแต่ง\n"
+    "3. **คำถามสถานะ network/router/NAS/disk/container/อุปกรณ์ออนไลน์ → ต้องเรียก tool เสมอ "
+    "ห้ามเดา/แต่งผลเอง** (มี ping_network/nas_disk/nas_docker ให้ใช้)\n"
+    "4. หลังได้ผลจาก tool → สรุปคำตอบจากข้อมูลจริงเท่านั้น ห้ามแต่ง\n"
 )
 
 

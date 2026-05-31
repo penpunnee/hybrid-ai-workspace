@@ -1,6 +1,6 @@
 # MCP Server Export — เปิด tools ให้ Claude Code / IDE อื่น
 
-`mcp_server.py` เปิด **13 tools** ของ Hybrid AI Workspace (จาก `agents/tools.py` `TOOL_REGISTRY`)
+`mcp_server.py` เปิด **18 tools** ของ Hybrid AI Workspace (จาก `agents/tools.py` `TOOL_REGISTRY`)
 ผ่าน Model Context Protocol แบบ **stdio** — wrap `execute_tool()` เดิม ไม่เขียน tool ซ้ำ
 
 ## ติดตั้ง

@@ -322,6 +322,18 @@ _TOOL_GUARD = (
 )
 
 
+def ping_network() -> list[dict]:
+    """ping Router+NAS+PC จริง → [{name, ip, online, latency_ms}] (ใช้ทั้ง narration + agent tool)"""
+    results = []
+    for name, ip in [("Router", ROUTER_IP), ("NAS", NAS_IP), ("PC", PC_IP)]:
+        r = ping_device(ip)
+        results.append({
+            "name": name, "ip": ip,
+            "online": r.get("online", False), "latency_ms": r.get("latency_ms"),
+        })
+    return results
+
+
 def _format_ping_results(results: list[dict]) -> str:
     """format ผล ping จริงเป็น context (results = [{name, ip, online, latency_ms?}])"""
     lines = ["[ผล ping จริง — TCP check ณ ตอนนี้]"]
@@ -401,13 +413,6 @@ def build_tool_context(tools: list[str]) -> str:
             parts.append(f"[PC Status — {PC_IP}] {status}{lat}")
 
         elif tool == "ping_network":
-            results = []
-            for name, ip in [("Router", ROUTER_IP), ("NAS", NAS_IP), ("PC", PC_IP)]:
-                r = ping_device(ip)
-                results.append({
-                    "name": name, "ip": ip,
-                    "online": r.get("online", False), "latency_ms": r.get("latency_ms"),
-                })
-            parts.append(_format_ping_results(results))
+            parts.append(_format_ping_results(ping_network()))
 
     return _join_with_guard(parts)

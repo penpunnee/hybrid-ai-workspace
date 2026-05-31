@@ -31,8 +31,8 @@ narration (ตอนนี้):  ข้อมูลจริง → ฉีด te
 execution (Agent):   [โมเดลเรียก tool] → ระบบรันจริง → โชว์ผลดิบ → [โมเดลสรุปสั้น]  ← กุไม่ได้
 ```
 ความจริงมาจาก **การ execute tool** ไม่ใช่การพิมพ์ → โมเดลกุไม่ได้
-**งานที่ค้าง:** wire home tools (ping/disk/docker) เข้า `agents/tools.py:TOOL_REGISTRY`
-(ปัจจุบัน Agent มี 13 tools แต่ไม่มี ping/home — มีแต่ API endpoint ลอยอยู่)
+**✅ ทำแล้ว:** wire home tools เข้า `agents/tools.py:TOOL_REGISTRY` แล้ว —
+`nas_disk`/`nas_docker`/`ping_network`/`ping_device`/`wol_pc` (Agent mode รันจริง โชว์ผลดิบ)
 
 ## วิธี debug ที่ได้ผล
 - **verify บน production จริงด้วย ground truth** — ยิง `/api/chat` ตรง (LAN bypass auth)

@@ -141,7 +141,7 @@ Ollama branch: context cap 2000 chars; trim history to <3000 tokens.
 **Phase D — Multi-modal Agent**
 - `utils/code_sandbox.py` — Python in Docker / subprocess sandbox
 - `utils/fs_tools.py` — whitelist-restricted FS ops
-- `agents/tools.py` — tool registry (includes `run_python`, `fs_*`)
+- `agents/tools.py` — tool registry (18 tools: web/wiki/memory/`run_python`/`fs_*` + home: `nas_disk`/`nas_docker`/`ping_network`/`ping_device`/`wol_pc`)
 
 **Phase E — Performance**
 - `utils/embed.py` — LMStudio embed + sqlite persistent cache + LRU
@@ -279,7 +279,8 @@ LOG_FILE=server.log
 
 ## สิ่งที่จะทำต่อ (Next Steps)
 **ลำดับความสำคัญ — งานที่ค้าง/ต่อยอดได้:**
-1. 🏛️ **[สถาปัตยกรรม] wire home tools เข้า Agent registry** — ปัจจุบัน Agent มี 13 tools แต่**ไม่มี ping/disk/docker** (มีแต่ API endpoint + ฟังก์ชันใน `utils/home_tools.py` ลอยอยู่). เป้าหมาย: wrap เป็น agent tools ลงทะเบียนใน `agents/tools.py:TOOL_REGISTRY` → Agent mode รัน ping/disk จริง **แสดงผลดิบ = ปิด hallucination 100%** (วิธีเดียวที่ปิดสนิทบนโมเดลเล็ก). *นี่คือ "การเปลี่ยนสถาปัตยกรรม narration→execution" ที่คุยกันไว้*
+1. ✅ **[สถาปัตยกรรม] wire home tools เข้า Agent registry — เสร็จแล้ว** — `agents/tools.py:TOOL_REGISTRY` มี 18 tools แล้ว (เพิ่ม `nas_disk`/`nas_docker`/`ping_network`/`ping_device`/`wol_pc` wrap จาก `utils/home_tools.py`). Agent mode รัน ping/disk/docker จริง **แสดงผลดิบ = ปิด hallucination** (เปลี่ยน narration→execution). `ping_network()` ถูก extract เป็นฟังก์ชันใน home_tools ใช้ร่วมทั้ง narration path + agent tool
+   - ⚠️ **เงื่อนไขสำคัญ:** agent loop (`agents/orchestrator.py`) รันบน **LM Studio เท่านั้น** (hardcode client) — ปิด hallucination ได้จริงเฉพาะตอน LM Studio ใช้ได้ + โมเดลเลือกเรียก tool. แก้แล้ว 2 จุดให้ทำงานจริง: orchestrator อ่าน `LMSTUDIO_API_KEY` จาก env (เดิม hardcode dummy → LM Studio รุ่นใหม่ reject) + `AGENT_SYSTEM_HINT` โฆษณา home tools ครบ (เดิมไม่ลิสต์ → โมเดลเล็กไม่เรียก แล้วเดา). คำถาม network/NAS ทั่วไป (non-agent) ยังพึ่ง narration guard (4 ชั้น) ที่ทำงานทุก provider
 2. 🔑 **ตั้ง `ANTHROPIC_API_KEY` ใน NAS `.env`** → recreate (ปุ่ม Claude/auto ถึงตอบจริง; default = `claude-sonnet-4-6`, max_tokens 4096)
 3. 💾 **ตั้ง DSM task `db_backup.sh`** รายวัน 03:30 (user=root) — กัน feedback หาย
 4. 👍 **สะสม feedback** ~200-500 เพื่อ fine-tune (หรือ bootstrap ด้วย `scripts/gen_seed_sft.py`) → รัน `scripts/improve_loop.sh` บน PC GPU (`.235`, RTX 3060)

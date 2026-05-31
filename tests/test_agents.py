@@ -82,6 +82,67 @@ def test_execute_tool_clamps_length(monkeypatch):
     assert len(out) == 5000
 
 
+# ── home/network tools (wired จาก utils.home_tools → ปิด hallucination ใน agent) ─
+def test_home_tools_registered():
+    # ping/disk/docker/wol ต้องอยู่ใน registry → Agent mode รันจริงได้ แสดงผลดิบ
+    for name in ("nas_disk", "nas_docker", "ping_network", "ping_device", "wol_pc"):
+        assert name in tools.TOOL_REGISTRY
+
+
+def test_ping_network_tool_formats_real_results(monkeypatch):
+    import utils.home_tools as ht
+    monkeypatch.setattr(ht, "ping_device",
+                        lambda ip: {"ip": ip, "online": True, "latency_ms": 1.2, "port": 80})
+    out = tools._t_ping_network()
+    assert "Router" in out and "NAS" in out and "PC" in out
+    assert "🟢" in out
+
+
+def test_ping_device_tool_offline(monkeypatch):
+    import utils.home_tools as ht
+    monkeypatch.setattr(ht, "ping_device",
+                        lambda ip: {"ip": ip, "online": False, "latency_ms": None})
+    out = tools._t_ping_device("192.168.1.50")
+    assert "🔴" in out and "192.168.1.50" in out
+
+
+def test_nas_disk_tool_formats_volumes(monkeypatch):
+    import utils.home_tools as ht
+    monkeypatch.setattr(ht, "nas_disk_usage",
+                        lambda: {"ok": True, "nas_ip": "192.168.51.49",
+                                 "volumes": [{"path": "/volume1", "used_gb": 100.0,
+                                              "total_gb": 200.0, "free_gb": 100.0,
+                                              "percent": 50.0, "status": "normal"}]})
+    out = tools._t_nas_disk()
+    assert "/volume1" in out and "50.0%" in out
+
+
+def test_nas_disk_tool_surfaces_error(monkeypatch):
+    import utils.home_tools as ht
+    monkeypatch.setattr(ht, "nas_disk_usage",
+                        lambda: {"error": "ยังไม่ตั้งค่า NAS_USER"})
+    out = tools._t_nas_disk()
+    assert out.startswith("❌") and "NAS_USER" in out
+
+
+def test_nas_docker_tool_formats_containers(monkeypatch):
+    import utils.home_tools as ht
+    monkeypatch.setattr(ht, "nas_docker_status",
+                        lambda: {"ok": True, "nas_ip": "192.168.51.49",
+                                 "containers": [{"name": "ai-backend-1", "status": "running",
+                                                 "running": True, "image": "x"}]})
+    out = tools._t_nas_docker()
+    assert "ai-backend-1" in out and "🟢" in out
+
+
+def test_wol_tool(monkeypatch):
+    import utils.home_tools as ht
+    monkeypatch.setattr(ht, "wol_pc",
+                        lambda: {"ok": True, "ip": "x", "message": "ส่ง WoL แล้ว"})
+    out = tools._t_wol_pc()
+    assert "✅" in out
+
+
 # ══════════════════════════════ orchestrator.py ═══════════════════════════════
 
 def _msg(content="", tool_calls=None):
@@ -195,3 +256,30 @@ def test_agent_max_steps_forces_synthesis(monkeypatch):
     chunks = "".join(e[1] for e in events if e[0] == "chunk")
     assert "max_steps_reached" in kinds
     assert chunks == "สรุปคำตอบ"
+
+
+# ── orchestrator config: LM Studio token + agent hint (scrutinize fixes) ───────
+def test_orchestrator_uses_lmstudio_api_key_from_env(monkeypatch):
+    # 🔴 BLOCKER fix: LM Studio รุ่นใหม่บังคับ token — orchestrator ต้องอ่าน LMSTUDIO_API_KEY
+    # ไม่ใช่ hardcode "lmstudio" (ตรงกับ fix ใน utils/llm.py + embed.py)
+    import importlib
+    import agents.orchestrator as o
+    monkeypatch.setenv("LMSTUDIO_API_KEY", "secret-token-123")
+    importlib.reload(o)
+    try:
+        assert o._client.api_key == "secret-token-123"
+    finally:
+        monkeypatch.delenv("LMSTUDIO_API_KEY", raising=False)
+        importlib.reload(o)   # คืนค่า default ให้เทสอื่นไม่กระทบ
+
+
+def test_orchestrator_api_key_defaults_to_lmstudio():
+    import agents.orchestrator as o
+    assert o._client.api_key == "lmstudio"   # fallback เดิมเมื่อไม่ตั้ง env
+
+
+def test_agent_hint_advertises_home_tools():
+    # 🟠 MAJOR fix: โมเดลเล็กพึ่ง hint เลือก tool — ต้องโฆษณา home tools
+    # ไม่งั้นถามเรื่อง network/NAS แล้วโมเดลเดาแทนเรียก tool (กุ)
+    for kw in ("ping_network", "nas_disk", "nas_docker"):
+        assert kw in orch.AGENT_SYSTEM_HINT
