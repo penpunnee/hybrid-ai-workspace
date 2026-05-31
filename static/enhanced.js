@@ -658,6 +658,48 @@
   setInterval(fetchHealth, 60_000);
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // 1.5 DREAM STATS — แทนค่า hardcoded 40/40/20% ด้วยข้อมูล dream cycle จริง
+  //     (React bundle เป็น build แล้ว แก้ตรงไม่ได้ → overlay เขียนทับค่าใน DOM)
+  // ─────────────────────────────────────────────────────────────────────────────
+  const _DREAM_TITLES = {
+    "Light Sleep": "Phase 1 — ความจำที่ดึงมาวิเคราะห์ (24 ชม.ล่าสุด)",
+    "REM Sleep": "Phase 2 — ธีมที่ AI สกัดได้",
+    "Deep Sleep": "Phase 3 — promote เข้า long-term memory",
+  };
+  let _dreamVals = null;
+
+  function applyDreamStats(vals) {
+    if (!vals) return;
+    const map = { "Light Sleep": vals.light, "REM Sleep": vals.rem, "Deep Sleep": vals.deep };
+    document.querySelectorAll("div, span").forEach((el) => {
+      if (el.children.length > 0) return;                 // เอาเฉพาะ leaf (label จริง)
+      const t = (el.textContent || "").trim();
+      if (!(t in map)) return;
+      const valEl = el.nextElementSibling;                // ค่า % เดิมเป็น sibling ถัดไป
+      if (valEl && valEl !== el && valEl.children.length === 0) {
+        const v = map[t];
+        const next = v === "—" ? "—" : String(v);
+        if (valEl.textContent !== next) {                 // เขียนเฉพาะตอนเปลี่ยน (กัน loop/flicker)
+          valEl.textContent = next;
+          valEl.style.opacity = "0.9";
+        }
+      }
+      if (el.parentElement) el.parentElement.title = _DREAM_TITLES[t];
+    });
+  }
+
+  async function fetchDreamStats() {
+    try {
+      const d = await _origFetch("/api/dream/report").then((r) => r.json());
+      _dreamVals = (window.dreamCardValues || (() => null))(d);
+      applyDreamStats(_dreamVals);
+    } catch {}
+  }
+  fetchDreamStats();
+  setInterval(fetchDreamStats, 300_000);                  // refetch ทุก 5 นาที (dream รันกลางคืน)
+  setInterval(() => applyDreamStats(_dreamVals), 2_000);  // re-apply กัน React re-render ทับ
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // 2. GLOBAL CHAT SEARCH  (Ctrl+Shift+F)
   // ─────────────────────────────────────────────────────────────────────────────
   const searchOverlay = document.createElement("div");
