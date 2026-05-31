@@ -36,7 +36,10 @@ docker compose logs hybrid-ai -f
 ⚠️ **Volume mount gotcha**: `skills/` ในโค้ด ไม่ใช่ที่ container อ่าน. Container อ่านจาก `${NAS_DATA_PATH}/skills` (default `./data/skills/`). ถ้าเพิ่ม .md ใหม่ใน git → ต้อง `cp skills/*.md data/skills/` ด้วย
 
 ### Frontend (pre-built)
-`static/` คือ React build output — mount เป็น Docker volume. แก้แล้ว rebuild แยกแล้วแทนที่ `static/`. ไฟล์ `static/enhanced.js` เป็น vanilla JS overlay (ไม่ต้อง build) — ทำงานคู่กับ React bundle, handle SSE events เพิ่มเติม
+`static/` คือ React build output — mount เป็น Docker volume. แก้แล้ว rebuild แยกแล้วแทนที่ `static/`. overlay แบบ vanilla (ไม่ต้อง build, ทำงานคู่ React bundle):
+- `static/enhanced.js` — FAB (Claude/Agent/Search/Export/Vault), token counter, draft autosave, slash quick-prompts, hardware bar, **Dream stats applier** (เขียนทับ % ปลอมใน React ด้วยข้อมูลจริง), handle SSE เพิ่มเติม
+- `static/dream_stats.js` — pure mapper `dreamCardValues(report)` → Light/REM/Deep จริง (dual-export node/browser, โหลดก่อน enhanced.js)
+- ⚠️ React bundle minified แก้ตรงไม่ได้ → ค่า hardcode ใน bundle (เช่น sleep %) ต้องเขียนทับผ่าน enhanced.js overlay. หลังแก้ static → **hard refresh + bump `?v=` cache-bust** ใน `index.html`
 
 ## Architecture
 
@@ -57,9 +60,17 @@ docker compose logs hybrid-ai -f
    - `search_skills` — semantic top-3 จาก ChromaDB skills index
    - `vault_ctx` — Obsidian notes (ถ้า `obsidian_inject: true`)
    - `docs_ctx` — uploaded documents RAG (Phase B, `retrieve_chunks` + cache)
-   - `home_tool_ctx` — real-time NAS data (auto-triggered โดย keyword)
+   - `home_tool_ctx` — real-time NAS data (auto-triggered โดย keyword ผ่าน `detect_home_tools`). tools: `disk`/`docker`/`wol`/`ping_pc`/**`ping_network`** (ping Router+NAS+PC จริงด้วย TCP check เมื่อถามถึง router/เครือข่าย). **ฉีดข้อมูลจริงแล้วต่อท้ายด้วย `_TOOL_GUARD`** เสมอ — ห้ามโมเดลแต่งผล/IP/คำสั่ง/output สมมติ (ดู Anti-hallucination ด้านล่าง)
    - `citations.format_inline_legend()` — `[1] [2] [3]` reference list
 4. **Active learning instruction** (Phase C) — ถ้า prompt กำกวม → inject "ถ้าข้อมูลไม่พอ ให้ถามกลับ"
+
+### Anti-hallucination (session 2026-05-31) — กันโมเดลเล็กกุข้อมูล real-time
+โมเดล local (llama3) ชอบ "เล่า" ผล ping/ราคา/เว็บ ให้ดูจริง — กันด้วย **4 ชั้น**:
+1. **system prompt guard** (`assistants/config.py:_NO_FABRICATION`) — ห้ามแต่งข้อมูล real-time ทุกผู้ช่วย + reword ขวัญ (เลิก "ไม่เคยปฏิเสธ"). guard นี้เข้า seed fine-tune ผ่าน `gen_seed_sft` อัตโนมัติ
+2. **home_tool guard** (`utils/home_tools.py:_TOOL_GUARD` + `_join_with_guard`) — แนบกติกาท้ายข้อมูลที่ฉีด (ใกล้ attention กว่า system prompt) — ห้ามแต่ง IP/ping/คำสั่ง/output สมมติ, ถ้าไม่มีข้อมูลให้บอก "ยังไม่ได้เช็ค"
+3. **quality gate** (`reasoning/learn_gate.py:should_auto_learn`) — กัน auto-learn บันทึก lesson จาก negative_feedback ("ไม่ใช่ละ") หรือ realtime_home_tool → กัน **feedback loop ปนเปื้อน** (คำตอบกุ→save เป็น lesson→recall→กุซ้ำ)
+4. **ข้อมูลจริง** (`ping_network`) — ป้อนผล ping จริงแทนให้โมเดลเดา (วิธีที่ได้ผลที่สุด)
+- ⚠️ **เพดาน:** ชั้น 1-3 = prompt-based ลด hallucination ได้แต่ไม่ 100% บนโมเดลเล็ก. ปิดสนิทต้องสถาปัตยกรรม **Agent mode** (รัน tool จริง โชว์ผลดิบ — โมเดลกุไม่ได้). ดู "สิ่งที่จะทำต่อ"
 
 Ollama branch: context cap 2000 chars; trim history to <3000 tokens.
 
@@ -104,6 +115,9 @@ Ollama branch: context cap 2000 chars; trim history to <3000 tokens.
 - `reasoning/router.py` — model selection per query
 - `reasoning/classifier.py` — complexity / needs_internet classifiers
 - `reasoning/active_learning.py` — ambiguity detection (Phase C)
+- `reasoning/learn_gate.py` — `should_auto_learn()` quality gate (กัน lesson ปนเปื้อน, session 2026-05-31)
+- `assistants/config.py` — persona system prompts + `_NO_FABRICATION` guard
+- `utils/home_tools.py` — `detect_home_tools`/`build_tool_context` + `ping_network` (ping จริง) + `_TOOL_GUARD`
 
 **Memory & Skills**
 - `memory/operations.py` — `recall()`, `remember()`, `teach()`, `push_working()` (unified API)
@@ -260,3 +274,16 @@ LOG_FILE=server.log
 - Cloudflare tunnel returns 530 when origin down → check `cloudflared` container
 - `static/skills/` (git) ≠ `data/skills/` (container mount) — copy needed after `git pull`
 - **Container name**: docker-compose service `hybrid-ai` → actual container `ai-backend-1` (project name prefix). Use `docker restart ai-backend-1` not `hybrid-ai`
+- `detect_home_tools` over-broad: `_DOCKER_KW` มี "รัน" → prompt ที่มีคำว่า "รัน" (เช่น "ทำไมรันผิด") trigger docker tool โดยไม่ตั้งใจ (low-harm, ฉีด context เกิน)
+- โมเดลเล็ก (ollama llama3) **ไม่ทำตาม guard 100%** — งาน real-time ที่ต้องการความถูกต้องเป๊ะ ให้ใช้ Agent mode / Claude / Gemini
+
+## สิ่งที่จะทำต่อ (Next Steps)
+**ลำดับความสำคัญ — งานที่ค้าง/ต่อยอดได้:**
+1. 🏛️ **[สถาปัตยกรรม] wire home tools เข้า Agent registry** — ปัจจุบัน Agent มี 13 tools แต่**ไม่มี ping/disk/docker** (มีแต่ API endpoint + ฟังก์ชันใน `utils/home_tools.py` ลอยอยู่). เป้าหมาย: wrap เป็น agent tools ลงทะเบียนใน `agents/tools.py:TOOL_REGISTRY` → Agent mode รัน ping/disk จริง **แสดงผลดิบ = ปิด hallucination 100%** (วิธีเดียวที่ปิดสนิทบนโมเดลเล็ก). *นี่คือ "การเปลี่ยนสถาปัตยกรรม narration→execution" ที่คุยกันไว้*
+2. 🔑 **ตั้ง `ANTHROPIC_API_KEY` ใน NAS `.env`** → recreate (ปุ่ม Claude/auto ถึงตอบจริง; default = `claude-sonnet-4-6`, max_tokens 4096)
+3. 💾 **ตั้ง DSM task `db_backup.sh`** รายวัน 03:30 (user=root) — กัน feedback หาย
+4. 👍 **สะสม feedback** ~200-500 เพื่อ fine-tune (หรือ bootstrap ด้วย `scripts/gen_seed_sft.py`) → รัน `scripts/improve_loop.sh` บน PC GPU (`.235`, RTX 3060)
+5. 🧹 **(optional) เพิ่ม quality gate ที่ฝั่ง recall** — ปัจจุบัน gate กันตอน *save*; อาจเสริมกรอง lesson ปนเปื้อนตอน *recall* ด้วย
+6. 🌐 **(optional) detect_home_tools** — แก้ "รัน" ใน `_DOCKER_KW` ให้เจาะจงขึ้น (เช่น "docker รัน", "container รัน")
+
+**Deploy:** ทุก commit อยู่บน `utils/`/`reasoning/`/`assistants/`/`static/` (volume mount) → DSM Task Scheduler `deploy-hybrid-ai` → Run (git fetch + recreate, ไม่ต้อง build). HEAD ล่าสุด = `b9d745d`
