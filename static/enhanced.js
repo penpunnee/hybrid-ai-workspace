@@ -515,8 +515,9 @@
       if (d.ok) {
         _authToken = d.token;
         localStorage.setItem("hw_auth_token", _authToken);
-        // reload เพื่อให้ React โหลดใหม่พร้อม token
-        window.location.reload();
+        loginOverlay.classList.remove("open");
+        // reload เพื่อให้ React โหลด session ใหม่ด้วย token
+        setTimeout(() => window.location.reload(), 100);
       } else {
         document.getElementById("login-err").textContent = d.error || "รหัสผ่านไม่ถูกต้อง";
       }
