@@ -285,21 +285,64 @@ LOG_FILE=server.log
 - **Login modal loop (แก้แล้ว 2026-06-02)**: fetch monkey-patch เปิด login overlay ทุก 401 แม้มี token → แก้ให้เปิดเฉพาะ `!_authToken` (`static/enhanced.js`)
 - **Provider UI**: เมื่อตั้ง `LMSTUDIO_BASE_URL` แล้ว React UI แสดงเฉพาะ 2 ปุ่ม (LMStudio + Gemini) — Ollama ถูกรวมเป็น local เดียวกัน
 
+## Routing Architecture (2026-06-03)
+**"auto" เป็น default เดียวทั้งโปรเจค — `reasoning/router.py` เป็น single source of truth**
+
+```
+ทุก request (chat / regenerate / dream / stream_response)
+    ↓ provider = "auto"
+    ↓
+reasoning/router.py → LMStudio/DeepSeek → Gemini → Ollama (last resort)
+```
+
+- `utils/llm.py:stream_response()` default = `"auto"` (ไม่ใช่ `"ollama"` อีกต่อไป)
+- `routers/chat.py:/api/regenerate` default = `"auto"`
+- `utils/dream.py:rem_sleep/run_dream_cycle` default = `"auto"` + resolve ผ่าน router
+- Gemini fallback → router เลือก local model (ไม่ hardcode ollama)
+- **Ollama ปรากฏเฉพาะใน** `reasoning/router.py` fallback สุดท้าย + true cascade error ใน `llm.py`
+
+## UX Features (enhanced.js) — session 2026-06-03
+| Section | Feature | วิธีใช้ |
+|---|---|---|
+| §18 | 📎 File Manager | ปุ่มซ้ายล่าง — upload PDF/DOCX/XLSX/รูป, drag&drop, 📷 กล้อง |
+| §19 | Copy AI message | hover AI bubble → ปุ่ม "คัดลอก" มุมขวาบน |
+| §20 | ✏️ Edit + Resend | hover user bubble → แก้ข้อความ → ส่งใหม่ (truncate + resend) |
+| §20 | 🗑️ Delete pair | hover user bubble → ลบ user+AI message คู่นั้น |
+| §21 | Mobile keyboard | visualViewport resize → scroll textarea พ้น keyboard |
+
+**File upload flow:**
+- รูปภาพ → `/api/upload` → base64 → `hw_pending_image` → ส่งพร้อม chat
+- เอกสาร (PDF/DOCX/XLSX) → `/api/documents/upload` (index ChromaDB) + pending context bar
+- ขนาดสูงสุด 10 MB | รองรับ: `.pdf .docx .xlsx .xls .txt .md .csv .jpg .png .webp`
+- **New API**: `DELETE /api/message/{db_id}` — ลบ message เดี่ยว (`utils/history.py:delete_message_by_id`)
+
+## Internet Search / Classifier (2026-06-03)
+`reasoning/classifier.py:needs_internet()` patterns เพิ่ม:
+- ฝน/อากาศ: `ฝนจะตกไหม`, `วันนี้อากาศ`, `คืนนี้ฝน` ฯลฯ
+- เน็ต: `เน็ตมาเลย`, `เช็คเน็ต`, `ไปดูในเน็ต`, `อินเทอร์เน็ต`, `search ให้`
+
+`agents/orchestrator.py` เพิ่ม rule บังคับ:
+- user พูด "ไปหาในเน็ต"/"เช็คเน็ต"/"search" → **ต้องเรียก `web_search` ทันที** ทั้งใน `AGENT_SYSTEM_HINT` และ `_REACT_SYSTEM`
+
 ## สิ่งที่จะทำต่อ (Next Steps)
 **ลำดับความสำคัญ — งานที่ค้าง/ต่อยอดได้:**
 1. ✅ **[สถาปัตยกรรม] wire home tools เข้า Agent registry**
-2. ✅ **[Agent mode] provider-aware orchestrator (2026-06-01)** — Gemini + LMStudio + Ollama ReAct
+2. ✅ **[Agent mode] provider-aware orchestrator (2026-06-01)**
 3. ✅ **[detect_home_tools] แก้ "รัน" over-broad (2026-06-01)**
-4. ✅ **[HA Agent] Home Assistant tools + Ollama ReAct (2026-06-02)** — `utils/ha_client.py`, tools `ha_search_entities`/`ha_get_state`/`ha_call_service`, `_run_agent_ollama()` ReAct loop
-5. ✅ **[UI] จัด toolbar (2026-06-02)** — รวม 🏠 Home panel (System+NAS+Docker+PC+WoL) เข้า FAB, ลบ Health widget ซ้ำ, ซ่อนปุ่ม Claude/Vault จนกว่าจะ set key
-6. ✅ **[Auth] แก้ lockout + login loop (2026-06-02)** — ratelimit นับเฉพาะ token ผิด, login overlay ไม่เปิดซ้ำเมื่อมี token
-7. ✅ **[Dream] ใช้ DeepSeek R1 (LMStudio) + timeout 10 นาที (2026-06-02)** — `routers/dream.py` default provider = LMStudio (DeepSeek) → Gemini → Ollama; timeout 600s (env `DREAM_TIMEOUT`). `rem_sleep()` ส่ง `LMSTUDIO_REASON_MODEL` เป็น model_override
-8. ✅ **[LMStudio] เปลี่ยนเป็น DeepSeek-R1 (2026-06-02)** — `LMSTUDIO_CHAT_MODEL=deepseek/deepseek-r1-0528-qwen3-8b`, `OLLAMA_NUM_CTX=8192`
-9. 🔑 **ตั้ง `ANTHROPIC_API_KEY` ใน NAS `.env`** → recreate → ปุ่ม ✨ Claude โผล่อัตโนมัติ
-10. 🏠 **ตั้ง `HA_URL` + `HA_TOKEN` ใน NAS `.env`** → recreate → Agent สั่ง HA ได้จริง
-11. 💾 **ตั้ง DSM task `db_backup.sh`** รายวัน 03:30 (user=root)
-12. 👍 **สะสม feedback** ~200-500 → fine-tune บน PC GPU (RTX 3060, `.235`)
-13. 🧹 **(optional) quality gate ฝั่ง recall**
+4. ✅ **[HA Agent] Home Assistant tools + ReAct (2026-06-02)**
+5. ✅ **[UI] จัด toolbar (2026-06-02)**
+6. ✅ **[Auth] แก้ lockout + login loop (2026-06-02)**
+7. ✅ **[Dream] ใช้ DeepSeek R1 via auto routing (2026-06-03)**
+8. ✅ **[LMStudio] เปลี่ยนเป็น DeepSeek-R1 (2026-06-02)**
+9. ✅ **[Routing] "auto" default ทั้งโปรเจค — single source of truth (2026-06-03)**
+10. ✅ **[UX] copy/edit/delete message + mobile keyboard (2026-06-03)**
+11. ✅ **[Files] PDF/DOCX/XLSX upload + File Manager UI (2026-06-03)**
+12. ✅ **[Classifier] เพิ่ม pattern เน็ต/อากาศ/ฝน + agent web_search rule (2026-06-03)**
+13. 🔑 **ตั้ง `ANTHROPIC_API_KEY` ใน NAS `.env`** → recreate → ปุ่ม ✨ Claude โผล่อัตโนมัติ
+14. 🏠 **ตั้ง `HA_URL` + `HA_TOKEN` ใน NAS `.env`** → recreate → Agent สั่ง HA ได้จริง
+15. 💾 **ตั้ง DSM task `db_backup.sh`** รายวัน 03:30 (user=root)
+16. 👍 **สะสม feedback** ~200-500 → fine-tune บน PC GPU (RTX 3060, `.235`)
+17. 🧹 **(optional) quality gate ฝั่ง recall**
 
 ## ✅ Admin unlock endpoint (2026-06-01)
 `POST /api/admin/unlock` — ล้าง auth-fail lockout สำหรับ IP ที่ระบุ (LAN/loopback เท่านั้น, 403 ถ้ามาจาก Cloudflare/public)
