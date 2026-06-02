@@ -968,16 +968,28 @@
     <button class="enh-fab" id="fab-export" title="Export Session (Ctrl+E)">
       📤 <span>Export</span>
     </button>
-    <button class="enh-fab" id="fab-vault" title="Vault Search">
+    <button class="enh-fab" id="fab-vault" title="Vault Search" style="display:none">
       🌿 <span>Vault</span>
     </button>
-    <button class="enh-fab" id="fab-agent" title="Agent Mode — AI ใช้ tools อัตโนมัติ (weather, wiki, search, ฯลฯ)">
+    <button class="enh-fab" id="fab-agent" title="Agent Mode — AI ใช้ tools จริง (ค้นเว็บ, บ้าน, ไฟล์ ฯลฯ)">
       🤖 <span>Agent</span>
     </button>
-    <button class="enh-fab" id="fab-claude" title="Claude (Anthropic) — ส่งคำถามไป Claude API (ต้องตั้ง ANTHROPIC_API_KEY บนเซิร์ฟเวอร์)">
+    <button class="enh-fab" id="fab-claude" title="Claude (Anthropic)" style="display:none">
       ✨ <span>Claude</span>
     </button>`;
   document.body.appendChild(toolbar);
+
+  // โหลด config จาก server — เปิดปุ่มเฉพาะที่พร้อมใช้จริง
+  fetch("/config").then(r => r.json()).then(cfg => {
+    if (cfg.has_anthropic) {
+      const b = document.getElementById("fab-claude");
+      if (b) b.style.display = "";
+    }
+    if (cfg.has_vault) {
+      const b = document.getElementById("fab-vault");
+      if (b) b.style.display = "";
+    }
+  }).catch(() => {});
 
   document.getElementById("fab-search").addEventListener("click", () => {
     searchOverlay.classList.toggle("open");
@@ -996,7 +1008,7 @@
   const _syncAgentBtn = () => _agentBtn.classList.toggle("enh-fab-active", _agentMode);
   // Claude Mode toggle
   const _claudeBtn = document.getElementById("fab-claude");
-  const _syncClaudeBtn = () => _claudeBtn.classList.toggle("enh-fab-active", _claudeMode);
+  const _syncClaudeBtn = () => _claudeBtn && _claudeBtn.classList.toggle("enh-fab-active", _claudeMode);
   _syncAgentBtn();
   _syncClaudeBtn();
   _agentBtn.addEventListener("click", () => {
@@ -1010,7 +1022,7 @@
       _syncClaudeBtn();
     }
   });
-  _claudeBtn.addEventListener("click", () => {
+  _claudeBtn && _claudeBtn.addEventListener("click", () => {
     _claudeMode = !_claudeMode;
     localStorage.setItem("hw_claude_mode", _claudeMode ? "1" : "0");
     _syncClaudeBtn();

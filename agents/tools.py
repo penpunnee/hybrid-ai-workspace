@@ -245,6 +245,64 @@ def _t_wol_pc() -> str:
     return f"✅ {r.get('message', 'ส่ง WoL แล้ว')}"
 
 
+def _t_ha_search_entities(query: str, max_results: int = 10) -> str:
+    """ค้น HA entity จาก friendly_name หรือ entity_id"""
+    from utils.ha_client import search_entities
+    try:
+        max_results = int(max_results)
+    except (TypeError, ValueError):
+        max_results = 10
+    results = search_entities(query, max_results=max_results)
+    if not results:
+        return f"ไม่พบ entity ที่ตรงกับ '{query}'"
+    if results[0].get("error"):
+        return f"❌ {results[0]['error']}"
+    lines = [f"พบ {len(results)} entity สำหรับ '{query}':"]
+    for r in results:
+        lines.append(
+            f"• {r['entity_id']} ({r['friendly_name']}) — state: {r['state']}"
+        )
+    return "\n".join(lines)
+
+
+def _t_ha_get_state(entity_id: str) -> str:
+    """ดึงสถานะ + attributes ของ HA entity"""
+    from utils.ha_client import get_state
+    r = get_state(entity_id)
+    if r.get("error"):
+        return f"❌ {r['error']}"
+    attrs = r.get("attributes", {})
+    friendly = attrs.pop("friendly_name", entity_id)
+    attr_str = ", ".join(f"{k}={v}" for k, v in list(attrs.items())[:8])
+    return (
+        f"{friendly} ({entity_id})\n"
+        f"state: {r['state']}\n"
+        f"attributes: {attr_str or '-'}\n"
+        f"last_changed: {r.get('last_changed', '-')}"
+    )
+
+
+def _t_ha_call_service(
+    domain: str,
+    service: str,
+    entity_id: str = "",
+    data: dict | None = None,
+) -> str:
+    """เรียก HA service — สั่งเปิด/ปิด/ตั้งค่าอุปกรณ์ใดๆ"""
+    from utils.ha_client import call_service
+    if isinstance(data, str):
+        import json
+        try:
+            data = json.loads(data)
+        except Exception:
+            data = {}
+    r = call_service(domain, service, entity_id=entity_id, data=data or {})
+    if r.get("error"):
+        return f"❌ {r['error']}"
+    label = f"{entity_id} " if entity_id else ""
+    return f"✅ {label}{domain}.{service} สำเร็จ"
+
+
 # ── Registry ─────────────────────────────────────────────────────────────────
 
 TOOL_REGISTRY: dict[str, dict[str, Any]] = {
@@ -464,7 +522,93 @@ TOOL_REGISTRY: dict[str, dict[str, Any]] = {
         "parameters": {"type": "object", "properties": {}, "required": []},
         "fn": _t_wol_pc,
     },
+    "ha_search_entities": {
+        "description": (
+            "ค้นหา Home Assistant entity จากชื่อ (ภาษาไทยหรืออังกฤษ) "
+            "คืน entity_id + state ที่ตรงกัน "
+            "ใช้ก่อน ha_call_service เสมอเมื่อไม่รู้ entity_id"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "ชื่อหรือคีย์เวิร์ด เช่น 'ไฟห้องนั่งเล่น', 'แอร์', 'ปลั๊ก'"},
+                "max_results": {"type": "integer", "description": "จำนวนผลลัพธ์สูงสุด (default 10)", "default": 10},
+            },
+            "required": ["query"],
+        },
+        "fn": _t_ha_search_entities,
+    },
+    "ha_get_state": {
+        "description": (
+            "ดึงสถานะปัจจุบัน + attributes ของ HA entity (ไฟ/แอร์/สวิตช์/sensor ฯลฯ) "
+            "ใช้เมื่อต้องการรู้ว่าอุปกรณ์เปิด/ปิด อุณหภูมิเท่าไหร่ ฯลฯ"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "entity_id": {"type": "string", "description": "เช่น 'light.living_room', 'climate.bedroom_ac'"},
+            },
+            "required": ["entity_id"],
+        },
+        "fn": _t_ha_get_state,
+    },
+    "ha_call_service": {
+        "description": (
+            "สั่ง Home Assistant service — เปิด/ปิด/ตั้งค่าอุปกรณ์ใดๆ ในบ้าน "
+            "domain เช่น 'light','switch','climate','automation','script' "
+            "service เช่น 'turn_on','turn_off','toggle','set_temperature' "
+            "ควรเรียก ha_search_entities ก่อนเพื่อให้ได้ entity_id ที่ถูกต้อง"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "domain": {"type": "string", "description": "เช่น 'light', 'switch', 'climate'"},
+                "service": {"type": "string", "description": "เช่น 'turn_on', 'turn_off', 'set_temperature'"},
+                "entity_id": {"type": "string", "description": "entity ที่จะสั่ง (ปล่อยว่างถ้า service ไม่ต้อง)"},
+                "data": {
+                    "type": "object",
+                    "description": "extra payload เช่น {\"temperature\": 25} สำหรับ climate",
+                },
+            },
+            "required": ["domain", "service"],
+        },
+        "fn": _t_ha_call_service,
+    },
 }
+
+
+def get_gemini_tools() -> list:
+    """แปลง TOOL_REGISTRY → format ของ Gemini function calling (google.genai SDK)"""
+    from google.genai import types as genai_types
+    declarations = []
+    for name, spec in TOOL_REGISTRY.items():
+        params = spec["parameters"]
+        props = params.get("properties", {})
+        required = params.get("required", [])
+        gemini_props = {}
+        for prop_name, prop_schema in props.items():
+            ptype = prop_schema.get("type", "string").upper()
+            type_map = {
+                "STRING": genai_types.Type.STRING,
+                "INTEGER": genai_types.Type.INTEGER,
+                "NUMBER": genai_types.Type.NUMBER,
+                "BOOLEAN": genai_types.Type.BOOLEAN,
+            }
+            gemini_props[prop_name] = genai_types.Schema(
+                type=type_map.get(ptype, genai_types.Type.STRING),
+                description=prop_schema.get("description", ""),
+            )
+        func_decl = genai_types.FunctionDeclaration(
+            name=name,
+            description=spec["description"],
+            parameters=genai_types.Schema(
+                type=genai_types.Type.OBJECT,
+                properties=gemini_props,
+                required=required,
+            ) if gemini_props else None,
+        )
+        declarations.append(func_decl)
+    return declarations
 
 
 def get_openai_tools() -> list[dict]:

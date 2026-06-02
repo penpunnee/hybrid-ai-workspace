@@ -3,7 +3,7 @@ import json
 import shutil
 from datetime import datetime, date, timedelta
 from fastapi import APIRouter, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from core.config import GEMINI_API_KEY, DB_PATH, NAS_DATA_PATH
 from core.scheduler import scheduler
@@ -60,8 +60,8 @@ def routing_preview(q: str):
 
 @router.get("/config")
 def get_config():
+    import os
     from core.config import LMSTUDIO_BASE_URL, LMSTUDIO_CHAT_MODEL
-    # ถ้าตั้ง LM Studio ไว้ → ใช้ model นั้นแสดงในหน้าแชทแทน Ollama
     active_local_model = LMSTUDIO_CHAT_MODEL if LMSTUDIO_BASE_URL else OLLAMA_MODEL
     return {
         "assistants": [
@@ -70,6 +70,8 @@ def get_config():
         ],
         "ollama_model": active_local_model,
         "gemini_model": GEMINI_MODEL,
+        "has_anthropic": bool(os.getenv("ANTHROPIC_API_KEY", "").strip()),
+        "has_vault": bool(os.getenv("OBSIDIAN_VAULT_PATH", "").strip()),
     }
 
 
@@ -270,3 +272,20 @@ async def text_to_speech_stream(request: Request):
 
     return StreamingResponse(event_gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.post("/admin/unlock")
+async def admin_unlock(request: Request):
+    """ล้าง auth-fail lockout — LAN/loopback เท่านั้น (ไม่ผ่าน Cloudflare)"""
+    from core.auth import is_local_request
+    from core.ratelimit import unlock_ip, client_key
+    if not is_local_request(request):
+        return JSONResponse({"error": "forbidden — LAN only"}, status_code=403)
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    ip = body.get("ip") or client_key(request)
+    unlock_ip(ip)
+    return {"unlocked": ip}

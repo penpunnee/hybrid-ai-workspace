@@ -187,7 +187,8 @@ async def chat(request: Request):
             if citations:
                 yield f"data: {json.dumps({'citations': citations.to_list()}, ensure_ascii=False)}\n\n"
             try:
-                for kind, payload in run_agent(messages):
+                agent_provider = provider if provider in ("gemini", "lmstudio", "ollama") else "gemini"
+                for kind, payload in run_agent(messages, provider=agent_provider):
                     if kind == "event":
                         # SSE event สำหรับ enhanced.js timeline — React อ่านแล้ว ignore
                         yield f"data: {json.dumps({'agent': payload}, ensure_ascii=False)}\n\n"

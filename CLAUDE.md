@@ -211,6 +211,11 @@ LMSTUDIO_EMBED_MODEL=text-embedding-nomic-embed-text-v1.5
 LMSTUDIO_TIMEOUT=180
 SHOW_THINKING=false
 
+# Home Assistant
+HA_URL=https://ha.pawinhome.com   # หรือ http://192.168.51.x:8123 ถ้าใช้ LAN เท่านั้น
+HA_TOKEN=                          # Long-Lived Access Token (HA → Profile → Security)
+HA_TIMEOUT=10                      # วินาที
+
 # Auth + Network
 UI_PASSWORD=
 CORS_ORIGINS=
@@ -279,13 +284,27 @@ LOG_FILE=server.log
 
 ## สิ่งที่จะทำต่อ (Next Steps)
 **ลำดับความสำคัญ — งานที่ค้าง/ต่อยอดได้:**
-1. ✅ **[สถาปัตยกรรม] wire home tools เข้า Agent registry — เสร็จแล้ว** — `agents/tools.py:TOOL_REGISTRY` มี 18 tools แล้ว (เพิ่ม `nas_disk`/`nas_docker`/`ping_network`/`ping_device`/`wol_pc` wrap จาก `utils/home_tools.py`). Agent mode รัน ping/disk/docker จริง **แสดงผลดิบ = ปิด hallucination** (เปลี่ยน narration→execution). `ping_network()` ถูก extract เป็นฟังก์ชันใน home_tools ใช้ร่วมทั้ง narration path + agent tool
-   - ⚠️ **เงื่อนไขสำคัญ:** agent loop (`agents/orchestrator.py`) รันบน **LM Studio เท่านั้น** (hardcode client) — ปิด hallucination ได้จริงเฉพาะตอน LM Studio ใช้ได้ + โมเดลเลือกเรียก tool. แก้แล้ว 2 จุดให้ทำงานจริง: orchestrator อ่าน `LMSTUDIO_API_KEY` จาก env (เดิม hardcode dummy → LM Studio รุ่นใหม่ reject) + `AGENT_SYSTEM_HINT` โฆษณา home tools ครบ (เดิมไม่ลิสต์ → โมเดลเล็กไม่เรียก แล้วเดา). คำถาม network/NAS ทั่วไป (non-agent) ยังพึ่ง narration guard (4 ชั้น) ที่ทำงานทุก provider
-2. 🔑 **ตั้ง `ANTHROPIC_API_KEY` ใน NAS `.env`** → recreate (ปุ่ม Claude/auto ถึงตอบจริง; default = `claude-sonnet-4-6`, max_tokens 4096)
-3. 💾 **ตั้ง DSM task `db_backup.sh`** รายวัน 03:30 (user=root) — กัน feedback หาย
-4. 👍 **สะสม feedback** ~200-500 เพื่อ fine-tune (หรือ bootstrap ด้วย `scripts/gen_seed_sft.py`) → รัน `scripts/improve_loop.sh` บน PC GPU (`.235`, RTX 3060)
-5. 🧹 **(optional) เพิ่ม quality gate ที่ฝั่ง recall** — ปัจจุบัน gate กันตอน *save*; อาจเสริมกรอง lesson ปนเปื้อนตอน *recall* ด้วย
-6. 🌐 **(optional) detect_home_tools** — แก้ "รัน" ใน `_DOCKER_KW` ให้เจาะจงขึ้น (เช่น "docker รัน", "container รัน")
+1. ✅ **[สถาปัตยกรรม] wire home tools เข้า Agent registry — เสร็จแล้ว**
+2. ✅ **[Agent mode] provider-aware orchestrator (2026-06-01)** — `agents/orchestrator.py` รองรับ `provider="gemini"` (default) และ `"lmstudio"`. Gemini ใช้ `google.genai` SDK + function calling. `routers/chat.py` + `routers/agent.py` ส่ง provider ต่อไปแล้ว. suite 554 passed
+3. ✅ **[detect_home_tools] แก้ "รัน" over-broad (2026-06-01)** — ลบ `"รัน"` เดี่ยวออกจาก `_DOCKER_KW`; แทนด้วย compound `"docker รัน"`, `"container รัน"` etc. กัน false trigger บน prompt coding ทั่วไป
+4. ✅ **[HA Agent] Home Assistant tools + Ollama ReAct (2026-06-02)** — `utils/ha_client.py` (search_entities/get_state/call_service ผ่าน REST API HA_URL+HA_TOKEN). tools 3 ตัวใหม่ใน `agents/tools.py`: `ha_search_entities`, `ha_get_state`, `ha_call_service`. `_run_agent_ollama()` ReAct loop ใน `agents/orchestrator.py` รองรับ `provider="ollama"`. **ต้องตั้ง `HA_URL` + `HA_TOKEN` ใน `.env` ก่อน deploy**
+5. 🔑 **ตั้ง `ANTHROPIC_API_KEY` ใน NAS `.env`** → recreate (ปุ่ม Claude/auto ถึงตอบจริง; default = `claude-sonnet-4-6`, max_tokens 4096)
+6. 🏠 **ตั้ง `HA_URL` + `HA_TOKEN` ใน NAS `.env`** → recreate (Ollama/Gemini Agent สั่งอุปกรณ์บ้านได้จริง)
+7. 💾 **ตั้ง DSM task `db_backup.sh`** รายวัน 03:30 (user=root) — กัน feedback หาย
+8. 👍 **สะสม feedback** ~200-500 เพื่อ fine-tune (หรือ bootstrap ด้วย `scripts/gen_seed_sft.py`) → รัน `scripts/improve_loop.sh` บน PC GPU (`.235`, RTX 3060)
+9. 🧹 **(optional) เพิ่ม quality gate ที่ฝั่ง recall** — ปัจจุบัน gate กันตอน *save*; อาจเสริมกรอง lesson ปนเปื้อนตอน *recall* ด้วย
+
+## ✅ Admin unlock endpoint (2026-06-01)
+`POST /api/admin/unlock` — ล้าง auth-fail lockout สำหรับ IP ที่ระบุ (LAN/loopback เท่านั้น, 403 ถ้ามาจาก Cloudflare/public)
+```bash
+# ปลด lock IP ที่ระบุ (รันจาก LAN)
+curl -X POST http://192.168.51.49:8000/api/admin/unlock \
+     -H "Content-Type: application/json" -d '{"ip": "LOCKED_IP"}'
+# ไม่ระบุ ip → ปลด lock IP ของ caller เอง
+curl -X POST http://192.168.51.49:8000/api/admin/unlock
+```
+- `core/ratelimit.py`: เพิ่ม `SlidingWindowLimiter.reset_key(key)` + `unlock_ip(ip)` (ล้างเฉพาะ key นั้น ไม่ reset ทั้งหมด)
+- suite: 513 passed
 
 ## ✅ Security hardening — scrutinize audit (2026-06-01, deployed+verified prod)
 รัน skill `scrutinize` ทั้งโปรเจกต์ → เจอ+แก้ 5 จุด (TDD, suite 509). **ตรวจแล้วสะอาด:** dream prune (ลบถูกทาง ข้าม verified), code_sandbox (Docker --network none --read-only; local block by default), fs_tools (resolve+relative_to กัน traversal), CORS (specific origins):
