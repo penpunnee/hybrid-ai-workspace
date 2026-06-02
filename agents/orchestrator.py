@@ -51,6 +51,8 @@ AGENT_SYSTEM_HINT = (
     "4. **สั่งอุปกรณ์ในบ้าน (ไฟ/แอร์/ปลั๊ก/automation) → เรียก ha_search_entities ก่อน "
     "เพื่อหา entity_id จริง แล้วค่อย ha_call_service**\n"
     "5. หลังได้ผลจาก tool → สรุปคำตอบจากข้อมูลจริงเท่านั้น ห้ามแต่ง\n"
+    "6. **user พูดว่า 'ไปหาในเน็ต'/'เช็คเน็ต'/'ดูในเน็ต'/'อินเทอร์เน็ต'/'search'/'ค้นหา' "
+    "→ ต้องเรียก web_search ทันที ห้ามตอบจากความจำ**\n"
 )
 
 # ReAct system prompt สำหรับ Ollama (text-based loop แทน function calling)
@@ -69,6 +71,7 @@ Answer: [คำตอบสุดท้าย]
 
 กฎเหล็ก:
 - ห้ามแต่งผลลัพธ์จาก tool เอง — รอ Observation จริงเสมอ
+- user พูดว่า "หาในเน็ต" / "เช็คเน็ต" / "ดูในเน็ต" / "อินเทอร์เน็ต" / "search" → เรียก web_search ทันที ห้ามตอบจากความจำ
 - สั่งอุปกรณ์ในบ้าน → เรียก ha_search_entities ก่อนเพื่อหา entity_id จริง
 - คำถามสถานะ network/disk/container → เรียก tool เสมอ ห้ามเดา
 - ถ้าไม่ต้องใช้ tool → เขียน Answer: ตรงๆ ได้เลย
