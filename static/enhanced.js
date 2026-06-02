@@ -2311,7 +2311,276 @@
   })();
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 18. COPY MESSAGE — ปุ่มคัดลอกข้อความทั้งก้อน (AI bubble)
+  // 18. FILE MANAGER — 📎 upload PDF/DOCX/XLSX/image + doc list panel
+  // ─────────────────────────────────────────────────────────────────────────────
+  (function () {
+    // ── styles ──
+    const css = `
+      #enh-file-bar {
+        position:fixed; bottom:56px; left:50%; transform:translateX(-50%);
+        display:none; gap:6px; align-items:center; flex-wrap:wrap;
+        background:rgba(15,23,42,0.95); border:1px solid rgba(99,102,241,0.35);
+        border-radius:12px; padding:6px 12px; z-index:8996; max-width:90vw;
+        backdrop-filter:blur(10px);
+      }
+      #enh-file-bar.has-files { display:flex; }
+      .enh-file-chip {
+        display:flex; align-items:center; gap:4px;
+        background:rgba(99,102,241,0.2); border:1px solid rgba(99,102,241,0.4);
+        border-radius:8px; padding:3px 8px; font-size:12px; color:#c7d2fe;
+      }
+      .enh-file-chip button {
+        background:none; border:none; color:#94a3b8; cursor:pointer;
+        font-size:13px; padding:0 2px; line-height:1;
+      }
+      .enh-file-chip button:hover { color:#f87171; }
+
+      #enh-doc-panel {
+        position:fixed; top:0; right:0; width:320px; height:100%;
+        background:rgba(10,15,30,0.97); border-left:1px solid rgba(99,102,241,0.3);
+        z-index:9100; display:none; flex-direction:column;
+        backdrop-filter:blur(16px); padding:16px;
+      }
+      #enh-doc-panel.open { display:flex; }
+      #enh-doc-panel h3 { color:#e2e8f0; margin:0 0 12px; font-size:15px; }
+      #enh-doc-panel .enh-close { background:none; border:none; color:#94a3b8;
+        font-size:18px; cursor:pointer; position:absolute; top:12px; right:14px; }
+      .enh-doc-item {
+        display:flex; align-items:flex-start; gap:8px;
+        padding:8px; border-radius:8px; border:1px solid rgba(99,102,241,0.2);
+        margin-bottom:8px; background:rgba(30,41,59,0.5);
+      }
+      .enh-doc-item .enh-doc-info { flex:1; min-width:0; }
+      .enh-doc-item .enh-doc-name {
+        font-size:13px; color:#c7d2fe; white-space:nowrap;
+        overflow:hidden; text-overflow:ellipsis;
+      }
+      .enh-doc-item .enh-doc-meta { font-size:11px; color:#64748b; margin-top:2px; }
+      .enh-doc-item button {
+        background:none; border:none; color:#64748b; cursor:pointer; font-size:14px;
+        flex-shrink:0; padding:2px;
+      }
+      .enh-doc-item button:hover { color:#f87171; }
+      #enh-doc-upload-zone {
+        border:2px dashed rgba(99,102,241,0.4); border-radius:10px;
+        padding:20px; text-align:center; color:#64748b; font-size:13px;
+        cursor:pointer; margin-bottom:12px; transition:border-color .2s;
+      }
+      #enh-doc-upload-zone:hover { border-color:rgba(99,102,241,0.8); color:#c7d2fe; }
+      #enh-doc-list { flex:1; overflow-y:auto; }
+      #enh-doc-empty { color:#475569; font-size:13px; text-align:center; padding:20px 0; }
+
+      #enh-fab-file {
+        position:fixed; bottom:14px; left:14px;
+        width:38px; height:38px; border-radius:50%;
+        background:rgba(30,41,59,0.9); border:1px solid rgba(99,102,241,0.35);
+        color:#94a3b8; font-size:17px; cursor:pointer; z-index:8995;
+        display:flex; align-items:center; justify-content:center;
+        transition:all .2s;
+      }
+      #enh-fab-file:hover { background:rgba(99,102,241,0.25); color:#e2e8f0; }
+      #enh-fab-file .enh-file-count {
+        position:absolute; top:-4px; right:-4px;
+        background:#6366f1; color:#fff; border-radius:50%;
+        width:16px; height:16px; font-size:10px;
+        display:none; align-items:center; justify-content:center;
+      }
+    `;
+    document.head.appendChild(Object.assign(document.createElement("style"), { textContent: css }));
+
+    // ── state ──
+    const _pendingDocs = []; // { name, content } รอ inject เป็น context ถัดไป
+
+    // ── file bar ──
+    const fileBar = document.createElement("div");
+    fileBar.id = "enh-file-bar";
+    document.body.appendChild(fileBar);
+
+    function _updateFileBar() {
+      fileBar.innerHTML = "";
+      if (!_pendingDocs.length) { fileBar.classList.remove("has-files"); return; }
+      fileBar.classList.add("has-files");
+      _pendingDocs.forEach((doc, i) => {
+        const chip = document.createElement("div");
+        chip.className = "enh-file-chip";
+        chip.innerHTML = `📄 <span>${doc.name}</span>`;
+        const rm = document.createElement("button");
+        rm.textContent = "✕";
+        rm.onclick = () => { _pendingDocs.splice(i, 1); _updateFileBar(); };
+        chip.appendChild(rm);
+        fileBar.appendChild(chip);
+      });
+      const hint = document.createElement("span");
+      hint.style.cssText = "font-size:11px;color:#64748b";
+      hint.textContent = "จะใช้เป็น context ในข้อความถัดไป";
+      fileBar.appendChild(hint);
+    }
+
+    // inject pending docs เข้า chat body ก่อนส่ง
+    const _origFetchFile = window.fetch.bind(window);
+    window.fetch = function(url, opts) {
+      if (typeof url === "string" && url === "/api/chat" && opts?.body && _pendingDocs.length) {
+        try {
+          const body = JSON.parse(opts.body);
+          const docsCtx = _pendingDocs.map(d =>
+            `=== ไฟล์: ${d.name} ===\n${d.content.slice(0, 3000)}`
+          ).join("\n\n");
+          body.prompt = body.prompt + `\n\n[เอกสารแนบ]\n${docsCtx}`;
+          opts = { ...opts, body: JSON.stringify(body) };
+          _pendingDocs.length = 0;
+          _updateFileBar();
+        } catch {}
+      }
+      return _origFetchFile(url, opts);
+    };
+
+    // ── doc panel ──
+    const panel = document.createElement("div");
+    panel.id = "enh-doc-panel";
+    panel.innerHTML = `
+      <button class="enh-close" id="enh-doc-close">✕</button>
+      <h3>📎 เอกสาร</h3>
+      <div id="enh-doc-upload-zone">คลิกหรือลาก PDF / DOCX / XLSX / TXT มาวาง</div>
+      <div id="enh-doc-list"><div id="enh-doc-empty">ยังไม่มีเอกสาร</div></div>
+    `;
+    document.body.appendChild(panel);
+    document.getElementById("enh-doc-close").onclick = () => panel.classList.remove("open");
+
+    async function _loadDocList() {
+      const list = document.getElementById("enh-doc-list");
+      try {
+        const r = await _origFetch("/api/documents");
+        const { documents = [] } = await r.json();
+        list.innerHTML = "";
+        if (!documents.length) {
+          list.innerHTML = '<div id="enh-doc-empty">ยังไม่มีเอกสาร</div>';
+          return;
+        }
+        documents.forEach((doc) => {
+          const item = document.createElement("div");
+          item.className = "enh-doc-item";
+          const date = doc.indexed_at ? new Date(doc.indexed_at * 1000).toLocaleDateString("th-TH") : "";
+          item.innerHTML = `
+            <div class="enh-doc-info">
+              <div class="enh-doc-name" title="${doc.source}">📄 ${doc.source}</div>
+              <div class="enh-doc-meta">${doc.chunks_count} chunks · ${date}</div>
+            </div>`;
+          const del = document.createElement("button");
+          del.textContent = "🗑️";
+          del.title = "ลบเอกสาร";
+          del.onclick = async () => {
+            await _origFetch(`/api/documents/${encodeURIComponent(doc.source)}`, { method: "DELETE" });
+            showToast("🗑️ ลบเอกสารแล้ว");
+            _loadDocList();
+          };
+          item.appendChild(del);
+          list.appendChild(item);
+        });
+      } catch { list.innerHTML = '<div id="enh-doc-empty">โหลดไม่ได้</div>'; }
+    }
+
+    async function _handleFile(file) {
+      const MAX = 10 * 1024 * 1024;
+      if (file.size > MAX) { showToast("❌ ไฟล์ใหญ่เกิน 10 MB"); return; }
+
+      const ext = file.name.split(".").pop().toLowerCase();
+      const isImage = file.type.startsWith("image/") || ["jpg","jpeg","png","gif","webp"].includes(ext);
+
+      showToast(`⏳ กำลังประมวลผล ${file.name}…`);
+
+      if (isImage) {
+        // รูปภาพ → base64 → hw_pending_image (ส่งพร้อม chat ได้เลย)
+        const form = new FormData();
+        form.append("file", file, file.name);
+        try {
+          const r = await _origFetch("/api/upload", {
+            method: "POST",
+            headers: _authToken ? { "x-auth-token": _authToken } : {},
+            body: form,
+          });
+          const d = await r.json();
+          if (d.ok && d.is_image) {
+            localStorage.setItem("hw_pending_image", JSON.stringify({ b64: d.b64, mime: d.mime }));
+            showToast(`✅ รูป ${file.name} พร้อมแล้ว — กด Send`);
+          } else { showToast("❌ " + (d.error || "upload ล้มเหลว")); }
+        } catch { showToast("❌ upload ล้มเหลว"); }
+        return;
+      }
+
+      // เอกสาร → /api/documents/upload (index เข้า ChromaDB) + เก็บ pending context
+      const form = new FormData();
+      form.append("file", file, file.name);
+      try {
+        const r = await _origFetch("/api/documents/upload", {
+          method: "POST",
+          headers: _authToken ? { "x-auth-token": _authToken } : {},
+          body: form,
+        });
+        const d = await r.json();
+        if (d.ok) {
+          showToast(`✅ index ${file.name} แล้ว (${d.chunks_count} chunks)`);
+          _loadDocList();
+          // ดึง text กลับมาเก็บเป็น pending context ด้วย
+          const rText = await _origFetch("/api/upload", {
+            method: "POST",
+            headers: _authToken ? { "x-auth-token": _authToken } : {},
+            body: (() => { const f2 = new FormData(); f2.append("file", file, file.name); return f2; })(),
+          });
+          const dText = await rText.json();
+          if (dText.text) {
+            _pendingDocs.push({ name: file.name, content: dText.text });
+            _updateFileBar();
+          }
+        } else { showToast("❌ " + (d.error || d.detail || "index ล้มเหลว")); }
+      } catch (e) { showToast("❌ " + e.message); }
+    }
+
+    // upload zone drag & drop
+    const zone = document.getElementById("enh-doc-upload-zone");
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = ".pdf,.docx,.xlsx,.xls,.txt,.md,.csv,.jpg,.jpeg,.png,.webp";
+    fileInput.multiple = true;
+    fileInput.style.display = "none";
+    document.body.appendChild(fileInput);
+
+    zone.onclick = () => { fileInput.value = ""; fileInput.click(); };
+    fileInput.onchange = () => { [...fileInput.files].forEach(_handleFile); };
+
+    zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.style.borderColor = "#6366f1"; });
+    zone.addEventListener("dragleave", () => { zone.style.borderColor = ""; });
+    zone.addEventListener("drop", (e) => {
+      e.preventDefault(); zone.style.borderColor = "";
+      [...(e.dataTransfer?.files || [])].forEach(_handleFile);
+    });
+
+    // ── FAB ปุ่มเปิด panel ──
+    const fab = document.createElement("button");
+    fab.id = "enh-fab-file";
+    fab.title = "จัดการไฟล์ / เอกสาร";
+    fab.innerHTML = `📎<span class="enh-file-count"></span>`;
+    document.body.appendChild(fab);
+    fab.onclick = () => { panel.classList.toggle("open"); if (panel.classList.contains("open")) _loadDocList(); };
+
+    // camera input สำหรับมือถือ
+    const camInput = document.createElement("input");
+    camInput.type = "file";
+    camInput.accept = "image/*";
+    camInput.capture = "environment";
+    camInput.style.display = "none";
+    document.body.appendChild(camInput);
+    camInput.onchange = () => { if (camInput.files[0]) _handleFile(camInput.files[0]); };
+
+    // เพิ่มปุ่ม 📷 ใน panel header
+    const camBtn = document.createElement("button");
+    camBtn.textContent = "📷 ถ่ายรูป";
+    camBtn.style.cssText = "margin-bottom:8px;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.3);color:#c7d2fe;border-radius:8px;padding:4px 12px;font-size:12px;cursor:pointer;";
+    camBtn.onclick = () => { camInput.value = ""; camInput.click(); };
+    panel.insertBefore(camBtn, document.getElementById("enh-doc-upload-zone"));
+  })();
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 19. COPY MESSAGE — ปุ่มคัดลอกข้อความทั้งก้อน (AI bubble)
   // ─────────────────────────────────────────────────────────────────────────────
   (function () {
     const css = `

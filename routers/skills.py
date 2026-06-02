@@ -220,6 +220,26 @@ async def upload_file(file: UploadFile = File(...)):
         extracted = auto_extract_skills(raw_text, name)
         return {"ok": True, "filename": name, "is_image": False, "text": text[:8000], "skills_extracted": extracted}
 
+    if ext in ("xlsx", "xls") or "spreadsheetml" in mime:
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+            parts = []
+            for sheet in wb.worksheets:
+                rows = ["\t".join(str(c) if c is not None else "" for c in row)
+                        for row in sheet.iter_rows(values_only=True)
+                        if any(c is not None for c in row)]
+                if rows:
+                    parts.append(f"[Sheet: {sheet.title}]\n" + "\n".join(rows))
+            raw_text = "\n\n".join(parts)
+            text = f"[Excel: {name}]\n{raw_text}"
+        except ImportError:
+            return {"ok": False, "error": "ไม่พบ library openpyxl"}
+        except Exception as e:
+            return {"ok": False, "error": f"อ่าน Excel ไม่ได้: {e}"}
+        extracted = auto_extract_skills(raw_text, name)
+        return {"ok": True, "filename": name, "is_image": False, "text": text[:8000], "skills_extracted": extracted}
+
     try:
         if ext == "json":
             import json as _json
