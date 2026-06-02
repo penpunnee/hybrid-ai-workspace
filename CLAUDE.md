@@ -281,37 +281,40 @@ LOG_FILE=server.log
 - **Container name**: docker-compose service `hybrid-ai` → actual container `ai-backend-1` (project name prefix). Use `docker restart ai-backend-1` not `hybrid-ai`
 - `detect_home_tools` over-broad: `_DOCKER_KW` มี "รัน" → prompt ที่มีคำว่า "รัน" (เช่น "ทำไมรันผิด") trigger docker tool โดยไม่ตั้งใจ (low-harm, ฉีด context เกิน)
 - โมเดลเล็ก (ollama llama3) **ไม่ทำตาม guard 100%** — งาน real-time ที่ต้องการความถูกต้องเป๊ะ ให้ใช้ Agent mode / Claude / Gemini
+- **Auth lockout false-positive (แก้แล้ว 2026-06-02)**: React app โหลดหน้าแรกยิง API ไม่มี token → นับเป็น auth-fail → lock ก่อน login. แก้: นับเฉพาะ request ที่มี `x-auth-token` แต่ผิด (`core/ratelimit.py`)
+- **Login modal loop (แก้แล้ว 2026-06-02)**: fetch monkey-patch เปิด login overlay ทุก 401 แม้มี token → แก้ให้เปิดเฉพาะ `!_authToken` (`static/enhanced.js`)
+- **Provider UI**: เมื่อตั้ง `LMSTUDIO_BASE_URL` แล้ว React UI แสดงเฉพาะ 2 ปุ่ม (LMStudio + Gemini) — Ollama ถูกรวมเป็น local เดียวกัน
 
 ## สิ่งที่จะทำต่อ (Next Steps)
 **ลำดับความสำคัญ — งานที่ค้าง/ต่อยอดได้:**
-1. ✅ **[สถาปัตยกรรม] wire home tools เข้า Agent registry — เสร็จแล้ว**
-2. ✅ **[Agent mode] provider-aware orchestrator (2026-06-01)** — `agents/orchestrator.py` รองรับ `provider="gemini"` (default) และ `"lmstudio"`. Gemini ใช้ `google.genai` SDK + function calling. `routers/chat.py` + `routers/agent.py` ส่ง provider ต่อไปแล้ว. suite 554 passed
-3. ✅ **[detect_home_tools] แก้ "รัน" over-broad (2026-06-01)** — ลบ `"รัน"` เดี่ยวออกจาก `_DOCKER_KW`; แทนด้วย compound `"docker รัน"`, `"container รัน"` etc. กัน false trigger บน prompt coding ทั่วไป
-4. ✅ **[HA Agent] Home Assistant tools + Ollama ReAct (2026-06-02)** — `utils/ha_client.py` (search_entities/get_state/call_service ผ่าน REST API HA_URL+HA_TOKEN). tools 3 ตัวใหม่ใน `agents/tools.py`: `ha_search_entities`, `ha_get_state`, `ha_call_service`. `_run_agent_ollama()` ReAct loop ใน `agents/orchestrator.py` รองรับ `provider="ollama"`. **ต้องตั้ง `HA_URL` + `HA_TOKEN` ใน `.env` ก่อน deploy**
-5. 🔑 **ตั้ง `ANTHROPIC_API_KEY` ใน NAS `.env`** → recreate (ปุ่ม Claude/auto ถึงตอบจริง; default = `claude-sonnet-4-6`, max_tokens 4096)
-6. 🏠 **ตั้ง `HA_URL` + `HA_TOKEN` ใน NAS `.env`** → recreate (Ollama/Gemini Agent สั่งอุปกรณ์บ้านได้จริง)
-7. 💾 **ตั้ง DSM task `db_backup.sh`** รายวัน 03:30 (user=root) — กัน feedback หาย
-8. 👍 **สะสม feedback** ~200-500 เพื่อ fine-tune (หรือ bootstrap ด้วย `scripts/gen_seed_sft.py`) → รัน `scripts/improve_loop.sh` บน PC GPU (`.235`, RTX 3060)
-9. 🧹 **(optional) เพิ่ม quality gate ที่ฝั่ง recall** — ปัจจุบัน gate กันตอน *save*; อาจเสริมกรอง lesson ปนเปื้อนตอน *recall* ด้วย
+1. ✅ **[สถาปัตยกรรม] wire home tools เข้า Agent registry**
+2. ✅ **[Agent mode] provider-aware orchestrator (2026-06-01)** — Gemini + LMStudio + Ollama ReAct
+3. ✅ **[detect_home_tools] แก้ "รัน" over-broad (2026-06-01)**
+4. ✅ **[HA Agent] Home Assistant tools + Ollama ReAct (2026-06-02)** — `utils/ha_client.py`, tools `ha_search_entities`/`ha_get_state`/`ha_call_service`, `_run_agent_ollama()` ReAct loop
+5. ✅ **[UI] จัด toolbar (2026-06-02)** — รวม 🏠 Home panel (System+NAS+Docker+PC+WoL) เข้า FAB, ลบ Health widget ซ้ำ, ซ่อนปุ่ม Claude/Vault จนกว่าจะ set key
+6. ✅ **[Auth] แก้ lockout + login loop (2026-06-02)** — ratelimit นับเฉพาะ token ผิด, login overlay ไม่เปิดซ้ำเมื่อมี token
+7. ✅ **[Dream] ใช้ Gemini + timeout 10 นาที (2026-06-02)** — `routers/dream.py` default provider = Gemini ถ้ามี key, fallback Ollama; timeout 600s (env `DREAM_TIMEOUT`)
+8. ✅ **[LMStudio] เปลี่ยนเป็น DeepSeek-R1 (2026-06-02)** — `LMSTUDIO_CHAT_MODEL=deepseek/deepseek-r1-0528-qwen3-8b`, `OLLAMA_NUM_CTX=8192`
+9. 🔑 **ตั้ง `ANTHROPIC_API_KEY` ใน NAS `.env`** → recreate → ปุ่ม ✨ Claude โผล่อัตโนมัติ
+10. 🏠 **ตั้ง `HA_URL` + `HA_TOKEN` ใน NAS `.env`** → recreate → Agent สั่ง HA ได้จริง
+11. 💾 **ตั้ง DSM task `db_backup.sh`** รายวัน 03:30 (user=root)
+12. 👍 **สะสม feedback** ~200-500 → fine-tune บน PC GPU (RTX 3060, `.235`)
+13. 🧹 **(optional) quality gate ฝั่ง recall**
 
 ## ✅ Admin unlock endpoint (2026-06-01)
 `POST /api/admin/unlock` — ล้าง auth-fail lockout สำหรับ IP ที่ระบุ (LAN/loopback เท่านั้น, 403 ถ้ามาจาก Cloudflare/public)
 ```bash
-# ปลด lock IP ที่ระบุ (รันจาก LAN)
+# ปลด lock IP ที่ระบุ (รันจาก LAN) — ต้องระบุ IP จริงของ client ไม่ใช่ NAS
 curl -X POST http://192.168.51.49:8000/api/admin/unlock \
-     -H "Content-Type: application/json" -d '{"ip": "LOCKED_IP"}'
-# ไม่ระบุ ip → ปลด lock IP ของ caller เอง
-curl -X POST http://192.168.51.49:8000/api/admin/unlock
+     -H "Content-Type: application/json" -d '{"ip": "CLIENT_IP"}'
+# หา IP จาก log: docker logs ai-backend-1 2>&1 | grep "auth_fail\|lock" | tail -10
 ```
-- `core/ratelimit.py`: เพิ่ม `SlidingWindowLimiter.reset_key(key)` + `unlock_ip(ip)` (ล้างเฉพาะ key นั้น ไม่ reset ทั้งหมด)
-- suite: 513 passed
 
 ## ✅ Security hardening — scrutinize audit (2026-06-01, deployed+verified prod)
-รัน skill `scrutinize` ทั้งโปรเจกต์ → เจอ+แก้ 5 จุด (TDD, suite 509). **ตรวจแล้วสะอาด:** dream prune (ลบถูกทาง ข้าม verified), code_sandbox (Docker --network none --read-only; local block by default), fs_tools (resolve+relative_to กัน traversal), CORS (specific origins):
-1. 🔴 **fail-closed auth** (`core/auth.py`) — เดิม GET fail-open → vault/documents/skills/feedback/sandbox หลุด public (verified curl 200). แก้เป็น fail-closed (ดู Request Flow). **เพิ่ม endpoint sensitive ใหม่ = ปลอดภัย default ไม่ต้องแก้ denylist**
-2. 🟠 **middleware order** (`server.py`) — register `auth→rate_limit→request_id` (add ทีหลัง=outer) → rate_limit wrap auth เห็น 401 feed lockout. ถ้าเพิ่ม middleware ใหม่ ระวังลำดับนี้
-3. 🟠 **`/api/regenerate`** (`routers/chat.py`) — เคย NameError (`search_memory` ไม่ import) + ลบคำตอบทิ้งก่อน crash. fix import แล้ว + มี test
-4. 🟡 **recall ranking** (`memory/store.py:_rank_results`) — blend `0.5·confidence + 0.5·score` (verified ยัง primary) แทน confidence ล้วน
-5. 🟡 **LM Studio token** (`reasoning/router.py:_lmstudio_headers`) — probe แนบ `LMSTUDIO_API_KEY` (เหมือน orchestrator/embed/llm). **ทุกจุดที่ยิง LM Studio ต้องส่ง token นี้**
+1. 🔴 **fail-closed auth** (`core/auth.py`)
+2. 🟠 **middleware order** (`server.py`)
+3. 🟠 **`/api/regenerate`** (`routers/chat.py`)
+4. 🟡 **recall ranking** (`memory/store.py`)
+5. 🟡 **LM Studio token** (`reasoning/router.py`)
 
-**Deploy:** ทุก commit อยู่บน `core/`/`utils/`/`reasoning/`/`routers/`/`memory/`/`agents/`/`server.py`/`static/` (volume mount) → DSM Task Scheduler `deploy-hybrid-ai` → Run (git fetch + recreate, ไม่ต้อง build). HEAD ล่าสุด = `9630d6c`
+**Deploy:** DSM Task Scheduler `deploy-hybrid-ai` → Run. HEAD ล่าสุด = `66c4f15`
