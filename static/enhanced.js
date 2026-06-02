@@ -134,8 +134,9 @@
       position: fixed; inset: 0; z-index: 99999;
       background: rgba(2,6,23,0.97); backdrop-filter: blur(20px);
       display: none; align-items: center; justify-content: center;
+      pointer-events: none;
     }
-    #login-overlay.open { display: flex; }
+    #login-overlay.open { display: flex; pointer-events: auto; }
     #login-box {
       background: rgba(15,23,42,0.98); border: 1px solid rgba(99,102,241,0.4);
       border-radius: 24px; padding: 40px; width: min(360px, calc(100vw - 32px));
@@ -358,7 +359,7 @@
       .enh-fab span { display: none !important; }
 
       /* toolbar + home panel — ยกขึ้นเหนือ input + token bar */
-      #enh-toolbar { bottom: 100px !important; right: 6px !important; }
+      #enh-toolbar { bottom: 100px !important; right: 6px !important; left: auto !important; flex-direction: column !important; }
       #hw-home-panel { width: calc(100vw - 24px); right: 12px; left: 12px; bottom: 144px; }
 
       /* Scroll-to-bottom button — เหนือปุ่มอื่น */
