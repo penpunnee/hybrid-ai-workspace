@@ -210,6 +210,14 @@ def truncate_from_db_id(db_id: int):
     conn.close()
 
 
+def delete_message_by_id(db_id: int):
+    """ลบ message เดี่ยวตาม db_id"""
+    conn = _get_conn()
+    conn.execute("DELETE FROM messages WHERE id = ?", (db_id,))
+    conn.commit()
+    conn.close()
+
+
 def get_last_user_message(assistant: str, session_id: str) -> str:
     """ดึง user message ล่าสุดของ session"""
     conn = _get_conn()

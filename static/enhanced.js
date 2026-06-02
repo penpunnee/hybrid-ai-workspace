@@ -2310,4 +2310,230 @@
     window.addEventListener("scroll", () => { if (_open) _position(); }, true);
   })();
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 18. COPY MESSAGE — ปุ่มคัดลอกข้อความทั้งก้อน (AI bubble)
+  // ─────────────────────────────────────────────────────────────────────────────
+  (function () {
+    const css = `
+      .enh-copy-msg {
+        position:absolute; top:6px; right:6px;
+        background:rgba(99,102,241,0.15); border:1px solid rgba(99,102,241,0.3);
+        color:#94a3b8; border-radius:6px; padding:2px 8px; font-size:11px;
+        cursor:pointer; opacity:0; transition:opacity .2s;
+      }
+      .enh-copy-msg:hover { background:rgba(99,102,241,0.3); color:#e2e8f0; }
+      .enh-copy-msg.copied { color:#34d399; border-color:rgba(52,211,153,0.4); }
+    `;
+    document.head.appendChild(Object.assign(document.createElement("style"), { textContent: css }));
+
+    const obs = new MutationObserver(() => {
+      document.querySelectorAll("div.flex.group.justify-start").forEach((container) => {
+        if (container.dataset.copyMsgWired) return;
+        const bubble = container.querySelector('[class*="rounded-3xl"]');
+        if (!bubble) return;
+        container.dataset.copyMsgWired = "1";
+        bubble.style.position = "relative";
+
+        const btn = document.createElement("button");
+        btn.className = "enh-copy-msg";
+        btn.textContent = "คัดลอก";
+        bubble.appendChild(btn);
+
+        container.addEventListener("mouseenter", () => (btn.style.opacity = "1"));
+        container.addEventListener("mouseleave", () => (btn.style.opacity = "0"));
+
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const text = bubble.innerText.replace(/คัดลอก$/,"").replace(/📌/g,"").trim();
+          navigator.clipboard.writeText(text).then(() => {
+            btn.textContent = "✓ คัดลอกแล้ว";
+            btn.classList.add("copied");
+            setTimeout(() => { btn.textContent = "คัดลอก"; btn.classList.remove("copied"); }, 2000);
+          });
+        });
+      });
+    });
+    window.addEventListener("load", () => {
+      obs.observe(document.getElementById("root"), { childList: true, subtree: true });
+    });
+  })();
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 19. EDIT + RESEND — แก้ user message แล้วส่งใหม่ (truncate + resend)
+  // 20. DELETE PAIR   — ลบ user message + AI response คู่นั้น
+  // ─────────────────────────────────────────────────────────────────────────────
+  (function () {
+    const css = `
+      .enh-user-actions {
+        display:none; gap:4px; margin-top:4px; justify-content:flex-end;
+      }
+      div.flex.group.justify-end:hover .enh-user-actions { display:flex; }
+      .enh-ua-btn {
+        background:rgba(30,41,59,0.8); border:1px solid rgba(99,102,241,0.25);
+        color:#94a3b8; border-radius:6px; padding:2px 8px; font-size:11px;
+        cursor:pointer; transition:all .2s;
+      }
+      .enh-ua-btn:hover { color:#e2e8f0; border-color:rgba(99,102,241,0.5); }
+      .enh-ua-btn.danger:hover { color:#f87171; border-color:rgba(248,113,113,0.4); }
+      .enh-edit-area {
+        width:100%; min-height:60px; background:rgba(15,23,42,0.9);
+        border:1px solid rgba(99,102,241,0.4); border-radius:12px;
+        color:#e2e8f0; padding:8px 12px; font-size:14px; resize:vertical;
+        font-family:inherit;
+      }
+      .enh-edit-actions { display:flex; gap:6px; margin-top:6px; justify-content:flex-end; }
+      .enh-edit-send {
+        background:#6366f1; color:#fff; border:none; border-radius:8px;
+        padding:4px 16px; font-size:13px; cursor:pointer;
+      }
+      .enh-edit-cancel {
+        background:transparent; color:#94a3b8; border:1px solid rgba(148,163,184,0.3);
+        border-radius:8px; padding:4px 12px; font-size:13px; cursor:pointer;
+      }
+    `;
+    document.head.appendChild(Object.assign(document.createElement("style"), { textContent: css }));
+
+    async function getMsgDbId(content) {
+      await refreshHistory();
+      const msg = _historyCache.find(
+        (m) => (m.content || m.message || "").trim() === content.trim()
+      );
+      return msg?.id || msg?.db_id || null;
+    }
+
+    async function deletePair(dbId) {
+      await _origFetch(`/api/message/${dbId}`, { method: "DELETE" });
+      const next = _historyCache.find((m) => (m.id || m.db_id) > dbId && m.role === "assistant");
+      if (next) await _origFetch(`/api/message/${next.id || next.db_id}`, { method: "DELETE" });
+    }
+
+    async function resendEdited(oldDbId, newText) {
+      await _origFetch(`/api/truncate/${oldDbId}`, { method: "DELETE" });
+      const body = JSON.stringify({
+        assistant: ctx.assistant,
+        session_id: ctx.session,
+        prompt: newText,
+        provider: localStorage.getItem("hw_provider") || "auto",
+      });
+      await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body });
+      setTimeout(() => window.location.reload(), 800);
+    }
+
+    function showEditMode(container, bubble, originalText) {
+      const originalHTML = bubble.innerHTML;
+      bubble.innerHTML = "";
+
+      const ta = document.createElement("textarea");
+      ta.className = "enh-edit-area";
+      ta.value = originalText;
+
+      const acts = document.createElement("div");
+      acts.className = "enh-edit-actions";
+
+      const sendBtn = document.createElement("button");
+      sendBtn.className = "enh-edit-send";
+      sendBtn.textContent = "✓ ส่งใหม่";
+
+      const cancelBtn = document.createElement("button");
+      cancelBtn.className = "enh-edit-cancel";
+      cancelBtn.textContent = "ยกเลิก";
+
+      acts.appendChild(cancelBtn);
+      acts.appendChild(sendBtn);
+      bubble.appendChild(ta);
+      bubble.appendChild(acts);
+      ta.focus();
+
+      cancelBtn.addEventListener("click", () => {
+        bubble.innerHTML = originalHTML;
+        delete container.dataset.editWired;
+        wireUserBubble(container);
+      });
+      sendBtn.addEventListener("click", async () => {
+        const newText = ta.value.trim();
+        if (!newText) return;
+        sendBtn.disabled = true;
+        sendBtn.textContent = "กำลังส่ง…";
+        const dbId = await getMsgDbId(originalText);
+        if (!dbId) { showToast("❌ ไม่พบ message"); bubble.innerHTML = originalHTML; return; }
+        await resendEdited(dbId, newText);
+      });
+    }
+
+    function wireUserBubble(container) {
+      if (container.dataset.editWired) return;
+      const bubble = container.querySelector('[class*="rounded-3xl"]');
+      if (!bubble) return;
+      container.dataset.editWired = "1";
+
+      const actRow = document.createElement("div");
+      actRow.className = "enh-user-actions";
+
+      const editBtn = document.createElement("button");
+      editBtn.className = "enh-ua-btn";
+      editBtn.textContent = "✏️ แก้ไข";
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "enh-ua-btn danger";
+      delBtn.textContent = "🗑️ ลบ";
+
+      actRow.appendChild(editBtn);
+      actRow.appendChild(delBtn);
+      container.appendChild(actRow);
+
+      editBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        showEditMode(container, bubble, bubble.innerText.trim());
+      });
+
+      delBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const dbId = await getMsgDbId(bubble.innerText.trim());
+        if (!dbId) { showToast("❌ ไม่พบ message"); return; }
+        await deletePair(dbId);
+        showToast("🗑️ ลบแล้ว");
+        // ลบ AI bubble ถัดไปออกจาก DOM
+        const all = [...document.querySelectorAll("div.flex.group.justify-start, div.flex.group.justify-end")];
+        const idx = all.indexOf(container);
+        if (idx >= 0 && all[idx + 1]?.classList.contains("justify-start")) all[idx + 1].remove();
+        container.remove();
+      });
+    }
+
+    const userObs = new MutationObserver(() => {
+      document.querySelectorAll("div.flex.group.justify-end").forEach(wireUserBubble);
+    });
+    window.addEventListener("load", () => {
+      userObs.observe(document.getElementById("root"), { childList: true, subtree: true });
+    });
+  })();
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 21. MOBILE KEYBOARD SCROLL — กัน input ถูก keyboard บัง (visualViewport)
+  // ─────────────────────────────────────────────────────────────────────────────
+  (function () {
+    if (!window.visualViewport) return;
+    let _lastVH = window.visualViewport.height;
+
+    function _scrollInputIntoView() {
+      const ta = document.querySelector("textarea");
+      if (!ta) return;
+      const rect = ta.getBoundingClientRect();
+      const vvh = window.visualViewport.height;
+      if (rect.bottom > vvh - 8) {
+        window.scrollBy({ top: rect.bottom - vvh + 16, behavior: "smooth" });
+      }
+    }
+
+    window.visualViewport.addEventListener("resize", () => {
+      const newH = window.visualViewport.height;
+      if (newH < _lastVH - 100) setTimeout(_scrollInputIntoView, 100); // keyboard เปิด
+      _lastVH = newH;
+    });
+
+    document.addEventListener("focusin", (e) => {
+      if (e.target.tagName === "TEXTAREA") setTimeout(_scrollInputIntoView, 300);
+    });
+  })();
+
 })();

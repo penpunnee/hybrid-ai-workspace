@@ -8,6 +8,7 @@ from core.state import share_store_set, share_store_get
 from utils.history import (
     load_history, get_sessions, clear_session, export_history_md,
     pin_message, get_pinned_messages, truncate_from_db_id, rename_session,
+    delete_message_by_id,
 )
 
 router = APIRouter(prefix="/api", tags=["sessions"])
@@ -71,6 +72,13 @@ def export_session(assistant: str, session_id: str):
 @router.delete("/truncate/{db_id}")
 def truncate_endpoint(db_id: int):
     truncate_from_db_id(db_id)
+    return {"ok": True}
+
+
+@router.delete("/message/{db_id}")
+def delete_message_endpoint(db_id: int):
+    """ลบ message เดี่ยว (ใช้คู่กับ delete pair ใน UI)"""
+    delete_message_by_id(db_id)
     return {"ok": True}
 
 
