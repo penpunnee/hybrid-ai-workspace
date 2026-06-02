@@ -105,9 +105,18 @@ class SlidingWindowLimiter:
             self._hits.clear()
             self._last_sweep = 0.0
 
+    def reset_key(self, key: str) -> None:
+        with self._lock:
+            self._hits.pop(key, None)
+
 
 _req_limiter = SlidingWindowLimiter(_RPM, _WINDOW)
 _authfail_limiter = SlidingWindowLimiter(_AUTH_FAIL_MAX, _AUTH_FAIL_WINDOW)
+
+
+def unlock_ip(ip: str) -> None:
+    """ล้าง auth-fail lock สำหรับ IP นั้น — เรียกจาก admin endpoint (LAN-only)"""
+    _authfail_limiter.reset_key(ip)
 
 
 def client_key(request: Request) -> str:
@@ -143,10 +152,14 @@ async def rate_limit_middleware(request: Request, call_next):
     if not allowed:
         return _429("rate limit exceeded", retry)
 
+    # บันทึก token ก่อน call (body อ่านซ้ำไม่ได้ แต่ header อ่านได้)
+    had_token = bool(request.headers.get("x-auth-token", "").strip())
+
     response = await call_next(request)
 
-    # นับ auth failure (401 จาก auth_middleware/login) → feed lockout
-    if response.status_code == 401:
+    # นับ auth failure เฉพาะกรณีมี token แต่ผิด (brute-force จริง)
+    # ถ้าไม่มี token เลย = client ยังไม่ได้ login → ไม่นับ (กัน false lockout ตอนโหลดหน้า)
+    if response.status_code == 401 and had_token:
         _authfail_limiter.record(key)
 
     return response
