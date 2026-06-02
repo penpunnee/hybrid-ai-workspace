@@ -303,9 +303,12 @@ async def chat(request: Request):
                 try:
                     from core.config import LMSTUDIO_BASE_URL, LMSTUDIO_CHAT_MODEL, OLLAMA_MODEL
                     from reasoning.classifier import needs_internet
-                    if LMSTUDIO_BASE_URL:
-                        fb_provider, fb_model = "lmstudio", LMSTUDIO_CHAT_MODEL
-                        fb_model_label = LMSTUDIO_CHAT_MODEL.split("/")[-1]
+                    # router ตัดสินใจ local provider — LMStudio/DeepSeek ก่อน, Ollama เป็น last resort
+                    from reasoning.router import route as _route
+                    _fb_decision = _route(prompt, provider_hint="auto")
+                    if _fb_decision.provider in ("lmstudio", "lmstudio_web"):
+                        fb_provider, fb_model = "lmstudio", _fb_decision.model
+                        fb_model_label = _fb_decision.model.split("/")[-1] if _fb_decision.model else "LMStudio"
                     else:
                         fb_provider, fb_model = "ollama", ""
                         fb_model_label = OLLAMA_MODEL
@@ -421,7 +424,7 @@ async def regenerate_response(request: Request):
     data = await request.json()
     assistant  = data.get("assistant", list(ASSISTANTS.keys())[0])
     session_id = data.get("session_id", "default")
-    provider   = data.get("provider", "ollama")
+    provider   = data.get("provider", "auto")
     agent_mode = bool(data.get("agent_mode", False))
 
     delete_last_assistant_message(assistant, session_id)

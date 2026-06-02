@@ -12,12 +12,8 @@ _DREAM_TIMEOUT = int(os.getenv("DREAM_TIMEOUT", "600"))  # 10 นาที defau
 
 
 def _default_dream_provider() -> str:
-    """เลือก provider สำหรับ Dream REM — DeepSeek (LMStudio) → Gemini → Ollama"""
-    if os.getenv("LMSTUDIO_BASE_URL", "").strip():
-        return "lmstudio"
-    if os.getenv("GEMINI_API_KEY", "").strip():
-        return "gemini"
-    return "ollama"
+    """ให้ router ตัดสินใจ — single source of truth"""
+    return "auto"
 
 
 @router.post("")

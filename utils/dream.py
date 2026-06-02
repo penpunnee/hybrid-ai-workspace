@@ -113,7 +113,7 @@ def light_sleep(hours: int = 24) -> list[dict]:
 
 
 # ---------- Phase 2: REM Sleep ----------
-def rem_sleep(memories: list[dict], provider: str = "ollama") -> dict:
+def rem_sleep(memories: list[dict], provider: str = "auto") -> dict:
     """
     วิเคราะห์ pattern + หาธีม + cross-links
     
@@ -189,6 +189,15 @@ def rem_sleep(memories: list[dict], provider: str = "ollama") -> dict:
             return result
         except json.JSONDecodeError:
             return None
+
+    # ให้ router resolve "auto" → LMStudio/DeepSeek/Gemini/Ollama (single source of truth)
+    if provider == "auto":
+        try:
+            from reasoning.router import route as _route
+            decision = _route("analyze memories and extract themes")
+            provider = decision.provider
+        except Exception:
+            provider = "ollama"
 
     # DeepSeek R1 ผ่าน LMStudio ใช้ REASON model (เหมาะกับ analysis)
     model_override = ""
@@ -484,7 +493,7 @@ def deep_sleep(memories: list[dict], themes: list[dict]) -> dict:
 
 
 # ---------- Main Dream Cycle ----------
-def run_dream_cycle(provider: str = "ollama", hours: int = 24) -> dict:
+def run_dream_cycle(provider: str = "auto", hours: int = 24) -> dict:
     """
     รันวงจรฝันเต็มรูปแบบ
     
@@ -687,6 +696,6 @@ def list_reports(limit: int = 10) -> list[dict]:
 if __name__ == "__main__":
     # รันจาก command line: python -m utils.dream
     import sys
-    provider = sys.argv[1] if len(sys.argv) > 1 else "ollama"
+    provider = sys.argv[1] if len(sys.argv) > 1 else "auto"
     result = run_dream_cycle(provider=provider)
     print(json.dumps(result, ensure_ascii=False, indent=2))

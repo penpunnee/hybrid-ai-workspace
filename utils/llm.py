@@ -113,7 +113,7 @@ _last_failover: dict = {"active": False}  # track failover state
 _health_cache: dict = {"ok": None, "ts": 0.0, "msg": ""}  # cache health check 30s
 
 
-def stream_response(messages: list[dict], provider: str = "ollama",
+def stream_response(messages: list[dict], provider: str = "auto",
                     image_b64: str = "", image_mime: str = "",
                     agent_mode: bool = False, model_override: str = ""):
     """
