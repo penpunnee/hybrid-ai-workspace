@@ -23,6 +23,32 @@ from utils.memory import _get_client
 from utils.llm import stream_response
 from utils.skills import save_skill
 
+_PROCEDURAL_KW = (
+    "วิธี", "ขั้นตอน", "how to", "how-to", "install", "setup", "configure",
+    "deploy", "debug", "fix", "สร้าง", "ติดตั้ง", "ตั้งค่า", "แก้",
+)
+_PERSONAL_KW = (
+    "ชอบ", "ไม่ชอบ", "prefer", "กำลังทำ", "กำลัง", "โปรเจกต์", "project",
+    "working on", "ปอย", "pawin", "พี่ปอย", "ต้องการ", "อยากได้", "นิสัย",
+)
+
+
+def classify_theme(name: str, summary: str) -> str:
+    """คืน 'skill' | 'memory' | 'both' ตาม content ของ theme
+
+    - 'skill'  = procedural knowledge ("วิธี X", "how to X") → บันทึกใน skills_db
+    - 'memory' = personal user context ("ชอบ X", "กำลังทำ X") → บันทึกใน long_term_memory
+    - 'both'   = ไม่ชัดเจน → บันทึกทั้งสองที่ (safe default)
+    """
+    text = (name + " " + summary).lower()
+    is_proc = any(kw in text for kw in _PROCEDURAL_KW)
+    is_pers = any(kw in text for kw in _PERSONAL_KW)
+    if is_proc and not is_pers:
+        return "skill"
+    if is_pers and not is_proc:
+        return "memory"
+    return "both"
+
 # Configure logging for dream cycle
 logger = logging.getLogger(__name__)
 
@@ -164,11 +190,16 @@ def rem_sleep(memories: list[dict], provider: str = "ollama") -> dict:
         except json.JSONDecodeError:
             return None
 
-    logger.info(f"Dream/REM: Analyzing {len(memories)} memories (provider={provider})")
+    # DeepSeek R1 ผ่าน LMStudio ใช้ REASON model (เหมาะกับ analysis)
+    model_override = ""
+    if provider == "lmstudio":
+        model_override = os.getenv("LMSTUDIO_REASON_MODEL", "")
+
+    logger.info(f"Dream/REM: Analyzing {len(memories)} memories (provider={provider}, model={model_override or 'default'})")
 
     # Attempt 1 — full prompt
     try:
-        response = "".join(stream_response(messages, provider=provider))
+        response = "".join(stream_response(messages, provider=provider, model_override=model_override))
         result = _try_parse(response)
         if result:
             logger.info(f"Dream/REM: Found {len(result.get('themes', []))} themes")
@@ -188,7 +219,7 @@ def rem_sleep(memories: list[dict], provider: str = "ollama") -> dict:
                 '"insights":["<actual insight>"],"connections":[]}'
             )},
         ]
-        response2 = "".join(stream_response(simple_msgs, provider=provider))
+        response2 = "".join(stream_response(simple_msgs, provider=provider, model_override=model_override))
         result = _try_parse(response2)
         if result:
             logger.info(f"Dream/REM: attempt 2 succeeded — {len(result.get('themes', []))} themes")
@@ -391,37 +422,48 @@ def deep_sleep(memories: list[dict], themes: list[dict]) -> dict:
         if name and count >= PROMOTE_MIN_HITS:
             theme_counts[name] = count
 
-    # บันทึก theme ที่ผ่านเกณฑ์เข้า skills (sync=False เพื่อไม่ sync ทุกรายการ)
+    skill_promoted = []
+    memory_promoted = []
+
     for theme_name, count in theme_counts.items():
         matching = next((t for t in themes if t.get("name") == theme_name), {})
         summary = matching.get("summary", "")
-        if summary and len(summary) > 10:
+        if not (summary and len(summary) > 10):
+            continue
+
+        dest = classify_theme(theme_name, summary)
+        promoted.append(theme_name)
+
+        if dest in ("skill", "both"):
             save_skill(
                 topic=f"[Dream] {theme_name}",
                 summary=f"{summary} (consolidated {count} times on {datetime.now().strftime('%Y-%m-%d')})",
                 source="dream_cycle",
-                sync=False,  # sync ครั้งเดียวหลัง loop จบ
+                sync=False,
             )
-            promoted.append(theme_name)
+            skill_promoted.append(theme_name)
+
+        if dest in ("memory", "both"):
+            memory_promoted.append(theme_name)
 
     # sync skills ครั้งเดียวหลังบันทึกครบทุก theme
-    if promoted:
+    if skill_promoted:
         try:
             from utils.skills_search import sync_skills_to_search
             from utils.skills import _load_skills_db
             sync_skills_to_search(_load_skills_db())
-            logger.info(f"Dream/DeepSleep: Skills synced after promoting {len(promoted)} themes")
+            logger.info(f"Dream/DeepSleep: Skills synced after promoting {len(skill_promoted)} themes")
         except Exception as e:
             logger.warning(f"Dream/DeepSleep: Skills sync failed (non-critical): {e}")
 
-    # บันทึกเข้า ChromaDB collection "long_term_memory"
-    if client is not None and promoted:
+    # บันทึกเฉพาะ memory-type themes เข้า ChromaDB long_term_memory
+    if client is not None and memory_promoted:
         try:
             col = client.get_or_create_collection(
                 "long_term_memory",
                 metadata={"hnsw:space": "cosine"},
             )
-            for theme_name in promoted:
+            for theme_name in memory_promoted:
                 matching = next((t for t in themes if t.get("name") == theme_name), {})
                 summary = matching.get("summary", "")
                 doc_id = f"lt_{datetime.now().strftime('%Y%m%d')}_{theme_name[:20]}"
@@ -434,7 +476,7 @@ def deep_sleep(memories: list[dict], themes: list[dict]) -> dict:
                         "hits": theme_counts[theme_name],
                     }],
                 )
-            logger.info(f"Dream/DeepSleep: Promoted {len(promoted)} themes to long-term memory")
+            logger.info(f"Dream/DeepSleep: Promoted {len(memory_promoted)} themes to long-term memory")
         except Exception as e:
             logger.error(f"Dream/DeepSleep error: {str(e)}")
 

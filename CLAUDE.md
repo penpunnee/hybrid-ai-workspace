@@ -293,7 +293,7 @@ LOG_FILE=server.log
 4. ✅ **[HA Agent] Home Assistant tools + Ollama ReAct (2026-06-02)** — `utils/ha_client.py`, tools `ha_search_entities`/`ha_get_state`/`ha_call_service`, `_run_agent_ollama()` ReAct loop
 5. ✅ **[UI] จัด toolbar (2026-06-02)** — รวม 🏠 Home panel (System+NAS+Docker+PC+WoL) เข้า FAB, ลบ Health widget ซ้ำ, ซ่อนปุ่ม Claude/Vault จนกว่าจะ set key
 6. ✅ **[Auth] แก้ lockout + login loop (2026-06-02)** — ratelimit นับเฉพาะ token ผิด, login overlay ไม่เปิดซ้ำเมื่อมี token
-7. ✅ **[Dream] ใช้ Gemini + timeout 10 นาที (2026-06-02)** — `routers/dream.py` default provider = Gemini ถ้ามี key, fallback Ollama; timeout 600s (env `DREAM_TIMEOUT`)
+7. ✅ **[Dream] ใช้ DeepSeek R1 (LMStudio) + timeout 10 นาที (2026-06-02)** — `routers/dream.py` default provider = LMStudio (DeepSeek) → Gemini → Ollama; timeout 600s (env `DREAM_TIMEOUT`). `rem_sleep()` ส่ง `LMSTUDIO_REASON_MODEL` เป็น model_override
 8. ✅ **[LMStudio] เปลี่ยนเป็น DeepSeek-R1 (2026-06-02)** — `LMSTUDIO_CHAT_MODEL=deepseek/deepseek-r1-0528-qwen3-8b`, `OLLAMA_NUM_CTX=8192`
 9. 🔑 **ตั้ง `ANTHROPIC_API_KEY` ใน NAS `.env`** → recreate → ปุ่ม ✨ Claude โผล่อัตโนมัติ
 10. 🏠 **ตั้ง `HA_URL` + `HA_TOKEN` ใน NAS `.env`** → recreate → Agent สั่ง HA ได้จริง

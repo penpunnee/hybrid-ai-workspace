@@ -12,7 +12,9 @@ _DREAM_TIMEOUT = int(os.getenv("DREAM_TIMEOUT", "600"))  # 10 นาที defau
 
 
 def _default_dream_provider() -> str:
-    """เลือก provider ที่ดีที่สุดสำหรับ Dream REM — Gemini ก่อน (เร็วและแม่น), fallback Ollama"""
+    """เลือก provider สำหรับ Dream REM — DeepSeek (LMStudio) → Gemini → Ollama"""
+    if os.getenv("LMSTUDIO_BASE_URL", "").strip():
+        return "lmstudio"
     if os.getenv("GEMINI_API_KEY", "").strip():
         return "gemini"
     return "ollama"
