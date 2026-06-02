@@ -100,8 +100,9 @@
         throw err;
       })
       .then((resp) => {
-        // ดัก 401 → login modal
-        if (resp.status === 401) {
+        // ดัก 401 → login modal เฉพาะกรณีไม่มี token (ยังไม่ login)
+        // ถ้ามี token อยู่แล้วแต่ได้ 401 = endpoint อื่น ไม่ force logout
+        if (resp.status === 401 && !_authToken) {
           loginOverlay.classList.add("open");
           setTimeout(() => document.getElementById("login-input")?.focus(), 100);
         }
