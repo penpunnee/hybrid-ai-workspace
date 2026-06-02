@@ -159,24 +159,6 @@
     #login-btn:hover { opacity: 0.9; }
     #login-err { color: #f87171; font-size: 12px; margin-top: 10px; min-height: 18px; }
 
-    /* Health Widget */
-    #hw-btn {
-      position: fixed; bottom: 16px; right: 16px; z-index: 9000;
-      background: rgba(15,23,42,0.85); backdrop-filter: blur(12px);
-      border: 1px solid rgba(99,102,241,0.3); border-radius: 12px;
-      padding: 6px 12px; cursor: pointer; font-size: 11px;
-      color: #94a3b8; display: flex; align-items: center; gap: 8px;
-      transition: all .2s; user-select: none;
-    }
-    #hw-btn:hover { border-color: rgba(99,102,241,0.7); color: #e2e8f0; }
-    #hw-panel {
-      position: fixed; bottom: 52px; right: 16px; z-index: 9001;
-      background: rgba(15,23,42,0.95); backdrop-filter: blur(16px);
-      border: 1px solid rgba(99,102,241,0.25); border-radius: 16px;
-      padding: 16px; min-width: 240px; display: none;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-    }
-    #hw-panel.open { display: block; }
     .hw-row { display: flex; justify-content: space-between; align-items: center;
       padding: 4px 0; font-size: 12px; color: #94a3b8; }
     .hw-val { color: #e2e8f0; font-weight: 600; }
@@ -228,7 +210,7 @@
 
     /* Floating toolbar */
     #enh-toolbar {
-      position: fixed; bottom: 16px; right: 76px; z-index: 9000;
+      position: fixed; bottom: 16px; right: 16px; z-index: 9000;
       display: flex; gap: 6px;
     }
     .enh-fab {
@@ -374,12 +356,8 @@
       }
       .enh-fab span { display: none !important; }
 
-      /* Health widget — ยกขึ้นเหนือ input + token bar (เดิม 16px ทับกัน) */
-      #hw-btn { bottom: 100px !important; left: 6px !important; right: auto !important; padding: 5px 8px !important; }
-      #hw-panel { bottom: 140px !important; left: 6px !important; right: 8px !important; min-width: 0; }
-
-      /* Home control button + panel — ยกขึ้นเหนือ input */
-      #hw-home-btn { bottom: 100px !important; right: 6px !important; width: 36px; height: 36px; font-size: 18px; }
+      /* toolbar + home panel — ยกขึ้นเหนือ input + token bar */
+      #enh-toolbar { bottom: 100px !important; right: 6px !important; }
       #hw-home-panel { width: calc(100vw - 24px); right: 12px; left: 12px; bottom: 144px; }
 
       /* Scroll-to-bottom button — เหนือปุ่มอื่น */
@@ -587,75 +565,9 @@
     } catch {}
   })();
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 1. HEALTH WIDGET
-  // ─────────────────────────────────────────────────────────────────────────────
-  const hwBtn = document.createElement("div");
-  hwBtn.id = "hw-btn";
-  hwBtn.innerHTML = `<span id="hw-dot">●</span><span id="hw-summary">System</span>`;
-  document.body.appendChild(hwBtn);
-
-  const hwPanel = document.createElement("div");
-  hwPanel.id = "hw-panel";
-  hwPanel.innerHTML = `<div class="enh-title">📊 System Health</div><div id="hw-body"></div>`;
-  document.body.appendChild(hwPanel);
-
-  hwBtn.addEventListener("click", () => hwPanel.classList.toggle("open"));
-  document.addEventListener("click", (e) => {
-    if (!hwBtn.contains(e.target) && !hwPanel.contains(e.target))
-      hwPanel.classList.remove("open");
-  });
-
-  function colorPct(pct) {
-    return pct > 85 ? "#f87171" : pct > 65 ? "#fbbf24" : "#34d399";
-  }
-  function barColor(pct) {
-    return pct > 85 ? "#f87171" : pct > 65 ? "#fbbf24" : "#6366f1";
-  }
-
-  async function fetchHealth() {
-    try {
-      const r = await _origFetch("/api/health");
-      const d = await r.json();
-      const disk = d.disk || {};
-      const ram = d.ram || {};
-      const chroma = d.chromadb || {};
-      const dream = d.dream?.last || {};
-
-      document.getElementById("hw-dot").style.color = "#34d399";
-      document.getElementById("hw-summary").textContent =
-        `💾${disk.used_pct ?? "?"}% 🧠${ram.used_pct ?? "?"}%`;
-
-      document.getElementById("hw-body").innerHTML = `
-        <div class="hw-row"><span>💾 Disk</span>
-          <span class="hw-val" style="color:${colorPct(disk.used_pct)}">${disk.used_gb}/${disk.total_gb} GB</span></div>
-        <div class="hw-bar"><div class="hw-fill" style="width:${disk.used_pct}%;background:${barColor(disk.used_pct)}"></div></div>
-
-        <div class="hw-row"><span>🧠 RAM</span>
-          <span class="hw-val" style="color:${colorPct(ram.used_pct)}">${ram.used_mb}/${ram.total_mb} MB</span></div>
-        <div class="hw-bar"><div class="hw-fill" style="width:${ram.used_pct}%;background:${barColor(ram.used_pct)}"></div></div>
-
-        <div class="hw-row"><span>🔵 ChromaDB</span>
-          <span class="hw-val ${chroma.available ? "hw-ok" : "hw-err"}">
-            ${chroma.available ? `✅ ${chroma.total ?? 0} entries` : "❌ Offline"}</span></div>
-
-        <div class="hw-row"><span>🌙 Dream ล่าสุด</span>
-          <span class="hw-val">${dream.started_at ? dream.started_at.slice(0,16) : "ยังไม่มี"}</span></div>
-
-        <div class="hw-row"><span>📚 Skills</span>
-          <span class="hw-val">${d.skills_count ?? 0} skills</span></div>
-
-        <div class="hw-row"><span>🗄️ DB</span>
-          <span class="hw-val">${d.db_size_mb ?? 0} MB</span></div>
-      `;
-    } catch {
-      document.getElementById("hw-dot").style.color = "#f87171";
-      document.getElementById("hw-summary").textContent = "Offline";
-    }
-  }
-
-  fetchHealth();
-  setInterval(fetchHealth, 60_000);
+  // helper สีตาม % (ใช้ร่วมกับ home panel)
+  function colorPct(pct) { return pct > 85 ? "#f87171" : pct > 65 ? "#fbbf24" : "#34d399"; }
+  function barColor(pct)  { return pct > 85 ? "#f87171" : pct > 65 ? "#fbbf24" : "#6366f1"; }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 1.5 DREAM STATS — แทนค่า hardcoded 40/40/20% ด้วยข้อมูล dream cycle จริง
@@ -962,6 +874,9 @@
   const toolbar = document.createElement("div");
   toolbar.id = "enh-toolbar";
   toolbar.innerHTML = `
+    <button class="enh-fab" id="fab-home" title="Home — สถานะระบบ + บ้าน">
+      🏠 <span>Home</span>
+    </button>
     <button class="enh-fab" id="fab-search" title="ค้นหาทุก Session (Ctrl+Shift+F)">
       🔍 <span>Search</span>
     </button>
@@ -1400,32 +1315,19 @@
   );
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 14. HOME CONTROL PANEL — NAS + PC + Wake-on-LAN (rewritten v2)
+  // 14. HOME PANEL — System Health + NAS + Docker + PC + WoL (รวมใน FAB 🏠)
   // ─────────────────────────────────────────────────────────────────────────────
-  // inject CSS
   document.head.insertAdjacentHTML("beforeend", `<style>
-    #hw-home-btn {
-      position:fixed; bottom:72px; right:18px; z-index:9300;
-      width:42px; height:42px; border-radius:50%;
-      background:rgba(15,23,42,0.9); border:1.5px solid rgba(99,102,241,0.5);
-      cursor:pointer; font-size:20px; display:flex; align-items:center; justify-content:center;
-      box-shadow:0 4px 16px rgba(0,0,0,0.5); transition:all .2s; user-select:none;
-    }
-    #hw-home-btn:hover { transform:scale(1.12); border-color:#818cf8; }
-    #hw-home-btn.active { border-color:#6366f1; background:rgba(99,102,241,0.25); }
     #hw-home-panel {
-      position:fixed; bottom:122px; right:18px; z-index:9299;
-      width:min(308px, calc(100vw - 32px)); max-height:70vh; overflow-y:auto;
-      background:rgba(8,12,24,0.96); border:1px solid rgba(99,102,241,0.35);
+      position:fixed; bottom:52px; right:16px; z-index:9299;
+      width:min(320px, calc(100vw - 32px)); max-height:80vh; overflow-y:auto;
+      background:rgba(8,12,24,0.97); border:1px solid rgba(99,102,241,0.35);
       border-radius:16px; backdrop-filter:blur(20px);
-      padding:14px 14px 12px; display:none; flex-direction:column; gap:9px;
+      padding:14px 14px 12px; display:none; flex-direction:column; gap:8px;
       box-shadow:0 12px 40px rgba(0,0,0,0.6); color:#e2e8f0; font-size:12px;
     }
     #hw-home-panel.show { display:flex; }
     .hw-h { font-size:10px; color:#6366f1; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
-    .hw-row { display:flex; align-items:center; gap:7px; }
-    .hw-bar { height:4px; border-radius:2px; background:rgba(255,255,255,0.07); margin-top:3px; }
-    .hw-bar-fill { height:100%; border-radius:2px; transition:width .5s; }
     .hw-sep { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:1px 0; }
     .hw-btn {
       flex:1; padding:5px 6px; border-radius:8px; border:none; cursor:pointer;
@@ -1437,16 +1339,10 @@
     .hw-o:hover { background:rgba(251,146,60,.22); }
     .hw-b { background:rgba(99,102,241,.12); color:#818cf8; border:1px solid rgba(99,102,241,.3); }
     .hw-b:hover { background:rgba(99,102,241,.22); }
+    .hw-bar { height:4px; border-radius:2px; background:rgba(255,255,255,0.07); margin-top:3px; }
+    .hw-bar-fill { height:100%; border-radius:2px; transition:width .5s; }
   </style>`);
 
-  // toggle button
-  const hcBtn = document.createElement("div");
-  hcBtn.id = "hw-home-btn";
-  hcBtn.title = "Home Control";
-  hcBtn.innerHTML = "🏠";
-  document.body.appendChild(hcBtn);
-
-  // panel skeleton (buttons wired via addEventListener, NOT onclick=)
   const hcPanel = document.createElement("div");
   hcPanel.id = "hw-home-panel";
   document.body.appendChild(hcPanel);
@@ -1455,25 +1351,34 @@
 
   function _hwRender() {
     hcPanel.innerHTML = `
-      <div class="hw-row" style="margin-bottom:2px">
-        <span class="hw-h" style="flex:1">🏠 Home Control</span>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+        <span style="font-size:14px">🏠</span>
+        <span style="font-weight:700;font-size:13px;flex:1">Home</span>
         <span id="hw-ts" style="font-size:10px;color:#475569">—</span>
         <button id="hw-x" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:13px;padding:0 0 0 8px">✕</button>
       </div>
       <hr class="hw-sep">
-      <div class="hw-h" style="color:#94a3b8">💾 NAS Storage</div>
+
+      <div class="hw-h">📊 System</div>
+      <div id="hw-sys" style="color:#64748b;font-size:11px">กำลังโหลด…</div>
+      <hr class="hw-sep">
+
+      <div class="hw-h">💾 NAS Storage</div>
       <div id="hw-disk" style="color:#64748b;font-size:11px">กำลังโหลด…</div>
       <hr class="hw-sep">
-      <div class="hw-h" style="color:#94a3b8">🐳 Docker Containers</div>
+
+      <div class="hw-h">🐳 Docker</div>
       <div id="hw-docker" style="color:#64748b;font-size:11px">กำลังโหลด…</div>
       <hr class="hw-sep">
-      <div class="hw-h" style="color:#94a3b8">🖥️ PC 192.168.51.235</div>
-      <div id="hw-pc" class="hw-row" style="color:#64748b;font-size:11px">กำลัง ping…</div>
+
+      <div class="hw-h">🖥️ PC</div>
+      <div id="hw-pc" style="color:#64748b;font-size:11px">กำลัง ping…</div>
       <hr class="hw-sep">
-      <div class="hw-row">
+
+      <div style="display:flex;gap:6px">
         <button id="hw-refresh" class="hw-btn hw-g">🔄 Refresh</button>
         <button id="hw-wol" class="hw-btn hw-o">⚡ Wake PC</button>
-        <button id="hw-pingnas" class="hw-btn hw-b">📡 Ping NAS</button>
+        <button id="hw-pingnas" class="hw-btn hw-b">📡 NAS</button>
       </div>`;
 
     document.getElementById("hw-x").addEventListener("click", _hwClose);
@@ -1483,42 +1388,70 @@
   }
 
   let _hwOpen = false;
+  const _fabHome = document.getElementById("fab-home");
 
-  function _hwClose() { hcPanel.classList.remove("show"); hcBtn.classList.remove("active"); _hwOpen = false; }
+  function _hwClose() {
+    hcPanel.classList.remove("show");
+    _fabHome && _fabHome.classList.remove("enh-fab-active");
+    _hwOpen = false;
+  }
   function _hwToggle(e) {
     e.stopPropagation();
     if (_hwOpen) { _hwClose(); return; }
     _hwOpen = true;
     _hwRender();
     hcPanel.classList.add("show");
-    hcBtn.classList.add("active");
+    _fabHome && _fabHome.classList.add("enh-fab-active");
     _hwRefresh();
   }
 
-  hcBtn.addEventListener("click", _hwToggle);
+  _fabHome && _fabHome.addEventListener("click", _hwToggle);
   document.addEventListener("click", (e) => {
-    if (_hwOpen && !hcPanel.contains(e.target) && e.target !== hcBtn && !hcBtn.contains(e.target))
+    if (_hwOpen && !hcPanel.contains(e.target) && e.target !== _fabHome && !(_fabHome && _fabHome.contains(e.target)))
       _hwClose();
   });
 
   async function _hwRefresh() {
     const h = _authToken ? { "x-auth-token": _authToken } : {};
 
+    // system health (RAM + ChromaDB + Skills)
+    try {
+      const d = await _origFetch("/api/health", { headers: h }).then(x => x.json());
+      const el = document.getElementById("hw-sys"); if (!el) return;
+      const ram = d.ram || {};
+      const chroma = d.chromadb || {};
+      const rc = _hwBarColor(ram.used_pct);
+      el.innerHTML = `
+        <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+          <span style="color:#94a3b8">🧠 RAM</span>
+          <span style="color:${rc};font-weight:600">${ram.used_mb ?? "?"}/${ram.total_mb ?? "?"}MB</span>
+        </div>
+        <div class="hw-bar"><div class="hw-bar-fill" style="width:${ram.used_pct ?? 0}%;background:${rc}"></div></div>
+        <div style="display:flex;justify-content:space-between;margin-top:4px">
+          <span style="color:#94a3b8">🔵 ChromaDB</span>
+          <span style="color:${chroma.available?"#34d399":"#f87171"}">${chroma.available ? "Online" : "Offline"}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span style="color:#94a3b8">📚 Skills</span>
+          <span style="color:#e2e8f0">${d.skills_count ?? 0}</span>
+        </div>`;
+    } catch(e) { const el=document.getElementById("hw-sys"); if(el) el.textContent="❌ " + e.message; }
+
     // disk
     try {
       const r = await _origFetch("/api/tools/home/disk", { headers: h }).then(x => x.json());
-      const el = document.getElementById("hw-disk");
-      if (!el) return;
+      const el = document.getElementById("hw-disk"); if (!el) return;
       if (r.error) { el.textContent = "❌ " + r.error; }
       else if (!r.volumes?.length) { el.textContent = "ไม่พบข้อมูล volume"; }
       else {
         el.innerHTML = r.volumes.map(v => {
           const c = _hwBarColor(v.percent);
           return `<div style="margin-bottom:4px">
-            <div class="hw-row"><span style="flex:1;color:#94a3b8">${v.path}</span>
-            <span style="color:${c};font-weight:600">${v.free_gb} GB ว่าง</span></div>
+            <div style="display:flex;justify-content:space-between">
+              <span style="color:#94a3b8">${v.path}</span>
+              <span style="color:${c};font-weight:600">${v.free_gb}GB ว่าง</span>
+            </div>
             <div class="hw-bar"><div class="hw-bar-fill" style="width:${v.percent}%;background:${c}"></div></div>
-            <div style="color:#475569;font-size:10px">${v.used_gb} / ${v.total_gb} GB · ${v.percent}%</div>
           </div>`;
         }).join("");
       }
@@ -1527,13 +1460,12 @@
     // docker
     try {
       const r = await _origFetch("/api/tools/home/docker", { headers: h }).then(x => x.json());
-      const el = document.getElementById("hw-docker");
-      if (!el) return;
+      const el = document.getElementById("hw-docker"); if (!el) return;
       if (r.error) { el.textContent = "❌ " + r.error; }
       else {
         const cs = r.containers || [];
         el.innerHTML = cs.length ? cs.map(c =>
-          `<div class="hw-row" style="margin-bottom:2px">
+          `<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
             <span>${c.running?"🟢":"🔴"}</span>
             <span style="flex:1;color:${c.running?"#e2e8f0":"#475569"}">${c.name}</span>
             <span style="color:#334155;font-size:10px">${c.status}</span>
@@ -1544,12 +1476,11 @@
     // ping PC
     try {
       const r = await _origFetch("/api/tools/home/ping/192.168.51.235", { headers: h }).then(x => x.json());
-      const el = document.getElementById("hw-pc");
-      if (!el) return;
+      const el = document.getElementById("hw-pc"); if (!el) return;
       const lat = r.latency_ms != null ? ` · ${r.latency_ms.toFixed(1)}ms` : "";
       el.innerHTML = r.online
-        ? `<span>🟢</span><span style="color:#34d399">Online${lat}</span>`
-        : `<span>🔴</span><span style="color:#ef4444">Offline</span>`;
+        ? `<span style="color:#34d399">🟢 Online${lat}</span>`
+        : `<span style="color:#ef4444">🔴 Offline</span>`;
     } catch(e) { const el=document.getElementById("hw-pc"); if(el) el.textContent="❌ " + e.message; }
 
     const ts = document.getElementById("hw-ts");
@@ -1557,22 +1488,19 @@
   }
 
   async function _hwWol() {
-    const btn = document.getElementById("hw-wol");
-    if (!btn) return;
+    const btn = document.getElementById("hw-wol"); if (!btn) return;
     btn.textContent = "⏳…"; btn.disabled = true;
     try {
       const h = { "Content-Type": "application/json", ...(_authToken ? { "x-auth-token": _authToken } : {}) };
       const r = await _origFetch("/api/tools/home/wol", { method: "POST", headers: h }).then(x => x.json());
       btn.textContent = r.ok ? "✅ ส่งแล้ว!" : "❌ Error";
-      if (!r.ok && r.error) alert(r.error);
       if (r.ok) setTimeout(_hwRefresh, 35000);
     } catch { btn.textContent = "❌ Error"; }
     setTimeout(() => { if(btn){btn.textContent="⚡ Wake PC";btn.disabled=false;} }, 5000);
   }
 
   async function _hwPingNAS() {
-    const btn = document.getElementById("hw-pingnas");
-    if (!btn) return;
+    const btn = document.getElementById("hw-pingnas"); if (!btn) return;
     btn.textContent = "⏳…"; btn.disabled = true;
     try {
       const h = _authToken ? { "x-auth-token": _authToken } : {};
@@ -1580,7 +1508,7 @@
       const lat = r.latency_ms != null ? ` ${r.latency_ms.toFixed(1)}ms` : "";
       btn.textContent = r.online ? `📡 OK${lat}` : "📡 Offline";
     } catch { btn.textContent = "📡 Error"; }
-    setTimeout(() => { if(btn){btn.textContent="📡 Ping NAS";btn.disabled=false;} }, 4000);
+    setTimeout(() => { if(btn){btn.textContent="📡 NAS";btn.disabled=false;} }, 4000);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
