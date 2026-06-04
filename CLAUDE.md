@@ -56,7 +56,7 @@ docker compose logs hybrid-ai -f
    - `lessons` — auto-learned (ChromaDB)
    - `skills_md` — keyword-matched .md files (`load_skills_relevant`)
 3. **Volatile block** (เปลี่ยนทุก turn):
-   - `memory_ctx` — 3-tier recall (working + episodic + long_term)
+   - `memory_ctx` — 4-tier recall (working + episodic + **user_facts** + long_term)
    - `search_skills` — semantic top-3 จาก ChromaDB skills index
    - `vault_ctx` — Obsidian notes (ถ้า `obsidian_inject: true`)
    - `docs_ctx` — uploaded documents RAG (Phase B, `retrieve_chunks` + cache)
@@ -90,6 +90,7 @@ Ollama branch: context cap 2000 chars; trim history to <3000 tokens.
 | Chat history, sessions, pins, shares | `chat_history.db` (SQLite) |
 | Feedback (thumbs up/down) | `chat_history.db` table `feedback` (Phase C) |
 | Long-term + episodic memory | ChromaDB (external service) |
+| User facts (shared ทุก assistant) | ChromaDB `user_facts` — บันทึกจาก "จำไว้ว่า" / prefer / correction |
 | Skills knowledge base | `skills/*.md` (file system) + `skills_db.json` + ChromaDB `skills_search` |
 | Dream reports | `dream_reports/dream_YYYYMMDD_HHMMSS.json` |
 | Document chunks (Phase B) | ChromaDB collection `documents` |
@@ -166,6 +167,7 @@ Response headers: `X-Request-Id`, `X-Provider-Used`, `X-Model-Used`
 ### Memory Tiers
 1. **Working** (in-mem ring buffer per session_id) — `memory/working.py`
 2. **Episodic** — ChromaDB `memory_{assistant_slug}` (confidence-based, decays via Dream)
+2.5. **User Facts** — ChromaDB `user_facts` (shared ทุก assistant) — บันทึกผ่าน `memory/teach.py`, ค้นหาผ่าน `search_user_facts(min_score=0.6)`. inject ใน `recall()` ทุก turn ใต้ header `[ข้อมูลของคุณ]`
 3. **Long-term** — ChromaDB `long_term_memory` (Dream-promoted themes only)
 
 ### Dream Cycle (02:00 Asia/Bangkok)
@@ -181,6 +183,7 @@ Response headers: `X-Request-Id`, `X-Provider-Used`, `X-Model-Used`
 | Embed | sqlite WAL `data/embed_cache.db` | unlimited | exact text |
 | Retrieval (per-session) | in-memory dict | 10min / 200 sessions | cosine ≥ 0.85 |
 | Response (semantic) | sqlite WAL `data/response_cache.db` | 30 days / 1000 entries | cosine ≥ 0.92 |
+| Response bypass | — | — | `is_realtime_query()` — ping/disk/docker/ราคา/อากาศ/สถานะระบบ bypass เสมอ |
 
 Stats: `GET /api/cache/stats`
 
@@ -279,7 +282,7 @@ LOG_FILE=server.log
 - Cloudflare tunnel returns 530 when origin down → check `cloudflared` container
 - `static/skills/` (git) ≠ `data/skills/` (container mount) — copy needed after `git pull`
 - **Container name**: docker-compose service `hybrid-ai` → actual container `ai-backend-1` (project name prefix). Use `docker restart ai-backend-1` not `hybrid-ai`
-- `detect_home_tools` over-broad: `_DOCKER_KW` มี "รัน" → prompt ที่มีคำว่า "รัน" (เช่น "ทำไมรันผิด") trigger docker tool โดยไม่ตั้งใจ (low-harm, ฉีด context เกิน)
+- `detect_home_tools` keyword precision: `_DOCKER_KW` ใช้ compound เท่านั้น (`"docker รัน"`, `"docker หยุดทำงาน"` ฯลฯ) — standalone `"รัน"` / `"หยุด"` / `"หยุดทำงาน"` ถูกตัดออกแล้ว (session 2026-06-03)
 - โมเดลเล็ก (ollama llama3) **ไม่ทำตาม guard 100%** — งาน real-time ที่ต้องการความถูกต้องเป๊ะ ให้ใช้ Agent mode / Claude / Gemini
 - **Auth lockout false-positive (แก้แล้ว 2026-06-02)**: React app โหลดหน้าแรกยิง API ไม่มี token → นับเป็น auth-fail → lock ก่อน login. แก้: นับเฉพาะ request ที่มี `x-auth-token` แต่ผิด (`core/ratelimit.py`)
 - **Login modal loop (แก้แล้ว 2026-06-02)**: fetch monkey-patch เปิด login overlay ทุก 401 แม้มี token → แก้ให้เปิดเฉพาะ `!_authToken` (`static/enhanced.js`)
@@ -324,6 +327,58 @@ reasoning/router.py → LMStudio/DeepSeek → Gemini → Ollama (last resort)
 `agents/orchestrator.py` เพิ่ม rule บังคับ:
 - user พูด "ไปหาในเน็ต"/"เช็คเน็ต"/"search" → **ต้องเรียก `web_search` ทันที** ทั้งใน `AGENT_SYSTEM_HINT` และ `_REACT_SYSTEM`
 
+## Web Search (2026-06-04)
+`utils/websearch.py` อัปเดต:
+- **Google Custom Search API** เป็น provider หลัก (ต้องตั้ง `GOOGLE_SEARCH_API_KEY` + `GOOGLE_SEARCH_CX`) → fallback DDG
+- **Domain credibility scoring** — `_domain_score(url)` คืน (score, label):
+  - 🟢 แหล่งทางการ (1.2x): `.go.th`, `.gov.`, `.edu.`, `wikipedia.org`, `bbc.com`, `reuters.com` ฯลฯ
+  - 🔵 ทั่วไป (1.0x): เว็บทั่วไป
+  - 🟡 ระวัง (0.7x): `blogspot`, `pantip.com`, `reddit.com`, `facebook.com` ฯลฯ
+- คูณ `_rerank_score × domain_score` ก่อน inject → แหล่งทางการขึ้นก่อน
+- inject คำสั่งสังเคราะห์ใน prompt: "เรียบเรียงด้วยภาษาของตัวเอง ห้ามคัดลอก"
+- แจ้ง hint "ข้อมูลอาจขัดแย้ง" อัตโนมัติเมื่อมีแหล่ง low credibility
+
+**ENV ที่ต้องตั้งบน NAS:**
+```env
+GOOGLE_SEARCH_API_KEY=AIza...
+GOOGLE_SEARCH_CX=44c7c0b7c3c5049a2
+```
+
+## OCR + Document Summarization (2026-06-04)
+### `utils/ocr.py` — OCR ด้วย Vision LLM
+- **PDF scan** → `pdf2image` แปลง PNG ทีละหน้า → Gemini Vision อ่านข้อความ → fallback LMStudio Vision
+- **รูปภาพ** (JPG/PNG/WEBP) → Gemini Vision โดยตรง
+- auto-detect ใน upload: PDF ไม่มีข้อความ → OCR อัตโนมัติ
+- รองรับ: `.pdf .jpg .jpeg .png .webp`
+- ต้องการ: `poppler` (brew install poppler บน Mac, apt install poppler-utils บน NAS)
+
+### `utils/summarize.py` — Map-Reduce Summarization
+```
+text ยาว → chunk_text() → MAP (สรุปแต่ละ chunk) → REDUCE (รวมเป็น final)
+```
+- **Model**: DeepSeek-R1 via LMStudio → fallback Gemini (ถ้า LMStudio ต่อไม่ได้)
+- **summary_type**: `general` | `legal` | `financial` | `academic`
+- chunk_size default = 3,000 chars
+
+### Endpoints ใหม่
+| Endpoint | ใช้ทำ |
+|---|---|
+| `POST /api/documents/ocr` | OCR PDF scan / รูปภาพ → คืน text |
+| `POST /api/documents/summarize` | สรุปเอกสาร (Map-Reduce) รองรับ multipart + JSON |
+
+**ตัวอย่าง:**
+```bash
+# OCR
+curl -X POST http://NAS:8000/api/documents/ocr -F "file=@scan.pdf"
+# สรุป
+curl -X POST http://NAS:8000/api/documents/summarize -F "file=@report.pdf" -F "summary_type=general"
+```
+
+**⚠️ NAS ต้องติดตั้ง poppler:**
+```bash
+sudo apt-get install -y poppler-utils
+```
+
 ## สิ่งที่จะทำต่อ (Next Steps)
 **ลำดับความสำคัญ — งานที่ค้าง/ต่อยอดได้:**
 1. ✅ **[สถาปัตยกรรม] wire home tools เข้า Agent registry**
@@ -338,11 +393,19 @@ reasoning/router.py → LMStudio/DeepSeek → Gemini → Ollama (last resort)
 10. ✅ **[UX] copy/edit/delete message + mobile keyboard (2026-06-03)**
 11. ✅ **[Files] PDF/DOCX/XLSX upload + File Manager UI (2026-06-03)**
 12. ✅ **[Classifier] เพิ่ม pattern เน็ต/อากาศ/ฝน + agent web_search rule (2026-06-03)**
-13. 🔑 **ตั้ง `ANTHROPIC_API_KEY` ใน NAS `.env`** → recreate → ปุ่ม ✨ Claude โผล่อัตโนมัติ
-14. 🏠 **ตั้ง `HA_URL` + `HA_TOKEN` ใน NAS `.env`** → recreate → Agent สั่ง HA ได้จริง
-15. 💾 **ตั้ง DSM task `db_backup.sh`** รายวัน 03:30 (user=root)
-16. 👍 **สะสม feedback** ~200-500 → fine-tune บน PC GPU (RTX 3060, `.235`)
-17. 🧹 **(optional) quality gate ฝั่ง recall**
+13. ✅ **[Memory] User Facts tier 2.5 — shared `user_facts` ChromaDB collection (2026-06-03)**
+14. ✅ **[Cache] `is_realtime_query` bypass response cache สำหรับ real-time query (2026-06-03)**
+15. ✅ **[home_tools] แก้ `_DOCKER_KW` "หยุด"/"หยุดทำงาน" over-broad → compound เท่านั้น (2026-06-03)**
+16. ✅ **[Tests] score threshold + docker keyword + auth lockout test fixes (2026-06-03)**
+17. ✅ **[Search] Google Custom Search + domain credibility scoring (2026-06-04)**
+18. ✅ **[OCR] Gemini Vision OCR + auto-detect PDF scan (2026-06-04)**
+19. ✅ **[Summarize] Map-Reduce DeepSeek-R1 + Gemini fallback (2026-06-04)**
+20. 🔑 **ตั้ง `ANTHROPIC_API_KEY` ใน NAS `.env`** → recreate → ปุ่ม ✨ Claude โผล่อัตโนมัติ
+21. 🏠 **ตั้ง `HA_URL` + `HA_TOKEN` ใน NAS `.env`** → recreate → Agent สั่ง HA ได้จริง
+22. 💾 **ตั้ง DSM task `db_backup.sh`** รายวัน 03:30 (user=root)
+23. 📦 **ติดตั้ง `poppler-utils` บน NAS** → รองรับ OCR PDF scan
+24. 👍 **สะสม feedback** ~200-500 → fine-tune บน PC GPU (RTX 3060, `.235`)
+25. 🧹 **(optional) quality gate ฝั่ง recall**
 
 ## ✅ Admin unlock endpoint (2026-06-01)
 `POST /api/admin/unlock` — ล้าง auth-fail lockout สำหรับ IP ที่ระบุ (LAN/loopback เท่านั้น, 403 ถ้ามาจาก Cloudflare/public)
@@ -360,4 +423,4 @@ curl -X POST http://192.168.51.49:8000/api/admin/unlock \
 4. 🟡 **recall ranking** (`memory/store.py`)
 5. 🟡 **LM Studio token** (`reasoning/router.py`)
 
-**Deploy:** DSM Task Scheduler `deploy-hybrid-ai` → Run. HEAD ล่าสุด = `66c4f15`
+**Deploy:** DSM Task Scheduler `deploy-hybrid-ai` → Run. HEAD ล่าสุด = `36f6660` (session 2026-06-04: Google Search + OCR + Summarize)
