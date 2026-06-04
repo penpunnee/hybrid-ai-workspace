@@ -105,6 +105,23 @@ def test_limiter_record_and_reset(clock):
     assert lim.over_limit("ip")[0] is False
 
 
+def test_reset_key_clears_only_target(clock):
+    lim = rl.SlidingWindowLimiter(limit=2, window=60)
+    lim.record("a"); lim.record("a")
+    lim.record("b"); lim.record("b")
+    lim.reset_key("a")
+    assert lim.over_limit("a")[0] is False   # a ถูกล้าง
+    assert lim.over_limit("b")[0] is True    # b ยังคง lock อยู่
+
+
+def test_unlock_ip_clears_authfail(monkeypatch, clock):
+    monkeypatch.setattr(rl, "_authfail_limiter", rl.SlidingWindowLimiter(limit=2, window=300))
+    rl._authfail_limiter.record("1.2.3.4"); rl._authfail_limiter.record("1.2.3.4")
+    assert rl._authfail_limiter.over_limit("1.2.3.4")[0] is True
+    rl.unlock_ip("1.2.3.4")
+    assert rl._authfail_limiter.over_limit("1.2.3.4")[0] is False
+
+
 # ── client_key ────────────────────────────────────────────────────────────────
 # หมายเหตุ: ใช้ public IP จริง (8.8.8.8 ฯลฯ) — TEST-NET (203.0.113.x) ถูก Python 3.14
 # จัดเป็น is_private=True → is_local_request bypass → rate limit ไม่ทำงาน
@@ -171,7 +188,8 @@ def test_mw_public_over_limit_429(fresh_limiters):
 
 
 def test_mw_auth_fail_lockout(fresh_limiters):
-    pub = _req(host="8.8.4.4")
+    # ส่ง token ผิดจำลอง brute-force — ratelimit.py นับเฉพาะ had_token=True
+    pub = _req(host="8.8.4.4", headers={"x-auth-token": "wrong-token"})
     # 401 สองครั้ง (limit auth_fail = 2) → ครั้งถัดไปถูก lock
     assert _run_mw(pub, status=401).status_code == 401
     assert _run_mw(pub, status=401).status_code == 401

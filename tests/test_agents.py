@@ -178,12 +178,19 @@ class FakeClient:
         return SimpleNamespace(completions=SimpleNamespace(create=self._create))
 
 
-def _run(messages, **kw):
-    return list(orch.run_agent(messages, **kw))
+def _run(messages, provider="lmstudio", **kw):
+    return list(orch.run_agent(messages, provider=provider, **kw))
+
+
+def _patch_lmstudio(monkeypatch, fake_client):
+    """patch OpenAI constructor ใน _run_agent_lmstudio และตั้ง LMSTUDIO_BASE_URL"""
+    monkeypatch.setattr(orch, "LMSTUDIO_BASE_URL", "http://fake:1234/v1")
+    import openai
+    monkeypatch.setattr(openai, "OpenAI", lambda **kw: fake_client)
 
 
 def test_agent_direct_answer_no_tools(monkeypatch):
-    monkeypatch.setattr(orch, "_client", FakeClient([_resp(_msg(content="คำตอบตรงๆ"))]))
+    _patch_lmstudio(monkeypatch, FakeClient([_resp(_msg(content="คำตอบตรงๆ"))]))
     events = _run([{"role": "system", "content": "base"}])
     kinds = [e[1]["type"] for e in events if e[0] == "event"]
     chunks = [e[1] for e in events if e[0] == "chunk"]
@@ -192,21 +199,21 @@ def test_agent_direct_answer_no_tools(monkeypatch):
 
 
 def test_agent_injects_system_hint(monkeypatch):
-    monkeypatch.setattr(orch, "_client", FakeClient([_resp(_msg(content="x"))]))
+    _patch_lmstudio(monkeypatch, FakeClient([_resp(_msg(content="x"))]))
     messages = [{"role": "system", "content": "base"}]
     _run(messages)
     assert "[Agent Mode]" in messages[0]["content"]
 
 
 def test_agent_inserts_system_when_missing(monkeypatch):
-    monkeypatch.setattr(orch, "_client", FakeClient([_resp(_msg(content="x"))]))
+    _patch_lmstudio(monkeypatch, FakeClient([_resp(_msg(content="x"))]))
     messages = [{"role": "user", "content": "hi"}]
     _run(messages)
     assert messages[0]["role"] == "system"
 
 
 def test_agent_tool_call_then_answer(monkeypatch):
-    monkeypatch.setattr(orch, "_client", FakeClient([
+    _patch_lmstudio(monkeypatch, FakeClient([
         _resp(_msg(tool_calls=[_tool_call("c1", "calculator", '{"expression": "2+2"}')])),
         _resp(_msg(content="ได้ 4")),
     ]))
@@ -224,7 +231,7 @@ def test_agent_tool_call_then_answer(monkeypatch):
 
 
 def test_agent_llm_error_yields_error_event(monkeypatch):
-    monkeypatch.setattr(orch, "_client", FakeClient([RuntimeError("boom")]))
+    _patch_lmstudio(monkeypatch, FakeClient([RuntimeError("boom")]))
     events = _run([{"role": "system", "content": "base"}])
     kinds = [e[1]["type"] for e in events if e[0] == "event"]
     chunks = [e[1] for e in events if e[0] == "chunk"]
@@ -234,7 +241,7 @@ def test_agent_llm_error_yields_error_event(monkeypatch):
 
 def test_agent_bad_tool_arguments_default_empty(monkeypatch):
     # arguments เป็น JSON เสีย → args = {} (ไม่ crash)
-    monkeypatch.setattr(orch, "_client", FakeClient([
+    _patch_lmstudio(monkeypatch, FakeClient([
         _resp(_msg(tool_calls=[_tool_call("c1", "current_time", "{not json")])),
         _resp(_msg(content="done")),
     ]))
@@ -246,7 +253,7 @@ def test_agent_bad_tool_arguments_default_empty(monkeypatch):
 
 def test_agent_max_steps_forces_synthesis(monkeypatch):
     # ทุก step คืน tool_call → ไม่จบ → ครบ max_steps → synthesis stream
-    monkeypatch.setattr(orch, "_client", FakeClient([
+    _patch_lmstudio(monkeypatch, FakeClient([
         _resp(_msg(tool_calls=[_tool_call("c1", "calculator", '{"expression":"1+1"}')])),
         [_stream_chunk("สรุป"), _stream_chunk("คำตอบ")],   # final stream (stream=True)
     ]))
@@ -258,24 +265,37 @@ def test_agent_max_steps_forces_synthesis(monkeypatch):
     assert chunks == "สรุปคำตอบ"
 
 
-# ── orchestrator config: LM Studio token + agent hint (scrutinize fixes) ───────
+# ── orchestrator config: LM Studio token + agent hint ──────────────────────
 def test_orchestrator_uses_lmstudio_api_key_from_env(monkeypatch):
-    # 🔴 BLOCKER fix: LM Studio รุ่นใหม่บังคับ token — orchestrator ต้องอ่าน LMSTUDIO_API_KEY
-    # ไม่ใช่ hardcode "lmstudio" (ตรงกับ fix ใน utils/llm.py + embed.py)
-    import importlib
-    import agents.orchestrator as o
-    monkeypatch.setenv("LMSTUDIO_API_KEY", "secret-token-123")
-    importlib.reload(o)
-    try:
-        assert o._client.api_key == "secret-token-123"
-    finally:
-        monkeypatch.delenv("LMSTUDIO_API_KEY", raising=False)
-        importlib.reload(o)   # คืนค่า default ให้เทสอื่นไม่กระทบ
+    # LMSTUDIO_API_KEY ต้องถูกส่งเข้า OpenAI constructor ทุกครั้ง
+    captured = {}
+    import openai
+    monkeypatch.setattr(orch, "LMSTUDIO_BASE_URL", "http://fake:1234/v1")
+    monkeypatch.setattr(orch, "LMSTUDIO_API_KEY", "secret-token-123")
+
+    def fake_openai(**kw):
+        captured.update(kw)
+        return FakeClient([_resp(_msg(content="ok"))])
+
+    monkeypatch.setattr(openai, "OpenAI", fake_openai)
+    _run([{"role": "system", "content": "base"}])
+    assert captured.get("api_key") == "secret-token-123"
 
 
-def test_orchestrator_api_key_defaults_to_lmstudio():
-    import agents.orchestrator as o
-    assert o._client.api_key == "lmstudio"   # fallback เดิมเมื่อไม่ตั้ง env
+def test_orchestrator_api_key_defaults_to_lmstudio(monkeypatch):
+    # fallback เมื่อไม่ตั้ง env = "lmstudio"
+    import openai
+    monkeypatch.setattr(orch, "LMSTUDIO_BASE_URL", "http://fake:1234/v1")
+    monkeypatch.setattr(orch, "LMSTUDIO_API_KEY", "lmstudio")
+    captured = {}
+
+    def fake_openai(**kw):
+        captured.update(kw)
+        return FakeClient([_resp(_msg(content="ok"))])
+
+    monkeypatch.setattr(openai, "OpenAI", fake_openai)
+    _run([{"role": "system", "content": "base"}])
+    assert captured.get("api_key") == "lmstudio"
 
 
 def test_agent_hint_advertises_home_tools():

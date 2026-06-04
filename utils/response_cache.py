@@ -21,6 +21,21 @@ from utils.embed import embed_query, cosine_similarity
 
 logger = logging.getLogger(__name__)
 
+_REALTIME_KW = (
+    "ping", "disk", "docker", "container", "เครือข่าย", "network",
+    "nas", "ออนไลน์", "offline", "ราคา", "price", "หุ้น", "bitcoin",
+    "crypto", "ทอง", "น้ำมัน", "อากาศ", "weather", "สภาพอากาศ",
+    "สถานะ nas", "สถานะ server", "สถานะระบบ", "สถานะเน็ต",
+    "status", "รันอยู่", "uptime",
+)
+
+
+def is_realtime_query(prompt: str) -> bool:
+    """คืน True ถ้า prompt ถามข้อมูล real-time — ต้อง bypass cache เสมอ"""
+    text = prompt.lower()
+    return any(kw in text for kw in _REALTIME_KW)
+
+
 _DB_PATH = os.getenv("RESPONSE_CACHE_DB", _DEFAULT_DB)
 _ENABLED = os.getenv("RESPONSE_CACHE_ENABLED", "true").lower() == "true"
 _SIM_THRESHOLD = float(os.getenv("RESPONSE_CACHE_THRESHOLD", "0.92"))
@@ -142,6 +157,10 @@ def _evict_if_needed(conn: sqlite3.Connection) -> None:
 
 def lookup(assistant: str, prompt: str, threshold: float = _SIM_THRESHOLD) -> Optional[dict]:
     """หา cached response ที่ Q ใกล้กับ prompt — คืน {response, similarity, source_prompt, model} หรือ None"""
+    if is_realtime_query(prompt):
+        logger.debug(f"[ResponseCache] bypass — real-time query: {prompt[:60]}")
+        return None
+
     conn = _init()
     if conn is None or not prompt.strip():
         return None

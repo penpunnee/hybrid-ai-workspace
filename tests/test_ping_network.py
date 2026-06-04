@@ -56,3 +56,37 @@ def test_plain_pc_question_still_ping_pc():
     tools = detect_home_tools("PC เปิดอยู่ไหม")
     assert "ping_pc" in tools
     assert "ping_network" not in tools
+
+
+# ── "รัน" keyword over-broad fix ─────────────────────────────────────────────
+def test_run_code_question_no_docker_trigger():
+    """'รัน' คำเดียวใน coding context ต้องไม่ trigger docker tool"""
+    assert "docker" not in detect_home_tools("ทำไมรันโค้ดผิด")
+    assert "docker" not in detect_home_tools("รัน Python ยังไง")
+    assert "docker" not in detect_home_tools("รันสคริปต์ไม่ได้")
+
+
+def test_docker_specific_terms_still_trigger():
+    """คำเฉพาะ docker ต้องยัง trigger ได้"""
+    assert "docker" in detect_home_tools("docker container รันอยู่ไหม")
+    assert "docker" in detect_home_tools("container หยุดทำงาน")
+    assert "docker" in detect_home_tools("service ล่ม")
+
+
+def test_docker_run_compound_triggers():
+    """compound ที่ชัดเจนต้อง trigger"""
+    assert "docker" in detect_home_tools("docker รัน container ไหม")
+    assert "docker" in detect_home_tools("container รันอยู่ไหม")
+
+
+def test_stop_working_non_docker_context_no_trigger():
+    """'หยุดทำงาน' ใน context ที่ไม่ใช่ docker ต้องไม่ trigger"""
+    assert "docker" not in detect_home_tools("โปรแกรมหยุดทำงาน")
+    assert "docker" not in detect_home_tools("เน็ตหยุดทำงาน")
+    assert "docker" not in detect_home_tools("แอปหยุดทำงาน")
+
+
+def test_docker_stop_compound_triggers():
+    """'docker/service หยุดทำงาน' ต้อง trigger"""
+    assert "docker" in detect_home_tools("docker หยุดทำงานแล้ว")
+    assert "docker" in detect_home_tools("service หยุดทำงาน restart ด้วย")

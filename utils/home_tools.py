@@ -301,7 +301,10 @@ def ping_device(ip: str) -> dict:
 # ── Keyword Detection ─────────────────────────────────────────────────────────
 
 _DISK_KW    = {"disk", "storage", "พื้นที่", "ดิสก์", "เนื้อที่", "เต็ม", "ว่าง", "เหลือ"}
-_DOCKER_KW  = {"docker", "container", "คอนเทนเนอร์", "service", "รัน", "หยุด"}
+_DOCKER_KW  = {"docker", "container", "คอนเทนเนอร์", "service",
+               "docker หยุดทำงาน", "service หยุดทำงาน",
+               "หยุด container", "หยุด service",
+               "docker รัน", "container รัน", "รัน container", "รัน docker"}
 _WOL_KW     = {"เปิด pc", "เปิดpc", "wake", "wol", "ปลุก", "เปิดคอม"}
 _PING_KW    = {"ping", "ออนไลน์", "online", "pc ออน", "pc เปิด", "pcเปิด", "pc อยู่ไหม"}
 _NAS_KW     = {"nas", "synology", "เนส", "เซิร์ฟเวอร์บ้าน"}

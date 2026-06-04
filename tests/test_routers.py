@@ -116,3 +116,26 @@ def test_regenerate_no_nameerror(monkeypatch):
     assert r.status_code == 200
     assert "REGEN_OK" in r.text
     assert "NameError" not in r.text and '"error"' not in r.text
+
+
+# ── POST /api/admin/unlock ──────────────────────────────────────────────────
+def test_admin_unlock_forbidden_from_public(monkeypatch):
+    """public IP → 403 (endpoint LAN-only)"""
+    import core.auth as auth
+    monkeypatch.setattr(auth, "is_local_request", lambda req: False)
+    r = client.post("/api/admin/unlock", json={"ip": "8.8.8.8"})
+    assert r.status_code == 403
+
+
+def test_admin_unlock_clears_authfail_from_lan(monkeypatch):
+    """LAN request → ล้าง lock + คืน {unlocked: ip}"""
+    import core.auth as auth
+    import core.ratelimit as rl
+    monkeypatch.setattr(auth, "is_local_request", lambda req: True)
+    monkeypatch.setattr(rl, "_authfail_limiter", rl.SlidingWindowLimiter(limit=2, window=300))
+    rl._authfail_limiter.record("9.9.9.9"); rl._authfail_limiter.record("9.9.9.9")
+    assert rl._authfail_limiter.over_limit("9.9.9.9")[0] is True
+    r = client.post("/api/admin/unlock", json={"ip": "9.9.9.9"})
+    assert r.status_code == 200
+    assert r.json()["unlocked"] == "9.9.9.9"
+    assert rl._authfail_limiter.over_limit("9.9.9.9")[0] is False

@@ -49,6 +49,7 @@ async def agent_chat(request: Request):
     session_id = data.get("session_id", "default")
     prompt = data.get("prompt", "")
     max_steps = int(data.get("max_steps", 4))
+    provider = data.get("provider", "gemini")  # default Gemini (พร้อมใช้ทันที)
 
     config = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])
     base_prompt = config["system_prompt"]
@@ -63,7 +64,7 @@ async def agent_chat(request: Request):
     def sse():
         full = ""
         try:
-            for kind, payload in run_agent(messages, max_steps=max_steps):
+            for kind, payload in run_agent(messages, max_steps=max_steps, provider=provider):
                 if kind == "event":
                     yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
                 elif kind == "chunk":

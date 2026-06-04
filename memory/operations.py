@@ -5,7 +5,7 @@
 import logging
 from .schema import MemoryEntry
 from .working import working_memory
-from .store import save_entry, search_entries, search_long_term
+from .store import save_entry, search_entries, search_long_term, search_user_facts
 from .teach import process_teaching
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def recall(assistant: str, query: str, session_id: str = "",
         if ctx:
             parts.append(ctx)
 
-    # Tier 2 — Episodic Memory
+    # Tier 2 — Episodic Memory (per-assistant)
     episodic = search_entries(assistant, query, n_results=n_results,
                               min_confidence=min_confidence)
     if episodic:
@@ -49,6 +49,14 @@ def recall(assistant: str, query: str, session_id: str = "",
             label = MemoryEntry.confidence_label(e["confidence"])
             verified_mark = " ✓" if e["verified"] else ""
             lines.append(f"• {label}{verified_mark} {e['content'][:200]}")
+        parts.append("\n".join(lines))
+
+    # Tier 2.5 — User Facts (shared across all Assistants)
+    user_facts = search_user_facts(query, n_results=n_results)
+    if user_facts:
+        lines = ["[ข้อมูลของคุณ]"]
+        for uf in user_facts:
+            lines.append(f"• ✅ {uf['content'][:200]}")
         parts.append("\n".join(lines))
 
     # Tier 3 — Long-term (Dream promoted)

@@ -71,20 +71,19 @@ def process_teaching(assistant: str, user_text: str, ai_response: str = "") -> b
             content=knowledge,
             assistant=assistant,
             type=mem_type,         # type: ignore
-            confidence=0.95,       # user สอนโดยตรง = confidence สูง
+            confidence=0.95,
             source="user_taught",
             verified=True,
         )
-        ok = save_entry(entry)
+        ok = save_entry(entry, collection_name="user_facts")
         if ok:
-            logger.info(f"[Teach] บันทึก {mem_type} จาก user: '{knowledge[:60]}...'")
+            logger.info(f"[Teach] บันทึก {mem_type} → user_facts: '{knowledge[:60]}...'")
         return ok
 
     # ถ้า user แก้ไข AI → ลด confidence ของ memory ที่เกี่ยวข้อง
     if detect_correction(user_text) and ai_response:
         update_confidence(assistant, ai_response[:200], new_confidence=0.3)
         logger.info(f"[Teach] ตรวจเจอการแก้ไข → ลด confidence ของ response ก่อนหน้า")
-        # บันทึก correction เป็น memory ใหม่
         if len(user_text) > 10:
             entry = MemoryEntry(
                 content=f"[การแก้ไข] {user_text[:300]}",
@@ -94,7 +93,7 @@ def process_teaching(assistant: str, user_text: str, ai_response: str = "") -> b
                 source="user_taught",
                 verified=True,
             )
-            save_entry(entry)
+            save_entry(entry, collection_name="user_facts")
         return True
 
     return False

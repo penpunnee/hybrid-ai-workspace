@@ -196,6 +196,38 @@ def search_long_term(query: str, n_results: int = 3) -> list[dict]:
         return []
 
 
+_USER_FACTS_MIN_SCORE = 0.6
+
+
+def search_user_facts(query: str, n_results: int = 3,
+                      min_score: float = _USER_FACTS_MIN_SCORE) -> list[dict]:
+    """ค้นหาใน user_facts collection — shared ทุก Assistant (User-level memory)"""
+    client = _get_chroma_client()
+    if client is None:
+        return []
+    try:
+        col = client.get_collection("user_facts")
+        res = col.query(query_texts=[query], n_results=n_results)
+        docs  = res.get("documents", [[]])[0]
+        metas = res.get("metadatas", [[]])[0]
+        dists = res.get("distances", [[]])[0]
+        return [
+            {
+                "content":    doc,
+                "confidence": meta.get("confidence", 0.95) if meta else 0.95,
+                "verified":   True,
+                "type":       meta.get("type", "fact") if meta else "fact",
+                "source":     meta.get("source", "user_taught") if meta else "user_taught",
+                "score":      round(1 - dist, 3),
+            }
+            for doc, meta, dist in zip(docs, metas, dists)
+            if (1 - dist) >= min_score
+        ]
+    except Exception as e:
+        logger.debug(f"search_user_facts: {e}")
+        return []
+
+
 def _safe_slug(name: str) -> str:
     import re
     ascii_only = name.encode("ascii", "ignore").decode("ascii")
