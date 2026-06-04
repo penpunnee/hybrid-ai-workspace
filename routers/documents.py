@@ -12,6 +12,8 @@ from fastapi import APIRouter, Request, UploadFile, File, Form, HTTPException
 from utils.documents import (
     index_document, retrieve_chunks, list_documents, delete_document,
 )
+from utils.summarize import summarize_document
+from utils.ocr import ocr_pdf, ocr_image
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 logger = logging.getLogger(__name__)
@@ -34,9 +36,19 @@ def _decode_bytes(raw: bytes, filename: str) -> str:
             import pypdf
             reader = pypdf.PdfReader(io.BytesIO(raw))
             pages = [p.extract_text() or "" for p in reader.pages]
-            return f"[PDF: {filename} — {len(reader.pages)} หน้า]\n" + "\n\n".join(pages)
+            text = "\n\n".join(pages).strip()
+            # ถ้าไม่มีข้อความ (PDF scan) → ใช้ OCR
+            if not text:
+                logger.info(f"[Documents] PDF scan detected → OCR: {filename}")
+                result = ocr_pdf(raw, filename=filename)
+                if not result.get("ok"):
+                    raise HTTPException(422, result.get("error", "OCR ล้มเหลว"))
+                return f"[PDF scan: {filename} — {result['pages']} หน้า (OCR via {result['provider']})]\n{result['text']}"
+            return f"[PDF: {filename} — {len(reader.pages)} หน้า]\n{text}"
         except ImportError:
             raise HTTPException(415, "ไม่พบ library pypdf (pip install pypdf)")
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(422, f"อ่าน PDF ไม่ได้: {e}")
 
@@ -132,6 +144,74 @@ async def search(request: Request):
     source = data.get("source") or None
     results = retrieve_chunks(query, top_k=top_k, source_filter=source)
     return {"query": query, "results": results, "count": len(results)}
+
+
+@router.post("/ocr")
+async def ocr_endpoint(
+    request: Request,
+    file: UploadFile | None = File(None),
+):
+    """OCR PDF scan หรือรูปภาพ → คืนข้อความ
+
+    รองรับ: .pdf .jpg .jpeg .png .webp
+    """
+    _OCR_EXT = {".pdf", ".jpg", ".jpeg", ".png", ".webp"}
+    if file is None:
+        raise HTTPException(400, "field 'file' required")
+    ext = ("." + (file.filename or "").rsplit(".", 1)[-1].lower()) if "." in (file.filename or "") else ""
+    if ext not in _OCR_EXT:
+        raise HTTPException(415, f"รองรับเฉพาะ: {', '.join(_OCR_EXT)}")
+    raw = await file.read()
+    if len(raw) > _MAX_BYTES:
+        raise HTTPException(413, f"file too large (>{_MAX_BYTES} bytes)")
+    filename = file.filename or "upload"
+
+    if ext == ".pdf":
+        result = ocr_pdf(raw, filename=filename)
+    else:
+        result = ocr_image(raw, filename=filename)
+
+    if not result.get("ok"):
+        raise HTTPException(422, result.get("error", "OCR ล้มเหลว"))
+    return result
+
+
+@router.post("/summarize")
+async def summarize(request: Request):
+    """สรุปเอกสารด้วย DeepSeek-R1 (Map-Reduce)
+
+    Body (multipart): file=<ไฟล์>, summary_type=general|legal|financial|academic
+    Body (JSON): {source, content, summary_type}
+    """
+    content_type = request.headers.get("content-type", "")
+
+    if "multipart" in content_type:
+        form = await request.form()
+        file = form.get("file")
+        summary_type = str(form.get("summary_type", "general"))
+        if not file or not hasattr(file, "read"):
+            raise HTTPException(400, "field 'file' required")
+        raw = await file.read()
+        if len(raw) > _MAX_BYTES:
+            raise HTTPException(413, f"file too large (>{_MAX_BYTES} bytes)")
+        filename = getattr(file, "filename", "document") or "document"
+        text = _decode_bytes(raw, filename)
+    else:
+        try:
+            data = await request.json()
+        except Exception:
+            raise HTTPException(400, "expected multipart file or JSON body")
+        text = (data.get("content") or "").strip()
+        filename = (data.get("source") or "document").strip()
+        summary_type = (data.get("summary_type") or "general").strip()
+        if not text:
+            raise HTTPException(400, "field 'content' required")
+
+    if not text.strip():
+        raise HTTPException(422, "ไม่พบข้อความในเอกสาร")
+
+    result = summarize_document(text, filename=filename, summary_type=summary_type)
+    return result
 
 
 @router.delete("/{source:path}")

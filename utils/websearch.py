@@ -19,6 +19,29 @@ _UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ch
 _FETCH_TIMEOUT = 6
 _FETCH_TOP_N = 2  # ดึง HTML แค่ 2 ผลแรก ที่เหลือใช้ snippet
 
+# ── Domain credibility scoring ───────────────────────────────────────────────
+_HIGH_CREDIBILITY = re.compile(
+    r"\.go\.th|\.gov\.|\.edu\.|\.ac\.th|\.ac\.|wikipedia\.org"
+    r"|who\.int|un\.org|moph\.go\.th|bbc\.com|reuters\.com|ap\.org",
+    re.IGNORECASE,
+)
+_LOW_CREDIBILITY = re.compile(
+    r"blogspot\.|wordpress\.com|pantip\.com|reddit\.com|twitter\.com"
+    r"|facebook\.com|tiktok\.com|youtube\.com",
+    re.IGNORECASE,
+)
+
+
+def _domain_score(url: str) -> tuple[float, str]:
+    """คืน (score, label) ตาม domain — high=1.2, normal=1.0, low=0.7"""
+    if not url:
+        return 1.0, "🔵 ทั่วไป"
+    if _HIGH_CREDIBILITY.search(url):
+        return 1.2, "🟢 แหล่งทางการ"
+    if _LOW_CREDIBILITY.search(url):
+        return 0.7, "🟡 ระวัง (บล็อก/ฟอรัม)"
+    return 1.0, "🔵 ทั่วไป"
+
 
 def _extract_text(html: str, max_chars: int = 1500) -> str:
     """ดึง text จาก HTML แบบเร็ว (ไม่ใช้ BeautifulSoup)"""
@@ -67,8 +90,36 @@ def _enrich_with_fetch(results: list[dict], top_n: int = _FETCH_TOP_N) -> list[d
     return results
 
 
+def _google_search(query: str, max_results: int = 5) -> list[dict]:
+    """ค้นผ่าน Google Custom Search API"""
+    import os, requests
+    api_key = os.getenv("GOOGLE_SEARCH_API_KEY", "")
+    cx = os.getenv("GOOGLE_SEARCH_CX", "")
+    if not api_key or not cx:
+        return []
+    try:
+        resp = requests.get(
+            "https://www.googleapis.com/customsearch/v1",
+            params={"key": api_key, "cx": cx, "q": query, "num": min(max_results, 10)},
+            timeout=8,
+        )
+        items = resp.json().get("items", [])
+        results = [{"title": i.get("title", ""), "body": i.get("snippet", ""), "href": i.get("link", "")} for i in items]
+        logger.info(f"[Google] '{query}' → {len(results)} results")
+        return results
+    except Exception as e:
+        logger.warning(f"[Google] search failed: {e}")
+        return []
+
+
 def search_web(query: str, max_results: int = 5, region: str = "th-th") -> list[dict]:
-    """ค้น DuckDuckGo คืนค่า list of {title, body, href}"""
+    """ค้นหา — ลอง Google ก่อน fallback DDG"""
+    # ลอง Google Custom Search ก่อน
+    results = _google_search(query, max_results)
+    if results:
+        return results
+
+    # fallback → DuckDuckGo
     try:
         try:
             from ddgs import DDGS
@@ -81,7 +132,7 @@ def search_web(query: str, max_results: int = 5, region: str = "th-th") -> list[
                 safesearch="moderate",
                 max_results=max_results,
             ))
-        logger.info(f"[WebSearch] '{query}' → {len(results)} results")
+        logger.info(f"[WebSearch] '{query}' → {len(results)} results (DDG)")
         return results
     except Exception as e:
         logger.warning(f"[WebSearch] DuckDuckGo failed: {e}")
@@ -125,13 +176,20 @@ def format_for_context(results: list[dict], query: str) -> str:
         return ""
 
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    # แยก high/low credibility เพื่อแจ้งโมเดล
+    has_low = any(_LOW_CREDIBILITY.search(r.get("href", "")) for r in results)
+    conflict_hint = " ข้อมูลบางแหล่งอาจขัดแย้งกัน ให้ระบุความไม่แน่นอนและแนะนำค้นเพิ่ม" if has_low else ""
+
     lines = [
         "🌐 **ข้อมูลล่าสุดจากอินเตอร์เน็ต** (ระบบดึงให้แล้ว ณ เวลานี้)",
         f"คำค้น: \"{query}\" | เวลา: {now}",
         "",
-        "**คำสั่งสำคัญ:** ห้ามบอกว่า \"ไม่มี internet\" หรือ \"ไม่มีข้อมูล real-time\" "
-        "เพราะระบบดึงข้อมูลด้านล่างให้แล้ว ตอบโดยใช้ข้อมูลด้านล่างนี้เท่านั้น "
-        "สรุปข้อมูลที่เกี่ยวข้องและอ้างอิงแหล่งที่มา:",
+        "**คำสั่งสำคัญ:**",
+        "- ห้ามบอกว่า \"ไม่มี internet\" เพราะระบบดึงข้อมูลด้านล่างให้แล้ว",
+        "- **เรียบเรียงด้วยภาษาของตัวเอง** ห้ามคัดลอกข้อความยาวๆ โดยตรง",
+        "- 🟢 แหล่งทางการ = น้ำหนักสูง | 🔵 ทั่วไป = ใช้ประกอบ | 🟡 บล็อก/ฟอรัม = ระวัง ใช้ประกอบเท่านั้น",
+        f"- อ้างอิงแหล่งที่มาทุกครั้ง{conflict_hint}",
         "",
     ]
     for i, r in enumerate(results, 1):
@@ -142,10 +200,10 @@ def format_for_context(results: list[dict], query: str) -> str:
         score = r.get("_rerank_score")
         if not (snippet or fetched):
             continue
-        score_tag = f" _(relevance: {score})_" if score is not None else ""
-        lines.append(f"[{i}] **{title}**{score_tag}")
+        _, cred_label = _domain_score(href)
+        score_tag = f" _(relevance: {score:.2f})_" if score is not None else ""
+        lines.append(f"[{i}] **{title}** {cred_label}{score_tag}")
         if fetched:
-            # ใช้ fetched text เป็นหลักเพราะมีเนื้อหาจริง
             lines.append(f"    {fetched[:1500]}")
         elif snippet:
             lines.append(f"    {snippet}")
@@ -389,7 +447,13 @@ def _web_search_impl(query: str, max_results: int = 5, top_k: int = 3) -> tuple[
 
     results = _enrich_with_fetch(results, top_n=_FETCH_TOP_N)
 
-    # Embedding rerank กับ original query (ตัวที่ user ถามจริง)
+    # ใส่ domain score ก่อน rerank เพื่อให้ embedding score × credibility
+    for r in results:
+        d_score, d_label = _domain_score(r.get("href", ""))
+        r["_domain_score"] = d_score
+        r["_source_label"] = d_label
+
+    # Embedding rerank × domain score
     try:
         from utils.embed import rerank_by_similarity
         reranked = rerank_by_similarity(
@@ -398,6 +462,10 @@ def _web_search_impl(query: str, max_results: int = 5, top_k: int = 3) -> tuple[
             top_k=top_k,
         )
         if reranked:
+            # คูณ _rerank_score ด้วย domain score
+            for r in reranked:
+                if r.get("_rerank_score") is not None:
+                    r["_rerank_score"] = round(r["_rerank_score"] * r.get("_domain_score", 1.0), 4)
             results = reranked
     except Exception as e:
         logger.warning(f"[WebSearch] rerank failed, use top {top_k}: {e}")
