@@ -3220,6 +3220,7 @@
       }
       ta.addEventListener("input", () => {
         sendBtn.classList.toggle("on", !!ta.value.trim());
+        sendBtn.disabled = nativeInput.disabled || !ta.value.trim();
         autoResize();
       });
 
