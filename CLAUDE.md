@@ -8,6 +8,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Stack: Python FastAPI + React (pre-built static) + SQLite + ChromaDB + Ollama / LMStudio (local) + Gemini (cloud) + APScheduler.
 
+⚠️ **`app.py` is a legacy Streamlit UI (last touched 2026-05-10) — not the active frontend.** The real UI is the React SPA in `static/`, served by `server.py`. Don't confuse the two when tracing a feature.
+
+📖 **`CONTEXT.md`** — domain glossary (Session/Assistant/Skill vs Tool/Agent Mode/ReAct/Dream Promotion/etc.). Read it before touching memory, agent, or routing code — it disambiguates terms used loosely elsewhere.
+
 ## Commands
 
 ### Local Development
@@ -24,6 +28,7 @@ pytest tests/
 pytest tests/test_main.py -v
 pytest tests/test_main.py::TestHealthEndpoints::test_root_endpoint -v
 ```
+CI (`.github/workflows/tests.yml`) runs `pytest tests/ -q` on every push to `main` and on PRs — `tests/conftest.py` points hosts at `localhost` and sets `UI_PASSWORD=""` + a temp `DB_PATH` so it runs without a real ChromaDB/Ollama/NAS.
 
 ### Docker (NAS Deploy)
 ```bash
@@ -378,6 +383,26 @@ curl -X POST http://NAS:8000/api/documents/summarize -F "file=@report.pdf" -F "s
 ```bash
 sudo apt-get install -y poppler-utils
 ```
+
+## Self-Improvement / Fine-tune Pipeline (`scripts/`)
+Full guide: **`FINETUNE_GUIDE.md`**. Goal: adapt the local Llama model (served via Ollama) toward ขวัญ's persona + the `_NO_FABRICATION` guard, without touching the base model used elsewhere.
+
+```
+curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → eval gate (Claude judge) → deploy (Ollama) → serve
+```
+| Stage | Script | Notes |
+|---|---|---|
+| Seed (bootstrap, no 👍 yet) | `scripts/gen_seed_sft.py` | Synthetic curated pairs in ขวัญ's voice; system prompt pulled live from `assistants/config.py` so it can't drift |
+| Export real feedback | `scripts/export_finetune.py` | Pulls 👍'd Q&A pairs from `chat_history.db` → JSONL chat format |
+| Auto-score (RLAIF) | `scripts/auto_score.py` | Claude grades past answers (≥ threshold) → `data/finetune_auto.jsonl` (kept **separate** from human-labelled data — weaker signal) |
+| Train | `scripts/train_qlora.py` (template, runs on PC GPU via WSL/CUDA) | 4-bit QLoRA, seq 2048, r=16, batch 2×accum 4 → GGUF `kwan-ft/`. OOM → drop `MAX_SEQ_LEN`/`BATCH_SIZE` |
+| **Eval gate** | `scripts/eval_kwan.py` | Claude as pairwise judge (positions swapped to cancel bias) vs. baseline → win rate → exit 0=PASS/1=FAIL. **Never deploy on FAIL** — this is what prevents model collapse |
+| Deploy | `ollama create kwan-ft -f Modelfile.kwan-ft` then point NAS `.env` `OLLAMA_MODEL=kwan-ft` | Keep the previous model around for rollback |
+| Orchestration | `scripts/improve_loop.sh` | Phase 4: runs export → score → train → eval gate → deploy-if-PASS end to end on the GPU box |
+| Live smoke test | `scripts/probe_live.sh` | End-to-end probe against `https://ai.pawinhome.com` after NAS/LMStudio changes |
+| Cache benchmarking | `scripts/bench_cache.py` | Measures Phase E cache hit rate — `synthetic` (controlled repeat ratio) or `replay` (real prompts from `chat_history.db`) |
+
+⚠️ **fine-tune ≠ memorization** — use RAG/memory for "remembering" things; fine-tune is for style/format/behavior that prompting can't fix. Try Modelfile persona → skills/RAG first; fine-tune is the last resort. Currently gated on accumulating ~200-500 👍 (`GET /api/feedback/stats`).
 
 ## สิ่งที่จะทำต่อ (Next Steps)
 **ลำดับความสำคัญ — งานที่ค้าง/ต่อยอดได้:**
