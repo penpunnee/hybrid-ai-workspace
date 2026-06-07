@@ -324,6 +324,24 @@ reasoning/router.py → LMStudio/DeepSeek → Gemini → Ollama (last resort)
 - ขนาดสูงสุด 10 MB | รองรับ: `.pdf .docx .xlsx .xls .txt .md .csv .jpg .png .webp`
 - **New API**: `DELETE /api/message/{db_id}` — ลบ message เดี่ยว (`utils/history.py:delete_message_by_id`)
 
+## §22 — Custom Chat Input Bar (ChatBox redesign overlay, session 2026-06-07/08)
+แปลง React `ChatBox.tsx` mockup (mode pills/agent switcher/skills/local-model picker) เป็น vanilla-JS overlay ทับ native input — สถาปัตยกรรม **"skin + proxy"**: React ยังเป็นเจ้าของ render/streaming/SSE ทั้งหมด เราแค่ตั้งค่า native input ผ่าน native value setter + `nativeForm.requestSubmit()` แล้วซ่อน form เดิม (`display:none`)
+
+| Pill/Toggle | ผลจริงต่อ backend |
+|---|---|
+| **Code mode** | proxy คลิก `_agentBtn` → เปิด Agent Mode จริง (`tool_agent: true`) |
+| **Ask mode** | proxy คลิก `_agentBtn` → ปิด Agent Mode |
+| **Plan mode** | fetch interceptor เติม suffix `[ขอให้ช่วยวางแผนเป็นขั้นตอนสั้นๆ...]` ต่อท้าย `prompt` จริงก่อนส่ง |
+| **Obsidian skill** | inject `obsidian_inject: true` |
+| **Web Search skill** | inject `tool_agent: true` |
+| Agent pill | แสดงผู้ช่วยจริงจาก `ctx.assistant`/`/api/config`, คลิกแล้วหาแล้วคลิกปุ่มสลับจริงใน sidebar (match by `textContent`) |
+| Dream Cycle / TTS / ChromaDB | cosmetic ล้วน — ไม่มี hook ต่อ backend ต่อข้อความ |
+
+**State persistence**: `localStorage` keys `hw_cb_mode`, `hw_cb_skills` (prefix `hw_cb_*`)
+**Exposed for fetch interceptor**: `window.__hwChatBoxMode()`, `window.__hwChatBoxSkills()`
+
+⚠️ **Bug ที่เจอ+แก้แล้ว (chatbox3, 2026-06-08)**: ปุ่มส่งค้าง `disabled` หลังส่งข้อความแรก — `_disabledObs` (MutationObserver) sync `sendBtn.disabled` เฉพาะตอน native input เปลี่ยน attr `disabled` (เริ่ม/จบ stream); ตอนจบ stream `ta.value` ว่างพอดี → ตั้ง `disabled=true` ค้าง ส่วน `input` listener อัพเดทแค่ class `.on` ไม่ sync `.disabled` กลับ → พิมพ์ข้อความถัดไปกดส่งไม่ได้เลย. **แก้โดยให้ `input` listener sync `sendBtn.disabled = nativeInput.disabled || !ta.value.trim()` ทุกครั้งที่พิมพ์ด้วย**
+
 ## Internet Search / Classifier (2026-06-03)
 `reasoning/classifier.py:needs_internet()` patterns เพิ่ม:
 - ฝน/อากาศ: `ฝนจะตกไหม`, `วันนี้อากาศ`, `คืนนี้ฝน` ฯลฯ
@@ -448,4 +466,4 @@ curl -X POST http://192.168.51.49:8000/api/admin/unlock \
 4. 🟡 **recall ranking** (`memory/store.py`)
 5. 🟡 **LM Studio token** (`reasoning/router.py`)
 
-**Deploy:** DSM Task Scheduler `deploy-hybrid-ai` → Run. HEAD ล่าสุด = `36f6660` (session 2026-06-04: Google Search + OCR + Summarize)
+**Deploy:** DSM Task Scheduler `deploy-hybrid-ai` → Run. HEAD ล่าสุด = `1e9c032` (session 2026-06-08: §22 Custom Chat Input Bar — Mode pills จริง + แก้บั๊กปุ่มส่งค้าง disabled, deployed+verified prod)
