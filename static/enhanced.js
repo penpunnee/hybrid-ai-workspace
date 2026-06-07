@@ -46,16 +46,35 @@
             try { localStorage.removeItem("hw_draft_" + (b.session_id || "default")); } catch {}
           }
           // Claude Mode ชนะ Agent Mode — override provider=claude ส่งไป Claude API
+          let _bodyMutated = false;
           if (_claudeMode) {
             b.provider = "claude";
-            opts = { ...opts, body: JSON.stringify(b) };
+            _bodyMutated = true;
           } else if (_agentMode && !b.tool_agent) {
             // Inject tool_agent flag เมื่อเปิด Agent Mode
             b.tool_agent = true;
-            opts = { ...opts, body: JSON.stringify(b) };
-            // เปิด queue รอ events
             _pendingAgentTimeline = { events: [], sessionToken: Date.now().toString(36) };
+            _bodyMutated = true;
           }
+          // ChatBox skill toggles (§22) — Obsidian → obsidian_inject, Web Search → tool_agent
+          const _cbSkillState = window.__hwChatBoxSkills ? window.__hwChatBoxSkills() : null;
+          if (_cbSkillState?.obsidian && !b.obsidian_inject) {
+            b.obsidian_inject = true;
+            _bodyMutated = true;
+          }
+          if (_cbSkillState?.webSearch && !b.tool_agent) {
+            b.tool_agent = true;
+            if (!_pendingAgentTimeline) _pendingAgentTimeline = { events: [], sessionToken: Date.now().toString(36) };
+            _bodyMutated = true;
+          }
+          // Plan mode (§22) — เติมคำสั่งวางแผนก่อนตอบต่อท้าย prompt จริง
+          const _cbModeState = window.__hwChatBoxMode ? window.__hwChatBoxMode() : null;
+          const _planSuffix = "\n\n[ขอให้ช่วยวางแผนเป็นขั้นตอนสั้นๆ ก่อน แล้วค่อยลงรายละเอียดนะ]";
+          if (_cbModeState === "plan" && b.prompt && !b.prompt.includes(_planSuffix)) {
+            b.prompt = b.prompt + _planSuffix;
+            _bodyMutated = true;
+          }
+          if (_bodyMutated) opts = { ...opts, body: JSON.stringify(b) };
         } catch {}
       }
 
@@ -2802,6 +2821,467 @@
 
     document.addEventListener("focusin", (e) => {
       if (e.target.tagName === "TEXTAREA") setTimeout(_scrollInputIntoView, 300);
+    });
+  })();
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 22. CUSTOM CHAT INPUT BAR — ChatBox redesign (mode/agent/skills pills)
+  //     สถาปัตยกรรม: เป็น "skin + proxy" ทับ input เดิมของ React —
+  //     ของจริงต่อ backend: ส่งข้อความ (proxy เข้า native input+form),
+  //     สลับผู้ช่วย (คลิกปุ่มเดิมจริงใน sidebar), Obsidian/Web Search skill
+  //     (inject obsidian_inject / tool_agent ผ่าน fetch interceptor — รูปแบบเดียวกับ _agentMode).
+  //     ส่วน Mode (Code/Ask/Plan) และ Skills อื่น (Dream/TTS/ChromaDB) = cosmetic UI state ล้วน
+  //     (backend ไม่มี hook ต่อข้อความ) — เก็บไว้เพื่อ UX ที่สอดคล้องกับดีไซน์ที่ส่งมา
+  // ─────────────────────────────────────────────────────────────────────────────
+  (function () {
+    const MODES = [
+      { id: "code", label: "Code", color: "#7EB8F7", glyph: "⌨", desc: "เปิด Agent Mode อัตโนมัติ — AI ใช้ tools จริง (รันโค้ด/ค้นไฟล์ ฯลฯ)" },
+      { id: "ask",  label: "Ask",  color: "#B69EF5", glyph: "?", desc: "ปิด Agent Mode — ถาม-ตอบทั่วไป ไม่ใช้ tools" },
+      { id: "plan", label: "Plan", color: "#5ECFA8", glyph: "≡", desc: "เติมคำสั่งให้ AI วางแผนเป็นขั้นตอนก่อนตอบจริง" },
+    ];
+    const SKILLS = [
+      { id: "obsidian", label: "Obsidian",    icon: "📝", real: true,  hint: "ฉีด context จาก Obsidian Vault เข้าคำตอบจริง" },
+      { id: "search",   label: "Web Search",  icon: "🔍", real: true,  hint: "บังคับ Agent ค้นเว็บจริงก่อนตอบ" },
+      { id: "dream",    label: "Dream Cycle", icon: "🌙", real: false, hint: "Dream รันอัตโนมัติตอนตี 2 — ปุ่มนี้เป็นแค่ shortcut แสดงผล" },
+      { id: "tts",      label: "TTS",         icon: "🔊", real: false, hint: "ยังไม่มีฟีเจอร์ TTS ใน backend" },
+      { id: "chroma",   label: "ChromaDB",    icon: "🗄️", real: false, hint: "Memory ผ่าน ChromaDB ทำงานอัตโนมัติทุก turn อยู่แล้ว" },
+    ];
+    const AGENT_COLOR = { fa: "#7EB8F7", kwan: "#B69EF5", khim: "#5ECFA8" };
+    const AGENT_EMOJI = { fa: "🩵", kwan: "🧡", khim: "💙" };
+
+    function _shortAgentName(fullName) {
+      const m = fullName.match(/[฀-๿]+/);
+      return m ? m[0] : fullName;
+    }
+
+    // ── persisted cosmetic state ──────────────────────────────────────────────
+    let _cbMode = localStorage.getItem("hw_cb_mode") || "ask";
+    let _cbSkills = [];
+    try { _cbSkills = JSON.parse(localStorage.getItem("hw_cb_skills") || "[]"); } catch { _cbSkills = []; }
+
+    // ── real skill toggle state — wired into fetch interceptor ───────────────
+    let _obsidianSkill  = _cbSkills.includes("obsidian");
+    let _webSearchSkill = _cbSkills.includes("search");
+    window.__hwChatBoxSkills = () => ({ obsidian: _obsidianSkill, webSearch: _webSearchSkill });
+    // Plan mode → fetch interceptor เติมคำสั่ง "วางแผนก่อนตอบ" ต่อท้าย prompt จริง
+    window.__hwChatBoxMode = () => _cbMode;
+
+    function _persistSkills() {
+      localStorage.setItem("hw_cb_skills", JSON.stringify(_cbSkills));
+    }
+
+    // Code → เปิด Agent Mode จริง (AI ใช้ tools), Ask → ปิด — proxy ผ่านปุ่ม FAB เดิม
+    // เพื่อให้ state/localStorage/sync กับ Claude Mode ทำงานถูกต้องตามกลไกเดิมทั้งหมด
+    function _setAgentMode(target) {
+      if (_agentMode !== target && _agentBtn) _agentBtn.click();
+    }
+    function _applyModeSideEffects(modeId) {
+      if (modeId === "code") _setAgentMode(true);
+      else if (modeId === "ask") _setAgentMode(false);
+      // "plan" ไม่ยุ่งกับ Agent Mode — แค่เติมคำสั่งวางแผนต่อท้าย prompt (ดู fetch interceptor)
+    }
+
+    // ── wait for native chat input to mount ──────────────────────────────────
+    function _findNativeInput() {
+      return [...document.querySelectorAll("input[type='text'], textarea")].find(_isChatInput) || null;
+    }
+
+    function _waitFor(fn, retries = 40, delay = 250) {
+      return new Promise((resolve) => {
+        const tick = (n) => {
+          const v = fn();
+          if (v) return resolve(v);
+          if (n <= 0) return resolve(null);
+          setTimeout(() => tick(n - 1), delay);
+        };
+        tick(retries);
+      });
+    }
+
+    Promise.all([
+      _waitFor(_findNativeInput),
+      fetch("/api/config").then((r) => r.json()).catch(() => null),
+    ]).then(([nativeInput, cfg]) => {
+      if (!nativeInput) return; // ไม่เจอ input — ปล่อย React ทำงานปกติ ไม่ติดตั้ง overlay
+      const nativeForm = nativeInput.closest("form") || nativeInput.parentElement;
+      const assistants = (cfg && cfg.assistants) || [];
+      const activeModel = (cfg && cfg.ollama_model) || "";
+
+      let _agent = assistants.find((a) => a.slug === ctx.assistant) || assistants[0] || null;
+
+      // ── CSS ──────────────────────────────────────────────────────────────
+      const css = `
+        .enh-cb-wrap { width:100%; max-width:620px; margin:10px auto 0; font-family:'DM Sans',sans-serif; }
+        .enh-cb-box {
+          background: linear-gradient(160deg,#13131A 0%,#0F0F15 100%);
+          border: 1px solid #22222E; border-radius: 20px; position: relative;
+          transition: border-color .25s, box-shadow .3s; overflow: visible;
+        }
+        .enh-cb-box::before {
+          content:''; position:absolute; inset:-1px; border-radius:20px; z-index:-1;
+          background: radial-gradient(ellipse at 60% 0%, color-mix(in srgb,var(--c) 12%,transparent), transparent 70%);
+          opacity:0; transition:opacity .3s; pointer-events:none;
+        }
+        .enh-cb-box.on { border-color: color-mix(in srgb,var(--c) 45%,#22222E); }
+        .enh-cb-box.on::before { opacity:1; }
+        .enh-cb-box.on { box-shadow: 0 0 0 1px color-mix(in srgb,var(--c) 12%,transparent), 0 16px 50px #00000088; }
+        .enh-cb-top { display:flex; align-items:center; gap:7px; padding:12px 14px 0; flex-wrap:wrap; }
+        .enh-cb-pill {
+          display:flex; align-items:center; gap:7px; padding:6px 13px; border-radius:50px; cursor:pointer;
+          border:1px solid #242432; background:#16161E; font-size:13px; font-weight:500; user-select:none;
+          transition:all .15s; position:relative; letter-spacing:.01em;
+        }
+        .enh-cb-pill:hover { background:#1C1C26; border-color:#2E2E3E; }
+        .enh-cb-pill .enh-cb-chev { font-size:8px; color:#333; margin-left:2px; }
+        .enh-cb-pill.active {
+          background: color-mix(in srgb,var(--c) 10%,#13131A);
+          border-color: color-mix(in srgb,var(--c) 35%,transparent);
+          box-shadow: 0 0 12px color-mix(in srgb,var(--c) 12%,transparent);
+        }
+        .enh-cb-dd {
+          position:absolute; bottom:calc(100% + 10px); left:0; background:#14141C; border:1px solid #222232;
+          border-radius:14px; overflow:hidden; z-index:520; min-width:240px;
+          box-shadow: 0 -4px 6px #00000044, 0 -12px 40px #00000077; backdrop-filter:blur(12px);
+        }
+        .enh-cb-dd-item { display:flex; align-items:flex-start; gap:11px; padding:11px 15px; cursor:pointer; transition:background .1s; position:relative; }
+        .enh-cb-dd-item:hover { background:#1C1C28; }
+        .enh-cb-dd-item+.enh-cb-dd-item { border-top:1px solid #1A1A24; }
+        .enh-cb-dd-lbl { font-size:13px; font-weight:500; color:#D0D0E0; }
+        .enh-cb-dd-sub { font-size:11px; color:#5A5A78; margin-top:2px; font-family:'Noto Sans Thai',sans-serif; }
+        .enh-cb-dd-chk { position:absolute; right:14px; top:50%; transform:translateY(-50%); font-size:12px; }
+        .enh-cb-dd-skills { padding:10px; display:flex; flex-direction:column; gap:5px; width:240px; }
+        .enh-cb-sk {
+          display:flex; align-items:center; gap:8px; padding:7px 11px; border-radius:9px; cursor:pointer;
+          border:1px solid #1A1A26; background:#111118; color:#7A7A98; font-size:12px; transition:all .13s;
+        }
+        .enh-cb-sk:hover { background:#161622; color:#A0A0C0; border-color:#222232; }
+        .enh-cb-sk.on { background:color-mix(in srgb,var(--c) 9%,#111118); border-color:color-mix(in srgb,var(--c) 30%,transparent); color:var(--c); }
+        .enh-cb-sk .enh-cb-sk-dot { width:5px; height:5px; border-radius:50%; background:#34d399; flex-shrink:0; opacity:.85; }
+        .enh-cb-sk-check { margin-left:auto; font-size:11px; }
+        .enh-cb-chip {
+          display:flex; align-items:center; gap:4px; padding:4px 10px; border-radius:50px;
+          border:1px solid color-mix(in srgb,var(--c) 30%,transparent); background:color-mix(in srgb,var(--c) 9%,#111118);
+          color:var(--c); font-size:11px; cursor:pointer; transition:opacity .13s;
+        }
+        .enh-cb-chip:hover { opacity:.65; }
+        .enh-cb-box textarea {
+          width:100%; background:transparent; border:none; outline:none; color:#C4C4D8; font-size:14px;
+          line-height:1.7; resize:none; font-family:'Noto Sans Thai','DM Sans',sans-serif;
+          min-height:52px; max-height:160px; padding:12px 18px 6px; caret-color:var(--c);
+        }
+        .enh-cb-box textarea::placeholder { color:#3A3A52; }
+        .enh-cb-box textarea:disabled { opacity:.5; }
+        .enh-cb-hr { height:1px; background:linear-gradient(90deg,transparent,#1C1C28 20%,#1C1C28 80%,transparent); margin:0 14px; }
+        .enh-cb-bot { display:flex; align-items:center; gap:4px; padding:9px 11px 12px; }
+        .enh-cb-ib {
+          width:32px; height:32px; border-radius:9px; border:none; background:transparent; cursor:pointer;
+          transition:all .14s; display:flex; align-items:center; justify-content:center; color:#4A4A68; font-size:14px;
+        }
+        .enh-cb-ib:hover { background:#17172A; color:#9090B0; }
+        .enh-cb-ib.active { color:var(--c); background:color-mix(in srgb,var(--c) 12%,transparent); }
+        .enh-cb-sep { width:1px; height:18px; background:#1A1A26; margin:0 4px; }
+        .enh-cb-sp { flex:1; }
+        .enh-cb-status { display:flex; align-items:center; gap:6px; font-size:11px; }
+        .enh-cb-sdot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+        .enh-cb-send {
+          width:38px; height:38px; border-radius:12px; border:none; background:var(--c); cursor:pointer;
+          display:flex; align-items:center; justify-content:center; opacity:.18; transition:all .18s; flex-shrink:0;
+        }
+        .enh-cb-send.on { opacity:1; box-shadow:0 4px 18px color-mix(in srgb,var(--c) 35%,transparent); }
+        .enh-cb-send.on:hover { filter:brightness(1.18); transform:scale(1.06); }
+        .enh-cb-send.on:active { transform:scale(.95); }
+        .enh-cb-send:disabled { cursor:not-allowed; }
+        .enh-cb-hint { text-align:center; padding:8px 0 2px; font-size:10px; color:#2A2A40; line-height:1.7; font-family:'JetBrains Mono',monospace; letter-spacing:.03em; }
+        .enh-cb-hint em { color:color-mix(in srgb,var(--c) 45%,#2A2A40); font-style:normal; }
+      `;
+      document.head.appendChild(Object.assign(document.createElement("style"), { textContent: css }));
+
+      // ── build DOM ─────────────────────────────────────────────────────────
+      const wrap = document.createElement("div");
+      wrap.className = "enh-cb-wrap";
+      wrap.innerHTML = `
+        <div class="enh-cb-box">
+          <div class="enh-cb-top">
+            <div class="enh-cb-rel" style="position:relative">
+              <div class="enh-cb-pill active" data-pill="mode"><span class="enh-cb-mode-glyph"></span><span class="enh-cb-mode-lbl"></span><span class="enh-cb-chev">▾</span></div>
+            </div>
+            <div class="enh-cb-rel" style="position:relative">
+              <div class="enh-cb-pill" data-pill="agent"></div>
+            </div>
+            <div class="enh-cb-rel" style="position:relative">
+              <div class="enh-cb-pill" data-pill="skills">
+                <span>✨</span><span class="enh-cb-skills-lbl">Skills</span>
+              </div>
+            </div>
+            <span class="enh-cb-chips"></span>
+            <div class="enh-cb-sp"></div>
+            <div class="enh-cb-status">
+              <span class="enh-cb-sdot" style="background:#5ECFA8;box-shadow:0 0 6px #5ECFA888"></span>
+              <span style="color:#5A7A6A">${activeModel ? _esc(activeModel) : "Local"}</span>
+              <span style="color:#1E1E2E">·</span>
+              <span class="enh-cb-mode2"></span>
+            </div>
+          </div>
+          <textarea placeholder="" rows="2"></textarea>
+          <div class="enh-cb-hr"></div>
+          <div class="enh-cb-bot">
+            <button class="enh-cb-ib" data-act="attach" title="แนบไฟล์">📎</button>
+            <button class="enh-cb-ib" data-act="image" title="แนบรูป">🖼️</button>
+            <button class="enh-cb-ib" data-act="search" title="Web Search (toggle skill)">🔍</button>
+            <div class="enh-cb-sep"></div>
+            <span class="enh-cb-sp"></span>
+            <button class="enh-cb-send" title="ส่ง (Enter)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round">
+                <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="enh-cb-hint">Enter ส่ง · Shift+Enter ขึ้นบรรทัด · <em>Ctrl+[1/2/3]</em> เปลี่ยนโหมด</div>
+      `;
+      nativeForm.insertAdjacentElement("afterend", wrap);
+      nativeForm.style.display = "none";
+
+      const box      = wrap.querySelector(".enh-cb-box");
+      const ta       = wrap.querySelector("textarea");
+      const sendBtn  = wrap.querySelector(".enh-cb-send");
+      const modePill = wrap.querySelector('[data-pill="mode"]');
+      const agentPill= wrap.querySelector('[data-pill="agent"]');
+      const skillsPill = wrap.querySelector('[data-pill="skills"]');
+      const skillsLbl  = wrap.querySelector(".enh-cb-skills-lbl");
+      const chipsEl  = wrap.querySelector(".enh-cb-chips");
+      const mode2El  = wrap.querySelector(".enh-cb-mode2");
+
+      function curMode() { return MODES.find((m) => m.id === _cbMode) || MODES[1]; }
+
+      function applyAccent() {
+        const c = curMode().color;
+        box.style.setProperty("--c", c);
+        wrap.querySelectorAll(".enh-cb-dd-skills, .enh-cb-sk").forEach((el) => el.style.setProperty("--c", c));
+      }
+
+      function syncModePill() {
+        const m = curMode();
+        modePill.querySelector(".enh-cb-mode-glyph").textContent = m.glyph;
+        modePill.querySelector(".enh-cb-mode-lbl").textContent = m.label;
+        modePill.style.setProperty("--c", m.color);
+        modePill.style.color = m.color;
+        applyAccent();
+      }
+
+      function syncAgentPill() {
+        if (!_agent) { agentPill.style.display = "none"; return; }
+        const color = AGENT_COLOR[_agent.slug] || "#B69EF5";
+        const emoji = AGENT_EMOJI[_agent.slug] || "🤖";
+        agentPill.innerHTML = `${emoji} ${_esc(_shortAgentName(_agent.name))} <span class="enh-cb-chev">▾</span>`;
+        agentPill.style.color = color;
+      }
+
+      function syncSkillsUI() {
+        skillsPill.style.color = _cbSkills.length ? curMode().color : "#3E3E5A";
+        skillsLbl.textContent = _cbSkills.length ? `Skills · ${_cbSkills.length}` : "Skills";
+        chipsEl.innerHTML = "";
+        SKILLS.filter((s) => _cbSkills.includes(s.id)).forEach((s) => {
+          const chip = document.createElement("span");
+          chip.className = "enh-cb-chip";
+          chip.style.setProperty("--c", curMode().color);
+          chip.textContent = `${s.icon} ${s.label} ×`;
+          chip.addEventListener("click", () => toggleSkill(s.id));
+          chipsEl.appendChild(chip);
+        });
+        wrap.querySelector('[data-act="search"]')?.classList.toggle("active", _webSearchSkill);
+      }
+
+      function syncStatus() {
+        mode2El.textContent = _claudeMode ? "Claude" : (_agentMode ? "Agent" : "Auto");
+        mode2El.style.color = _claudeMode ? "#f9a8d4" : (_agentMode ? "#34d399" : "#7EB8F7");
+      }
+
+      function toggleSkill(id) {
+        const def = SKILLS.find((s) => s.id === id);
+        if (_cbSkills.includes(id)) {
+          _cbSkills = _cbSkills.filter((s) => s !== id);
+        } else {
+          _cbSkills = [..._cbSkills, id];
+        }
+        if (def?.real) {
+          if (id === "obsidian")  _obsidianSkill  = _cbSkills.includes("obsidian");
+          if (id === "search")    _webSearchSkill = _cbSkills.includes("search");
+          showToast(`${_cbSkills.includes(id) ? "✅ เปิด" : "⭕ ปิด"} ${def.label} — ${def.hint}`, 2200);
+        }
+        _persistSkills();
+        syncSkillsUI();
+      }
+
+      // ── dropdowns (open/close + outside click) ───────────────────────────
+      let _openDD = null; // { name, el }
+      function closeDD() {
+        if (_openDD) { _openDD.el.remove(); _openDD = null; }
+      }
+      function openDD(name, anchor, render) {
+        if (_openDD && _openDD.name === name) return closeDD();
+        closeDD();
+        const dd = document.createElement("div");
+        dd.className = "enh-cb-dd";
+        render(dd);
+        anchor.parentElement.appendChild(dd);
+        _openDD = { name, el: dd };
+      }
+      document.addEventListener("mousedown", (e) => {
+        if (_openDD && !_openDD.el.contains(e.target) &&
+            !modePill.contains(e.target) && !agentPill.contains(e.target) && !skillsPill.contains(e.target)) {
+          closeDD();
+        }
+      });
+
+      modePill.addEventListener("click", () => {
+        openDD("mode", modePill, (dd) => {
+          MODES.forEach((m) => {
+            const item = document.createElement("div");
+            item.className = "enh-cb-dd-item";
+            item.innerHTML = `<span style="color:${m.color};margin-top:2px;font-size:14px">${m.glyph}</span>
+              <span style="flex:1"><div class="enh-cb-dd-lbl">${m.label}</div><div class="enh-cb-dd-sub">${_esc(m.desc)}</div></span>
+              ${_cbMode === m.id ? `<span class="enh-cb-dd-chk" style="color:${m.color}">✓</span>` : ""}`;
+            item.addEventListener("click", () => {
+              _cbMode = m.id;
+              localStorage.setItem("hw_cb_mode", _cbMode);
+              _applyModeSideEffects(_cbMode);
+              syncModePill(); syncSkillsUI(); syncStatus(); closeDD();
+            });
+            dd.appendChild(item);
+          });
+        });
+      });
+
+      agentPill.addEventListener("click", () => {
+        if (!assistants.length) return;
+        openDD("agent", agentPill, (dd) => {
+          dd.style.minWidth = "220px";
+          assistants.forEach((a) => {
+            const color = AGENT_COLOR[a.slug] || "#B69EF5";
+            const emoji = AGENT_EMOJI[a.slug] || "🤖";
+            const item = document.createElement("div");
+            item.className = "enh-cb-dd-item";
+            item.innerHTML = `<span style="font-size:17px;line-height:1">${emoji}</span>
+              <span style="flex:1"><div class="enh-cb-dd-lbl">${_esc(_shortAgentName(a.name))}</div><div class="enh-cb-dd-sub">${_esc(a.name)}</div></span>
+              ${_agent?.slug === a.slug ? `<span class="enh-cb-dd-chk" style="color:${color}">✓</span>` : ""}`;
+            item.addEventListener("click", () => {
+              closeDD();
+              // สลับผู้ช่วยจริง — คลิกปุ่มเดิมใน sidebar (จับคู่ด้วยข้อความชื่อเต็ม)
+              const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === a.name);
+              if (btn) {
+                btn.click();
+                _agent = a;
+                syncAgentPill();
+                ta.placeholder = `พิมพ์ถึง ${_shortAgentName(a.name)}...`;
+              } else {
+                showToast("ℹ️ สลับผู้ช่วยได้ที่แถบด้านข้าง (ไม่พบปุ่มสลับในหน้านี้)");
+              }
+            });
+            dd.appendChild(item);
+          });
+        });
+      });
+
+      function renderSkillsDD(dd) {
+        dd.innerHTML = "";
+        const inner = document.createElement("div");
+        inner.className = "enh-cb-dd-skills";
+        inner.style.setProperty("--c", curMode().color);
+        SKILLS.forEach((s) => {
+          const row = document.createElement("div");
+          row.className = `enh-cb-sk${_cbSkills.includes(s.id) ? " on" : ""}`;
+          row.title = s.hint;
+          row.innerHTML = `<span>${s.icon}</span><span style="flex:1">${s.label}</span>
+            ${s.real ? '<span class="enh-cb-sk-dot" title="ต่อ backend จริง"></span>' : ""}
+            ${_cbSkills.includes(s.id) ? '<span class="enh-cb-sk-check">✓</span>' : ""}`;
+          row.addEventListener("click", () => { toggleSkill(s.id); renderSkillsDD(dd); });
+          inner.appendChild(row);
+        });
+        dd.appendChild(inner);
+        const foot = document.createElement("div");
+        foot.style.cssText = "padding:8px 15px;border-top:1px solid #181824;font-size:10px;color:#46466A;";
+        foot.textContent = "● = มีผลต่อคำตอบจริง · อื่น ๆ เป็นตัวเลือกแสดงผล";
+        dd.appendChild(foot);
+      }
+      skillsPill.addEventListener("click", () => openDD("skills", skillsPill, renderSkillsDD));
+
+      // ── textarea: mirror ↔ native input proxy ────────────────────────────
+      function _setNativeValue(el, value) {
+        const proto = el.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+        if (setter) setter.call(el, value); else el.value = value;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+
+      function autoResize() {
+        ta.style.height = "auto";
+        ta.style.height = Math.min(ta.scrollHeight, 160) + "px";
+      }
+      ta.addEventListener("input", () => {
+        sendBtn.classList.toggle("on", !!ta.value.trim());
+        autoResize();
+      });
+
+      function doSend() {
+        const text = ta.value.trim();
+        if (!text || nativeInput.disabled) return;
+        _setNativeValue(nativeInput, text);
+        const submitted = nativeForm.requestSubmit ? nativeForm.requestSubmit() : nativeForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        void submitted;
+        ta.value = "";
+        sendBtn.classList.remove("on");
+        autoResize();
+        ta.focus();
+      }
+
+      ta.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); }
+        if (e.ctrlKey && ["1", "2", "3"].includes(e.key)) {
+          e.preventDefault();
+          _cbMode = ["code", "ask", "plan"][+e.key - 1];
+          localStorage.setItem("hw_cb_mode", _cbMode);
+          _applyModeSideEffects(_cbMode);
+          syncModePill(); syncStatus();
+        }
+      });
+      sendBtn.addEventListener("click", doSend);
+
+      // ── toolbar buttons: proxy ไปไฟล์อินพุตที่ซ่อนของจริง ─────────────────
+      wrap.querySelector('[data-act="attach"]').addEventListener("click", () => {
+        document.querySelector('input[type="file"][accept*=".txt"]')?.click();
+      });
+      wrap.querySelector('[data-act="image"]').addEventListener("click", () => {
+        document.querySelector('input[type="file"][accept="image/*"]')?.click();
+      });
+      wrap.querySelector('[data-act="search"]').addEventListener("click", () => toggleSkill("search"));
+
+      // ── reflect native input's disabled (streaming) state ────────────────
+      const _disabledObs = new MutationObserver(() => {
+        ta.disabled = nativeInput.disabled;
+        sendBtn.disabled = nativeInput.disabled || !ta.value.trim();
+      });
+      _disabledObs.observe(nativeInput, { attributes: true, attributeFilter: ["disabled"] });
+
+      ta.addEventListener("focus", () => box.classList.add("on"));
+      ta.addEventListener("blur",  () => box.classList.remove("on"));
+
+      // ── keep agent pill in sync when assistant switches elsewhere (sidebar) ──
+      setInterval(() => {
+        if (ctx.assistant && (!_agent || _agent.slug !== ctx.assistant)) {
+          const found = assistants.find((a) => a.slug === ctx.assistant);
+          if (found) { _agent = found; syncAgentPill(); ta.placeholder = `พิมพ์ถึง ${_shortAgentName(found.name)}...`; }
+        }
+      }, 1500);
+
+      // ── init ──────────────────────────────────────────────────────────────
+      syncModePill();
+      syncAgentPill();
+      syncSkillsUI();
+      syncStatus();
+      setInterval(syncStatus, 1000);
+      autoResize();
+      if (_agent) ta.placeholder = `พิมพ์ถึง ${_shortAgentName(_agent.name)}...`;
     });
   })();
 
