@@ -23,6 +23,9 @@
 
     if (s.claudeMode) {
       b.provider = "claude";
+      // React ChatBox ส่ง tool_agent มาเองได้ (Code mode/webSearch) — ต้องถอดออก
+      // ถึงจะชนะจริง: backend เช็ค tool_agent ก่อน provider ("claude" → gemini agent)
+      if (b.tool_agent) delete b.tool_agent;
       mutated = true;
     } else if (s.agentMode && !b.tool_agent) {
       b.tool_agent = true;

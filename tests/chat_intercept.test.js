@@ -38,6 +38,17 @@ test("Claude ชนะ Agent — เปิดคู่กัน provider=claude 
   assert.strictEqual(b.tool_agent, undefined);
 });
 
+// React ChatBox (2026-06-10) ส่ง tool_agent มาใน body เองได้ (Code mode/webSearch)
+// — Claude ต้องถอดออกถึงจะชนะจริง (backend เช็ค tool_agent ก่อน provider)
+test("Claude ถอด tool_agent ที่ React ส่งมาใน body แล้ว", () => {
+  const b = { prompt: "x", tool_agent: true };
+  const r = applyChatBodyMutations(b, { ...OFF, claudeMode: true });
+  assert.strictEqual(b.provider, "claude");
+  assert.strictEqual(b.tool_agent, undefined);
+  assert.strictEqual(r.mutated, true);
+  assert.strictEqual(r.needTimeline, false);
+});
+
 // regression Major 1 (scrutinize 2026-06-10): webSearch ห้าม hijack Claude
 test("Major 1: webSearch + Claude mode → ห้ามฉีด tool_agent (กันเด้งไป gemini agent)", () => {
   const b = { prompt: "x" };

@@ -2895,10 +2895,15 @@
       });
     }
 
+    // React bundle ใหม่ (2026-06-10) มี ChatBox ของตัวเองแล้ว — ข้าม overlay ทั้ง section
+    // (flag ตั้งที่ module top-level ของ app.tsx ซึ่งรันก่อน defer script ตัวนี้เสมอ)
+    if (window.__hwReactChatBox) return;
+
     Promise.all([
       _waitFor(_findNativeInput),
       fetch("/api/config").then((r) => r.json()).catch(() => null),
     ]).then(([nativeInput, cfg]) => {
+      if (window.__hwReactChatBox) return; // กันเหนียว: flag มาช้า (bundle เก่า cache)
       if (!nativeInput) return; // ไม่เจอ input — ปล่อย React ทำงานปกติ ไม่ติดตั้ง overlay
       let nativeForm = nativeInput.closest("form") || nativeInput.parentElement;
       const assistants = (cfg && cfg.assistants) || [];
