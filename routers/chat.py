@@ -42,11 +42,13 @@ async def chat(request: Request):
     tool_agent  = bool(data.get("tool_agent", False))
     obsidian_inject = bool(data.get("obsidian_inject", False))
     reflect     = bool(data.get("reflect", False))
+    plan_mode   = bool(data.get("plan_mode", False))
     active_learning = data.get("active_learning", True)  # default ON
 
     config = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])
     base_prompt = config["system_prompt"]
-    use_response_cache = bool(data.get("response_cache", True)) and not (tool_agent or agent_mode or image_b64)
+    # plan_mode bypass cache — คำตอบ plan-style คนละความหมายกับคำตอบปกติของ prompt เดียวกัน
+    use_response_cache = bool(data.get("response_cache", True)) and not (tool_agent or agent_mode or image_b64 or plan_mode)
 
     # ── ตรวจจับ Teaching signal จาก user ────────────────────────────────────
     teach(assistant, prompt)
@@ -165,6 +167,14 @@ async def chat(request: Request):
             logger.info(f"[Chat/AL] {al_decision.reason}")
     except Exception as e:
         logger.debug(f"[Chat/AL] skipped: {e}")
+
+    # ── Plan mode (§22 ChatBox) — ฉีด instruction เข้า system prompt เท่านั้น ──
+    # ห้ามแตะ prompt: save_message/push_working/remember ใช้ prompt เดิม
+    # → DB/memory/fine-tune corpus สะอาด (scrutinize 2026-06-10, Major 2)
+    if plan_mode:
+        system_prompt += "\n\n[โหมดวางแผน] ผู้ใช้เปิดโหมด Plan: ช่วยวางแผนเป็นขั้นตอนสั้นๆ ก่อน แล้วค่อยลงรายละเอียด"
+        logger.info("[Chat] plan_mode on — inject plan instruction (system prompt)")
+
     save_message(assistant, "user", prompt, provider, session_id)
 
     messages = [{"role": "system", "content": system_prompt}]

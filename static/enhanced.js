@@ -62,16 +62,18 @@
             b.obsidian_inject = true;
             _bodyMutated = true;
           }
-          if (_cbSkillState?.webSearch && !b.tool_agent) {
+          // Claude Mode ชนะเสมอ — ห้ามฉีด tool_agent ตอน Claude เปิด: backend เช็ค
+          // tool_agent ก่อน provider → provider="claude" จะถูกเด้งไป gemini agent เงียบๆ
+          if (_cbSkillState?.webSearch && !b.tool_agent && !_claudeMode) {
             b.tool_agent = true;
             if (!_pendingAgentTimeline) _pendingAgentTimeline = { events: [], sessionToken: Date.now().toString(36) };
             _bodyMutated = true;
           }
-          // Plan mode (§22) — เติมคำสั่งวางแผนก่อนตอบต่อท้าย prompt จริง
+          // Plan mode (§22) — ส่ง flag ให้ backend ฉีด instruction เข้า system prompt
+          // ห้าม mutate prompt: suffix จะถูก save ลง DB ปนเปื้อน history/fine-tune corpus
           const _cbModeState = window.__hwChatBoxMode ? window.__hwChatBoxMode() : null;
-          const _planSuffix = "\n\n[ขอให้ช่วยวางแผนเป็นขั้นตอนสั้นๆ ก่อน แล้วค่อยลงรายละเอียดนะ]";
-          if (_cbModeState === "plan" && b.prompt && !b.prompt.includes(_planSuffix)) {
-            b.prompt = b.prompt + _planSuffix;
+          if (_cbModeState === "plan" && !b.plan_mode) {
+            b.plan_mode = true;
             _bodyMutated = true;
           }
           if (_bodyMutated) opts = { ...opts, body: JSON.stringify(b) };
@@ -3107,7 +3109,12 @@
         if (def?.real) {
           if (id === "obsidian")  _obsidianSkill  = _cbSkills.includes("obsidian");
           if (id === "search")    _webSearchSkill = _cbSkills.includes("search");
-          showToast(`${_cbSkills.includes(id) ? "✅ เปิด" : "⭕ ปิด"} ${def.label} — ${def.hint}`, 2200);
+          if (id === "search" && _webSearchSkill && _claudeMode) {
+            // Claude Mode ชนะ — interceptor จะไม่ฉีด tool_agent จนกว่าจะปิด Claude
+            showToast("⚠️ Claude Mode เปิดอยู่ — Web Search จะยังไม่ทำงานจนกว่าจะปิด Claude (✨)", 3200);
+          } else {
+            showToast(`${_cbSkills.includes(id) ? "✅ เปิด" : "⭕ ปิด"} ${def.label} — ${def.hint}`, 2200);
+          }
         }
         _persistSkills();
         syncSkillsUI();
