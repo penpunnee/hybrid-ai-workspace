@@ -45,38 +45,22 @@
             // ส่งแล้ว → เคลียร์ draft ที่ค้างของ session นั้น
             try { localStorage.removeItem("hw_draft_" + (b.session_id || "default")); } catch {}
           }
-          // Claude Mode ชนะ Agent Mode — override provider=claude ส่งไป Claude API
-          let _bodyMutated = false;
-          if (_claudeMode) {
-            b.provider = "claude";
-            _bodyMutated = true;
-          } else if (_agentMode && !b.tool_agent) {
-            // Inject tool_agent flag เมื่อเปิด Agent Mode
-            b.tool_agent = true;
-            _pendingAgentTimeline = { events: [], sessionToken: Date.now().toString(36) };
-            _bodyMutated = true;
+          // กติกา mutate body ทั้งหมดอยู่ใน static/chat_intercept.js (pure + node test)
+          // — Claude ชนะ Agent/webSearch, Plan = flag เท่านั้นห้ามแตะ prompt
+          const _ci = window.hwChatIntercept;
+          if (_ci) {
+            const _cbSkillState = window.__hwChatBoxSkills ? window.__hwChatBoxSkills() : null;
+            const _cbResult = _ci.applyChatBodyMutations(b, {
+              claudeMode: _claudeMode,
+              agentMode: _agentMode,
+              obsidian: !!(_cbSkillState && _cbSkillState.obsidian),
+              webSearch: !!(_cbSkillState && _cbSkillState.webSearch),
+              mode: window.__hwChatBoxMode ? window.__hwChatBoxMode() : null,
+            });
+            if (_cbResult.needTimeline)
+              _pendingAgentTimeline = { events: [], sessionToken: Date.now().toString(36) };
+            if (_cbResult.mutated) opts = { ...opts, body: JSON.stringify(b) };
           }
-          // ChatBox skill toggles (§22) — Obsidian → obsidian_inject, Web Search → tool_agent
-          const _cbSkillState = window.__hwChatBoxSkills ? window.__hwChatBoxSkills() : null;
-          if (_cbSkillState?.obsidian && !b.obsidian_inject) {
-            b.obsidian_inject = true;
-            _bodyMutated = true;
-          }
-          // Claude Mode ชนะเสมอ — ห้ามฉีด tool_agent ตอน Claude เปิด: backend เช็ค
-          // tool_agent ก่อน provider → provider="claude" จะถูกเด้งไป gemini agent เงียบๆ
-          if (_cbSkillState?.webSearch && !b.tool_agent && !_claudeMode) {
-            b.tool_agent = true;
-            if (!_pendingAgentTimeline) _pendingAgentTimeline = { events: [], sessionToken: Date.now().toString(36) };
-            _bodyMutated = true;
-          }
-          // Plan mode (§22) — ส่ง flag ให้ backend ฉีด instruction เข้า system prompt
-          // ห้าม mutate prompt: suffix จะถูก save ลง DB ปนเปื้อน history/fine-tune corpus
-          const _cbModeState = window.__hwChatBoxMode ? window.__hwChatBoxMode() : null;
-          if (_cbModeState === "plan" && !b.plan_mode) {
-            b.plan_mode = true;
-            _bodyMutated = true;
-          }
-          if (_bodyMutated) opts = { ...opts, body: JSON.stringify(b) };
         } catch {}
       }
 
@@ -3106,14 +3090,12 @@
       }
 
       function syncStatus() {
-        // reconcile pill Code/Ask ↔ _agentMode จริง — FAB Agent/Claude toggle เปลี่ยน
-        // _agentMode ได้โดยไม่ผ่าน pill (เช่น เปิด Claude → agent ถูกปิด) → pill ห้ามโกหก
-        // ("plan" ไม่แตะ agent state — ไม่ต้อง reconcile)
-        if (_cbMode === "code" && !_agentMode) {
-          _cbMode = "ask"; localStorage.setItem("hw_cb_mode", _cbMode);
-          syncModePill(); syncSkillsUI();
-        } else if (_cbMode === "ask" && _agentMode) {
-          _cbMode = "code"; localStorage.setItem("hw_cb_mode", _cbMode);
+        // reconcile pill Code/Ask ↔ _agentMode จริง — กติกาอยู่ใน chat_intercept.js
+        // (FAB Agent/Claude toggle เปลี่ยน _agentMode ได้โดยไม่ผ่าน pill → pill ห้ามโกหก)
+        const _next = window.hwChatIntercept
+          ? window.hwChatIntercept.reconcileMode(_cbMode, _agentMode) : null;
+        if (_next) {
+          _cbMode = _next; localStorage.setItem("hw_cb_mode", _cbMode);
           syncModePill(); syncSkillsUI();
         }
         mode2El.textContent = _claudeMode ? "Claude" : (_agentMode ? "Agent" : "Auto");

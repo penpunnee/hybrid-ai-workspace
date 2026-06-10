@@ -27,3 +27,7 @@ jobs:
         # conftest.py ชี้ host → localhost (ไม่มี ChromaDB/Ollama จริงใน CI = connect refused เร็ว)
         # UI_PASSWORD="" + DB_PATH temp file ถูกตั้งใน tests/conftest.py แล้ว
         run: pytest tests/ -q
+
+      - name: Run JS tests (static modules)
+        # pure modules dual-export (dream_stats, chat_intercept) — node มากับ runner อยู่แล้ว
+        run: node --test tests/*.test.js
