@@ -2100,6 +2100,7 @@
     if (!isTA && !el.isContentEditable) return false;
     const ph = (el.getAttribute && el.getAttribute("placeholder")) || el.placeholder || "";
     if (/ส่งความคิด|ได้เลย/.test(ph)) return true;
+    if (isTA && el.closest && el.closest(".enh-cb-box")) return true;   // §22 overlay composer
     return isTA && document.querySelectorAll("textarea").length === 1;
   }
 
@@ -2148,6 +2149,7 @@
 
     document.addEventListener("input", (e) => {
       if (!_isComposer(e.target)) return;
+      if (!e.target.getClientRects().length) return;  // composer ซ่อนอยู่ (§22) — กัน pill เด้งที่ (0,0)
       _activeTA = e.target; _update(e.target);
     }, true);
     document.addEventListener("focusin", (e) => {
@@ -2189,6 +2191,9 @@
     let _t = null;
     document.addEventListener("input", (e) => {
       if (!_isComposer(e.target)) return;
+      // composer ถูกซ่อน (§22 overlay ทับ) — synthetic input จาก doSend ห้าม save
+      // ไม่งั้น debounce 400ms ยิงหลัง interceptor ลบ draft → ghost ของข้อความที่ส่งแล้ว
+      if (!e.target.getClientRects().length) return;
       const val = e.target.value;
       clearTimeout(_t);
       _t = setTimeout(() => {
@@ -2207,18 +2212,24 @@
       const draft = localStorage.getItem(KEY(sid));
       if (draft && !ta.value) _reactSet(ta, draft);
     }
+    // composer ที่มองเห็นจริง — ถ้า §22 overlay ติดตั้งแล้ว native จะถูกซ่อน
+    // ต้อง restore เข้า overlay (textarea แรกใน DOM = native ที่ซ่อน → draft มองไม่เห็น)
+    function _visibleComposer() {
+      const tas = [...document.querySelectorAll("textarea")];
+      return tas.find((t) => _isComposerEl(t) && t.getClientRects().length) || tas.find(_isComposerEl) || null;
+    }
     // observe จนเจอ composer ครั้งแรกแล้ว disconnect (กัน fire ทุก token ตอน stream)
     const mo = new MutationObserver(() => {
-      const ta = document.querySelector("textarea");
+      const ta = _visibleComposer();
       if (ta) { mo.disconnect(); _restoreInto(ta); }
     });
     mo.observe(document.body, { childList: true, subtree: true });
-    setTimeout(() => { const ta = document.querySelector("textarea"); if (ta) { mo.disconnect(); _restoreInto(ta); } }, 800);
+    setTimeout(() => { const ta = _visibleComposer(); if (ta) { mo.disconnect(); _restoreInto(ta); } }, 800);
     setTimeout(() => mo.disconnect(), 10000);   // safety: เลิก observe หลัง 10s ไม่ว่ายังไง
     // สลับ session ผ่าน hash → ลองกู้ draft ของ session ใหม่
     window.addEventListener("hashchange", () => {
       _lastSid = null;
-      setTimeout(() => { const ta = document.querySelector("textarea"); if (ta) _restoreInto(ta); }, 200);
+      setTimeout(() => { const ta = _visibleComposer(); if (ta) _restoreInto(ta); }, 200);
     });
   })();
 
@@ -2905,7 +2916,7 @@
       fetch("/api/config").then((r) => r.json()).catch(() => null),
     ]).then(([nativeInput, cfg]) => {
       if (!nativeInput) return; // ไม่เจอ input — ปล่อย React ทำงานปกติ ไม่ติดตั้ง overlay
-      const nativeForm = nativeInput.closest("form") || nativeInput.parentElement;
+      let nativeForm = nativeInput.closest("form") || nativeInput.parentElement;
       const assistants = (cfg && cfg.assistants) || [];
       const activeModel = (cfg && cfg.ollama_model) || "";
 
@@ -3095,6 +3106,16 @@
       }
 
       function syncStatus() {
+        // reconcile pill Code/Ask ↔ _agentMode จริง — FAB Agent/Claude toggle เปลี่ยน
+        // _agentMode ได้โดยไม่ผ่าน pill (เช่น เปิด Claude → agent ถูกปิด) → pill ห้ามโกหก
+        // ("plan" ไม่แตะ agent state — ไม่ต้อง reconcile)
+        if (_cbMode === "code" && !_agentMode) {
+          _cbMode = "ask"; localStorage.setItem("hw_cb_mode", _cbMode);
+          syncModePill(); syncSkillsUI();
+        } else if (_cbMode === "ask" && _agentMode) {
+          _cbMode = "code"; localStorage.setItem("hw_cb_mode", _cbMode);
+          syncModePill(); syncSkillsUI();
+        }
         mode2El.textContent = _claudeMode ? "Claude" : (_agentMode ? "Agent" : "Auto");
         mode2El.style.color = _claudeMode ? "#f9a8d4" : (_agentMode ? "#34d399" : "#7EB8F7");
       }
@@ -3250,7 +3271,9 @@
 
       function doSend() {
         const text = ta.value.trim();
-        if (!text || nativeInput.disabled) return;
+        if (!text) return;
+        if (!_rebindNative()) { showToast("⚠️ หากล่องส่งของแอปไม่เจอ — ลอง refresh หน้า"); return; }
+        if (nativeInput.disabled) return;
         _setNativeValue(nativeInput, text);
         const submitted = nativeForm.requestSubmit ? nativeForm.requestSubmit() : nativeForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
         void submitted;
@@ -3288,11 +3311,29 @@
       });
       _disabledObs.observe(nativeInput, { attributes: true, attributeFilter: ["disabled"] });
 
+      // ── re-bind เมื่อ React re-mount composer (เช่น สลับผู้ช่วย/session) ──
+      // ไม่งั้น nativeInput ค้างเป็น detached node → requestSubmit เงียบ = ข้อความหาย
+      // + form ใหม่โผล่มาเป็น input bar ซ้อนสอง (display:none ติดอยู่กับ node เก่า)
+      function _rebindNative() {
+        if (document.contains(nativeInput)) return true;
+        const ni = _findNativeInput();
+        if (!ni || wrap.contains(ni)) return false;
+        nativeInput = ni;
+        nativeForm = ni.closest("form") || ni.parentElement;
+        nativeForm.style.display = "none";
+        _disabledObs.disconnect();
+        _disabledObs.observe(nativeInput, { attributes: true, attributeFilter: ["disabled"] });
+        ta.disabled = nativeInput.disabled;
+        sendBtn.disabled = nativeInput.disabled || !ta.value.trim();
+        return true;
+      }
+
       ta.addEventListener("focus", () => box.classList.add("on"));
       ta.addEventListener("blur",  () => box.classList.remove("on"));
 
       // ── keep agent pill in sync when assistant switches elsewhere (sidebar) ──
       setInterval(() => {
+        _rebindNative();
         if (ctx.assistant && (!_agent || _agent.slug !== ctx.assistant)) {
           const found = assistants.find((a) => a.slug === ctx.assistant);
           if (found) { _agent = found; syncAgentPill(); ta.placeholder = `พิมพ์ถึง ${_shortAgentName(found.name)}...`; }
@@ -3307,6 +3348,11 @@
       setInterval(syncStatus, 1000);
       syncLocalHealth();
       setInterval(syncLocalHealth, 60000); // backend cache 30s — poll 60s พอ
+      // draft ที่ถูก restore เข้า native composer ก่อน overlay mount → ย้ายมาแสดงที่นี่
+      if (nativeInput.value && !ta.value) {
+        ta.value = nativeInput.value;
+        sendBtn.classList.toggle("on", !!ta.value.trim());
+      }
       autoResize();
       if (_agent) ta.placeholder = `พิมพ์ถึง ${_shortAgentName(_agent.name)}...`;
     });
