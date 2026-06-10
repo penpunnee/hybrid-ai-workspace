@@ -5,10 +5,10 @@ from datetime import datetime, date, timedelta
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from core.config import GEMINI_API_KEY, DB_PATH, NAS_DATA_PATH
+from core.config import GEMINI_API_KEY, DB_PATH, NAS_DATA_PATH, LMSTUDIO_BASE_URL
 from core.scheduler import scheduler
 from assistants.config import ASSISTANTS
-from utils.llm import OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health, _last_failover, stream_response
+from utils.llm import OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health, check_lmstudio_health, _last_failover, stream_response
 from utils.memory import is_memory_available, get_memory_stats
 from utils.skills import get_skill_count
 from utils.dream import get_latest_report
@@ -80,9 +80,10 @@ def status():
     from concurrent.futures import ThreadPoolExecutor
     import logging
     logger = logging.getLogger(__name__)
-    with ThreadPoolExecutor(max_workers=2) as ex:
+    with ThreadPoolExecutor(max_workers=3) as ex:
         f1 = ex.submit(check_ollama_health)
         f2 = ex.submit(is_memory_available)
+        f3 = ex.submit(check_lmstudio_health)
         try:
             ollama_ok, ollama_msg = f1.result(timeout=5)
         except Exception as e:
@@ -93,13 +94,24 @@ def status():
         except Exception as e:
             mem_ok = False
             logger.warning(f"Memory check failed: {e}")
+        try:
+            lmstudio_ok, lmstudio_msg = f3.result(timeout=5)
+        except Exception as e:
+            lmstudio_ok, lmstudio_msg = False, "Health check error"
+            logger.warning(f"LM Studio health check failed: {e}")
     next_dream = None
     job = scheduler.get_job("dream_nightly")
     if job and job.next_run_time:
         next_dream = job.next_run_time.strftime("%Y-%m-%d %H:%M")
+    # local หลัก = LM Studio (DeepSeek R1) ถ้าตั้ง LMSTUDIO_BASE_URL, ไม่งั้น Ollama
+    local_provider = "lmstudio" if LMSTUDIO_BASE_URL else "ollama"
     return {
         "ollama": ollama_ok,
         "ollama_message": ollama_msg,
+        "lmstudio": lmstudio_ok,
+        "lmstudio_message": lmstudio_msg,
+        "local_provider": local_provider,
+        "local_ok": lmstudio_ok if local_provider == "lmstudio" else ollama_ok,
         "gemini": bool(GEMINI_API_KEY),
         "memory": mem_ok,
         "skills": get_skill_count(),

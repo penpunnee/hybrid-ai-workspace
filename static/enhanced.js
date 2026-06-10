@@ -3099,6 +3099,23 @@
         mode2El.style.color = _claudeMode ? "#f9a8d4" : (_agentMode ? "#34d399" : "#7EB8F7");
       }
 
+      // ── status dot = สุขภาพ local model จริงจาก /api/status (local_ok) ────
+      // local หลัก = DeepSeek R1 via LM Studio — เดิม dot เขียว hardcode ตลอด
+      // แม้ LM Studio ล่ม (ระบบตกไป Gemini เงียบๆ จน quota หมดโดยไม่รู้ตัว)
+      const sdotEl = wrap.querySelector(".enh-cb-sdot");
+      async function syncLocalHealth() {
+        try {
+          const s = await fetch("/api/status").then((r) => r.json());
+          const ok = s.local_ok !== undefined ? s.local_ok : s.ollama; // fallback backend เก่า
+          const c = ok ? "#5ECFA8" : "#ef4444";
+          sdotEl.style.background = c;
+          sdotEl.style.boxShadow = `0 0 6px ${c}88`;
+          sdotEl.title = ok
+            ? `${s.local_provider || "local"} พร้อมใช้งาน`
+            : `${s.local_provider || "local"} ล่ม — ระบบจะ fallback ไป Gemini`;
+        } catch {} // เช็คไม่ได้ → คงสีเดิมไว้
+      }
+
       function toggleSkill(id) {
         const def = SKILLS.find((s) => s.id === id);
         if (_cbSkills.includes(id)) {
@@ -3288,6 +3305,8 @@
       syncSkillsUI();
       syncStatus();
       setInterval(syncStatus, 1000);
+      syncLocalHealth();
+      setInterval(syncLocalHealth, 60000); // backend cache 30s — poll 60s พอ
       autoResize();
       if (_agent) ta.placeholder = `พิมพ์ถึง ${_shortAgentName(_agent.name)}...`;
     });

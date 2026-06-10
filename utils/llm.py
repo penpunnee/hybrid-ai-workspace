@@ -333,6 +333,51 @@ def check_ollama_health(force: bool = False) -> tuple[bool, str]:
         return False, msg
 
 
+_lm_health_cache: dict = {"ok": None, "ts": 0.0, "msg": ""}  # cache 30s แบบเดียวกับ ollama
+
+
+def check_lmstudio_health(force: bool = False) -> tuple[bool, str]:
+    """ตรวจสุขภาพ LM Studio (local หลักตอนนี้ = DeepSeek R1 ผ่าน LM Studio)
+
+    GET {LMSTUDIO_BASE_URL}/models พร้อม Bearer LMSTUDIO_API_KEY
+    - ไม่ได้ตั้ง LMSTUDIO_BASE_URL → (False, แจ้งยังไม่ตั้งค่า)
+    - ตอบ 200 + มี model → (True, "")
+    - ตอบ 200 แต่ list ว่าง = ไม่มี model โหลด/JIT → (False, ...)
+    - ต่อไม่ได้/token ผิด → (False, ...)
+    """
+    import urllib.request, time, json
+    if not _LMSTUDIO_BASE_URL:
+        return False, "ยังไม่ได้ตั้งค่า LMSTUDIO_BASE_URL ใน .env"
+    if not force and _lm_health_cache["ok"] is not None:
+        if time.time() - _lm_health_cache["ts"] < 30:
+            return _lm_health_cache["ok"], _lm_health_cache.get("msg", "")
+
+    def _save(ok: bool, msg: str) -> tuple[bool, str]:
+        _lm_health_cache["ok"] = ok
+        _lm_health_cache["ts"] = time.time()
+        _lm_health_cache["msg"] = msg
+        return ok, msg
+
+    try:
+        req = urllib.request.Request(
+            f"{_LMSTUDIO_BASE_URL.rstrip('/')}/models",
+            headers={"Authorization": f"Bearer {_LMSTUDIO_API_KEY}"},
+        )
+        response = urllib.request.urlopen(req, timeout=8)
+        data = json.loads(response.read().decode())
+        models = [m.get("id", "") for m in data.get("data", [])]
+        if not models:
+            msg = "❌ LM Studio รันอยู่แต่ไม่มี model โหลด — เปิด model ใน LM Studio ก่อน"
+            logger.warning("LM Studio health: no models loaded")
+            return _save(False, msg)
+        return _save(True, "")
+    except Exception as e:
+        msg = (f"❌ เชื่อมต่อ LM Studio ไม่ได้ ({e}) — "
+               f"ตรวจสอบว่า PC เปิด + LM Studio Start Server ({_LMSTUDIO_BASE_URL})")
+        logger.error(f"LM Studio health check error: {e}")
+        return _save(False, msg)
+
+
 def _stream_ollama(messages: list[dict]):
     """
     Stream จาก Ollama local พร้อม retry mechanism และ error handling ที่ละเอียด
