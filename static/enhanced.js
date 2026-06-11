@@ -340,13 +340,13 @@
         max-height: 82vh; padding: 16px; border-radius: 16px;
       }
 
-      /* Floating toolbar — ย้ายไปซ้ายมือ เรียงแนวตั้ง กลางหน้าจอ */
+      /* Floating toolbar — มุมขวาล่างเหนือ composer (อย่าตั้ง top — จะยืดทาบกลางจอ) */
       #enh-toolbar {
-        left: 4px !important;
-        right: auto !important;
-        bottom: auto !important;
-        top: 50% !important;
-        transform: translateY(-50%) !important;
+        top: auto !important;
+        transform: none !important;
+        left: auto !important;
+        right: 6px !important;
+        bottom: 110px !important;
         flex-direction: column !important;
         gap: 4px !important;
       }
@@ -363,8 +363,6 @@
       }
       .enh-fab span { display: none !important; }
 
-      /* toolbar + home panel — ยกขึ้นเหนือ input + token bar */
-      #enh-toolbar { bottom: 100px !important; right: 6px !important; left: auto !important; flex-direction: column !important; }
       #hw-home-panel { width: calc(100vw - 24px); right: 12px; left: 12px; bottom: 144px; }
 
       /* Scroll-to-bottom button — เหนือปุ่มอื่น */
@@ -393,64 +391,10 @@
         line-height: 1.8 !important;
       }
 
-      /* ── Action buttons: เปลี่ยนจาก row ใต้ bubble → column ข้างๆ ── */
-
-      /* content column (bubble + buttons): เปลี่ยนเป็น flex-row */
-      .group > div.flex-col {
-        flex-direction: row !important;
-        align-items: flex-start !important;
-        gap: 4px !important;
-      }
-
-      /* bubble div: ขยายเต็มพื้นที่ที่เหลือ */
-      .group > div.flex-col > div[class*="rounded-3xl"] {
-        flex: 1 1 auto !important;
-        min-width: 0 !important;
-      }
-
-      /* action buttons row → เปลี่ยนเป็น column ด้านข้าง */
-      .group > div.flex-col > div.flex.items-center {
-        flex-direction: column !important;
-        gap: 3px !important;
-        align-items: center !important;
-        justify-content: flex-start !important;
-        flex-shrink: 0 !important;
-        flex: 0 0 auto !important;
-        align-self: flex-start !important;
-        margin-top: 4px !important;
-        width: 28px !important;
-        order: 99 !important;
-      }
-
-      /* ปุ่มแต่ละอัน: ขนาดเท่ากันทุกปุ่ม แสดงตลอด ไม่มี text ส่วนเกิน */
+      /* ── Action buttons: React จัด row ใต้ bubble + .msg-action โชว์เองบน touch แล้ว
+         (ถอด side-column hack เดิมออก 2026-06-11 — มันบีบ bubble + ปุ่มลอยรกจอ) ── */
       .group > div.flex-col > div.flex.items-center > button {
-        opacity: 0.6 !important;
-        padding: 0 !important;
-        font-size: 13px !important;
-        line-height: 1 !important;
-        border-radius: 50% !important;
-        width: 26px !important;
-        height: 26px !important;
-        min-width: 26px !important;
-        max-width: 26px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        overflow: hidden !important;
-        white-space: nowrap !important;
-        text-indent: 0 !important;
-        flex-shrink: 0 !important;
-        text-align: center !important;
-        box-sizing: border-box !important;
-        letter-spacing: -2px !important;  /* บีบให้ "📌 Pin" → โชว์แค่ emoji */
-      }
-
-      /* user message: ปุ่มอยู่ซ้ายมือ */
-      .group.justify-end > div.flex-col {
-        flex-direction: row-reverse !important;
-      }
-      .group.justify-end > div.flex-col > div.flex.items-center {
-        margin-right: 0 !important;
+        opacity: 0.6 !important; /* fallback bundle เก่าที่ยังไม่มี .msg-action */
       }
 
       /* Token bar */
