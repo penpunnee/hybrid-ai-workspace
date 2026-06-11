@@ -17,7 +17,11 @@ logger = logging.getLogger(__name__)
 
 _UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 _FETCH_TIMEOUT = 6
-_FETCH_TOP_N = 2  # ดึง HTML แค่ 2 ผลแรก ที่เหลือใช้ snippet
+_FETCH_TOP_N = 3  # ดึง HTML 3 ผลแรก ที่เหลือใช้ snippet
+# เพดานเนื้อหาต่อหน้า — 2,500 ตัวอักษร/หน้า × 3 หน้า ≈ 2.5k tokens
+# (สมดุล: ตอบละเอียดขึ้น แต่ไม่ชน n_ctx local agent ที่แบก system prompt ~8.5k อยู่แล้ว)
+_FETCH_MAX_CHARS = 2500
+_SNIPPET_MAX_CHARS = 500
 
 # ── Domain credibility scoring ───────────────────────────────────────────────
 _HIGH_CREDIBILITY = re.compile(
@@ -43,7 +47,7 @@ def _domain_score(url: str) -> tuple[float, str]:
     return 1.0, "🔵 ทั่วไป"
 
 
-def _extract_text(html: str, max_chars: int = 1500) -> str:
+def _extract_text(html: str, max_chars: int = _FETCH_MAX_CHARS) -> str:
     """ดึง text จาก HTML แบบเร็ว (ไม่ใช้ BeautifulSoup)"""
     html = re.sub(r"<script[^>]*>.*?</script>", " ", html, flags=re.DOTALL | re.IGNORECASE)
     html = re.sub(r"<style[^>]*>.*?</style>", " ", html, flags=re.DOTALL | re.IGNORECASE)
@@ -194,7 +198,7 @@ def format_for_context(results: list[dict], query: str) -> str:
     ]
     for i, r in enumerate(results, 1):
         title = r.get("title", "").strip()
-        snippet = r.get("body", "").strip()[:300]
+        snippet = r.get("body", "").strip()[:_SNIPPET_MAX_CHARS]
         fetched = r.get("fetched_text", "").strip()
         href = r.get("href", "").strip()
         score = r.get("_rerank_score")
@@ -204,7 +208,7 @@ def format_for_context(results: list[dict], query: str) -> str:
         score_tag = f" _(relevance: {score:.2f})_" if score is not None else ""
         lines.append(f"[{i}] **{title}** {cred_label}{score_tag}")
         if fetched:
-            lines.append(f"    {fetched[:1500]}")
+            lines.append(f"    {fetched[:_FETCH_MAX_CHARS]}")
         elif snippet:
             lines.append(f"    {snippet}")
         if href:

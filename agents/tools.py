@@ -26,7 +26,7 @@ def _t_web_search(query: str, max_results=5) -> str:
     # ดึง 2x แล้ว rerank เพื่อให้ได้ผลลัพธ์ที่ตรงประเด็นที่สุด
     initial_n = max(max_results, 6)
     results = search_web(query, max_results=initial_n)
-    results = _enrich_with_fetch(results, top_n=2)
+    results = _enrich_with_fetch(results)  # default _FETCH_TOP_N = 3 หน้า (2026-06-11)
     try:
         from utils.embed import rerank_by_similarity
         reranked = rerank_by_similarity(
