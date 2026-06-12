@@ -304,6 +304,22 @@ def test_agent_synthesis_stream_strips_marker_split_across_chunks(monkeypatch):
     assert chunks == "สรุปคำตอบ"
 
 
+# ── gemini agent: Part.from_text เป็น keyword-only ใน SDK ใหม่ (บั๊ก 2026-06-12) ──
+def test_split_messages_for_gemini_with_history():
+    pytest.importorskip("google.genai")
+    # มี history คั่นกลาง → ต้องสร้าง Content/Part ได้ (SDK ใหม่ from_text บังคับ text=)
+    sys_text, history, last_user = orch._split_messages_for_gemini([
+        {"role": "system", "content": "base"},
+        {"role": "user", "content": "คำถามเก่า"},
+        {"role": "assistant", "content": "คำตอบเก่า"},
+        {"role": "user", "content": "คำถามใหม่"},
+    ])
+    assert sys_text == "base"
+    assert last_user == "คำถามใหม่"
+    assert [c.role for c in history] == ["user", "model"]
+    assert history[0].parts[0].text == "คำถามเก่า"
+
+
 # ── orchestrator config: LM Studio token + agent hint ──────────────────────
 def test_orchestrator_uses_lmstudio_api_key_from_env(monkeypatch):
     # LMSTUDIO_API_KEY ต้องถูกส่งเข้า OpenAI constructor ทุกครั้ง

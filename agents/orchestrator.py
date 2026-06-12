@@ -262,7 +262,8 @@ def _split_messages_for_gemini(messages: list[dict]) -> tuple[str, list, str]:
     for msg in work:
         role = "user" if msg["role"] == "user" else "model"
         history.append(
-            genai_types.Content(role=role, parts=[genai_types.Part.from_text(msg["content"] or "")])
+            # SDK ใหม่บังคับ keyword-only: from_text(text=...) — positional = TypeError
+            genai_types.Content(role=role, parts=[genai_types.Part.from_text(text=msg["content"] or "")])
         )
 
     return system_text, history, last_user
