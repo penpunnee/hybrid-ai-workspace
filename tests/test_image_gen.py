@@ -71,6 +71,35 @@ def test_generate_image_no_client_returns_error(monkeypatch):
     assert "GEMINI_API_KEY" in out["error"]
 
 
+def _fake_client_raising(msg: str):
+    class FakeModels:
+        def generate_content(self, **kw):
+            raise RuntimeError(msg)
+
+    return SimpleNamespace(models=FakeModels())
+
+
+def test_generate_image_quota_limit_zero_says_not_available(monkeypatch):
+    # free tier limit=0 = โมเดลนี้ใช้ free tier ไม่ได้เลย — ห้ามบอก "ลองใหม่ภายหลัง"
+    fake = _fake_client_raising(
+        "429 RESOURCE_EXHAUSTED. Quota exceeded for metric: "
+        "generate_content_free_tier_requests, limit: 0, model: gemini-2.5-flash-preview-image"
+    )
+    with patch.object(image_gen, "_get_client", return_value=fake):
+        out = image_gen.generate_image("วาดรูปแมว")
+    assert out["ok"] is False
+    assert "free tier" in out["error"]
+    assert "ลองใหม่" not in out["error"]
+
+
+def test_generate_image_quota_temporary_says_retry(monkeypatch):
+    fake = _fake_client_raising("429 RESOURCE_EXHAUSTED. Quota exceeded, limit: 250")
+    with patch.object(image_gen, "_get_client", return_value=fake):
+        out = image_gen.generate_image("วาดรูปแมว")
+    assert out["ok"] is False
+    assert "ลองใหม่" in out["error"]
+
+
 def test_generate_image_no_image_in_response(tmp_path, monkeypatch):
     monkeypatch.setattr(image_gen, "GEN_IMAGE_DIR", str(tmp_path))
     part_txt = SimpleNamespace(inline_data=None, text="ขอโทษค่ะ ทำไม่ได้")

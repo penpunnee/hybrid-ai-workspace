@@ -96,5 +96,10 @@ def generate_image(prompt: str, image_b64: str = "", image_mime: str = "image/pn
         err = str(e)
         logger.error(f"[ImageGen] failed: {err}")
         if "429" in err or "quota" in err.lower() or "resource_exhausted" in err.lower():
+            # limit: 0 = free tier ไม่มีโควต้าให้โมเดลนี้เลย (ไม่ใช่หมดชั่วคราว) — retry ไม่ช่วย
+            if "limit: 0" in err:
+                return {"ok": False,
+                        "error": "โมเดลสร้างรูปไม่เปิดให้ใช้บน free tier (quota limit=0) — "
+                                 "ต้องเปิด billing บนโปรเจกต์ Google AI ก่อนถึงจะใช้ได้ค่ะ"}
             return {"ok": False, "error": "Gemini quota หมดชั่วคราว — ลองใหม่ภายหลังนะคะ"}
         return {"ok": False, "error": f"สร้างรูปไม่สำเร็จ: {err[:200]}"}
