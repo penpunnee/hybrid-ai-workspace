@@ -19,6 +19,44 @@ from .tools import execute_tool, get_openai_tools, get_gemini_tools, list_tools
 
 logger = logging.getLogger(__name__)
 
+
+class _MarkerFilter:
+    """ตัด marker จาก chat template ของ LM Studio (เช่น [TOOL_RESULT]) ที่โมเดล echo
+    ออกมาในคำตอบ — ทำงานแบบ stateful รองรับ marker ที่โดนแบ่งข้าม chunk
+    (pattern เดียวกับ _partial_tag_suffix_len ใน reasoning/parser.py)"""
+
+    _MARKERS = ("[TOOL_RESULT]", "[END_TOOL_RESULT]")
+
+    def __init__(self):
+        self._buf = ""
+        self._emitted = False  # ยังไม่ส่งอะไรออก → lstrip ช่องว่างนำหน้า
+
+    def _hold_len(self) -> int:
+        """ความยาว suffix ของ buffer ที่อาจเป็น marker ที่ยังมาไม่ครบ"""
+        hold = 0
+        for m in self._MARKERS:
+            for k in range(min(len(m) - 1, len(self._buf)), 0, -1):
+                if self._buf.endswith(m[:k]):
+                    hold = max(hold, k)
+                    break
+        return hold
+
+    def feed(self, chunk: str) -> str:
+        self._buf += chunk
+        for m in self._MARKERS:
+            self._buf = self._buf.replace(m, "")
+        cut = len(self._buf) - self._hold_len()
+        out, self._buf = self._buf[:cut], self._buf[cut:]
+        if not self._emitted:
+            out = out.lstrip()
+        if out:
+            self._emitted = True
+        return out
+
+    def flush(self) -> str:
+        out, self._buf = self._buf, ""
+        return out if self._emitted else out.lstrip()
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "")
@@ -287,7 +325,8 @@ def _run_agent_lmstudio(
 
         if not tool_calls:
             yield ("event", {"type": "answering"})
-            final = (msg.content or "").strip()
+            mf = _MarkerFilter()
+            final = (mf.feed(msg.content or "") + mf.flush()).strip()
             yield ("chunk", final or "(agent ไม่มีคำตอบ)")
             return
 
@@ -321,10 +360,16 @@ def _run_agent_lmstudio(
     try:
         final_stream = client.chat.completions.create(
             model=model, messages=messages, temperature=0.3, stream=True)
+        mf = _MarkerFilter()
         for chunk in final_stream:
             delta = chunk.choices[0].delta.content
             if delta:
-                yield ("chunk", delta)
+                out = mf.feed(delta)
+                if out:
+                    yield ("chunk", out)
+        tail = mf.flush()
+        if tail:
+            yield ("chunk", tail)
     except Exception as e:
         yield ("chunk", f"❌ Final synthesis failed: {e}")
 

@@ -265,6 +265,45 @@ def test_agent_max_steps_forces_synthesis(monkeypatch):
     assert chunks == "สรุปคำตอบ"
 
 
+# ── [TOOL_RESULT] marker หลุดจาก chat template (cosmetic bug 2026-06-12) ────
+def test_marker_filter_strips_markers_and_leading_space():
+    f = orch._MarkerFilter()
+    out = f.feed("[TOOL_RESULT]  \nคำตอบจริง") + f.flush()
+    assert out == "คำตอบจริง"
+
+
+def test_marker_filter_strips_marker_split_across_chunks():
+    f = orch._MarkerFilter()
+    out = f.feed("[TOOL_") + f.feed("RESULT]\nสวัสดี") + f.feed(" [END_TOOL_RESULT]ค่ะ") + f.flush()
+    assert out == "สวัสดี ค่ะ"
+
+
+def test_marker_filter_passthrough_normal_text():
+    f = orch._MarkerFilter()
+    out = f.feed("ข้อความ [ปกติ] ไม่โดนตัด") + f.flush()
+    assert out == "ข้อความ [ปกติ] ไม่โดนตัด"
+
+
+def test_agent_direct_answer_strips_tool_result_marker(monkeypatch):
+    _patch_lmstudio(monkeypatch, FakeClient([
+        _resp(_msg(content="[TOOL_RESULT]  \nคำตอบจริง")),
+    ]))
+    events = _run([{"role": "system", "content": "base"}])
+    chunks = [e[1] for e in events if e[0] == "chunk"]
+    assert chunks == ["คำตอบจริง"]
+
+
+def test_agent_synthesis_stream_strips_marker_split_across_chunks(monkeypatch):
+    _patch_lmstudio(monkeypatch, FakeClient([
+        _resp(_msg(tool_calls=[_tool_call("c1", "calculator", '{"expression":"1+1"}')])),
+        [_stream_chunk("[TOOL_"), _stream_chunk("RESULT]\nสรุป"), _stream_chunk("คำตอบ")],
+    ]))
+    monkeypatch.setattr(orch, "execute_tool", lambda name, args: "1+1 = 2")
+    events = _run([{"role": "system", "content": "base"}], max_steps=1)
+    chunks = "".join(e[1] for e in events if e[0] == "chunk")
+    assert chunks == "สรุปคำตอบ"
+
+
 # ── orchestrator config: LM Studio token + agent hint ──────────────────────
 def test_orchestrator_uses_lmstudio_api_key_from_env(monkeypatch):
     # LMSTUDIO_API_KEY ต้องถูกส่งเข้า OpenAI constructor ทุกครั้ง
