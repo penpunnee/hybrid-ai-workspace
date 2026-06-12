@@ -199,7 +199,7 @@ def _run_agent_gemini(
     # ครบ max_steps → บังคับสรุป
     yield ("event", {"type": "max_steps_reached"})
     try:
-        final_resp = chat.send_message("สรุปคำตอบสุดท้ายจากข้อมูล tools ที่ได้มาแล้ว ห้ามเรียก tool เพิ่ม")
+        final_resp = chat.send_message("ตอบคำถามจากข้อมูล tools ที่ได้มาให้ครบถ้วน — เก็บรายละเอียดสำคัญ ตัวเลข และแหล่งที่มาให้ครบ ความยาวให้เหมาะกับคำถาม (user ขอละเอียด = ตอบละเอียด) ห้ามเรียก tool เพิ่ม")
         yield ("chunk", final_resp.text or "(ไม่มีคำตอบ)")
     except Exception as e:
         yield ("chunk", f"❌ Final synthesis failed: {e}")
@@ -317,7 +317,7 @@ def _run_agent_lmstudio(
 
     yield ("event", {"type": "max_steps_reached"})
     messages.append({"role": "user",
-                     "content": "สรุปคำตอบสุดท้ายจากข้อมูล tools ที่ได้มาแล้ว ห้ามเรียก tool เพิ่ม"})
+                     "content": "ตอบคำถามจากข้อมูล tools ที่ได้มาให้ครบถ้วน — เก็บรายละเอียดสำคัญ ตัวเลข และแหล่งที่มาให้ครบ ความยาวให้เหมาะกับคำถาม (user ขอละเอียด = ตอบละเอียด) ห้ามเรียก tool เพิ่ม"})
     try:
         final_stream = client.chat.completions.create(
             model=model, messages=messages, temperature=0.3, stream=True)
@@ -430,7 +430,7 @@ def _run_agent_ollama(
     yield ("event", {"type": "max_steps_reached"})
     messages.append({
         "role": "user",
-        "content": "สรุปคำตอบสุดท้ายจากข้อมูลที่ได้มาแล้ว เขียนแค่ Answer: ... เท่านั้น",
+        "content": "ตอบจากข้อมูลที่ได้มาให้ครบถ้วน เก็บรายละเอียดและแหล่งที่มา เขียนแค่ Answer: ... เท่านั้น",
     })
     try:
         final = client.chat.completions.create(
