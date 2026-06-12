@@ -98,6 +98,11 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 if os.path.exists("static/assets"):
     app.mount("/assets", StaticFiles(directory="static/assets"), name="assets")
 
+# รูปที่ AI สร้าง (utils/image_gen.py) — เสิร์ฟผ่าน /gen/<file> (<img> ส่ง header ไม่ได้ → ต้อง open path)
+from utils.image_gen import GEN_IMAGE_DIR
+os.makedirs(GEN_IMAGE_DIR, exist_ok=True)
+app.mount("/gen", StaticFiles(directory=GEN_IMAGE_DIR), name="gen_images")
+
 
 @app.get("/", response_class=HTMLResponse)
 async def root():

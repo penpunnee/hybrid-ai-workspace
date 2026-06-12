@@ -50,6 +50,28 @@ async def chat(request: Request):
     # plan_mode bypass cache — คำตอบ plan-style คนละความหมายกับคำตอบปกติของ prompt เดียวกัน
     use_response_cache = bool(data.get("response_cache", True)) and not (tool_agent or agent_mode or image_b64 or plan_mode)
 
+    # ── Image generation short-circuit (วาดรูป/สร้างภาพ → Gemini Image) ─────
+    # อยู่ก่อน teach/cache — คำสั่งวาดรูปไม่ใช่ knowledge ห้ามเข้า cache/memory
+    from utils.image_gen import detect_image_request, generate_image
+    if prompt and detect_image_request(prompt) and not (tool_agent or agent_mode):
+        save_message(assistant, "user", prompt, "image_gen", session_id)
+        result = generate_image(prompt, image_b64=image_b64, image_mime=image_mime)
+        if result.get("ok"):
+            caption = result.get("text") or "วาดเสร็จแล้วค่ะ 🎨"
+            reply = f"{caption}\n\n![generated image]({result['url']})"
+        else:
+            reply = f"⚠️ {result.get('error', 'สร้างรูปไม่สำเร็จ')}"
+        img_aid = save_message(assistant, "assistant", reply, "image_gen", session_id)
+
+        def gen_image_resp():
+            yield f"data: {json.dumps({'chunk': reply}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'done': True, 'model': 'gemini-image', 'provider': 'image_gen', 'message_id': img_aid}, ensure_ascii=False)}\n\n"
+
+        logger.info(f"[Chat] image generation short-circuit (ok={result.get('ok')})")
+        return StreamingResponse(gen_image_resp(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+                                          "X-Provider-Used": "image_gen"})
+
     # ── ตรวจจับ Teaching signal จาก user ────────────────────────────────────
     teach(assistant, prompt)
 

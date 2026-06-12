@@ -160,7 +160,7 @@ Ollama branch: context cap 2000 chars; trim history to <3000 tokens.
 **Phase D — Multi-modal Agent**
 - `utils/code_sandbox.py` — Python in Docker / subprocess sandbox
 - `utils/fs_tools.py` — whitelist-restricted FS ops
-- `agents/tools.py` — tool registry (18 tools: web/wiki/memory/`run_python`/`fs_*` + home: `nas_disk`/`nas_docker`/`ping_network`/`ping_device`/`wol_pc`)
+- `agents/tools.py` — tool registry (22 tools: web/wiki/memory/`run_python`/`fs_*` + home tools + `generate_image`)
 
 **Phase E — Performance**
 - `utils/embed.py` — LMStudio embed + sqlite persistent cache + LRU
@@ -209,7 +209,7 @@ Stats: `GET /api/cache/stats`
 ```env
 # AI
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-2.5-flash   # ⚠️ ห้ามใช้ gemini-2.5-pro บน free tier (quota limit=0 → 429 ทุก request, เจอจริง 2026-06-11)
 GEMINI_LIVE_MODEL=gemini-2.0-flash-exp
 # Claude (Anthropic) — provider "claude"; ปล่อยว่าง=ปิด
 ANTHROPIC_API_KEY=
@@ -287,6 +287,13 @@ LOG_FILE=server.log
 ### WebSocket: Voice Chat
 `/ws/voice/{assistant_slug}` — bidirectional WS connecting to Gemini Live API. Client sends PCM `{type: "audio"}`, receives audio. Transcripts saved on turn completion.
 
+## Image Generation (2026-06-12)
+- `utils/image_gen.py` — `generate_image(prompt)` ผ่าน Gemini (`IMAGE_GEN_MODEL`, default `gemini-2.5-flash-image`) → เซฟ PNG ที่ `${NAS_DATA_PATH}/gen_images/` เสิร์ฟผ่าน `/gen/<file>` (open path — <img> ส่ง auth header ไม่ได้)
+- chat: `detect_image_request()` จับ "วาดรูป/สร้างภาพ/ออกแบบโลโก้" → short-circuit ก่อน teach/cache → ตอบ markdown `![..](/gen/xxx.png)` (persist ลง history เป็น text ปกติ)
+- React `renderMarkdown` แปลง `![..](/path)` → `<img class="md-img">` (รับเฉพาะ path ภายใน กัน external)
+- agent mode: tool `generate_image` ใน registry
+- ⚠️ คำสั่งวาดรูปห้ามเข้า response cache / teach / memory — short-circuit อยู่ก่อนทุกอย่างแล้ว
+
 ## Coding Conventions
 - All UI strings + comments **ภาษาไทย**; technical terms remain English
 - Each feature area → own router file in `routers/`, registered in `server.py`
@@ -296,6 +303,8 @@ LOG_FILE=server.log
 - ⚠️ **DELETE `/api/skills/{id}`**: lebt `delete_file` query param (default false). ส่ง `?delete_file=true` ถ้าต้องลบ .md ด้วย — กัน data loss
 
 ## Known Quirks / Bugs
+- **Memory contamination จากการเทส (เจอจริง 2026-06-11)**: ทุก Q&A ถูก save เข้า episodic ChromaDB (`memory_kwan` ฯลฯ) รวมถึงคำตอบกุ/error จากการ smoke test → ถูก recall กลับมาให้โมเดลตอบซ้ำแม้เปลี่ยน session/provider. **หลังเทส /api/chat บน prod ต้องตามลบ memory ทิ้ง** — ไม่มี API ลบ episodic รายตัว ให้ต่อ ChromaDB ตรง (`chromadb.HttpClient(host='192.168.51.49', port=8000)` → `get_collection('memory_kwan').delete(ids=[...])`) — get+review ก่อน delete เสมอ
+- **gemini_agent ≠ search_web()**: เส้น `gemini_agent` ใช้ Google Search grounding ในตัว Gemini (`types.Tool(google_search=...)` ใน `utils/llm.py`) — ส่วน `utils/websearch.py` (Google CSE+DDG) ใช้เฉพาะ route `lmstudio_web` + agent tool registry
 - ChromaDB uses `/api/v2/heartbeat` (not v1 — returns 410 Gone)
 - Cloudflare tunnel returns 530 when origin down → check `cloudflared` container
 - `static/skills/` (git) ≠ `data/skills/` (container mount) — copy needed after `git pull`

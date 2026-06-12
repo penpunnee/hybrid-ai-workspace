@@ -303,9 +303,36 @@ def _t_ha_call_service(
     return f"✅ {label}{domain}.{service} สำเร็จ"
 
 
+
+
+def _t_generate_image(prompt: str) -> str:
+    """สร้างรูปด้วย Gemini Image — คืน markdown รูปสำหรับแสดงใน chat"""
+    from utils.image_gen import generate_image
+    result = generate_image(prompt)
+    if result.get("ok"):
+        caption = result.get("text") or "วาดเสร็จแล้ว"
+        return f"{caption}\n\n![generated image]({result['url']})"
+    return f"สร้างรูปไม่สำเร็จ: {result.get('error', 'unknown')}"
+
 # ── Registry ─────────────────────────────────────────────────────────────────
 
 TOOL_REGISTRY: dict[str, dict[str, Any]] = {
+    "generate_image": {
+        "description": (
+            "สร้าง/วาดรูปภาพจากคำบรรยายด้วย Gemini Image "
+            "ใช้เมื่อ user ขอให้วาดรูป สร้างภาพ ออกแบบโลโก้/โปสเตอร์ "
+            "ผลลัพธ์เป็น markdown รูป ให้ใส่ไว้ในคำตอบตรงๆ ห้ามแก้ URL"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "description": "คำบรรยายรูปที่ต้องการ (ละเอียด = ผลดีกว่า)"},
+            },
+            "required": ["prompt"],
+        },
+        "fn": _t_generate_image,
+    },
+
     "web_search": {
         "description": (
             "ค้นหาข้อมูลจากอินเตอร์เน็ตด้วย DuckDuckGo + ดึงเนื้อหาหน้าเว็บจริง "

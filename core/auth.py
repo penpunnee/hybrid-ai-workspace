@@ -19,7 +19,7 @@ def token_matches(provided: str) -> bool:
 # /api/shared = public share link (token อยู่ใน URL), /api/health = monitoring probe
 _OPEN_PATHS = {"/", "/api/config", "/api/status", "/api/health",
                "/api/auth/check", "/api/auth/login"}
-_OPEN_PREFIXES = ("/static", "/assets", "/shared", "/api/shared", "/ws")
+_OPEN_PREFIXES = ("/static", "/assets", "/shared", "/api/shared", "/ws", "/gen")
 
 
 def _ip_is_private(ip_str: str) -> bool:
