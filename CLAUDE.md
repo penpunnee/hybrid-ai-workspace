@@ -31,6 +31,17 @@ pytest tests/test_main.py::TestHealthEndpoints::test_root_endpoint -v
 CI (`.github/workflows/tests.yml`) runs `pytest tests/ -q` on every push to `main` and on PRs — `tests/conftest.py` points hosts at `localhost` and sets `UI_PASSWORD=""` + a temp `DB_PATH` so it runs without a real ChromaDB/Ollama/NAS.
 
 ### Docker (NAS Deploy)
+ทางเร็วสุด (ใช้ได้ตั้งแต่ 2026-06-12 — SSH key auth + sudo docker ไม่ต้องรหัส):
+```bash
+# จาก Mac: push แล้วสั่ง NAS pull + restart ในคำสั่งเดียว (โค้ด = volume mount ไม่ต้อง rebuild)
+git push origin main && ssh -o BatchMode=yes pawin@192.168.51.49 \
+  'cd /var/services/homes/pawin/ui && git fetch origin main && git reset --hard origin/main \
+   && sudo -n /usr/local/bin/docker restart ai-backend-1'
+```
+- `static/` ไม่ต้อง restart เลย (เสิร์ฟจาก disk) · rebuild เฉพาะ requirements.txt/Dockerfile เปลี่ยน
+- SSH ตัน (Auto Block) → fallback: DSM Task Scheduler `deploy-hybrid-ai`
+
+แบบ shell บน NAS เอง:
 ```bash
 cd /var/services/homes/pawin/ui
 sudo git pull
@@ -288,6 +299,7 @@ LOG_FILE=server.log
 `/ws/voice/{assistant_slug}` — bidirectional WS connecting to Gemini Live API. Client sends PCM `{type: "audio"}`, receives audio. Transcripts saved on turn completion.
 
 ## Image Generation (2026-06-12)
+⛔ **พักฟีเจอร์ไว้ (user ตัดสินใจ 2026-06-12)** — โค้ดทำงานถูกทั้งเส้น (verified prod) แต่ Google ไม่เปิดโมเดลสร้างรูป**ทุกตัว**ให้ free tier (429 `limit: 0` — gemini-2.5-flash-image, gemini-3.1-flash-image; imagen = paid-only). ใช้ได้เมื่อเปิด billing (~$0.04/รูป) — ไม่ต้องแก้โค้ด. ดู `skills/gemini-api-quota-sdk-gotchas.md`
 - `utils/image_gen.py` — `generate_image(prompt)` ผ่าน Gemini (`IMAGE_GEN_MODEL`, default `gemini-2.5-flash-image`) → เซฟ PNG ที่ `${NAS_DATA_PATH}/gen_images/` เสิร์ฟผ่าน `/gen/<file>` (open path — <img> ส่ง auth header ไม่ได้)
 - chat: `detect_image_request()` จับ "วาดรูป/สร้างภาพ/ออกแบบโลโก้" → short-circuit ก่อน teach/cache → ตอบ markdown `![..](/gen/xxx.png)` (persist ลง history เป็น text ปกติ)
 - React `renderMarkdown` แปลง `![..](/path)` → `<img class="md-img">` (รับเฉพาะ path ภายใน กัน external)
@@ -314,6 +326,10 @@ LOG_FILE=server.log
 - **Auth lockout false-positive (แก้แล้ว 2026-06-02)**: React app โหลดหน้าแรกยิง API ไม่มี token → นับเป็น auth-fail → lock ก่อน login. แก้: นับเฉพาะ request ที่มี `x-auth-token` แต่ผิด (`core/ratelimit.py`)
 - **Login modal loop (แก้แล้ว 2026-06-02)**: fetch monkey-patch เปิด login overlay ทุก 401 แม้มี token → แก้ให้เปิดเฉพาะ `!_authToken` (`static/enhanced.js`)
 - **Provider UI**: เมื่อตั้ง `LMSTUDIO_BASE_URL` แล้ว React UI แสดงเฉพาะ 2 ปุ่ม (LMStudio + Gemini) — Ollama ถูกรวมเป็น local เดียวกัน
+- **429 "limit: 0" ≠ quota หมดชั่วคราว (เจอจริง 3 เคส)**: limit=0 = โมเดลนั้นไม่เปิดให้ free tier เลย retry ไม่ช่วย (gemini-2.5-pro, โมเดล image gen ทุกตัว) — error message ฝั่งเราต้องแยก 2 เคสนี้ (ดู `utils/image_gen.py` + `skills/gemini-api-quota-sdk-gotchas.md`)
+- **`[TOOL_RESULT]` echo จาก chat template (แก้แล้ว 2026-06-12)**: LM Studio render role `tool` ด้วย marker → โมเดลเลียนแบบขึ้นต้นคำตอบ agent → ตัดด้วย `agents/orchestrator.py:_MarkerFilter` (stateful, รอด marker แบ่งข้าม chunk — pattern เดียวกับ `<think>` ใน parser). ดู `skills/stream-template-marker-sanitization.md`
+- **google-genai SDK: `Part.from_text(text=...)` keyword-only (แก้แล้ว 2026-06-12)**: ส่ง positional = TypeError → gemini agent พังทุก request ที่มี history (request แรกของ session รอดเพราะ history ว่าง — **smoke test ต้องเทส multi-turn ใน session เดิมด้วย**)
+- **agent default = gemini**: `routers/chat.py` — `tool_agent:true` โดยไม่ส่ง provider → วิ่ง gemini agent; จะใช้ local agent ต้องส่ง `"provider":"lmstudio"` มาด้วย
 
 ## Routing Architecture (2026-06-03)
 **"auto" เป็น default เดียวทั้งโปรเจค — `reasoning/router.py` เป็น single source of truth**
@@ -339,6 +355,7 @@ reasoning/router.py → LMStudio/DeepSeek → Gemini → Ollama (last resort)
 | §20 | ✏️ Edit + Resend | hover user bubble → แก้ข้อความ → ส่งใหม่ (truncate + resend) |
 | §20 | 🗑️ Delete pair | hover user bubble → ลบ user+AI message คู่นั้น |
 | §21 | Mobile keyboard | visualViewport resize → scroll textarea พ้น keyboard |
+| React | Stream status (2026-06-12) | "กำลังคิด… (2m 31s · ↓ 7.1k tokens)" ใต้ bubble ระหว่าง stream — `~/appscript.ui/utils/streamstatus.ts` (vitest) + wire 3 เส้น send/regenerate/edit-resend ใน `app.tsx`, tick 1s, token≈chars/4 |
 
 **File upload flow:**
 - รูปภาพ → `/api/upload` → base64 → `hw_pending_image` → ส่งพร้อม chat
@@ -478,6 +495,10 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 28. 💾 **ตั้ง DSM task `db_backup.sh`** รายวัน 03:30 (user=root)
 29. 📦 **ติดตั้ง `poppler-utils` บน NAS** → รองรับ OCR PDF scan
 30. 🧹 **(optional)** quality gate ฝั่ง recall · ทยอยย้าย overlay features ที่เหลือ (FAB Claude/Agent, File Manager §18) เข้า React · เคลียร์ WIP `components/` ใน appscript.ui (untracked, ไม่ได้ import — ใช้หรือลบ)
+31. ✅ **[Agent] `[TOOL_RESULT]` echo + `Part.from_text` keyword-only (2026-06-12)** — `_MarkerFilter` กรอง marker ข้าม chunk + แก้ gemini agent พังเมื่อมี history (commits `db9eb9a`, `138172b`)
+32. ✅ **[UX] stream status แบบ Claude Code (2026-06-12)** — verb+เวลา+↓tokens ใต้ bubble (`fb39dad`)
+33. ⛔ **[Image Gen] พักไว้ — free tier limit=0 ทุกโมเดล** → ใช้ได้เมื่อเปิด billing (โค้ดพร้อมแล้ว ดู section Image Generation)
+34. 🧪 **ขยาย classifier ค้นเว็บตามบริบท + Gemini grounding ทุก call** — เริ่มไว้ 2026-06-11 ยังเขียน test ไม่เสร็จ
 
 ## ✅ Admin unlock endpoint (2026-06-01)
 `POST /api/admin/unlock` — ล้าง auth-fail lockout สำหรับ IP ที่ระบุ (LAN/loopback เท่านั้น, 403 ถ้ามาจาก Cloudflare/public)
@@ -495,7 +516,7 @@ curl -X POST http://192.168.51.49:8000/api/admin/unlock \
 4. 🟡 **recall ranking** (`memory/store.py`)
 5. 🟡 **LM Studio token** (`reasoning/router.py`)
 
-**Deploy:** DSM Task Scheduler `deploy-hybrid-ai` → Run. HEAD ล่าสุด = `3b181ba` (session 2026-06-10/11: scrutinize §22 แก้ครบ + LM Studio health + **ChatBox ย้ายเข้า React จริง** — deployed+verified prod 2026-06-11; ตอน recreate มี 502 window ~1 นาที เป็นปกติ)
+**Deploy:** ทางหลัก = SSH ตรงจาก Mac (ดู Commands→Docker) · fallback = DSM Task Scheduler `deploy-hybrid-ai`. Session 2026-06-12: image gen verify (พัก—free tier limit=0) + `_MarkerFilter` + `Part.from_text` fix + stream status — deployed+verified prod ครบ
 
 ## Session 2026-06-10/11 — scrutinize §22 + ChatBox เข้า React (สรุป)
 ลำดับงาน 6 commits (`383125c`→`3b181ba`) — รายละเอียดเต็มดู git log + memory:

@@ -1,5 +1,20 @@
 # Deploy Cheatsheet — Hybrid AI Workspace
 
+## ⚡ Deploy ตรงจาก Mac ผ่าน SSH (เร็วสุด — ใช้ได้ตั้งแต่ 2026-06-12)
+
+SSH key auth เข้า NAS ผ่านแล้ว (หลังปลด 2FA) + sudo docker ไม่ต้องรหัส:
+```bash
+# push จาก Mac แล้วสั่ง NAS pull + restart ในคำสั่งเดียว
+git push origin main && ssh -o BatchMode=yes pawin@192.168.51.49 \
+  'cd /var/services/homes/pawin/ui && git fetch origin main && git reset --hard origin/main \
+   && sudo -n /usr/local/bin/docker restart ai-backend-1'
+```
+- โค้ด Python (utils/ routers/ agents/ ฯลฯ) = volume mount → **restart พอ ไม่ต้อง rebuild**
+- `static/` เสิร์ฟจาก disk ต่อ request → **ไม่ต้อง restart เลย** (แค่ browser hard refresh)
+- rebuild เฉพาะตอน `requirements.txt`/`Dockerfile` เปลี่ยน
+- skills .md ใหม่ → ต้อง `cp skills/*.md data/skills/` บน NAS ด้วย (container อ่าน data/skills)
+- ถ้า SSH ตัน (Auto Block/2FA กลับมา) → fallback: DSM Task Scheduler `deploy-hybrid-ai`
+
 ## Deploy บน NAS (คำสั่งหลัก)
 
 ```bash
