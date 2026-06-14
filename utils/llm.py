@@ -108,6 +108,23 @@ anthropic_client = (
     if anthropic and ANTHROPIC_API_KEY else None
 )
 
+# --- Kimi (Moonshot Cloud LLM — OpenAI compatible) ---
+# opt-in: ตั้ง MOONSHOT_API_KEY ใน .env ถึงจะใช้ได้ (provider="kimi")
+MOONSHOT_API_KEY = os.getenv("MOONSHOT_API_KEY", "")
+KIMI_BASE_URL    = os.getenv("KIMI_BASE_URL", "https://api.moonshot.ai/v1")
+KIMI_MODEL       = os.getenv("KIMI_MODEL", "kimi-k2.6")
+KIMI_TIMEOUT     = int(os.getenv("KIMI_TIMEOUT", "180"))
+
+kimi_client = (
+    OpenAI(base_url=KIMI_BASE_URL, api_key=MOONSHOT_API_KEY, timeout=KIMI_TIMEOUT)
+    if MOONSHOT_API_KEY else None
+)
+
+
+# map effort slider → Gemini thinking_budget (token งบสำหรับคิด)
+_GEMINI_EFFORT_BUDGET = {
+    "low": 2048, "medium": 8192, "high": 16384, "xhigh": 24576, "max": 32768,
+}
 
 _last_failover: dict = {"active": False}  # track failover state
 _health_cache: dict = {"ok": None, "ts": 0.0, "msg": ""}  # cache health check 30s
@@ -115,26 +132,38 @@ _health_cache: dict = {"ok": None, "ts": 0.0, "msg": ""}  # cache health check 3
 
 def stream_response(messages: list[dict], provider: str = "auto",
                     image_b64: str = "", image_mime: str = "",
-                    agent_mode: bool = False, model_override: str = ""):
+                    agent_mode: bool = False, model_override: str = "",
+                    thinking: bool | None = None, effort: str = ""):
     """
     Stream response จาก LLM ที่เลือก
-    provider: 'ollama' | 'gemini' | 'lmstudio' | 'auto'
-    model_override: ใช้ model นี้แทน default (สำหรับ LM Studio)
+    provider: 'ollama' | 'gemini' | 'lmstudio' | 'kimi' | 'claude' | 'auto'
+    model_override: ใช้ model นี้แทน default (per-request จาก dropdown / router)
+    thinking: เปิด/ปิดโหมดคิด (None = ใช้ค่า default ของ provider — ไม่ override)
+    effort: ระดับการคิดเมื่อ thinking เปิด (low|medium|high|xhigh|max; "" = ใช้ default)
     """
     if provider == "gemini_agent":
         _last_failover["active"] = False
-        yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=True)
+        yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=True,
+                                  model=model_override, thinking=thinking, effort=effort)
         return
 
     # Claude ต้องมาก่อน gemini catch-all — Claude จัดการ vision ของตัวเอง
     if provider in ("claude", "claude_agent"):
         _last_failover["active"] = False
-        yield from _stream_claude(messages, image_b64, image_mime)
+        yield from _stream_claude(messages, image_b64, image_mime,
+                                  model=model_override, thinking=thinking, effort=effort)
+        return
+
+    if provider == "kimi":
+        _last_failover["active"] = False
+        yield from _stream_kimi(messages, model=model_override, thinking=thinking,
+                                effort=effort, image_b64=image_b64, image_mime=image_mime)
         return
 
     if provider == "gemini" or agent_mode or (image_b64 and provider not in ("lmstudio", "auto", "claude", "claude_agent")):
         _last_failover["active"] = False
-        yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode)
+        yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode,
+                                  model=model_override, thinking=thinking, effort=effort)
         return
 
     if provider in ("lmstudio", "lmstudio_web"):
@@ -179,7 +208,7 @@ def stream_response(messages: list[dict], provider: str = "auto",
         return
 
     _last_failover["active"] = False
-    yield from _stream_ollama(messages)
+    yield from _stream_ollama(messages, model=model_override)
 
 
 def _stream_lmstudio(messages: list[dict], model: str = "",
@@ -378,7 +407,7 @@ def check_lmstudio_health(force: bool = False) -> tuple[bool, str]:
         return _save(False, msg)
 
 
-def _stream_ollama(messages: list[dict]):
+def _stream_ollama(messages: list[dict], model: str = ""):
     """
     Stream จาก Ollama local พร้อม retry mechanism และ error handling ที่ละเอียด
     
@@ -404,11 +433,12 @@ def _stream_ollama(messages: list[dict]):
     """
     max_retries = OLLAMA_MAX_RETRIES
     retry_delay = OLLAMA_RETRY_DELAY
-    
+    model = model or OLLAMA_MODEL
+
     for attempt in range(max_retries):
         try:
             stream = ollama_client.chat.completions.create(
-                model=OLLAMA_MODEL,
+                model=model,
                 messages=messages,
                 stream=True,
                 timeout=OLLAMA_TIMEOUT,
@@ -425,18 +455,18 @@ def _stream_ollama(messages: list[dict]):
                 delta = chunk.choices[0].delta.content
                 if delta:
                     yield delta
-            logger.info(f"Ollama stream successful (model: {OLLAMA_MODEL})")
+            logger.info(f"Ollama stream successful (model: {model})")
             return  # Success - exit retry loop
         except Exception as e:
             err_str = str(e).lower()
-            
+
             # ถ้าเป็น model not found error ไม่ต้อง retry (จะไม่สำเร็จอยู่ดี)
             if "model" in err_str or "not found" in err_str:
-                logger.error(f"Ollama model not found: {OLLAMA_MODEL} - {str(e)}")
+                logger.error(f"Ollama model not found: {model} - {str(e)}")
                 yield (
-                    f"❌ Model `{OLLAMA_MODEL}` ไม่พบใน Ollama\n\n"
+                    f"❌ Model `{model}` ไม่พบใน Ollama\n\n"
                     f"กรุณา pull model ด้วยคำสั่ง:\n"
-                    f"```bash\nollama pull {OLLAMA_MODEL}\n```\n"
+                    f"```bash\nollama pull {model}\n```\n"
                     f"หรือตรวจสอบรายชื่อ model ที่มี:\n"
                     f"```bash\nollama list\n```"
                 )
@@ -483,7 +513,8 @@ def _stream_ollama(messages: list[dict]):
 
 
 def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = "",
-                   agent_mode: bool = False):
+                   agent_mode: bool = False, model: str = "",
+                   thinking: bool | None = None, effort: str = ""):
     """
     Stream จาก Gemini Cloud ด้วย google-genai SDK ใหม่
     
@@ -543,19 +574,28 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
                 types.Tool(code_execution=types.ToolCodeExecution()),
             ]
 
+        use_model = model or GEMINI_MODEL
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
             tools=tools,
         )
+        # thinking toggle (Gemini 3/2.5): None = ไม่แตะ (default ของโมเดล)
+        # ปิด = thinking_budget 0 · เปิด = budget ตาม effort. guard: SDK เก่าอาจไม่มี ThinkingConfig
+        if thinking is not None:
+            try:
+                budget = 0 if not thinking else _GEMINI_EFFORT_BUDGET.get(effort, 8192)
+                config.thinking_config = types.ThinkingConfig(thinking_budget=budget)
+            except Exception as te:
+                logger.warning(f"[Gemini] thinking_config ไม่รองรับ ({te}) — ข้าม")
         response = gemini_client.models.generate_content_stream(
-            model=GEMINI_MODEL,
+            model=use_model,
             contents=history,
             config=config,
         )
         for chunk in response:
             if chunk.text:
                 yield chunk.text
-        logger.info(f"Gemini stream successful (model: {GEMINI_MODEL}, agent_mode: {agent_mode})")
+        logger.info(f"Gemini stream successful (model: {use_model}, agent_mode: {agent_mode}, thinking: {thinking})")
 
     except Exception as e:
         err = str(e)
@@ -570,7 +610,8 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
             raise GeminiUnavailable(err) from e
 
 
-def _stream_claude(messages: list[dict], image_b64: str = "", image_mime: str = ""):
+def _stream_claude(messages: list[dict], image_b64: str = "", image_mime: str = "",
+                   model: str = "", thinking: bool | None = None, effort: str = ""):
     """Stream จาก Claude (Anthropic) ด้วย official SDK + prompt caching
 
     - system prompt → cached block (cache_control ephemeral, stable-first) ลด cost เมื่อ context ซ้ำ
@@ -616,7 +657,7 @@ def _stream_claude(messages: list[dict], image_b64: str = "", image_mime: str = 
         claude_messages.insert(0, {"role": "user", "content": "(เริ่มสนทนา)"})
 
     kwargs: dict = {
-        "model": CLAUDE_MODEL,
+        "model": model or CLAUDE_MODEL,
         "max_tokens": CLAUDE_MAX_TOKENS,
         "messages": claude_messages,
     }
@@ -626,9 +667,11 @@ def _stream_claude(messages: list[dict], image_b64: str = "", image_mime: str = 
             "text": system_text,
             "cache_control": {"type": "ephemeral"},
         }]
-    if CLAUDE_THINKING == "adaptive":
+    # thinking: None = ใช้ค่า env (CLAUDE_THINKING) เดิม · True/False = override per-request
+    _think_on = (CLAUDE_THINKING == "adaptive") if thinking is None else bool(thinking)
+    if _think_on:
         kwargs["thinking"] = {"type": "adaptive"}
-        kwargs["output_config"] = {"effort": CLAUDE_EFFORT}
+        kwargs["output_config"] = {"effort": effort or CLAUDE_EFFORT}
 
     try:
         with anthropic_client.messages.stream(**kwargs) as stream:
@@ -659,3 +702,64 @@ def _stream_claude(messages: list[dict], image_b64: str = "", image_mime: str = 
         else:
             logger.error(f"Claude stream error: {e}")
             yield f"❌ Claude error: {e}"
+
+
+def _stream_kimi(messages: list[dict], model: str = "",
+                 thinking: bool | None = None, effort: str = "",
+                 image_b64: str = "", image_mime: str = ""):
+    """Stream จาก Kimi (Moonshot, OpenAI-compatible) — provider="kimi"
+
+    - model: default KIMI_MODEL (kimi-k2.6)
+    - thinking: None = ปล่อย default · True/False = เปิด/ปิด reasoning ผ่าน extra_body
+      (Kimi: {"thinking": {"type": "enabled"/"disabled"}}). ปิดเป็นปกติของแชต = เร็ว/ไม่หลุด
+    - vision: K2.6 มี MoonViT — แทรกรูปแบบ OpenAI image_url ได้
+    Yields: text delta (str) หรือ error message
+    """
+    if kimi_client is None:
+        yield ("⚠️ ยังไม่ได้ตั้งค่า MOONSHOT_API_KEY\n\n"
+               "เปิด `.env` แล้วใส่:\n```\nMOONSHOT_API_KEY=sk-...\n```\n"
+               "ขอ key ที่ https://platform.moonshot.ai/")
+        return
+
+    use_model = model or KIMI_MODEL
+
+    # vision: แทรก image ลง user message ล่าสุด (เหมือน LM Studio)
+    if image_b64:
+        msgs = []
+        for i, m in enumerate(messages):
+            if m["role"] == "user" and i == len(messages) - 1:
+                msgs.append({"role": "user", "content": [
+                    {"type": "text", "text": m["content"]},
+                    {"type": "image_url", "image_url": {
+                        "url": f"data:{image_mime or 'image/jpeg'};base64,{image_b64}"}},
+                ]})
+            else:
+                msgs.append(m)
+    else:
+        msgs = messages
+
+    create_kwargs: dict = {"model": use_model, "messages": msgs, "stream": True}
+    # thinking None = ไม่ส่ง (ใช้ default ของ Kimi) — ส่งเฉพาะเมื่อ override ชัดเจน
+    if thinking is not None:
+        create_kwargs["extra_body"] = {
+            "thinking": {"type": "enabled" if thinking else "disabled"}
+        }
+
+    try:
+        stream = kimi_client.chat.completions.create(**create_kwargs)
+        for chunk in stream:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
+        logger.info(f"Kimi stream OK (model={use_model}, thinking={thinking})")
+    except Exception as e:
+        err = str(e).lower()
+        if "401" in err or "auth" in err or "api key" in err or "invalid" in err:
+            logger.error(f"Kimi auth error: {e}")
+            yield "❌ MOONSHOT_API_KEY ไม่ถูกต้อง — ตรวจสอบใน .env"
+        elif "429" in err or "rate" in err or "quota" in err:
+            logger.error(f"Kimi rate/quota: {e}")
+            yield "⏳ Kimi โดน rate limit / quota — รอสักครู่หรือสลับ provider"
+        else:
+            logger.error(f"Kimi stream error: {e}")
+            yield f"❌ Kimi error: {e}"

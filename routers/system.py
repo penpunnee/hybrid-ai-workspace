@@ -75,6 +75,48 @@ def get_config():
     }
 
 
+# curated cloud models สำหรับ dropdown — เลือกตัวไหน provider วิ่งตามตัวนั้น
+# (id ยืนยันจาก docs ทางการ 2026-06-15) · available คำนวณตอน request ตามว่ามี key ไหม
+_CLOUD_MODELS = [
+    {"provider": "gemini", "model": "gemini-3.5-flash",       "label": "Gemini 3.5 Flash"},
+    {"provider": "gemini", "model": "gemini-3-flash-preview", "label": "Gemini 3 Flash"},
+    {"provider": "gemini", "model": "gemini-3.1-flash-lite",  "label": "Gemini 3.1 Flash Lite"},
+    {"provider": "gemini", "model": "gemini-2.5-flash",       "label": "Gemini 2.5 Flash"},
+    {"provider": "gemini", "model": "gemma-4-31b-it",         "label": "Gemma 4 31B"},
+    {"provider": "claude", "model": "claude-opus-4-8",        "label": "Claude Opus 4.8"},
+    {"provider": "claude", "model": "claude-sonnet-4-6",      "label": "Claude Sonnet 4.6"},
+    {"provider": "claude", "model": "claude-haiku-4-5",       "label": "Claude Haiku 4.5"},
+    {"provider": "kimi",   "model": "kimi-k2.6",              "label": "Kimi K2.6"},
+]
+
+
+@router.get("/models")
+def list_models():
+    """รายชื่อโมเดลให้ dropdown — local (LM Studio/Ollama dynamic) + cloud (curated).
+    แต่ละ item: {provider, model, label, available}. available=False = ยังไม่มี key/ต่อไม่ได้
+    (โชว์ใน list แต่ disable เลือก)"""
+    import logging
+    from utils.llm import (GEMINI_API_KEY, ANTHROPIC_API_KEY, MOONSHOT_API_KEY,
+                           lmstudio_client, ollama_client)
+    from core.config import LMSTUDIO_BASE_URL
+
+    # local: ดึงรายชื่อจริงจาก server ที่รันอยู่ (LM Studio ถ้าตั้ง base url, ไม่งั้น Ollama)
+    local = []
+    client, prov = (lmstudio_client, "lmstudio") if LMSTUDIO_BASE_URL else (ollama_client, "ollama")
+    try:
+        for m in client.models.list().data:
+            local.append({"provider": prov, "model": m.id, "label": m.id, "available": True})
+    except Exception as e:
+        logging.getLogger("routers.system").info(f"[/api/models] local list ไม่ได้: {e}")
+
+    # cloud: curated + available ตาม key
+    key_for = {"gemini": bool(GEMINI_API_KEY), "claude": bool(ANTHROPIC_API_KEY),
+               "kimi": bool(MOONSHOT_API_KEY)}
+    cloud = [{**m, "available": key_for.get(m["provider"], False)} for m in _CLOUD_MODELS]
+
+    return {"local": local, "cloud": cloud}
+
+
 @router.get("/status")
 def status():
     from concurrent.futures import ThreadPoolExecutor

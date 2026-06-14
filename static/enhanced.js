@@ -23,9 +23,9 @@
   let _draftPrompt = "";
 
   // ── Agent Mode state ────────────────────────────────────────────────────────
-  let _agentMode = localStorage.getItem("hw_agent_mode") === "1";
+  let _agentMode = false;  // fab-agent ตัดออกแล้ว (2026-06-15) — tool_agent มาจาก React Code pill แทน
   // ── Claude Mode state — override provider=claude บน /api/chat ────────────────
-  let _claudeMode = localStorage.getItem("hw_claude_mode") === "1";
+  let _claudeMode = false;  // fab-claude ตัดออกแล้ว (2026-06-15) — เลือก Claude ผ่าน Model picker
   // queue ของ agent events ที่ยังรอ AI bubble ใหม่มา attach timeline
   let _pendingAgentTimeline = null;  // { events: [], sessionToken: string }
 
@@ -832,26 +832,15 @@
     <button class="enh-fab" id="fab-search" title="ค้นหาทุก Session (Ctrl+Shift+F)">
       🔍 <span>Search</span>
     </button>
-    <button class="enh-fab" id="fab-export" title="Export Session (Ctrl+E)">
-      📤 <span>Export</span>
-    </button>
     <button class="enh-fab" id="fab-vault" title="Vault Search" style="display:none">
       🌿 <span>Vault</span>
     </button>
-    <button class="enh-fab" id="fab-agent" title="Agent Mode — AI ใช้ tools จริง (ค้นเว็บ, บ้าน, ไฟล์ ฯลฯ)">
-      🤖 <span>Agent</span>
-    </button>
-    <button class="enh-fab" id="fab-claude" title="Claude (Anthropic)" style="display:none">
-      ✨ <span>Claude</span>
-    </button>`;
+  `;
   document.body.appendChild(toolbar);
 
   // โหลด config จาก server — เปิดปุ่มเฉพาะที่พร้อมใช้จริง
+  // (fab-claude ตัดออกแล้ว 2026-06-15 — เลือก Claude ผ่าน Model picker ใน React แทน)
   fetch("/config").then(r => r.json()).then(cfg => {
-    if (cfg.has_anthropic) {
-      const b = document.getElementById("fab-claude");
-      if (b) b.style.display = "";
-    }
     if (cfg.has_vault) {
       const b = document.getElementById("fab-vault");
       if (b) b.style.display = "";
@@ -863,43 +852,12 @@
     if (searchOverlay.classList.contains("open"))
       setTimeout(() => gsInput.focus(), 50);
   });
-  document.getElementById("fab-export").addEventListener("click", doExport);
   document.getElementById("fab-vault").addEventListener("click", () => {
     vaultOverlay.classList.toggle("open");
     if (vaultOverlay.classList.contains("open"))
       setTimeout(() => vsInput.focus(), 50);
   });
 
-  // Agent Mode toggle
-  const _agentBtn = document.getElementById("fab-agent");
-  const _syncAgentBtn = () => _agentBtn.classList.toggle("enh-fab-active", _agentMode);
-  // Claude Mode toggle
-  const _claudeBtn = document.getElementById("fab-claude");
-  const _syncClaudeBtn = () => _claudeBtn && _claudeBtn.classList.toggle("enh-fab-active", _claudeMode);
-  _syncAgentBtn();
-  _syncClaudeBtn();
-  _agentBtn.addEventListener("click", () => {
-    _agentMode = !_agentMode;
-    localStorage.setItem("hw_agent_mode", _agentMode ? "1" : "0");
-    _syncAgentBtn();
-    // Agent กับ Claude ใช้พร้อมกันไม่ได้ — เปิด Agent → ปิด Claude
-    if (_agentMode && _claudeMode) {
-      _claudeMode = false;
-      localStorage.setItem("hw_claude_mode", "0");
-      _syncClaudeBtn();
-    }
-  });
-  _claudeBtn && _claudeBtn.addEventListener("click", () => {
-    _claudeMode = !_claudeMode;
-    localStorage.setItem("hw_claude_mode", _claudeMode ? "1" : "0");
-    _syncClaudeBtn();
-    // เปิด Claude → ปิด Agent
-    if (_claudeMode && _agentMode) {
-      _agentMode = false;
-      localStorage.setItem("hw_agent_mode", "0");
-      _syncAgentBtn();
-    }
-  });
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 6. COPY CODE BUTTON — เพิ่มปุ่ม copy บน code block อัตโนมัติ
@@ -2811,11 +2769,9 @@
       localStorage.setItem("hw_cb_skills", JSON.stringify(_cbSkills));
     }
 
-    // Code → เปิด Agent Mode จริง (AI ใช้ tools), Ask → ปิด — proxy ผ่านปุ่ม FAB เดิม
-    // เพื่อให้ state/localStorage/sync กับ Claude Mode ทำงานถูกต้องตามกลไกเดิมทั้งหมด
-    function _setAgentMode(target) {
-      if (_agentMode !== target && _agentBtn) _agentBtn.click();
-    }
+    // fab-agent ตัดออกแล้ว (2026-06-15) — proxy เดิมเป็น no-op
+    // (block §22 นี้ตายอยู่แล้วเมื่อ React ChatBox active ดู return ด้านล่าง — React ส่ง tool_agent เอง)
+    function _setAgentMode() {}
     function _applyModeSideEffects(modeId) {
       if (modeId === "code") _setAgentMode(true);
       else if (modeId === "ask") _setAgentMode(false);

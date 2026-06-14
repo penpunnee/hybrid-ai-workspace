@@ -48,7 +48,7 @@ def test_ollama_provider_uses_ollama_even_when_lmstudio_set(monkeypatch):
 
     calls: list[str] = []
     monkeypatch.setattr(llm, "_stream_ollama",
-                        lambda m: iter([(calls.append("ollama"), "hi")[1]]))
+                        lambda m, model="": iter([(calls.append("ollama"), "hi")[1]]))
     monkeypatch.setattr(llm, "_stream_lmstudio",
                         lambda *a, **k: iter([(calls.append("lmstudio"), "x")[1]]))
 

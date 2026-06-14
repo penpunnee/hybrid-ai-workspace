@@ -36,6 +36,11 @@ async def chat(request: Request):
     session_id  = data.get("session_id", "default")
     prompt      = data.get("prompt", "")
     provider    = data.get("provider", "auto")
+    req_model   = data.get("model", "")          # โมเดลที่เลือกจาก dropdown (per-request)
+    req_thinking = data.get("thinking", None)    # None = ไม่ระบุ (ใช้ default ของ provider)
+    if req_thinking is not None:
+        req_thinking = bool(req_thinking)
+    req_effort  = data.get("effort", "")
     image_b64   = data.get("image_b64", "")
     image_mime  = data.get("image_mime", "")
     agent_mode  = bool(data.get("agent_mode", False))
@@ -329,6 +334,10 @@ async def chat(request: Request):
 
         except Exception as e:
             logger.warning(f"[Chat] route failed: {e}")
+    elif req_model:
+        # provider ชัดเจน + เลือกโมเดลจาก dropdown → ใช้ตัวนั้น (per-request override)
+        model_override = req_model
+        model_used = req_model.split("/")[-1]
 
     def generate():
         nonlocal provider_used, model_used, messages
@@ -348,7 +357,8 @@ async def chat(request: Request):
         def _try_stream(prov, mdl=""):
             for ck in stream_response(messages, provider=prov, image_b64=image_b64,
                                       image_mime=image_mime, agent_mode=agent_mode,
-                                      model_override=mdl):
+                                      model_override=mdl,
+                                      thinking=req_thinking, effort=req_effort):
                 yield ck
 
         try:
