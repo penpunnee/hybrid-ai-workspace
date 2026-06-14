@@ -6,6 +6,12 @@
     2. Context strength: retrieval ได้ผลน้อย/score ต่ำ
   → ถ้าทั้งคู่อ่อน + ไม่มี history → inject instruction ให้ AI ถามกลับ
 
+  Domain-specific (session 2026-06-14): คำถาม "อากาศ/ฝน/พยากรณ์" ที่ไม่มี
+  location → ตอบไม่ได้จริง (Gemini grounding ค้นไม่ได้ว่า "ฝนที่ไหน" แล้วกุ
+  ชื่อสถานที่ขึ้นมา). generic ambiguity จับไม่ได้เพราะ chunk ไทยยาว = "มี entity"
+  → เพิ่ม rule เฉพาะ: weather + ไม่มี location → clarify_directly (chat router
+  short-circuit ถามกลับแบบ deterministic ไม่เรียก LLM = กุไม่ได้เลย)
+
 ไม่ใช้ LLM ในการตัดสินใจ (เพื่อ latency) — heuristic ล้วน
 """
 from __future__ import annotations
@@ -36,8 +42,65 @@ _THAI_GENERIC_WORDS = {"ทำงาน", "ยังไง", "อย่างไ
                        "เป็นอะไร", "ทำอะไร", "ไหน", "ที่ไหน", "เมื่อไหร่"}
 
 
+# ── Weather domain (ต้องมี location เสมอ) ───────────────────────────────────
+# keyword ที่บอกว่าเป็นคำถามเรื่องสภาพอากาศ
+_WEATHER_KW = ("ฝนตก", "ฝนจะตก", "ฝน", "อากาศ", "พยากรณ์", "อุณหภูมิ",
+               "ร้อนไหม", "ร้อนมั้ย", "หนาวไหม", "หนาวมั้ย", "ฝนฟ้าคะนอง",
+               "แดดออก", "น้ำท่วม", "ลมแรง", "พายุ",
+               "weather", "rain", "forecast", "temperature", "humid")
+# intent ที่บ่งชี้ว่าเป็น "พยากรณ์/ถาม" ไม่ใช่ประโยคบอกเล่า (กัน false-positive)
+_FORECAST_INTENT = ("ไหม", "มั้ย", "วันนี้", "พรุ่งนี้", "คืนนี้", "เย็นนี้",
+                    "เช้านี้", "ตอนนี้", "จะตก", "กี่องศา", "เท่าไหร่", "เท่าไร",
+                    "?", "พยากรณ์", "ยังไง", "เป็นไง", "เป็นยังไง")
+
+# จังหวัดไทย 77 (ตัด "เลย"/"ตาก" ออกจาก bare list เพราะเป็นคำไทยทั่วไป
+# "ฝนตกไหมเลย"/"ตากผ้า" → false-positive; ถ้าจะระบุจริงมักมี marker "จังหวัด"/"จ." อยู่แล้ว)
+_PROVINCES = (
+    "กรุงเทพ", "สมุทรปราการ", "นนทบุรี", "ปทุมธานี", "พระนครศรีอยุธยา", "อยุธยา",
+    "อ่างทอง", "ลพบุรี", "สิงห์บุรี", "ชัยนาท", "สระบุรี", "ชลบุรี", "ระยอง",
+    "จันทบุรี", "ตราด", "ฉะเชิงเทรา", "ปราจีนบุรี", "นครนายก", "สระแก้ว",
+    "นครราชสีมา", "บุรีรัมย์", "สุรินทร์", "ศรีสะเกษ", "อุบลราชธานี", "ยโสธร",
+    "ชัยภูมิ", "อำนาจเจริญ", "หนองบัวลำภู", "ขอนแก่น", "อุดรธานี", "หนองคาย",
+    "มหาสารคาม", "ร้อยเอ็ด", "กาฬสินธุ์", "สกลนคร", "นครพนม", "มุกดาหาร",
+    "บึงกาฬ", "เชียงใหม่", "ลำพูน", "ลำปาง", "อุตรดิตถ์", "แพร่", "น่าน",
+    "พะเยา", "เชียงราย", "แม่ฮ่องสอน", "นครสวรรค์", "อุทัยธานี", "กำแพงเพชร",
+    "สุโขทัย", "พิษณุโลก", "พิจิตร", "เพชรบูรณ์", "ราชบุรี", "กาญจนบุรี",
+    "สุพรรณบุรี", "นครปฐม", "สมุทรสาคร", "สมุทรสงคราม", "เพชรบุรี",
+    "ประจวบคีรีขันธ์", "นครศรีธรรมราช", "กระบี่", "พังงา", "ภูเก็ต",
+    "สุราษฎร์ธานี", "ระนอง", "ชุมพร", "สงขลา", "สตูล", "ตรัง", "พัทลุง",
+    "ปัตตานี", "ยะลา", "นราธิวาส",
+    # ชื่อเล่น/เมืองที่คนเรียกบ่อย
+    "กทม", "บางกอก", "โคราช", "พัทยา", "หาดใหญ่", "ศรีราชา",
+    "bangkok", "phuket", "chiang mai", "chiangmai", "pattaya",
+)
+# marker ที่ตามด้วยชื่อพื้นที่ = มี location แน่ๆ
+_LOC_MARKERS = ("จังหวัด", "อำเภอ", "ตำบล", "จ.", "อ.", "ต.")
+
+
 def _has_thai_substring(text: str, needles: tuple[str, ...]) -> bool:
     return any(n in text for n in needles)
+
+
+def _is_weather_query(text: str) -> bool:
+    """เป็นคำถามพยากรณ์อากาศไหม (มี weather keyword + intent ถาม/พยากรณ์)"""
+    if not text:
+        return False
+    low = text.lower()
+    if not any(k in low for k in _WEATHER_KW):
+        return False
+    return any(i in low for i in _FORECAST_INTENT)
+
+
+def _has_location(text: str) -> bool:
+    """มีการระบุพื้นที่ (จังหวัด/อำเภอ/ชื่อเมือง/marker) ไหม"""
+    if not text:
+        return False
+    low = text.lower()
+    if any(p.lower() in low for p in _PROVINCES):
+        return True
+    if any(m in text for m in _LOC_MARKERS):
+        return True
+    return False
 
 
 def _has_entity(text: str) -> bool:
@@ -56,6 +119,8 @@ class ActiveLearningDecision:
     should_ask: bool = False
     reason: str = ""                                    # debug log
     instruction: str = ""                               # inject เพิ่มใน system prompt
+    clarify_directly: bool = False                      # chat router → short-circuit ถามกลับเอง (ไม่เรียก LLM)
+    clarify_message: str = ""                           # ข้อความถามกลับ deterministic (ใช้คู่ clarify_directly)
     signals: dict = field(default_factory=dict)        # raw signals สำหรับ telemetry
 
     def to_dict(self) -> dict:
@@ -104,11 +169,16 @@ def _context_strength(retrieval_scores: list[float] | None) -> float:
     return round(0.7 * top + 0.3 * avg, 3)
 
 
+def _wants_direct(prompt: str) -> bool:
+    return _has_thai_substring(prompt or "", _THAI_DIRECT) or bool(_ENG_DIRECT.search(prompt or ""))
+
+
 def decide(
     prompt: str,
     retrieval_scores: list[float] | None = None,
     history_length: int = 0,
     enabled: bool = True,
+    recent_user_text: str = "",
 ) -> ActiveLearningDecision:
     """ตัดสินใจว่าควรให้ AI ถามกลับไหม
 
@@ -117,12 +187,28 @@ def decide(
         retrieval_scores: similarity scores จาก citations/chunks/memory (0-1)
         history_length: จำนวน turns ใน session (ถ้ามาก → user มี context แล้ว)
         enabled: feature flag — ปิดได้ผ่าน request
+        recent_user_text: ข้อความ user ก่อนหน้าใน session (ใช้หา location ที่เคยบอกแล้ว)
 
     Returns:
         ActiveLearningDecision
     """
     if not enabled:
         return ActiveLearningDecision(should_ask=False, reason="disabled")
+
+    # ── Weather domain rule (มาก่อน generic ambiguity) ─────────────────────
+    # คำถามอากาศ/ฝน ที่ไม่มี location ทั้งใน prompt และ history → ถามกลับเลย
+    if _is_weather_query(prompt):
+        has_loc = _has_location(prompt) or _has_location(recent_user_text)
+        if not has_loc and not _wants_direct(prompt):
+            msg = ("บอกจังหวัดหรืออำเภอที่อยากรู้หน่อยได้ไหม "
+                   "จะได้เช็คพยากรณ์อากาศให้ตรงพื้นที่จริง ๆ ไม่เดามั่ว 😊")
+            return ActiveLearningDecision(
+                should_ask=True,
+                reason="weather_no_location → clarify",
+                clarify_directly=True,
+                clarify_message=msg,
+                signals={"weather_no_location": True, "weather_query": True},
+            )
 
     ambig, ambig_reasons = _ambiguity_score(prompt)
     ctx_strength = _context_strength(retrieval_scores)
@@ -135,7 +221,7 @@ def decide(
     }
 
     # ห้ามถามกลับถ้า user สั่งให้ตอบตรงๆ
-    if _has_thai_substring(prompt or "", _THAI_DIRECT) or _ENG_DIRECT.search(prompt or ""):
+    if _wants_direct(prompt):
         return ActiveLearningDecision(
             should_ask=False, reason="user_wants_direct", signals=signals
         )

@@ -179,16 +179,44 @@ async def chat(request: Request):
     try:
         from reasoning.active_learning import decide as _al_decide
         retrieval_scores = [c.score for c in citations._items if c.score > 0]
+        # ข้อความ user ก่อนหน้า — ใช้หา location ที่เคยบอกแล้ว (กันถามซ้ำ)
+        recent_user = " ".join(m["content"] for m in history[-6:] if m.get("role") == "user")
         al_decision = _al_decide(
             prompt, retrieval_scores=retrieval_scores,
             history_length=len(history),
             enabled=bool(active_learning),
+            recent_user_text=recent_user,
         )
-        if al_decision.should_ask:
+        if al_decision.should_ask and not al_decision.clarify_directly:
             system_prompt = system_prompt + al_decision.instruction
             logger.info(f"[Chat/AL] {al_decision.reason}")
     except Exception as e:
         logger.debug(f"[Chat/AL] skipped: {e}")
+
+    # ── Deterministic clarify (weather ไม่มี location ฯลฯ) ───────────────────
+    # ถามกลับเองโดยไม่เรียก LLM — โมเดลกุข้อมูล real-time ไม่ได้เลย (root cause
+    # บั๊ก "อำเภอละเว" 2026-06-14). ไม่ remember() กัน episodic ปนเปื้อนคำถาม clarify
+    if al_decision and al_decision.clarify_directly:
+        clarify = al_decision.clarify_message
+        logger.info(f"[Chat/AL] {al_decision.reason} — short-circuit clarify (no LLM)")
+        save_message(assistant, "user", prompt, provider, session_id)
+        clarify_aid = save_message(assistant, "assistant", clarify, "active_learning", session_id)
+        push_working(session_id, "user", prompt)
+        push_working(session_id, "assistant", clarify)
+
+        def gen_clarify():
+            yield f"data: {json.dumps({'active_learning': al_decision.to_dict()}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'chunk': clarify}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'done': True, 'model': 'active_learning', 'provider': 'active_learning', 'message_id': clarify_aid}, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(gen_clarify(), media_type="text/event-stream",
+                                 headers={
+                                     "Cache-Control": "no-cache",
+                                     "X-Accel-Buffering": "no",
+                                     "X-Model-Used": "active_learning",
+                                     "X-Provider-Used": "active_learning",
+                                     "Access-Control-Expose-Headers": "X-Model-Used, X-Provider-Used",
+                                 })
 
     # ── Plan mode (§22 ChatBox) — ฉีด instruction เข้า system prompt เท่านั้น ──
     # ห้ามแตะ prompt: save_message/push_working/remember ใช้ prompt เดิม
