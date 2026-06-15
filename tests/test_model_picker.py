@@ -55,6 +55,19 @@ class TestModelsEndpoint:
         kimi = next(m for m in cloud if m["model"] == "kimi-k2.6")
         assert kimi["available"] is False
 
+    def test_local_returns_only_active_chat_model(self, monkeypatch):
+        # LM Studio โหลด reason/vision/embedding ไว้ใช้ภายใน — picker ต้องโชว์
+        # โมเดลแชท local ตัวที่ใช้งานจริง "ตัวเดียว" ไม่ใช่ทุกตัวที่ server โหลด
+        import routers.system as sysmod
+        monkeypatch.setattr(sysmod, "OLLAMA_MODEL", "qwen/qwen3.5-9b")
+        local = client.get("/api/models").json()["local"]
+        assert len(local) == 1, f"local ต้องเหลือตัวเดียว ได้ {local}"
+        assert local[0]["model"] == "qwen/qwen3.5-9b"
+        assert local[0]["provider"] == "ollama"
+        # ไม่มี embedding/reason/aux model หลุดมา
+        ids = " ".join(m["model"].lower() for m in local)
+        assert "embed" not in ids and "deepseek" not in ids and "gemma" not in ids
+
 
 # ── provider="kimi" routing ───────────────────────────────────────────────────
 class TestKimiRouting:

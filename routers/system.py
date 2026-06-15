@@ -95,19 +95,16 @@ def list_models():
     """รายชื่อโมเดลให้ dropdown — local (LM Studio/Ollama dynamic) + cloud (curated).
     แต่ละ item: {provider, model, label, available}. available=False = ยังไม่มี key/ต่อไม่ได้
     (โชว์ใน list แต่ disable เลือก)"""
-    import logging
-    from utils.llm import (GEMINI_API_KEY, ANTHROPIC_API_KEY, MOONSHOT_API_KEY,
-                           lmstudio_client, ollama_client)
-    from core.config import LMSTUDIO_BASE_URL
+    from utils.llm import GEMINI_API_KEY, ANTHROPIC_API_KEY, MOONSHOT_API_KEY
+    from core.config import LMSTUDIO_BASE_URL, LMSTUDIO_CHAT_MODEL
 
-    # local: ดึงรายชื่อจริงจาก server ที่รันอยู่ (LM Studio ถ้าตั้ง base url, ไม่งั้น Ollama)
-    local = []
-    client, prov = (lmstudio_client, "lmstudio") if LMSTUDIO_BASE_URL else (ollama_client, "ollama")
-    try:
-        for m in client.models.list().data:
-            local.append({"provider": prov, "model": m.id, "label": m.id, "available": True})
-    except Exception as e:
-        logging.getLogger("routers.system").info(f"[/api/models] local list ไม่ได้: {e}")
+    # local: โชว์โมเดลแชท local ตัวที่ใช้งานจริง "ตัวเดียว" (active chat model จาก .env)
+    # — LM Studio โหลด reason/vision/embedding ไว้ใช้ภายใน ไม่ต้องโผล่ใน picker
+    #   (สถานะ online ดูที่ status dot / local_ok ไม่ใช่ที่นี่)
+    active_local = LMSTUDIO_CHAT_MODEL if LMSTUDIO_BASE_URL else OLLAMA_MODEL
+    prov = "lmstudio" if LMSTUDIO_BASE_URL else "ollama"
+    local = ([{"provider": prov, "model": active_local, "label": active_local, "available": True}]
+             if active_local else [])
 
     # cloud: curated + available ตาม key
     key_for = {"gemini": bool(GEMINI_API_KEY), "claude": bool(ANTHROPIC_API_KEY),
