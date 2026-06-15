@@ -35,6 +35,8 @@ async def chat(request: Request):
     assistant   = data.get("assistant", list(ASSISTANTS.keys())[0])
     session_id  = data.get("session_id", "default")
     prompt      = data.get("prompt", "")
+    if not isinstance(prompt, str):              # client ส่ง list/dict → crash ทุก provider + regex + ขยะลง DB
+        prompt = "" if prompt is None else str(prompt)
     provider    = data.get("provider", "auto")
     req_model   = data.get("model", "")          # โมเดลที่เลือกจาก dropdown (per-request)
     req_thinking = data.get("thinking", None)    # None = ไม่ระบุ (ใช้ default ของ provider)
