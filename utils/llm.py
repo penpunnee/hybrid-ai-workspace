@@ -556,7 +556,11 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
             if m["role"] == "system":
                 continue
             role = "user" if m["role"] == "user" else "model"
-            history.append(types.Content(role=role, parts=[types.Part(text=m["content"])]))
+            # coerce content เป็น str — content ที่เป็น list/dict ทำ types.Part crash ด้วย
+            # pydantic "valid part type" (None ผ่านได้ แต่ list/dict ไม่ผ่าน)
+            c = m.get("content")
+            text = c if isinstance(c, str) else ("" if c is None else str(c))
+            history.append(types.Content(role=role, parts=[types.Part(text=text)]))
 
         # ถ้ามีรูปภาพ ใส่เข้าไปใน parts ของ user message ล่าสุด
         if image_b64 and history and history[-1].role == "user":
@@ -587,15 +591,36 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
                 config.thinking_config = types.ThinkingConfig(thinking_budget=budget)
             except Exception as te:
                 logger.warning(f"[Gemini] thinking_config ไม่รองรับ ({te}) — ข้าม")
-        response = gemini_client.models.generate_content_stream(
-            model=use_model,
-            contents=history,
-            config=config,
-        )
-        for chunk in response:
-            if chunk.text:
-                yield chunk.text
-        logger.info(f"Gemini stream successful (model: {use_model}, agent_mode: {agent_mode}, thinking: {thinking})")
+        # transient (503/500/UNAVAILABLE/INTERNAL ฯลฯ) = Google ล่มชั่วคราว → retry ก่อน
+        # ไม่งั้น 1 blip เด้ง fallback local ทันที (โมเดล preview เช่น 3.1-flash-lite เจอบ่อย)
+        # ห้าม retry 429/quota/key-invalid — เปลือง quota เปล่าๆ ปล่อยให้ except ชั้นนอก classify
+        _TRANSIENT = ("503", "500", "unavailable", "internal", "deadline", "overloaded", "try again")
+        _MAX_ATTEMPTS = 3
+        yielded = False
+        for _attempt in range(_MAX_ATTEMPTS):
+            try:
+                response = gemini_client.models.generate_content_stream(
+                    model=use_model,
+                    contents=history,
+                    config=config,
+                )
+                for chunk in response:
+                    if chunk.text:
+                        yielded = True
+                        yield chunk.text
+                logger.info(f"Gemini stream successful (model: {use_model}, agent_mode: {agent_mode}, thinking: {thinking})")
+                return
+            except Exception as se:
+                serr = str(se).lower()
+                transient = (any(t in serr for t in _TRANSIENT)
+                             and "429" not in serr and "quota" not in serr
+                             and "resource_exhausted" not in serr and "api_key_invalid" not in serr)
+                # retry เฉพาะตอนยังไม่ yield chunk ไหน (กัน duplicate กลาง stream)
+                if transient and not yielded and _attempt < _MAX_ATTEMPTS - 1:
+                    logger.warning(f"[Gemini] transient error ({str(se)[:80]}) — retry {_attempt+1}/{_MAX_ATTEMPTS-1}")
+                    time.sleep(0.6 * (_attempt + 1))
+                    continue
+                raise  # ส่งต่อให้ except ชั้นนอก classify
 
     except Exception as e:
         err = str(e)
