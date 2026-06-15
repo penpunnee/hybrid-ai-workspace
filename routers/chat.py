@@ -350,11 +350,18 @@ async def chat(request: Request):
     # เดิมเสิร์ชเฉพาะ auto→lmstudio_web เท่านั้น → เลือกโมเดลเฉพาะ (qwen/Gemini/Gemma)
     # ตอบ real-time จาก training กว้างๆ. ทำให้ทุกโมเดลได้ข้อมูลจริงก่อนตอบ
     # (ข้าม agent — เสิร์ชเอง · vision — คนละโหมด · ที่ inject แล้ว — กันซ้ำ)
+    # Option B (2026-06-15): โมเดล Gemini → ใช้ Google Search grounding ในตัว (real Google)
+    # แทน DDG · provider อื่น (local/Claude/Kimi) ยัง inject DDG เหมือนเดิม
+    gemini_grounding = False
     if not web_injected and not agent_mode and not image_b64:
         try:
             from reasoning.classifier import needs_internet
             if needs_internet(prompt):
-                web_injected = _inject_web_context(messages, prompt, citations)
+                _eff = provider_used if provider_used and provider_used != "auto" else provider
+                if _eff in ("gemini", "gemini_agent"):
+                    gemini_grounding = True
+                else:
+                    web_injected = _inject_web_context(messages, prompt, citations)
         except Exception as e:
             logger.warning(f"[Chat] grounding check failed: {e}")
 
@@ -377,7 +384,8 @@ async def chat(request: Request):
             for ck in stream_response(messages, provider=prov, image_b64=image_b64,
                                       image_mime=image_mime, agent_mode=agent_mode,
                                       model_override=mdl,
-                                      thinking=req_thinking, effort=req_effort):
+                                      thinking=req_thinking, effort=req_effort,
+                                      web_grounding=gemini_grounding):
                 yield ck
 
         try:

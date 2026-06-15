@@ -79,16 +79,49 @@ def test_chat_injects_websearch_for_realtime_query(monkeypatch):
     r = client.post("/api/chat", json={
         "session_id": "scrut-ws",
         "prompt": "One Piece ออกตอนล่าสุดกี่ตอนแล้ว",   # needs_internet → ควรเสิร์ช
-        "provider": "gemini",
-        "model": "gemini-3.1-flash-lite",               # เลือกโมเดลเฉพาะ (req_model)
+        "provider": "lmstudio",                          # โมเดล local → ใช้ DDG inject
+        "model": "qwen/qwen3.5-9b",                      # เลือกโมเดลเฉพาะ (req_model)
         "active_learning": False,
         "response_cache": False,
     })
     assert r.status_code == 200
     _ = r.text
     sys_msg = cap["messages"][0]["content"]
-    assert "INTERNET CONTEXT" in sys_msg, "คำถาม real-time + เลือกโมเดลเฉพาะ ต้อง inject web context"
+    assert "INTERNET CONTEXT" in sys_msg, "คำถาม real-time + โมเดล local ต้อง inject web context (DDG)"
     assert "1120" in sys_msg
+
+
+def test_chat_gemini_uses_builtin_grounding_not_ddg(monkeypatch):
+    """Option B: โมเดล Gemini + คำถาม real-time → ใช้ google_search ในตัว (web_grounding=True)
+    ไม่ inject DDG context (ปล่อยให้ Gemini ground เอง)"""
+    import utils.websearch as ws
+    cap = {}
+    ddg_called = {"n": 0}
+
+    def fake_stream(messages, **k):
+        cap["messages"] = messages
+        cap["web_grounding"] = k.get("web_grounding")
+        yield "ok"
+
+    def fake_search(prompt, **k):
+        ddg_called["n"] += 1
+        return ("[1] ไม่ควรถูกเรียก", [])
+
+    monkeypatch.setattr(chatmod, "stream_response", fake_stream)
+    monkeypatch.setattr(ws, "web_search_with_results", fake_search)
+    r = client.post("/api/chat", json={
+        "session_id": "scrut-gemini-ground",
+        "prompt": "One Piece ออกตอนล่าสุดกี่ตอนแล้ว",
+        "provider": "gemini",
+        "model": "gemini-3.1-flash-lite",
+        "active_learning": False,
+        "response_cache": False,
+    })
+    assert r.status_code == 200
+    _ = r.text
+    assert cap["web_grounding"] is True, "Gemini real-time ต้องเปิด web_grounding (google_search ในตัว)"
+    assert "INTERNET CONTEXT" not in cap["messages"][0]["content"], "Gemini ไม่ควร inject DDG context"
+    assert ddg_called["n"] == 0, "Gemini ไม่ควรเรียก DDG"
 
 
 def test_chat_no_websearch_for_casual_query(monkeypatch):

@@ -137,7 +137,8 @@ _health_cache: dict = {"ok": None, "ts": 0.0, "msg": ""}  # cache health check 3
 def stream_response(messages: list[dict], provider: str = "auto",
                     image_b64: str = "", image_mime: str = "",
                     agent_mode: bool = False, model_override: str = "",
-                    thinking: bool | None = None, effort: str = ""):
+                    thinking: bool | None = None, effort: str = "",
+                    web_grounding: bool = False):
     """
     Stream response จาก LLM ที่เลือก
     provider: 'ollama' | 'gemini' | 'lmstudio' | 'kimi' | 'claude' | 'auto'
@@ -167,7 +168,8 @@ def stream_response(messages: list[dict], provider: str = "auto",
     if provider == "gemini" or agent_mode or (image_b64 and provider not in ("lmstudio", "auto", "claude", "claude_agent")):
         _last_failover["active"] = False
         yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode,
-                                  model=model_override, thinking=thinking, effort=effort)
+                                  model=model_override, thinking=thinking, effort=effort,
+                                  web_grounding=web_grounding)
         return
 
     if provider in ("lmstudio", "lmstudio_web"):
@@ -518,7 +520,8 @@ def _stream_ollama(messages: list[dict], model: str = ""):
 
 def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = "",
                    agent_mode: bool = False, model: str = "",
-                   thinking: bool | None = None, effort: str = ""):
+                   thinking: bool | None = None, effort: str = "",
+                   web_grounding: bool = False):
     """
     Stream จาก Gemini Cloud ด้วย google-genai SDK ใหม่
     
@@ -581,6 +584,10 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
                 types.Tool(google_search=types.GoogleSearch()),
                 types.Tool(code_execution=types.ToolCodeExecution()),
             ]
+        elif web_grounding:
+            # คำถาม real-time → ใช้ Google Search grounding ในตัว Gemini (real Google)
+            # เฉพาะ search ไม่เปิด code_execution
+            tools = [types.Tool(google_search=types.GoogleSearch())]
 
         use_model = model or GEMINI_MODEL
         config = types.GenerateContentConfig(
