@@ -218,8 +218,10 @@ def format_for_context(results: list[dict], query: str) -> str:
     return "\n".join(lines)
 
 
+# ⚠️ ห้ามใส่คำบอกเวลาล้วน (วันนี้/พรุ่งนี้) — มันแย่งคำถามที่แค่บังเอิญมี "วันนี้"
+# เช่น "ราคาทองวันนี้"/"ข่าววันนี้" ไป fetch_weather() (บั๊ก 2026-06-15)
 _WEATHER_KEYWORDS = re.compile(
-    r"อากาศ|พยากรณ์|อุณหภูมิ|ฝนตก|ความชื้น|พรุ่งนี้|วันนี้|weather|forecast|temperature",
+    r"อากาศ|พยากรณ์|อุณหภูมิ|ฝนตก|ความชื้น|weather|forecast|temperature",
     re.IGNORECASE,
 )
 
