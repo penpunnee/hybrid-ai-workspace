@@ -591,36 +591,50 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
                 config.thinking_config = types.ThinkingConfig(thinking_budget=budget)
             except Exception as te:
                 logger.warning(f"[Gemini] thinking_config ไม่รองรับ ({te}) — ข้าม")
-        # transient (503/500/UNAVAILABLE/INTERNAL ฯลฯ) = Google ล่มชั่วคราว → retry ก่อน
-        # ไม่งั้น 1 blip เด้ง fallback local ทันที (โมเดล preview เช่น 3.1-flash-lite เจอบ่อย)
-        # ห้าม retry 429/quota/key-invalid — เปลือง quota เปล่าๆ ปล่อยให้ except ชั้นนอก classify
+        # transient (503/500/UNAVAILABLE/INTERNAL ฯลฯ) = Google ล่มชั่วคราว
+        # ห้ามนับ 429/quota/key-invalid เป็น transient — ปล่อยให้ except ชั้นนอก classify
         _TRANSIENT = ("503", "500", "unavailable", "internal", "deadline", "overloaded", "try again")
         _MAX_ATTEMPTS = 3
+
+        def _is_transient(exc):
+            s = str(exc).lower()
+            return (any(t in s for t in _TRANSIENT) and "429" not in s and "quota" not in s
+                    and "resource_exhausted" not in s and "api_key_invalid" not in s)
+
+        # ลองตามลำดับ: โมเดลที่ขอ → Gemini ตัวเสถียร (default .env) ก่อนถอย local
+        # โมเดล preview (เช่น 3.1-flash-lite) 503 บ่อย — อยู่กับ Gemini quota ดีกว่าตก local
+        # (intent ของ user: เลือก 3.1 เพราะ quota/วันเยอะ)
+        _models = [use_model] + ([GEMINI_MODEL] if use_model != GEMINI_MODEL else [])
         yielded = False
-        for _attempt in range(_MAX_ATTEMPTS):
+        for _mi, _mdl in enumerate(_models):
+            _has_next = _mi < len(_models) - 1
             try:
-                response = gemini_client.models.generate_content_stream(
-                    model=use_model,
-                    contents=history,
-                    config=config,
-                )
-                for chunk in response:
-                    if chunk.text:
-                        yielded = True
-                        yield chunk.text
-                logger.info(f"Gemini stream successful (model: {use_model}, agent_mode: {agent_mode}, thinking: {thinking})")
-                return
-            except Exception as se:
-                serr = str(se).lower()
-                transient = (any(t in serr for t in _TRANSIENT)
-                             and "429" not in serr and "quota" not in serr
-                             and "resource_exhausted" not in serr and "api_key_invalid" not in serr)
-                # retry เฉพาะตอนยังไม่ yield chunk ไหน (กัน duplicate กลาง stream)
-                if transient and not yielded and _attempt < _MAX_ATTEMPTS - 1:
-                    logger.warning(f"[Gemini] transient error ({str(se)[:80]}) — retry {_attempt+1}/{_MAX_ATTEMPTS-1}")
-                    time.sleep(0.6 * (_attempt + 1))
+                for _attempt in range(_MAX_ATTEMPTS):
+                    try:
+                        response = gemini_client.models.generate_content_stream(
+                            model=_mdl,
+                            contents=history,
+                            config=config,
+                        )
+                        for chunk in response:
+                            if chunk.text:
+                                yielded = True
+                                yield chunk.text
+                        logger.info(f"Gemini stream successful (model: {_mdl}, agent_mode: {agent_mode}, thinking: {thinking})")
+                        return
+                    except Exception as se:
+                        # retry โมเดลเดิม เฉพาะ transient + ยังไม่ yield (กัน duplicate กลาง stream)
+                        if _is_transient(se) and not yielded and _attempt < _MAX_ATTEMPTS - 1:
+                            logger.warning(f"[Gemini] {_mdl} transient ({str(se)[:70]}) — retry {_attempt+1}/{_MAX_ATTEMPTS-1}")
+                            time.sleep(0.6 * (_attempt + 1))
+                            continue
+                        raise
+            except Exception as me:
+                # หมด retry ของ _mdl — ถ้า transient + ยังไม่ yield + มีตัวเสถียรให้ลอง → สลับโมเดล
+                if _is_transient(me) and not yielded and _has_next:
+                    logger.warning(f"[Gemini] {_mdl} ล่ม (transient) → สลับไป {_models[_mi+1]} ก่อนถอย local")
                     continue
-                raise  # ส่งต่อให้ except ชั้นนอก classify
+                raise  # non-transient / yield ไปแล้ว / หมดเชน → ให้ except ชั้นนอก classify
 
     except Exception as e:
         err = str(e)

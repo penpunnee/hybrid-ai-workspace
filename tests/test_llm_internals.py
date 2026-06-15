@@ -165,6 +165,61 @@ def test_gemini_nonstr_content_coerced(monkeypatch):
     assert "ok" in out
 
 
+# ── _stream_gemini stable-model fallback (scrutinize Major 2) ──────────────────
+class _FakeModelsRec:
+    """เหมือน _FakeModelsSeq แต่จด model ที่ถูกเรียกแต่ละครั้ง"""
+    def __init__(self, behaviors):
+        self._behaviors = list(behaviors)
+        self.calls = 0
+        self.models_called = []
+
+    def generate_content_stream(self, **k):
+        self.models_called.append(k.get("model"))
+        b = self._behaviors[min(self.calls, len(self._behaviors) - 1)]
+        self.calls += 1
+        if isinstance(b, Exception):
+            raise b
+        return iter(SimpleNamespace(text=t) for t in b)
+
+
+def _patch_gemini_rec(monkeypatch, behaviors, stable="gemini-2.5-flash"):
+    monkeypatch.setattr(llm.time, "sleep", lambda *a, **k: None)
+    monkeypatch.setattr(llm, "GEMINI_MODEL", stable)
+    fake = _FakeModelsRec(behaviors)
+    monkeypatch.setattr(llm, "gemini_client", SimpleNamespace(models=fake))
+    return fake
+
+
+def test_gemini_transient_falls_back_to_stable_model(monkeypatch):
+    # preview model 503 หมด retry → สลับไป Gemini ตัวเสถียร (ไม่ถอย local) ตาม intent "อยู่กับ Gemini quota"
+    fake = _patch_gemini_rec(monkeypatch, [Exception("503 UNAVAILABLE")] * 3 + [["recovered"]])
+    out = "".join(llm._stream_gemini([{"role": "user", "content": "hi"}],
+                                     model="gemini-3.1-flash-lite"))
+    assert "recovered" in out
+    assert "gemini-3.1-flash-lite" in fake.models_called   # ลองตัวที่ขอก่อน
+    assert fake.models_called[-1] == "gemini-2.5-flash"    # แล้วสลับไปตัวเสถียร
+
+
+def test_gemini_no_double_fallback_when_already_stable(monkeypatch):
+    # ถ้าตัวที่ขอ = ตัวเสถียรอยู่แล้ว → ไม่ต้องลองซ้ำตัวเดิม
+    fake = _patch_gemini_rec(monkeypatch, [Exception("503 UNAVAILABLE")] * 6)
+    with pytest.raises(GeminiUnavailable):
+        list(llm._stream_gemini([{"role": "user", "content": "hi"}],
+                                model="gemini-2.5-flash"))
+    assert fake.calls == 3                                  # 3 attempts ตัวเดียว ไม่มี chain ซ้ำ
+    assert set(fake.models_called) == {"gemini-2.5-flash"}
+
+
+def test_gemini_quota_no_model_fallback(monkeypatch):
+    # 429 ไม่ใช่ transient → ห้ามสลับโมเดล (เปลือง quota ของอีกตัว) เด้ง QuotaExhausted ทันที
+    fake = _patch_gemini_rec(monkeypatch, [Exception("429 RESOURCE_EXHAUSTED")] * 4)
+    with pytest.raises(GeminiQuotaExhausted):
+        list(llm._stream_gemini([{"role": "user", "content": "hi"}],
+                                model="gemini-3.1-flash-lite"))
+    assert fake.calls == 1
+    assert fake.models_called == ["gemini-3.1-flash-lite"]
+
+
 # ── check_ollama_health ───────────────────────────────────────────────────────
 class _FakeResp:
     def __init__(self, payload):
