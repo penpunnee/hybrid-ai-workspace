@@ -71,6 +71,10 @@ ollama_client = OpenAI(
 # --- Gemini (Cloud LLM) ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+# โมเดล Gemini สำรองเมื่อตัวที่ขอ transient-fail (เช่น preview 3.1-flash-lite 503)
+# default ว่าง = ไม่สลับโมเดล (retry-then-local) — กันเผา quota ตัวอื่นโดยไม่ตั้งใจ
+# ตั้งเป็นตัว quota เยอะ (เช่น gemini-3.1-flash-lite) ถ้าอยากอยู่กับ Gemini ก่อนถอย local
+GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "").strip()
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
@@ -601,10 +605,11 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
             return (any(t in s for t in _TRANSIENT) and "429" not in s and "quota" not in s
                     and "resource_exhausted" not in s and "api_key_invalid" not in s)
 
-        # ลองตามลำดับ: โมเดลที่ขอ → Gemini ตัวเสถียร (default .env) ก่อนถอย local
-        # โมเดล preview (เช่น 3.1-flash-lite) 503 บ่อย — อยู่กับ Gemini quota ดีกว่าตก local
-        # (intent ของ user: เลือก 3.1 เพราะ quota/วันเยอะ)
-        _models = [use_model] + ([GEMINI_MODEL] if use_model != GEMINI_MODEL else [])
+        # ลองตามลำดับ: โมเดลที่ขอ → Gemini สำรอง (GEMINI_FALLBACK_MODEL) ก่อนถอย local
+        # default GEMINI_FALLBACK_MODEL ว่าง = ไม่สลับ (retry-then-local) — กันเผา quota
+        # ตัวอื่นโดยไม่ตั้งใจ (เคยตั้งเป็น GEMINI_MODEL=2.5-flash ซึ่ง quota/วันต่ำ → ผิด)
+        _models = [use_model] + ([GEMINI_FALLBACK_MODEL]
+                                 if GEMINI_FALLBACK_MODEL and GEMINI_FALLBACK_MODEL != use_model else [])
         yielded = False
         for _mi, _mdl in enumerate(_models):
             _has_next = _mi < len(_models) - 1

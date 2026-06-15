@@ -26,6 +26,12 @@ from reasoning.classifier import (
     "Bitcoin คืออะไร",                # definitional (Wikipedia)
     "ช่วยหาข้อมูลให้หน่อย",            # หาข้อมูลให้
     "ราคาหุ้น PTT ตอนนี้",            # ราคา...ตอนนี้
+    # ── ความคืบหน้า/ตอนล่าสุด (anime/มังงะ/ซีรีส์/ซอฟต์แวร์) — เคสที่ user เจอจริง 2026-06-15 ──
+    "คัมภีร์วิถีเซียน อนิเมะตอนนี้ถึงตอนไหนแล้ว",   # อนิเมะ + ถึงตอนไหน
+    "One Piece ออกตอนล่าสุดกี่ตอนแล้ว",            # ล่าสุด + กี่ตอน
+    "มังงะเรื่องนี้จบหรือยัง",                       # มังงะ + จบหรือยัง
+    "เวอร์ชันล่าสุดของ Python คืออะไร",             # เวอร์ชันล่าสุด
+    "ซีรีส์เรื่องนี้ออกตอนใหม่ยัง",                  # ซีรีส์ + ตอนใหม่
 ])
 def test_needs_internet_true_for_realtime_and_definitional(text):
     assert needs_internet(text) is True, f"ควรต้องใช้ internet: {text!r}"
@@ -37,6 +43,7 @@ def test_needs_internet_true_for_realtime_and_definitional(text):
     "ขอบคุณมากนะ",                    # ขอบคุณ
     "เล่าเรื่องตลกให้ฟังหน่อย",         # chitchat
     "2 บวก 2 ได้เท่าไหร่",            # คำนวณในหัว ไม่ต้อง net
+    "ชอบดูอนิเมะแนวไหน",              # พูดถึงอนิเมะ แต่ไม่ถามความคืบหน้า → ไม่ต้อง net
 ])
 def test_needs_internet_false_for_chitchat_and_local(text):
     assert needs_internet(text) is False, f"ไม่ควรต้องใช้ internet: {text!r}"

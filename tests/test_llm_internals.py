@@ -182,9 +182,9 @@ class _FakeModelsRec:
         return iter(SimpleNamespace(text=t) for t in b)
 
 
-def _patch_gemini_rec(monkeypatch, behaviors, stable="gemini-2.5-flash"):
+def _patch_gemini_rec(monkeypatch, behaviors, fallback="gemini-2.5-flash"):
     monkeypatch.setattr(llm.time, "sleep", lambda *a, **k: None)
-    monkeypatch.setattr(llm, "GEMINI_MODEL", stable)
+    monkeypatch.setattr(llm, "GEMINI_FALLBACK_MODEL", fallback)
     fake = _FakeModelsRec(behaviors)
     monkeypatch.setattr(llm, "gemini_client", SimpleNamespace(models=fake))
     return fake

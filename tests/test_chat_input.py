@@ -59,3 +59,62 @@ def test_chat_normal_str_prompt_unchanged(monkeypatch):
     _ = r.text
     user_msgs = [m for m in cap["messages"] if m["role"] == "user"]
     assert any(m["content"] == "สวัสดีครับ" for m in user_msgs)
+
+
+# ── web-search grounding สำหรับ path ที่เลือกโมเดลเฉพาะ (Work A, 2026-06-15) ──
+def test_chat_injects_websearch_for_realtime_query(monkeypatch):
+    import utils.websearch as ws
+    cap = {}
+
+    def fake_stream(messages, **k):
+        cap["messages"] = messages
+        yield "ok"
+
+    def fake_search(prompt, **k):
+        return ("[1] One Piece ตอนล่าสุดคือ 1120",
+                [{"title": "x", "url": "http://x", "snippet": "1120"}])
+
+    monkeypatch.setattr(chatmod, "stream_response", fake_stream)
+    monkeypatch.setattr(ws, "web_search_with_results", fake_search)
+    r = client.post("/api/chat", json={
+        "session_id": "scrut-ws",
+        "prompt": "One Piece ออกตอนล่าสุดกี่ตอนแล้ว",   # needs_internet → ควรเสิร์ช
+        "provider": "gemini",
+        "model": "gemini-3.1-flash-lite",               # เลือกโมเดลเฉพาะ (req_model)
+        "active_learning": False,
+        "response_cache": False,
+    })
+    assert r.status_code == 200
+    _ = r.text
+    sys_msg = cap["messages"][0]["content"]
+    assert "INTERNET CONTEXT" in sys_msg, "คำถาม real-time + เลือกโมเดลเฉพาะ ต้อง inject web context"
+    assert "1120" in sys_msg
+
+
+def test_chat_no_websearch_for_casual_query(monkeypatch):
+    import utils.websearch as ws
+    cap = {}
+    called = {"n": 0}
+
+    def fake_stream(messages, **k):
+        cap["messages"] = messages
+        yield "ok"
+
+    def fake_search(prompt, **k):
+        called["n"] += 1
+        return ("x", [])
+
+    monkeypatch.setattr(chatmod, "stream_response", fake_stream)
+    monkeypatch.setattr(ws, "web_search_with_results", fake_search)
+    r = client.post("/api/chat", json={
+        "session_id": "scrut-casual",
+        "prompt": "สวัสดีครับ ขวัญ",                    # ทักทาย → ไม่ควรเสิร์ช
+        "provider": "ollama",
+        "model": "qwen/qwen3.5-9b",
+        "active_learning": False,
+        "response_cache": False,
+    })
+    assert r.status_code == 200
+    _ = r.text
+    assert called["n"] == 0, "คำถามทักทายไม่ควรเสิร์ชเว็บ"
+    assert "INTERNET CONTEXT" not in cap["messages"][0]["content"]

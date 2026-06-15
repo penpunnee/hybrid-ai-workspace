@@ -29,6 +29,37 @@ router = APIRouter(prefix="/api", tags=["chat"])
 logger = logging.getLogger(__name__)
 
 
+def _inject_web_context(messages: list, prompt: str, citations) -> bool:
+    """เสิร์ชเว็บแล้ว inject ผลเป็น system context — ground คำตอบทุกโมเดล (local/Gemini/Gemma)
+    สำหรับคำถาม real-time. คืน True ถ้า inject สำเร็จ. ใช้ร่วมกันทั้ง auto→lmstudio_web และ
+    path ที่เลือกโมเดลเฉพาะ"""
+    try:
+        from utils.websearch import web_search_with_results
+        web_ctx, web_results = web_search_with_results(prompt)
+        if not web_ctx:
+            return False
+        try:
+            citations.add_web_results(web_results)
+        except Exception as ce:
+            logger.debug(f"[Chat] web citations skipped: {ce}")
+        legend = citations.format_inline_legend()
+        sys_extra = (
+            "\n\n=== INTERNET CONTEXT (real-time data) ===\n"
+            f"{web_ctx}\n"
+            "=== END INTERNET CONTEXT ===\n"
+            f"{legend}\n"
+            "**กฎเหล็ก**: ใช้ข้อมูลด้านบนตอบคำถาม ห้ามบอกว่าไม่มี internet/ไม่มีข้อมูล real-time "
+            "เพราะระบบดึงข้อมูลให้แล้ว สรุปจากข้อมูลและอ้างอิงแหล่งที่มาด้วยเลข [n]. "
+            "ถ้าข้อมูลที่ให้ไม่มีคำตอบที่ถาม (เช่น เลขตอนล่าสุด) ให้บอกตรงๆ ว่าไม่พบ ห้ามเดา/แต่งตัวเลขเอง"
+        )
+        messages[0] = {"role": "system", "content": messages[0]["content"] + sys_extra}
+        logger.info(f"[Chat] web search injected ({len(web_ctx)} chars, {len(web_results)} sources)")
+        return True
+    except Exception as e:
+        logger.warning(f"[Chat] web search failed: {e}")
+        return False
+
+
 @router.post("/chat")
 async def chat(request: Request):
     data = await request.json()
@@ -292,6 +323,7 @@ async def chat(request: Request):
     model_used = ""
     provider_used = provider
     model_override = ""
+    web_injected = False
     if provider == "auto":
         try:
             from reasoning.router import route
@@ -302,37 +334,10 @@ async def chat(request: Request):
             model_used = decision.model.split("/")[-1] if decision.model else decision.provider
             logger.info(f"[Chat] route → {decision.provider}/{decision.model} ({decision.reason})")
 
-            # ── Web search: ค้น DDG แล้ว inject context ─────────────────────
+            # ── Web search: ค้นแล้ว inject context (router เลือก lmstudio_web) ──
             if decision.provider == "lmstudio_web":
-                try:
-                    from utils.websearch import web_search_with_results
-                    web_ctx, web_results = web_search_with_results(prompt)
-                    if web_ctx:
-                        try:
-                            citations.add_web_results(web_results)
-                        except Exception as ce:
-                            logger.debug(f"[Chat] web citations skipped: {ce}")
-                        legend = citations.format_inline_legend()
-                        # inject เป็น system instruction + user prompt
-                        sys_extra = (
-                            "\n\n=== INTERNET CONTEXT (real-time data) ===\n"
-                            f"{web_ctx}\n"
-                            "=== END INTERNET CONTEXT ===\n"
-                            f"{legend}\n"
-                            "**กฎเหล็ก**: ใช้ข้อมูลด้านบนตอบคำถาม ห้ามบอกว่าไม่มี internet/ไม่มีข้อมูล real-time "
-                            "เพราะระบบดึงข้อมูลให้แล้ว สรุปจากข้อมูลและอ้างอิงแหล่งที่มาด้วยเลข [n]"
-                        )
-                        messages[0] = {
-                            "role": "system",
-                            "content": messages[0]["content"] + sys_extra,
-                        }
-                        provider_used = "lmstudio"
-                        logger.info(f"[Chat] web search injected ({len(web_ctx)} chars, {len(web_results)} sources)")
-                    else:
-                        provider_used = "lmstudio"
-                except Exception as e:
-                    logger.warning(f"[Chat] web search failed: {e}")
-                    provider_used = "lmstudio"
+                web_injected = _inject_web_context(messages, prompt, citations)
+                provider_used = "lmstudio"
 
         except Exception as e:
             logger.warning(f"[Chat] route failed: {e}")
@@ -340,6 +345,18 @@ async def chat(request: Request):
         # provider ชัดเจน + เลือกโมเดลจาก dropdown → ใช้ตัวนั้น (per-request override)
         model_override = req_model
         model_used = req_model.split("/")[-1]
+
+    # ── Grounding ทุกโมเดล: คำถาม real-time → เสิร์ชเว็บ inject ───────────────────
+    # เดิมเสิร์ชเฉพาะ auto→lmstudio_web เท่านั้น → เลือกโมเดลเฉพาะ (qwen/Gemini/Gemma)
+    # ตอบ real-time จาก training กว้างๆ. ทำให้ทุกโมเดลได้ข้อมูลจริงก่อนตอบ
+    # (ข้าม agent — เสิร์ชเอง · vision — คนละโหมด · ที่ inject แล้ว — กันซ้ำ)
+    if not web_injected and not agent_mode and not image_b64:
+        try:
+            from reasoning.classifier import needs_internet
+            if needs_internet(prompt):
+                web_injected = _inject_web_context(messages, prompt, citations)
+        except Exception as e:
+            logger.warning(f"[Chat] grounding check failed: {e}")
 
     def generate():
         nonlocal provider_used, model_used, messages
