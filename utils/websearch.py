@@ -116,31 +116,41 @@ def _google_search(query: str, max_results: int = 5) -> list[dict]:
         return []
 
 
+def _ddg_search(query: str, max_results: int = 5, region: str = "th-th",
+                safesearch: str = "on") -> list[dict]:
+    """เรียก DuckDuckGo ครั้งเดียว — safesearch='on' กัน NSFW ที่ต้นทาง"""
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        from duckduckgo_search import DDGS
+    with DDGS() as ddgs:
+        return list(ddgs.text(
+            query,
+            region=region,
+            safesearch=safesearch,
+            max_results=max_results,
+        ))
+
+
 def search_web(query: str, max_results: int = 5, region: str = "th-th") -> list[dict]:
-    """ค้นหา — ลอง Google ก่อน fallback DDG"""
+    """ค้นหา — ลอง Google ก่อน fallback DDG (retry 1 ครั้งกัน throttle ชั่วคราว)"""
     # ลอง Google Custom Search ก่อน
     results = _google_search(query, max_results)
     if results:
         return results
 
-    # fallback → DuckDuckGo
-    try:
+    # fallback → DuckDuckGo (ยิงได้ถึง 2 ครั้ง: รอบแรกว่าง = น่าจะโดน throttle → ลองซ้ำ)
+    for attempt in range(2):
         try:
-            from ddgs import DDGS
-        except ImportError:
-            from duckduckgo_search import DDGS
-        with DDGS() as ddgs:
-            results = list(ddgs.text(
-                query,
-                region=region,
-                safesearch="moderate",
-                max_results=max_results,
-            ))
-        logger.info(f"[WebSearch] '{query}' → {len(results)} results (DDG)")
-        return results
-    except Exception as e:
-        logger.warning(f"[WebSearch] DuckDuckGo failed: {e}")
-        return _fallback_search(query, max_results)
+            results = _ddg_search(query, max_results, region)
+        except Exception as e:
+            logger.warning(f"[WebSearch] DuckDuckGo failed (attempt {attempt + 1}): {e}")
+            results = []
+        if results:
+            logger.info(f"[WebSearch] '{query}' → {len(results)} results (DDG, attempt {attempt + 1})")
+            return results
+
+    return _fallback_search(query, max_results)
 
 
 def _fallback_search(query: str, max_results: int = 3) -> list[dict]:
