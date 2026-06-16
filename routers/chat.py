@@ -303,7 +303,7 @@ async def chat(request: Request):
                 agent_provider = provider if provider in ("gemini", "lmstudio", "ollama") else "gemini"
                 for kind, payload in run_agent(messages, provider=agent_provider):
                     if kind == "event":
-                        # SSE event สำหรับ enhanced.js timeline — React อ่านแล้ว ignore
+                        # SSE agent event → React parse เป็น AgentTimeline (utils/agentsteps.ts, 2026-06-16)
                         yield f"data: {json.dumps({'agent': payload}, ensure_ascii=False)}\n\n"
                     elif kind == "chunk":
                         full_response += payload

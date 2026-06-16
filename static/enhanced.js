@@ -1995,6 +1995,7 @@
   //   event delegation → ทนต่อ React re-render; ~4 ตัวอักษร ≈ 1 token (ตาม approx_tokens)
   // ─────────────────────────────────────────────────────────────────────────────
   (function initTokenCounter() {
+    if (window.__hwReactChatBox) return;   // ported เข้า React แล้ว (utils/tokencount.ts, 2026-06-16)
     const tcCss = `
       #enh-tokcount {
         position: fixed; z-index: 9999; pointer-events: none;
@@ -2059,6 +2060,7 @@
   //   native value setter + input event (มาตรฐาน React-controlled input)
   // ─────────────────────────────────────────────────────────────────────────────
   (function initDraftAutosave() {
+    if (window.__hwReactChatBox) return;   // ported เข้า React แล้ว (utils/draft.ts, 2026-06-16)
     const KEY = (sid) => "hw_draft_" + (sid || "default");
     const _isComposer = _isComposerEl;   // N1: เฉพาะกล่องแชตหลัก
 
@@ -2123,6 +2125,7 @@
   // SLASH / QUICK PROMPTS — พิมพ์ "/" ต้นกล่อง → เมนู template → เลือกแล้วเติมเข้า composer
   // ─────────────────────────────────────────────────────────────────────────────
   (function initSlashPrompts() {
+    if (window.__hwReactChatBox) return;   // ported เข้า React แล้ว (utils/slash.ts, 2026-06-16)
     const PROMPTS = [
       { cmd: "review",    label: "🔍 Review โค้ด",  text: "ช่วย review โค้ดนี้ แล้วชี้จุดที่ควรปรับปรุง:\n\n" },
       { cmd: "bug",       label: "🐛 หา bug",       text: "ช่วยหา bug ในโค้ดนี้ และเสนอวิธีแก้:\n\n" },
