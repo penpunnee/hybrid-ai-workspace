@@ -80,3 +80,62 @@ class TestGetGeminiTools:
         assert len(tools) > 0
         first = tools[0]
         assert hasattr(first, "name") or isinstance(first, dict)
+
+
+class TestGeminiToolResponseTurn:
+    """Regression: หลัง agent เรียก tool แล้ววนรอบ 2 ต้องส่ง tool-response เป็น
+    list[Part] — ไม่ใช่ types.Content (chat.send_message รับ Content ตรงๆ ไม่ได้
+    → 'Message must be a valid part type ... got types.Content')
+    """
+
+    def _fc_response(self, name="web_search", args=None):
+        fc = MagicMock()
+        fc.name = name
+        fc.args = args or {"query": "x"}
+        part = MagicMock()
+        part.function_call = fc
+        resp = MagicMock()
+        cand = MagicMock()
+        cand.content.parts = [part]
+        resp.candidates = [cand]
+        return resp
+
+    def _text_response(self, text="done"):
+        part = MagicMock()
+        part.function_call = None
+        resp = MagicMock()
+        cand = MagicMock()
+        cand.content.parts = [part]
+        resp.candidates = [cand]
+        resp.text = text
+        return resp
+
+    def test_tool_response_turn_sent_as_parts_not_content(self):
+        from google.genai import types as genai_types
+
+        sent = []
+        responses = [self._fc_response(), self._text_response()]
+
+        fake_chat = MagicMock()
+        fake_chat.send_message.side_effect = lambda message: (
+            sent.append(message) or responses[len(sent) - 1]
+        )
+        fake_client = MagicMock()
+        fake_client.chats.create.return_value = fake_chat
+
+        with patch("google.genai.Client", return_value=fake_client), \
+             patch("agents.orchestrator.GEMINI_API_KEY", "fake-key"), \
+             patch("agents.orchestrator.execute_tool", return_value="tool result"), \
+             patch("agents.orchestrator.get_gemini_tools", return_value=[]):
+            from agents.orchestrator import _run_agent_gemini
+            _collect(_run_agent_gemini(
+                [{"role": "user", "content": "ping NAS"}],
+                "gemini-2.5-flash", max_steps=4,
+            ))
+
+        assert len(sent) >= 2, "ต้องมี send รอบ 2 (หลังรัน tool)"
+        assert sent[0] == "ping NAS"                    # รอบแรก = user string
+        second = sent[1]                                 # รอบ tool-response
+        assert not isinstance(second, genai_types.Content), \
+            "tool-response turn ต้องเป็น parts/list ไม่ใช่ types.Content"
+        assert isinstance(second, list) and len(second) > 0

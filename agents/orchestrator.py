@@ -229,10 +229,10 @@ def _run_agent_gemini(
                 )
             )
 
-        current_prompt = genai_types.Content(
-            role="user",
-            parts=tool_responses,
-        )
+        # ส่ง tool-response เป็น list[Part] ตรงๆ — chat.send_message ห่อเป็น
+        # Content(role="user") ให้เอง. ห้ามส่ง types.Content เข้าไป (SDK reject:
+        # "Message must be a valid part type ... got types.Content")
+        current_prompt = tool_responses
 
     # ครบ max_steps → บังคับสรุป
     yield ("event", {"type": "max_steps_reached"})
