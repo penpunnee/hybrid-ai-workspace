@@ -559,9 +559,11 @@
       applyDreamStats(_dreamVals);
     } catch {}
   }
-  fetchDreamStats();
-  setInterval(fetchDreamStats, 300_000);                  // refetch ทุก 5 นาที (dream รันกลางคืน)
-  setInterval(() => applyDreamStats(_dreamVals), 2_000);  // re-apply กัน React re-render ทับ
+  if (!window.__hwReactChatBox) {                         // ported เข้า React แล้ว (utils/dreamstats.ts, 2026-06-16)
+    fetchDreamStats();
+    setInterval(fetchDreamStats, 300_000);                // refetch ทุก 5 นาที (dream รันกลางคืน)
+    setInterval(() => applyDreamStats(_dreamVals), 2_000); // re-apply กัน React re-render ทับ
+  }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 2. GLOBAL CHAT SEARCH  (Ctrl+Shift+F)
