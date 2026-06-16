@@ -36,7 +36,7 @@ def save_entry(entry: MemoryEntry, collection_name: str | None = None) -> bool:
     if client is None:
         return False
 
-    col_name = collection_name or f"memory_{_safe_slug(entry.assistant)}"
+    col_name = collection_name or f"memory_{resolve_slug(entry.assistant)}"
     col = _get_collection(client, col_name)
     if col is None:
         return False
@@ -62,7 +62,7 @@ def search_entries(assistant: str, query: str, n_results: int = 5,
     if client is None:
         return []
 
-    col_name = f"memory_{_safe_slug(assistant)}"
+    col_name = f"memory_{resolve_slug(assistant)}"
     try:
         col = client.get_collection(col_name)
     except Exception:
@@ -129,7 +129,7 @@ def update_confidence(assistant: str, content_snippet: str, new_confidence: floa
     client = _get_chroma_client()
     if client is None:
         return False
-    col_name = f"memory_{_safe_slug(assistant)}"
+    col_name = f"memory_{resolve_slug(assistant)}"
     try:
         col = client.get_collection(col_name)
         res = col.query(query_texts=[content_snippet], n_results=1)
@@ -152,7 +152,7 @@ def bump_access_count(assistant: str, doc_ids: list[str]) -> None:
     client = _get_chroma_client()
     if client is None or not doc_ids:
         return
-    col_name = f"memory_{_safe_slug(assistant)}"
+    col_name = f"memory_{resolve_slug(assistant)}"
     try:
         col = client.get_collection(col_name)
         res = col.get(ids=doc_ids)
@@ -233,3 +233,17 @@ def _safe_slug(name: str) -> str:
     ascii_only = name.encode("ascii", "ignore").decode("ascii")
     slug = re.sub(r"[^a-zA-Z0-9]+", "_", ascii_only.lower()).strip("_")
     return slug or "default"
+
+
+def resolve_slug(name: str) -> str:
+    """คืน slug ที่เสถียรจาก config["slug"] (ไม่ derive จากชื่อ display → กัน
+    collection orphan เมื่อ rename). `name` อาจเป็นชื่อเต็ม ('🧡 ขวัญ (Logic)')
+    หรือ slug ('kwan'). assistant ที่ไม่อยู่ใน config → fallback _safe_slug (เดิม)."""
+    try:
+        from assistants.config import ASSISTANTS
+        for disp, cfg in ASSISTANTS.items():
+            if name == disp or name == cfg.get("slug"):
+                return cfg["slug"]
+    except Exception:
+        pass
+    return _safe_slug(name)

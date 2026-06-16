@@ -81,13 +81,13 @@ def push_working(session_id: str, role: str, content: str) -> None:
 
 def get_memory_summary(assistant: str) -> dict:
     """สรุปสถานะ memory ทั้งหมด"""
-    from .store import _get_chroma_client, _safe_slug
+    from .store import _get_chroma_client, resolve_slug
     client = _get_chroma_client()
     result = {"episodic": 0, "long_term": 0, "verified_facts": 0, "available": False}
     if client is None:
         return result
     try:
-        col_name = f"memory_{_safe_slug(assistant)}"
+        col_name = f"memory_{resolve_slug(assistant)}"
         col = client.get_collection(col_name)
         all_data = col.get()
         metas = all_data.get("metadatas", [])

@@ -71,7 +71,11 @@ def _get_collection(assistant_name: str):
     client = _get_client()
     if client is None:
         return None
-    slug = _safe_slug(assistant_name)
+    try:
+        from memory.store import resolve_slug
+        slug = resolve_slug(assistant_name)
+    except Exception:
+        slug = _safe_slug(assistant_name)
     with _lock:
         if slug not in _collections:
             try:
