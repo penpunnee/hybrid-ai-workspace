@@ -76,7 +76,8 @@ class TestConfigEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert "assistants" in data
-        assert len(data["assistants"]) == 3  # ฟ้า, ขวัญ, ขิม
+        assert len(data["assistants"]) == 1            # เหลือขวัญตัวเดียว
+        assert data["assistants"][0]["slug"] == "kwan"
 
 
 class TestChatEndpoint:
