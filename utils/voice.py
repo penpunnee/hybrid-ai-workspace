@@ -22,3 +22,44 @@ def speakable_part_text(part) -> str | None:
         return None
     text = getattr(part, "text", None)
     return text or None
+
+
+def live_server_content_events(sc) -> tuple[list[dict], str, str]:
+    """แปลง Gemini Live `server_content` → (events, user_delta, ai_delta) — pure → testable.
+
+    คืน:
+      - events: list ของ dict ที่ส่งให้ UI ผ่าน WebSocket
+          * input_transcription  → {"type": "user_text", "text": ...}
+          * output_transcription → {"type": "text", "text": ...}  ← เสียงที่โมเดลพูดจริง
+          * model_turn parts      → {"type": "text", "text": ...}  ← เฉพาะ text ที่พูดได้
+                                      (กรอง thought ผ่าน speakable_part_text) สำหรับโมเดล
+                                      text-modality ที่ไม่มี output_transcription
+      - user_delta / ai_delta: ข้อความสะสมเพื่อเซฟลง history เมื่อ turn จบ
+
+    ทำไมต้องส่ง output_transcription ให้ UI: โมเดล native-audio ส่งข้อความที่พูดจริง
+    มาทาง output_transcription (model_turn เป็น audio + thought). ถ้าไม่ส่ง → bubble
+    ผู้ช่วยว่างเปล่าหลังกรอง thought (regression ต่อจาก 6335c1e).
+    """
+    events: list[dict] = []
+    user_delta = ""
+    ai_delta = ""
+
+    it = getattr(sc, "input_transcription", None)
+    if it and getattr(it, "text", None):
+        user_delta += it.text
+        events.append({"type": "user_text", "text": it.text})
+
+    ot = getattr(sc, "output_transcription", None)
+    if ot and getattr(ot, "text", None):
+        ai_delta += ot.text
+        events.append({"type": "text", "text": ot.text})
+
+    mt = getattr(sc, "model_turn", None)
+    if mt:
+        for part in getattr(mt, "parts", []):
+            txt = speakable_part_text(part)
+            if txt:
+                ai_delta += txt
+                events.append({"type": "text", "text": txt})
+
+    return events, user_delta, ai_delta

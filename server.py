@@ -203,7 +203,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     from google.genai import types
     from assistants.config import ASSISTANTS
     from utils.tts import VOICE_MAP, DEFAULT_VOICE
-    from utils.voice import speakable_part_text
+    from utils.voice import live_server_content_events
     from utils.history import save_message as _save_msg
 
     await websocket.accept()
@@ -274,20 +274,11 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                             })
                         sc = getattr(response, "server_content", None)
                         if sc:
-                            it = getattr(sc, "input_transcription", None)
-                            if it and getattr(it, "text", None):
-                                user_transcript += it.text
-                                await websocket.send_json({"type": "user_text", "text": it.text})
-                            ot = getattr(sc, "output_transcription", None)
-                            if ot and getattr(ot, "text", None):
-                                ai_transcript += ot.text
-                            mt = getattr(sc, "model_turn", None)
-                            if mt:
-                                for part in getattr(mt, "parts", []):
-                                    txt = speakable_part_text(part)
-                                    if txt:
-                                        ai_transcript += txt
-                                        await websocket.send_json({"type": "text", "text": txt})
+                            events, user_delta, ai_delta = live_server_content_events(sc)
+                            user_transcript += user_delta
+                            ai_transcript += ai_delta
+                            for evt in events:
+                                await websocket.send_json(evt)
                             if getattr(sc, "turn_complete", False):
                                 await websocket.send_json({"type": "done"})
                                 if user_transcript.strip():
