@@ -4,12 +4,12 @@ import threading
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from core.config import CORS_ORIGINS_LIST, RELOAD
+from core.config import CORS_ORIGINS_LIST, RELOAD, GEMINI_API_KEY, GEMINI_LIVE_MODEL
 from core.auth import auth_middleware
 from core.ratelimit import rate_limit_middleware
 from core.observability import install_logging, start_request, current_request_id, timing_summary
@@ -198,7 +198,7 @@ fetch('/api/shared/{token}').then(r=>r.json()).then(d=>{{
 
 # ── Voice WebSocket (ยังอยู่ใน server.py เพราะต้องการ lifespan context) ──────
 @app.websocket("/ws/voice/{assistant_slug}")
-async def voice_websocket(websocket, assistant_slug: str, session_id: str = "voice_default"):
+async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id: str = "voice_default"):
     from google import genai
     from google.genai import types
     from assistants.config import ASSISTANTS
