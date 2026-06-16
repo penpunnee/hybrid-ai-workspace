@@ -36,8 +36,11 @@ class _FakeClient:
 
 def test_voice_ws_no_nameerror(monkeypatch):
     import google.genai as genai_mod
-    # บังคับมี key (test env มี key จริงจาก .env อยู่แล้ว) แต่กัน network ด้วย fake client
+    import server
+    # กัน network ด้วย fake client + บังคับมี key เอง (CI ไม่มี .env → ต้องไม่พึ่ง ambient key)
+    # patch ที่ server.GEMINI_API_KEY เพราะ bind ตอน import แล้ว setenv ไม่ทัน
     monkeypatch.setattr(genai_mod, "Client", _FakeClient)
+    monkeypatch.setattr(server, "GEMINI_API_KEY", "test-key")
 
     with client.websocket_connect("/ws/voice/test-slug") as ws:
         msg = ws.receive_json()
