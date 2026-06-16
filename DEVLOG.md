@@ -88,3 +88,21 @@
 - **Root cause:** fix voice transcript เขียนเป็นฟังก์ชัน pure + test เสร็จ แต่ไม่ได้ refactor handler ให้เรียก → production ยังรันโค้ด inline เดิมที่ไม่ส่ง `output_transcription` ให้ UI. native-audio พูดข้อความผ่าน ot (model_turn เป็น audio+thought ที่ถูกกรอง) → bubble ว่าง
 - **วิธีที่แก้ผ่าน:** server.py wire `live_server_content_events(sc)` → events {"type":"text"} จาก ot ถึง UI · commit `957fe23` · deployed+verified prod (text:2 จาก text:0)
 - **React source ที่ค้าง (`~/appscript.ui`):** commit `5d12043` — agentsteps.ts/markdown.tsx/reveal.ts + tests (vitest 13) ที่ build deploy ไปแล้ว (backend a7c67fe/2e1ad97) แต่ source ไม่เคย commit (ปิด Next Step #25 risk)
+
+---
+
+## [2026-06-17 04:38] SECTION #6 (port overlay features เข้า React — agent timeline + composer helpers + dream stats)
+**เป้าหมาย:** ทยอยย้าย overlay ของ enhanced.js เข้า React (Next Step #30/#36) — เลิกหนี้ DOM-patching/document-level event delegation
+
+### งานที่ทำ
+| # | ฟีเจอร์ | สถานะก่อนหน้า | วิธี | ผล |
+|---|---------|--------------|------|-----|
+| 1 | **Agent timeline** | commit 5d12043 wire parsing ไว้แล้ว | verify ครบสาย: parser (agentsteps.ts) ครอบ 5 type ที่ backend ยิง (thinking/tool_call/tool_result/answering/max_steps) + wire 3 SSE loop + render AgentTimeline | ✅ **verified prod** — ยิง agent จริงได้ thinking→tool_call→tool_result→answering. แก้ stale comment chat.py:306 |
+| 2 | **Composer helpers** | overlay เดิม (document-level) | port เป็น React-native 3 ตัว: `utils/tokencount.ts` (pill ตัวอักษร/tokens, warn>1500/hot>3000) · `utils/draft.ts` (autosave key เดิม hw_draft_<sid>, save debounce อ่าน sidRef → ไม่ save ตอนสลับ session, restore เมื่อกล่องว่าง) · `utils/slash.ts` (เมนู "/" + ArrowUp/Down/Enter/Tab/Escape) · wire เข้า composer (absolute menu/pill, onKeyDown ดัก slash ก่อน Enter→send) · gate IIFE เดิมด้วย `__hwReactChatBox` | ✅ vitest +17 · deployed `546ae20` |
+| 3 | **Dream stats** | overlay DOM-patch ทับ % ทุก 2s | `utils/dreamstats.ts` (port dreamCardValues) → render light/rem/deep counts ตรงใน sleep card แทน hardcoded 40/40/20% (dreamReport โหลดตอน mount) + tooltip phase · gate fetchDreamStats/applyDreamStats ด้วย `__hwReactChatBox` | ✅ vitest +5 · deployed `c3432cd` · **verified prod**: /api/dream/report → light=22 themes=2 |
+
+- **สถาปัตยกรรม:** ทุกตัวทำตาม pattern เดิม (extract pure util + vitest → wire React → gate overlay เดิมด้วย `__hwReactChatBox`). enhanced.js มี 4 guards (initTokenCounter/initDraftAutosave/initSlashPrompts/dream applier) — overlay เป็น fallback ของ bundle เก่าเท่านั้น
+- **timing:** React module (index.html บรรทัด 10, type=module) รันก่อน enhanced.js (บรรทัด 19, defer) ใน doc order → `__hwReactChatBox` ถูกตั้งก่อน guard เช็ค ✅
+- **deploy:** frontend-only — static เสิร์ฟจาก disk → git pull พอ ไม่ต้อง restart container. vitest รวม utils/ **55 ผ่าน** (10 files)
+- **bundle:** index-Cn7b8BSq.js · enhanced.js ?v=20260617-dream
+- **เหลือ overlay ที่ยังไม่ port (optional):** Home Panel FAB (System/NAS/Docker/PC/WoL), Export PNG, Global search (Ctrl+Shift+F), File Manager §18 — ตัวใหญ่/UI เยอะ
