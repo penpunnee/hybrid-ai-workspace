@@ -9,3 +9,16 @@ VOICE_MAP: dict[str, str] = {
     "khim": "Zephyr",
 }
 DEFAULT_VOICE = "Aoede"
+
+
+def speakable_part_text(part) -> str | None:
+    """คืน text ของ Gemini Live part เฉพาะส่วนที่ "พูดออกมา" จริง.
+
+    Live thinking model (เช่น gemini-2.5-flash-native-audio-latest) ส่ง part
+    ที่ `part.thought is True` = chain-of-thought ภายใน — ห้ามหลุดเข้า
+    transcript ที่เซฟหรือ UI. ตัดทิ้งที่นี่ที่เดียว (pure → unit-testable).
+    """
+    if getattr(part, "thought", False):
+        return None
+    text = getattr(part, "text", None)
+    return text or None

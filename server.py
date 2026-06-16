@@ -203,6 +203,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     from google.genai import types
     from assistants.config import ASSISTANTS
     from utils.tts import VOICE_MAP, DEFAULT_VOICE
+    from utils.voice import speakable_part_text
     from utils.history import save_message as _save_msg
 
     await websocket.accept()
@@ -283,9 +284,10 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                             mt = getattr(sc, "model_turn", None)
                             if mt:
                                 for part in getattr(mt, "parts", []):
-                                    if getattr(part, "text", None):
-                                        ai_transcript += part.text
-                                        await websocket.send_json({"type": "text", "text": part.text})
+                                    txt = speakable_part_text(part)
+                                    if txt:
+                                        ai_transcript += txt
+                                        await websocket.send_json({"type": "text", "text": txt})
                             if getattr(sc, "turn_complete", False):
                                 await websocket.send_json({"type": "done"})
                                 if user_transcript.strip():
