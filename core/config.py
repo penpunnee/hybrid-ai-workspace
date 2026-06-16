@@ -17,7 +17,9 @@ OLLAMA_REPEAT_PENALTY = float(os.getenv("OLLAMA_REPEAT_PENALTY", "1.1"))
 # ── Gemini (Cloud LLM) ───────────────────────────────────────────────────────
 GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL     = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-exp")
+# Live API (bidiGenerateContent) — gemini-2.0-flash-exp ถูกถอดออกจาก v1alpha แล้ว
+# ใช้ native-audio "latest" alias (เสถียร ไม่ rot ตามวันที่ preview) — verify ผ่าน ListModels
+GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.5-flash-native-audio-latest")
 
 # ── Database ─────────────────────────────────────────────────────────────────
 DB_PATH      = os.getenv("DB_PATH", "./chat_history.db")
