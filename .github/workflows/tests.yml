@@ -11,12 +11,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
 
       - name: Install dependencies
         run: |
@@ -29,5 +33,5 @@ jobs:
         run: pytest tests/ -q
 
       - name: Run JS tests (static modules)
-        # pure modules dual-export (dream_stats, chat_intercept) — node มากับ runner อยู่แล้ว
+        # pure modules dual-export (dream_stats, chat_intercept) — node 24 pin ผ่าน setup-node ด้านบน
         run: node --test tests/*.test.js
