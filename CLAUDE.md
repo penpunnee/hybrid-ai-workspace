@@ -225,7 +225,7 @@ Stats: `GET /api/cache/stats`
 # AI
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash   # ⚠️ ห้ามใช้ gemini-2.5-pro บน free tier (quota limit=0 → 429 ทุก request, เจอจริง 2026-06-11)
-GEMINI_LIVE_MODEL=gemini-2.0-flash-exp
+GEMINI_LIVE_MODEL=gemini-2.5-flash-native-audio-latest   # ⚠️ gemini-2.0-flash-exp/gemini-live-2.0-flash-001 ถูกถอดจาก Live API (bidiGenerateContent → 1008 not found, เจอจริง 2026-06-16). เช็ค model ที่ใช้ได้: ListModels filter supportedGenerationMethods มี bidiGenerateContent
 # Claude (Anthropic) — provider "claude"; ปล่อยว่าง=ปิด
 ANTHROPIC_API_KEY=
 CLAUDE_MODEL=claude-sonnet-4-6   # default คุ้ม; claude-opus-4-8 = ฉลาดสุด/แพงสุด, claude-haiku-4-5 = ถูกสุด

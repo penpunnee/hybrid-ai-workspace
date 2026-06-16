@@ -52,3 +52,21 @@
 | 4 | f-string ไม่มี placeholder (6 จุด) | llm.py:233 log literal · query_rewrite.py:64,66 `f"พรุ่งนี้"`/`f"tomorrow"` ตั้งใจคืน literal (ต่างจาก sibling ที่ interpolate วันที่) · teach.py:86 log · home_tools.py:233 | `f` prefix เกินมาเฉยๆ ไม่มี interpolation ที่ลืม | ❌ ไม่ใช่บั๊ก |
 
 - **สรุป:** ไม่เจอบั๊กใหม่ — findings ที่เหลือเป็น cosmetic ล้วน (unused var / redundant import / unnecessary f-prefix). ไม่แก้ตามกฎเหล็ก (ไม่มี failing behavior). ถ้าจะทำเป็น cleanup pass แยกต่างหากได้ แต่ไม่ใช่บั๊ก
+
+---
+
+## [2026-06-16 09:43] SECTION #4 (verify voice UI end-to-end บน prod)
+**เป้าหมาย:** ยืนยัน voice chat ทำงานจริง end-to-end หลัง deploy (ไม่ใช่แค่ test ที่ mock network)
+
+### Breadcrumb Ledger
+| # | สิ่งที่ลอง | ผล | บั๊ก? |
+|---|----------|-----|------|
+| live #1 | ยิง WS จริง /ws/voice/kwan (หลัง deploy a07ba34) | connection ถึง handler (ไม่ 1008 แล้ว) แต่ error event: `gemini-2.0-flash-exp not found for bidiGenerateContent` | ✅ เจอบั๊กที่ 2 (model config เก่า) |
+| diag | ListModels (v1alpha) filter bidiGenerateContent | gemini-2.0-flash-exp/gemini-live-2.0-flash-001 ถูกถอด → valid: gemini-2.5-flash-native-audio-latest ฯลฯ | — |
+| fix verify | ทดสอบ live turn ตรงกับ google.genai 2 รุ่น | native-audio-latest: audio 46KB + turn_complete=True ✅ | — |
+| deploy | DSM Task Scheduler `deploy-hybrid-ai` (SSH โดน Auto Block + WG ไป .49 ไม่ทะลุ — NAS ยังเข้าได้ผ่าน Cloudflare) | restart สำเร็จ (status 200 ผ่าน ai.pawinhome.com) | — |
+| live #2 | ยิง WS จริงผ่าน `wss://ai.pawinhome.com/ws/voice/kwan` | **connected → text → done · audio 46 chunks/176KB · "ได้ยินค่ะพี่ปอย 😊"** | ✅ end-to-end PASS |
+
+- **สรุป:** voice chat ทำงานครบสายบน prod — WS connect → Gemini Live session → audio+transcript stream → turn complete
+- **บั๊กที่แก้รวม session นี้:** (1) flaky anthropic test (2) voice WS handler พัง (annotation+imports) (3) GEMINI_LIVE_MODEL default เก่า → ทั้งหมาด deploy+verified prod
+- **หมายเหตุ (optional, ไม่ใช่ regression):** รุ่น native-audio เปิด thinking → `model_turn` มี part `thought` ปนกับ `text` → handler (server.py ~283-288) append .text ของ thought เข้า transcript ด้วย → reasoning โผล่ใน {type:text} ที่ส่ง UI. เสียงจริงถูกต้อง แต่ถ้าไม่อยากให้ thought โชว์ ควร filter `getattr(part,'thought',False)` — งานต่อแยก
