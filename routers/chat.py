@@ -60,6 +60,21 @@ def _inject_web_context(messages: list, prompt: str, citations) -> bool:
         return False
 
 
+def persist_agent_turn(assistant: str, prompt: str, full_response: str, session_id: str) -> int:
+    """persist คำตอบ agent → save_message + push_working เสมอ, แต่ **gate** remember()
+    (episodic) ด้วย should_auto_learn — คำตอบ agent มาจาก tool real-time เสมอ
+    ดังนั้นงาน realtime/home-tool ไม่ควรตกผลึกลง episodic (กันปนเปื้อน volatile)"""
+    agent_msg_id = save_message(assistant, "assistant", full_response, "agent", session_id)
+    push_working(session_id, "user", prompt)
+    push_working(session_id, "assistant", full_response)
+    ok, reason = should_auto_learn(prompt)
+    if ok:
+        remember(assistant, prompt, full_response)
+    else:
+        logger.info(f"[Chat/agent] skip remember (episodic): {reason}")
+    return agent_msg_id
+
+
 @router.post("/chat")
 async def chat(request: Request):
     data = await request.json()
@@ -298,13 +313,10 @@ async def chat(request: Request):
                 yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
                 return
 
-            # persist เหมือน /api/chat ปกติ
+            # persist เหมือน /api/chat ปกติ (gate remember ด้วย should_auto_learn)
             agent_msg_id = 0
             try:
-                agent_msg_id = save_message(assistant, "assistant", full_response, "agent", session_id)
-                push_working(session_id, "user", prompt)
-                push_working(session_id, "assistant", full_response)
-                remember(assistant, prompt, full_response)
+                agent_msg_id = persist_agent_turn(assistant, prompt, full_response, session_id)
             except Exception as e:
                 logger.warning(f"[Chat/agent] persist failed: {e}")
 

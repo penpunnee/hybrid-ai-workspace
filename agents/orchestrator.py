@@ -13,11 +13,69 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Generator, Any
 
 from .tools import execute_tool, get_openai_tools, get_gemini_tools, list_tools
 
 logger = logging.getLogger(__name__)
+
+_FORCE_SYNTH_PROMPT = (
+    "ตอบคำถามจากข้อมูล tools ที่ได้มาให้ครบถ้วน — เก็บรายละเอียดสำคัญ ตัวเลข "
+    "และแหล่งที่มาให้ครบ ความยาวให้เหมาะกับคำถาม (user ขอละเอียด = ตอบละเอียด) "
+    "ห้ามเรียก tool เพิ่ม"
+)
+
+
+def _chunk_parts(chunk) -> list:
+    """ดึง parts จาก Gemini stream chunk แบบทน None"""
+    cands = getattr(chunk, "candidates", None) or []
+    if not cands:
+        return []
+    content = getattr(cands[0], "content", None)
+    return getattr(content, "parts", None) or []
+
+
+def _is_retryable_gemini(e: Exception) -> bool:
+    """error ชั่วคราวที่ retry ได้ (503 overloaded / 429 / 5xx) — ยกเว้น limit:0
+    (free-tier ปิดโมเดลถาวร retry ไม่ช่วย, CLAUDE.md quirk)"""
+    s = str(e).lower()
+    if "limit: 0" in s or '"limit": 0' in s:
+        return False
+    try:
+        from google.genai import errors as ge
+        if isinstance(e, ge.ServerError):
+            return True
+    except Exception:
+        pass
+    code = getattr(e, "code", None) or getattr(e, "status_code", None)
+    if code in (429, 500, 502, 503, 504):
+        return True
+    return any(k in s for k in ("unavailable", "overloaded", "high demand",
+                                "try again", "resource_exhausted", "503", "502", "504"))
+
+
+def _gemini_stream_with_retry(chat, message, max_retries: int = 2, base_delay: float = 1.0):
+    """Generator stream chunks — retry เฉพาะ error ชั่วคราวที่เกิด *ก่อน* chunk แรก
+    ออกมา (กัน duplicate ครึ่งคำตอบ ถ้า fail กลางทาง)"""
+    attempt = 0
+    while True:
+        produced = False
+        try:
+            for chunk in chat.send_message_stream(message):
+                produced = True
+                yield chunk
+            return
+        except Exception as e:
+            if produced or attempt >= max_retries or not _is_retryable_gemini(e):
+                raise
+            delay = base_delay * (2 ** attempt)
+            logger.warning(
+                f"[Agent/Gemini] retryable error (try {attempt+1}/{max_retries}): {e} "
+                f"— backoff {delay}s"
+            )
+            time.sleep(delay)
+            attempt += 1
 
 
 class _MarkerFilter:
@@ -185,24 +243,32 @@ def _run_agent_gemini(
         yield ("event", {"type": "thinking", "step": step + 1})
         logger.info(f"[Agent/Gemini] step {step+1}/{max_steps}")
 
+        # stream response: แยก function_call ออกจาก text — ถ้าไม่มี tool call
+        # = คำตอบสุดท้าย → stream chunk ออกเลย (A); error ชั่วคราว → retry (F)
+        fn_calls = []
+        answered = False
         try:
-            response = chat.send_message(current_prompt)
+            for chunk in _gemini_stream_with_retry(chat, current_prompt):
+                for part in _chunk_parts(chunk):
+                    fc = getattr(part, "function_call", None)
+                    if fc:
+                        fn_calls.append(fc)
+                        continue
+                    txt = getattr(part, "text", None)
+                    if txt:
+                        if not answered:
+                            yield ("event", {"type": "answering"})
+                            answered = True
+                        yield ("chunk", txt)
         except Exception as e:
             logger.exception("[Agent/Gemini] API call failed")
             yield ("event", {"type": "error", "message": str(e)})
             yield ("chunk", f"❌ Gemini agent error: {e}")
             return
 
-        # ตรวจ function calls
-        fn_calls = []
-        for part in response.candidates[0].content.parts:
-            if hasattr(part, "function_call") and part.function_call:
-                fn_calls.append(part.function_call)
-
         if not fn_calls:
-            yield ("event", {"type": "answering"})
-            final = response.text or "(agent ไม่มีคำตอบ)"
-            yield ("chunk", final)
+            if not answered:
+                yield ("chunk", "(agent ไม่มีคำตอบ)")
             return
 
         # รัน tools แล้วส่ง results กลับ
@@ -229,16 +295,22 @@ def _run_agent_gemini(
                 )
             )
 
-        # ส่ง tool-response เป็น list[Part] ตรงๆ — chat.send_message ห่อเป็น
-        # Content(role="user") ให้เอง. ห้ามส่ง types.Content เข้าไป (SDK reject:
-        # "Message must be a valid part type ... got types.Content")
+        # ส่ง tool-response เป็น list[Part] ตรงๆ — SDK ห่อเป็น Content(role=user)
+        # ให้เอง. ห้ามส่ง types.Content (SDK reject "valid part type ... Content")
         current_prompt = tool_responses
 
-    # ครบ max_steps → บังคับสรุป
+    # ครบ max_steps → บังคับสรุป (stream เช่นกัน — A)
     yield ("event", {"type": "max_steps_reached"})
+    answered = False
     try:
-        final_resp = chat.send_message("ตอบคำถามจากข้อมูล tools ที่ได้มาให้ครบถ้วน — เก็บรายละเอียดสำคัญ ตัวเลข และแหล่งที่มาให้ครบ ความยาวให้เหมาะกับคำถาม (user ขอละเอียด = ตอบละเอียด) ห้ามเรียก tool เพิ่ม")
-        yield ("chunk", final_resp.text or "(ไม่มีคำตอบ)")
+        for chunk in _gemini_stream_with_retry(chat, _FORCE_SYNTH_PROMPT):
+            for part in _chunk_parts(chunk):
+                txt = getattr(part, "text", None)
+                if txt:
+                    answered = True
+                    yield ("chunk", txt)
+        if not answered:
+            yield ("chunk", "(ไม่มีคำตอบ)")
     except Exception as e:
         yield ("chunk", f"❌ Final synthesis failed: {e}")
 

@@ -82,60 +82,104 @@ class TestGetGeminiTools:
         assert hasattr(first, "name") or isinstance(first, dict)
 
 
-class TestGeminiToolResponseTurn:
-    """Regression: หลัง agent เรียก tool แล้ววนรอบ 2 ต้องส่ง tool-response เป็น
-    list[Part] — ไม่ใช่ types.Content (chat.send_message รับ Content ตรงๆ ไม่ได้
-    → 'Message must be a valid part type ... got types.Content')
+class TestGeminiAgentStreamingAndTools:
+    """A+C+F สำหรับ Gemini agent (ใช้ send_message_stream):
+    - A: stream คำตอบสุดท้ายเป็นหลาย chunk
+    - Content-fix (regression): tool-response turn เป็น list[Part] ไม่ใช่ types.Content
+    - F: retry/backoff เมื่อเจอ error ชั่วคราว (503/overloaded); error อื่นเด้งทันที
     """
 
-    def _fc_response(self, name="web_search", args=None):
-        fc = MagicMock()
-        fc.name = name
-        fc.args = args or {"query": "x"}
-        part = MagicMock()
-        part.function_call = fc
-        resp = MagicMock()
-        cand = MagicMock()
-        cand.content.parts = [part]
-        resp.candidates = [cand]
-        return resp
+    def _part(self, function_call=None, text=None):
+        p = MagicMock(); p.function_call = function_call; p.text = text
+        return p
 
-    def _text_response(self, text="done"):
-        part = MagicMock()
-        part.function_call = None
-        resp = MagicMock()
-        cand = MagicMock()
-        cand.content.parts = [part]
-        resp.candidates = [cand]
-        resp.text = text
-        return resp
+    def _chunk(self, parts):
+        ch = MagicMock(); cand = MagicMock()
+        cand.content.parts = parts
+        ch.candidates = [cand]
+        return ch
 
-    def test_tool_response_turn_sent_as_parts_not_content(self):
-        from google.genai import types as genai_types
+    def _fc(self, name="web_search", args=None):
+        fc = MagicMock(); fc.name = name; fc.args = args or {"query": "x"}
+        return fc
 
-        sent = []
-        responses = [self._fc_response(), self._text_response()]
-
-        fake_chat = MagicMock()
-        fake_chat.send_message.side_effect = lambda message: (
-            sent.append(message) or responses[len(sent) - 1]
-        )
+    def _run(self, fake_chat):
+        import contextlib
         fake_client = MagicMock()
         fake_client.chats.create.return_value = fake_chat
-
-        with patch("google.genai.Client", return_value=fake_client), \
-             patch("agents.orchestrator.GEMINI_API_KEY", "fake-key"), \
-             patch("agents.orchestrator.execute_tool", return_value="tool result"), \
-             patch("agents.orchestrator.get_gemini_tools", return_value=[]):
+        with contextlib.ExitStack() as st:
+            for cm in (
+                patch("google.genai.Client", return_value=fake_client),
+                patch("agents.orchestrator.GEMINI_API_KEY", "fake-key"),
+                patch("agents.orchestrator.execute_tool", return_value="tool result"),
+                patch("agents.orchestrator.get_gemini_tools", return_value=[]),
+                patch("agents.orchestrator.time.sleep", return_value=None),
+            ):
+                st.enter_context(cm)
             from agents.orchestrator import _run_agent_gemini
-            _collect(_run_agent_gemini(
+            return _collect(_run_agent_gemini(
                 [{"role": "user", "content": "ping NAS"}],
                 "gemini-2.5-flash", max_steps=4,
             ))
 
-        assert len(sent) >= 2, "ต้องมี send รอบ 2 (หลังรัน tool)"
-        assert sent[0] == "ping NAS"                    # รอบแรก = user string
-        second = sent[1]                                 # รอบ tool-response
-        assert not isinstance(second, genai_types.Content), \
-            "tool-response turn ต้องเป็น parts/list ไม่ใช่ types.Content"
-        assert isinstance(second, list) and len(second) > 0
+    def test_streams_final_answer_and_tool_response_is_parts(self):
+        from google.genai import types as genai_types
+        sent = []
+
+        def stream_side(message):
+            sent.append(message)
+            if len(sent) == 1:                       # step 1 → function call
+                return iter([self._chunk([self._part(function_call=self._fc())])])
+            return iter([                            # step 2 → คำตอบ stream 2 chunk
+                self._chunk([self._part(text="โต")]),
+                self._chunk([self._part(text="เกียว")]),
+            ])
+
+        fake_chat = MagicMock()
+        fake_chat.send_message_stream.side_effect = stream_side
+
+        results = self._run(fake_chat)
+        chunks = [p for k, p in results if k == "chunk"]
+        events = [p for k, p in results if k == "event"]
+
+        # A: คำตอบมาเป็นหลาย chunk แยกกัน (ไม่ใช่ก้อนเดียว)
+        assert "โต" in chunks and "เกียว" in chunks
+        assert any(e.get("type") == "tool_call" for e in events)
+        # Content-fix: turn ที่ 2 = list[Part] ไม่ใช่ types.Content
+        assert len(sent) >= 2
+        assert not isinstance(sent[1], genai_types.Content)
+        assert isinstance(sent[1], list) and len(sent[1]) > 0
+        assert not any("valid part type" in c for c in chunks)
+
+    def test_retries_transient_error_then_succeeds(self):
+        sent = []
+
+        def stream_side(message):
+            sent.append(message)
+            if len(sent) == 1:
+                raise Exception("503 UNAVAILABLE — model experiencing high demand")
+            return iter([self._chunk([self._part(text="คำตอบหลัง retry")])])
+
+        fake_chat = MagicMock()
+        fake_chat.send_message_stream.side_effect = stream_side
+
+        results = self._run(fake_chat)
+        text = "".join(p for k, p in results if k == "chunk")
+        assert "คำตอบหลัง retry" in text          # F: retry สำเร็จ
+        assert "agent error" not in text.lower()
+        assert len(sent) == 2                        # เรียกซ้ำ 1 รอบ
+
+    def test_non_retryable_error_surfaces_immediately(self):
+        sent = []
+
+        def stream_side(message):
+            sent.append(message)
+            raise Exception("400 INVALID_ARGUMENT — bad request")
+
+        fake_chat = MagicMock()
+        fake_chat.send_message_stream.side_effect = stream_side
+
+        results = self._run(fake_chat)
+        text = "".join(p for k, p in results if k == "chunk")
+        assert "Gemini agent error" in text          # ไม่ retry
+        assert len(sent) == 1
