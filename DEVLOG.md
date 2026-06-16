@@ -70,3 +70,21 @@
 - **สรุป:** voice chat ทำงานครบสายบน prod — WS connect → Gemini Live session → audio+transcript stream → turn complete
 - **บั๊กที่แก้รวม session นี้:** (1) flaky anthropic test (2) voice WS handler พัง (annotation+imports) (3) GEMINI_LIVE_MODEL default เก่า → ทั้งหมาด deploy+verified prod
 - **หมายเหตุ (optional, ไม่ใช่ regression):** รุ่น native-audio เปิด thinking → `model_turn` มี part `thought` ปนกับ `text` → handler (server.py ~283-288) append .text ของ thought เข้า transcript ด้วย → reasoning โผล่ใน {type:text} ที่ส่ง UI. เสียงจริงถูกต้อง แต่ถ้าไม่อยากให้ thought โชว์ ควร filter `getattr(part,'thought',False)` — งานต่อแยก
+
+---
+
+## [2026-06-16 21:45] SECTION #5 (จบงาน voice ที่ค้าง + commit React source)
+**เป้าหมาย/อาการ:** voice bubble ผู้ช่วยว่างเปล่าบน native-audio (regression ที่ SECTION #4 จดไว้ว่า "งานต่อแยก") — fix เขียนค้างครึ่งทาง
+
+### Breadcrumb Ledger
+| # | สมมติฐาน/สิ่งที่ลอง | วิธีที่ใช้ | ผล | ผ่าน? |
+|---|---------------------|----------|-----|-------|
+| repro | อ่าน server.py:281-283 + utils/voice.py (uncommitted) | — | inline handler สะสม `ot.text` ลง ai_transcript แต่**ไม่** send_json ให้ UI → bubble ว่าง. ฟังก์ชัน pure `live_server_content_events` + test (5) เขียนเสร็จแต่ยังไม่ wire | — |
+| H1 | handler ยังใช้ inline เดิม ไม่ได้เรียกฟังก์ชันใหม่ | grep server.py | ยืนยัน: import แค่ `speakable_part_text`, ไม่มี `live_server_content_events` | ✅ root cause = งาน wire ค้าง |
+| fix | wire ฟังก์ชันเข้า handler | server.py: import→`live_server_content_events`, แทน inline 277-290 ด้วย `events,user_delta,ai_delta = live_server_content_events(sc)` + ส่ง events | pyflakes clean (speakable import หาย, ไม่มี unused ใหม่) · voice tests 6 · full suite **657 passed** | ✅ |
+| deploy | push origin main + NAS reset --hard + restart ai-backend-1 | — | reset → 957fe23, container up HTTP 200, local_ok:true | ✅ |
+| live | ยิง WS จริงใน container `ws://localhost:8000/ws/voice/kwan` ส่ง text turn | — | **EVENT_COUNTS {connected:1, text:2, audio:9, done:1}** · AI_TEXT "สวัสดีค่ะพี่ปอย! 😊" | ✅ end-to-end PASS |
+
+- **Root cause:** fix voice transcript เขียนเป็นฟังก์ชัน pure + test เสร็จ แต่ไม่ได้ refactor handler ให้เรียก → production ยังรันโค้ด inline เดิมที่ไม่ส่ง `output_transcription` ให้ UI. native-audio พูดข้อความผ่าน ot (model_turn เป็น audio+thought ที่ถูกกรอง) → bubble ว่าง
+- **วิธีที่แก้ผ่าน:** server.py wire `live_server_content_events(sc)` → events {"type":"text"} จาก ot ถึง UI · commit `957fe23` · deployed+verified prod (text:2 จาก text:0)
+- **React source ที่ค้าง (`~/appscript.ui`):** commit `5d12043` — agentsteps.ts/markdown.tsx/reveal.ts + tests (vitest 13) ที่ build deploy ไปแล้ว (backend a7c67fe/2e1ad97) แต่ source ไม่เคย commit (ปิด Next Step #25 risk)
