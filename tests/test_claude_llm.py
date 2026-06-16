@@ -65,6 +65,9 @@ def fake_claude(monkeypatch):
 
 # ── unconfigured ──────────────────────────────────────────────────────────────
 def test_unconfigured_no_key(monkeypatch):
+    # SDK ติดตั้งแล้ว (anthropic ไม่ None) แต่ยังไม่ได้ตั้ง API key → ต้องแจ้งให้ตั้ง key
+    # pin anthropic เป็น truthy sentinel เพื่อไม่ให้ผลเทสขึ้นกับว่า env นี้ลง anthropic จริงไหม
+    monkeypatch.setattr(llm, "anthropic", object())
     monkeypatch.setattr(llm, "anthropic_client", None)
     out = list(llm._stream_claude([{"role": "user", "content": "hi"}]))
     assert "ANTHROPIC_API_KEY" in out[0]
