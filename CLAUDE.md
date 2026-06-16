@@ -528,7 +528,14 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 33. ⛔ **[Image Gen] พักไว้ — free tier limit=0 ทุกโมเดล** → ใช้ได้เมื่อเปิด billing (โค้ดพร้อมแล้ว ดู section Image Generation)
 34. 🧪 **ขยาย classifier ค้นเว็บตามบริบท + Gemini grounding ทุก call** — เริ่มไว้ 2026-06-11 ยังเขียน test ไม่เสร็จ
 35. ✅ **[Model Picker] dropdown เลือกโมเดล + effort + thinking + provider Kimi (2026-06-15)** — ดู section Model Picker, deployed `4f3a874`. **ค้าง: ใส่ `ANTHROPIC_API_KEY`/`MOONSHOT_API_KEY` ใน NAS `.env` → recreate** เพื่อปลดล็อก Claude/Kimi ใน dropdown
-36. 🧹 **(optional) คืน agent timeline ใน React** — ตัด `fab-agent` ทำให้ overlay timeline หาย; ถ้าอยากได้ step-by-step กลับมาต้อง parse `agent` SSE events ใน `app.tsx`
+36. ✅ **[Agent] คืน agent timeline ใน React (2026-06-16)** — `utils/agentsteps.ts` parse `agent` SSE events → `AgentTimeline` ครบ 3 SSE loop, verified prod (thinking→tool_call→tool_result→answering)
+37. ✅ **[Overlay→React] composer helpers + dream stats (2026-06-17, DEVLOG #6)** — token counter (`utils/tokencount.ts`) + draft autosave (`utils/draft.ts`) + slash prompts (`utils/slash.ts`) + dream stats card (`utils/dreamstats.ts`) ย้ายเข้า React, overlay เดิม gate ด้วย `__hwReactChatBox` (enhanced.js 4 guards). deployed `c3432cd`
+
+## ⏭️ ทำต่อ session หน้า (ค้างไว้ 2026-06-17)
+- 👀 **เปิด `ai.pawinhome.com` hard-refresh เช็ค UI จริง** (ยัง verify แค่ logic/build/deploy/gating — ไม่เคยเห็นบนจอ): พิมพ์ `/` → slash menu โผล่ + ลูกศร/Enter เลือก · พิมพ์ข้อความ → token pill มุมขวาบน textarea · พิมพ์ค้างแล้ว reload → draft กลับมา · การ์ด Sleep ใน sidebar ขึ้น count จริง (ไม่ใช่ 40%)
+- 🧹 **port overlay ตัวใหญ่ที่เหลือเข้า React** (pattern เดิม: pure util + vitest → wire → gate `__hwReactChatBox`): Home Panel FAB (System/NAS/Docker/PC/WoL), Export PNG (`doExport`/html2canvas), Global search Ctrl+Shift+F, File Manager §18 (upload PDF/DOCX/XLSX/รูป)
+- 🔐 **off-site GitHub backup ให้ `~/appscript.ui`** — ตอนนี้ remote = NAS bare repo เท่านั้น (`nas:/var/services/homes/pawin/git/appscript.ui.git`). GitHub ต้องสร้าง private repo + เพิ่ม deploy key เอง (key ที่ Mac มีผูก `hybrid-ai-workspace` ตัวเดียว, ไม่มี `gh`/token)
+- 🧹 เคลียร์ WIP `components/` ใน appscript.ui (untracked, ไม่ได้ import — ใช้หรือลบ) · quality gate ฝั่ง recall (optional)
 
 ## ✅ Admin unlock endpoint (2026-06-01)
 `POST /api/admin/unlock` — ล้าง auth-fail lockout สำหรับ IP ที่ระบุ (LAN/loopback เท่านั้น, 403 ถ้ามาจาก Cloudflare/public)
