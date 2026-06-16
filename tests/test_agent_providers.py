@@ -183,3 +183,73 @@ class TestGeminiAgentStreamingAndTools:
         text = "".join(p for k, p in results if k == "chunk")
         assert "Gemini agent error" in text          # ไม่ retry
         assert len(sent) == 1
+
+
+class TestRunAgentFcLoop:
+    """item E: loop กลาง provider-agnostic (_run_agent_fc) + adapter
+    Gemini/LMStudio share loop เดียวกัน — ทดสอบด้วย fake adapter"""
+
+    class _FakeAdapter:
+        name = "Fake"
+        def __init__(self, scripts, synth="SYNTH"):
+            self.scripts = scripts
+            self.i = 0
+            self.synth_text = synth
+            self.results_log = []
+        def step(self):
+            out = self.scripts[self.i]
+            self.i += 1
+            for item in out:
+                yield item
+        def add_tool_results(self, results):
+            self.results_log.append(results)
+        def synthesize(self):
+            yield ("text", self.synth_text)
+
+    def test_runs_tool_then_streams_answer(self):
+        from agents.orchestrator import _run_agent_fc, ToolCall
+        adapter = self._FakeAdapter([
+            [("call", ToolCall("web_search", {"q": "x"}))],   # step1 → tool call
+            [("text", "โต"), ("text", "เกียว")],               # step2 → คำตอบ 2 chunk
+        ])
+        with patch("agents.orchestrator.execute_tool", return_value="RESULT"):
+            results = _collect(_run_agent_fc(adapter, max_steps=4))
+        chunks = [p for k, p in results if k == "chunk"]
+        events = [p for k, p in results if k == "event"]
+        assert "โต" in chunks and "เกียว" in chunks                     # streamed
+        assert any(e.get("type") == "tool_call" and e["name"] == "web_search" for e in events)
+        assert any(e.get("type") == "tool_result" for e in events)
+        assert adapter.results_log and adapter.results_log[0][0][1] == "RESULT"
+
+    def test_no_tool_call_returns_answer_directly(self):
+        from agents.orchestrator import _run_agent_fc
+        adapter = self._FakeAdapter([[("text", "ตอบเลย")]])
+        results = _collect(_run_agent_fc(adapter, max_steps=4))
+        chunks = "".join(p for k, p in results if k == "chunk")
+        assert chunks == "ตอบเลย"
+
+    def test_max_steps_then_synthesize(self):
+        from agents.orchestrator import _run_agent_fc, ToolCall
+        adapter = self._FakeAdapter(
+            [[("call", ToolCall("t", {}))] for _ in range(2)], synth="สรุปท้าย")
+        with patch("agents.orchestrator.execute_tool", return_value="r"):
+            results = _collect(_run_agent_fc(adapter, max_steps=2))
+        chunks = "".join(p for k, p in results if k == "chunk")
+        events = [p for k, p in results if k == "event"]
+        assert "สรุปท้าย" in chunks
+        assert any(e.get("type") == "max_steps_reached" for e in events)
+
+    def test_error_in_step_surfaces_with_provider_name(self):
+        from agents.orchestrator import _run_agent_fc
+
+        class BoomAdapter:
+            name = "Boom"
+            def step(self):
+                raise RuntimeError("kaboom")
+                yield  # pragma: no cover
+            def add_tool_results(self, r): pass
+            def synthesize(self): yield ("text", "")
+
+        results = _collect(_run_agent_fc(BoomAdapter(), max_steps=2))
+        chunks = "".join(p for k, p in results if k == "chunk")
+        assert "Boom agent error" in chunks and "kaboom" in chunks

@@ -236,7 +236,7 @@ def test_agent_llm_error_yields_error_event(monkeypatch):
     kinds = [e[1]["type"] for e in events if e[0] == "event"]
     chunks = [e[1] for e in events if e[0] == "chunk"]
     assert "error" in kinds
-    assert chunks[0].startswith("❌ Agent error")
+    assert chunks[0].startswith("❌ LM Studio agent error")  # unified loop → provider-named
 
 
 def test_agent_bad_tool_arguments_default_empty(monkeypatch):

@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import time
+from dataclasses import dataclass, field
 from typing import Generator, Any
 
 from .tools import execute_tool, get_openai_tools, get_gemini_tools, list_tools
@@ -199,6 +200,166 @@ def run_agent(
         yield ("chunk", f"❌ ไม่รู้จัก agent provider: {provider}")
 
 
+# ── Unified function-calling agent loop (item E) ─────────────────────────────
+# Gemini + LM Studio share loop เดียวกัน — ต่างแค่ adapter (วิธี generate +
+# format tool-result). Ollama ReAct เป็นคนละ paradigm เก็บแยก
+
+@dataclass
+class ToolCall:
+    name: str
+    args: dict = field(default_factory=dict)
+    id: str = ""
+
+
+def _run_agent_fc(adapter, max_steps: int) -> Generator[tuple[str, Any], None, None]:
+    """loop กลาง provider-agnostic: thinking → generate → ถ้ามี tool call รัน
+    แล้ววนต่อ, ไม่มี = คำตอบสุดท้าย (stream). ครบ max_steps → บังคับ synthesize.
+    adapter ต้องมี: .name, .step()→yield ('text',str)|('call',ToolCall),
+    .add_tool_results(list[(ToolCall,str)]), .synthesize()→yield ('text',str)"""
+    for step in range(max_steps):
+        yield ("event", {"type": "thinking", "step": step + 1})
+        logger.info(f"[Agent/{adapter.name}] step {step+1}/{max_steps}")
+        calls: list[ToolCall] = []
+        answered = False
+        try:
+            for kind, payload in adapter.step():
+                if kind == "call":
+                    calls.append(payload)
+                elif kind == "text" and payload:
+                    if not answered:
+                        yield ("event", {"type": "answering"})
+                        answered = True
+                    yield ("chunk", payload)
+        except Exception as e:
+            logger.exception(f"[Agent/{adapter.name}] step failed")
+            yield ("event", {"type": "error", "message": str(e)})
+            yield ("chunk", f"❌ {adapter.name} agent error: {e}")
+            return
+
+        if not calls:
+            if not answered:
+                yield ("chunk", "(agent ไม่มีคำตอบ)")
+            return
+
+        results: list[tuple[ToolCall, str]] = []
+        for call in calls:
+            ev = {"type": "tool_call", "name": call.name, "args": call.args}
+            if call.id:
+                ev["id"] = call.id
+            yield ("event", ev)
+            result = execute_tool(call.name, call.args)
+            rev = {"type": "tool_result", "name": call.name, "preview": result[:300], "length": len(result)}
+            if call.id:
+                rev["id"] = call.id
+            yield ("event", rev)
+            results.append((call, result))
+        adapter.add_tool_results(results)
+
+    yield ("event", {"type": "max_steps_reached"})
+    answered = False
+    try:
+        for kind, payload in adapter.synthesize():
+            if kind == "text" and payload:
+                answered = True
+                yield ("chunk", payload)
+        if not answered:
+            yield ("chunk", "(ไม่มีคำตอบ)")
+    except Exception as e:
+        yield ("chunk", f"❌ Final synthesis failed: {e}")
+
+
+class _GeminiAdapter:
+    name = "Gemini"
+
+    def __init__(self, chat, last_user):
+        self.chat = chat
+        self._pending = last_user      # str (step1/synth) | list[Part] (หลัง tool)
+
+    def step(self):
+        for chunk in _gemini_stream_with_retry(self.chat, self._pending):
+            for part in _chunk_parts(chunk):
+                fc = getattr(part, "function_call", None)
+                if fc:
+                    yield ("call", ToolCall(name=fc.name, args=dict(fc.args) if fc.args else {}))
+                    continue
+                txt = getattr(part, "text", None)
+                if txt:
+                    yield ("text", txt)
+
+    def add_tool_results(self, results):
+        # list[Part] ตรงๆ — SDK ห่อเป็น Content(role=user) เอง (ห้ามส่ง types.Content)
+        from google.genai import types as genai_types
+        self._pending = [
+            genai_types.Part.from_function_response(name=c.name, response={"result": r})
+            for c, r in results
+        ]
+
+    def synthesize(self):
+        for chunk in _gemini_stream_with_retry(self.chat, _FORCE_SYNTH_PROMPT):
+            for part in _chunk_parts(chunk):
+                txt = getattr(part, "text", None)
+                if txt:
+                    yield ("text", txt)
+
+
+class _LMStudioAdapter:
+    name = "LM Studio"
+
+    def __init__(self, client, model, messages, tools_schema):
+        self.client = client
+        self.model = model
+        self.messages = messages
+        self.tools = tools_schema
+
+    def step(self):
+        # non-stream ตอน detect tool (OpenAI stream tool_call args เป็นชิ้น ยุ่ง)
+        response = self.client.chat.completions.create(
+            model=self.model, messages=self.messages, tools=self.tools,
+            tool_choice="auto", temperature=0.3, stream=False,
+        )
+        msg = response.choices[0].message
+        tool_calls = getattr(msg, "tool_calls", None) or []
+        if not tool_calls:
+            mf = _MarkerFilter()
+            final = (mf.feed(msg.content or "") + mf.flush()).strip()
+            yield ("text", final or "(agent ไม่มีคำตอบ)")
+            return
+        self.messages.append({
+            "role": "assistant", "content": msg.content or "",
+            "tool_calls": [
+                {"id": tc.id, "type": "function",
+                 "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                for tc in tool_calls
+            ],
+        })
+        for tc in tool_calls:
+            try:
+                args = json.loads(tc.function.arguments or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            yield ("call", ToolCall(name=tc.function.name, args=args, id=tc.id))
+
+    def add_tool_results(self, results):
+        for call, result in results:
+            self.messages.append({"role": "tool", "tool_call_id": call.id,
+                                  "name": call.name, "content": result})
+
+    def synthesize(self):
+        self.messages.append({"role": "user", "content": _FORCE_SYNTH_PROMPT})
+        stream = self.client.chat.completions.create(
+            model=self.model, messages=self.messages, temperature=0.3, stream=True)
+        mf = _MarkerFilter()
+        for chunk in stream:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                out = mf.feed(delta)
+                if out:
+                    yield ("text", out)
+        tail = mf.flush()
+        if tail:
+            yield ("text", tail)
+
+
 # ── Gemini path ──────────────────────────────────────────────────────────────
 
 def _run_agent_gemini(
@@ -237,82 +398,8 @@ def _run_agent_gemini(
         history=history,
     )
 
-    current_prompt = last_user
-
-    for step in range(max_steps):
-        yield ("event", {"type": "thinking", "step": step + 1})
-        logger.info(f"[Agent/Gemini] step {step+1}/{max_steps}")
-
-        # stream response: แยก function_call ออกจาก text — ถ้าไม่มี tool call
-        # = คำตอบสุดท้าย → stream chunk ออกเลย (A); error ชั่วคราว → retry (F)
-        fn_calls = []
-        answered = False
-        try:
-            for chunk in _gemini_stream_with_retry(chat, current_prompt):
-                for part in _chunk_parts(chunk):
-                    fc = getattr(part, "function_call", None)
-                    if fc:
-                        fn_calls.append(fc)
-                        continue
-                    txt = getattr(part, "text", None)
-                    if txt:
-                        if not answered:
-                            yield ("event", {"type": "answering"})
-                            answered = True
-                        yield ("chunk", txt)
-        except Exception as e:
-            logger.exception("[Agent/Gemini] API call failed")
-            yield ("event", {"type": "error", "message": str(e)})
-            yield ("chunk", f"❌ Gemini agent error: {e}")
-            return
-
-        if not fn_calls:
-            if not answered:
-                yield ("chunk", "(agent ไม่มีคำตอบ)")
-            return
-
-        # รัน tools แล้วส่ง results กลับ
-        tool_responses = []
-        for fc in fn_calls:
-            tool_name = fc.name
-            args = dict(fc.args) if fc.args else {}
-
-            yield ("event", {"type": "tool_call", "name": tool_name, "args": args})
-
-            result = execute_tool(tool_name, args)
-            yield ("event", {
-                "type": "tool_result",
-                "name": tool_name,
-                "preview": result[:300],
-                "length": len(result),
-            })
-
-            from google.genai import types as genai_types
-            tool_responses.append(
-                genai_types.Part.from_function_response(
-                    name=tool_name,
-                    response={"result": result},
-                )
-            )
-
-        # ส่ง tool-response เป็น list[Part] ตรงๆ — SDK ห่อเป็น Content(role=user)
-        # ให้เอง. ห้ามส่ง types.Content (SDK reject "valid part type ... Content")
-        current_prompt = tool_responses
-
-    # ครบ max_steps → บังคับสรุป (stream เช่นกัน — A)
-    yield ("event", {"type": "max_steps_reached"})
-    answered = False
-    try:
-        for chunk in _gemini_stream_with_retry(chat, _FORCE_SYNTH_PROMPT):
-            for part in _chunk_parts(chunk):
-                txt = getattr(part, "text", None)
-                if txt:
-                    answered = True
-                    yield ("chunk", txt)
-        if not answered:
-            yield ("chunk", "(ไม่มีคำตอบ)")
-    except Exception as e:
-        yield ("chunk", f"❌ Final synthesis failed: {e}")
+    # loop กลาง (item E) — streaming (A) + retry (F) + Content-fix อยู่ใน _GeminiAdapter
+    yield from _run_agent_fc(_GeminiAdapter(chat, last_user), max_steps)
 
 
 def _split_messages_for_gemini(messages: list[dict]) -> tuple[str, list, str]:
@@ -374,77 +461,8 @@ def _run_agent_lmstudio(
 
     tools_schema = get_openai_tools()
 
-    for step in range(max_steps):
-        yield ("event", {"type": "thinking", "step": step + 1})
-        logger.info(f"[Agent/LMStudio] step {step+1}/{max_steps}")
-
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=tools_schema,
-                tool_choice="auto",
-                temperature=0.3,
-                stream=False,
-            )
-        except Exception as e:
-            logger.exception("[Agent/LMStudio] LLM call failed")
-            yield ("event", {"type": "error", "message": str(e)})
-            yield ("chunk", f"❌ Agent error: {e}")
-            return
-
-        msg = response.choices[0].message
-        tool_calls = getattr(msg, "tool_calls", None) or []
-
-        if not tool_calls:
-            yield ("event", {"type": "answering"})
-            mf = _MarkerFilter()
-            final = (mf.feed(msg.content or "") + mf.flush()).strip()
-            yield ("chunk", final or "(agent ไม่มีคำตอบ)")
-            return
-
-        messages.append({
-            "role": "assistant",
-            "content": msg.content or "",
-            "tool_calls": [
-                {"id": tc.id, "type": "function",
-                 "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
-                for tc in tool_calls
-            ],
-        })
-
-        for tc in tool_calls:
-            tool_name = tc.function.name
-            try:
-                args = json.loads(tc.function.arguments or "{}")
-            except json.JSONDecodeError:
-                args = {}
-
-            yield ("event", {"type": "tool_call", "name": tool_name, "args": args, "id": tc.id})
-            result = execute_tool(tool_name, args)
-            yield ("event", {"type": "tool_result", "name": tool_name, "id": tc.id,
-                              "preview": result[:300], "length": len(result)})
-            messages.append({"role": "tool", "tool_call_id": tc.id,
-                              "name": tool_name, "content": result})
-
-    yield ("event", {"type": "max_steps_reached"})
-    messages.append({"role": "user",
-                     "content": "ตอบคำถามจากข้อมูล tools ที่ได้มาให้ครบถ้วน — เก็บรายละเอียดสำคัญ ตัวเลข และแหล่งที่มาให้ครบ ความยาวให้เหมาะกับคำถาม (user ขอละเอียด = ตอบละเอียด) ห้ามเรียก tool เพิ่ม"})
-    try:
-        final_stream = client.chat.completions.create(
-            model=model, messages=messages, temperature=0.3, stream=True)
-        mf = _MarkerFilter()
-        for chunk in final_stream:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                out = mf.feed(delta)
-                if out:
-                    yield ("chunk", out)
-        tail = mf.flush()
-        if tail:
-            yield ("chunk", tail)
-    except Exception as e:
-        yield ("chunk", f"❌ Final synthesis failed: {e}")
+    # loop กลาง (item E) — provider quirks (role:tool, MarkerFilter) อยู่ใน _LMStudioAdapter
+    yield from _run_agent_fc(_LMStudioAdapter(client, model, messages, tools_schema), max_steps)
 
 
 # ── Ollama ReAct path ─────────────────────────────────────────────────────────
