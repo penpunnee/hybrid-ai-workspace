@@ -533,13 +533,24 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 37. ✅ **[Overlay→React] composer helpers + dream stats (2026-06-17, DEVLOG #6)** — token counter (`utils/tokencount.ts`) + draft autosave (`utils/draft.ts`) + slash prompts (`utils/slash.ts`) + dream stats card (`utils/dreamstats.ts`) ย้ายเข้า React, overlay เดิม gate ด้วย `__hwReactChatBox` (enhanced.js 4 guards). deployed `c3432cd`
 38. ✅ **[Overlay→React] Home Panel (2026-06-17)** — System(RAM/ChromaDB/Skills)+NAS disk+Docker+PC ping+Wake PC/Ping NAS ย้ายเข้า React (`utils/homepanel.ts` pure view-models + 13 vitest → ปุ่ม 🏠 ใน header + modal ใน `app.tsx`). enhanced.js §14 gate ด้วย `__hwReactChatBox` + ลบปุ่ม `fab-home` overlay กัน trigger ซ้ำ. overlay bump `?v=20260617-home`. **Export เดิมพบว่า port เสร็จอยู่แล้ว** (`exportChat`+Ctrl+E+💾 — todo เก่าคลาด)
 
-## ⏭️ ทำต่อ session หน้า (ค้างไว้ 2026-06-17)
+## 📌 session 2026-06-17/18 — File Manager §18 + กู้ prod + watchdog (สรุป)
+- ✅ **File Manager §18 → React** (`843eca2` / source `02ac73d`): `utils/filemanager.ts` `classifyUpload`+11 vitest (89/89), ขยาย attach รองรับ PDF/DOCX/XLSX + index ChromaDB + ปุ่ม 📷 + drag&drop ลง composer, gate overlay §18, `?v=20260617-filemgr`. **→ port overlay→React ครบทุกตัวแล้ว**
+- 🔴→✅ **prod ล่ม (`ai-backend-1` หายรอบ 2) + fix ถาวร** (`4536e57`): กู้กลับ + `restart:always` + healthcheck + `backend-watchdog` (loop 60s `compose up -d hybrid-ai`). recovery path verified จริง. ดู Known Quirks "ai-backend-1 หายซ้ำ"
+- ⚠️ ค้าง verify ด้วยตา: File Manager drag&drop/กล้อง/index toast (verify แค่ build+test+prod-asset) · watchdog boot-race (recreate เกิน 1 ครั้งตอน boot ไม่ลูป — refine ด้วย `sleep 90` ก่อน loop แรกถ้าอยากเนียน)
+
+## ⏭️ ทำต่อ session หน้า (อัปเดต 2026-06-18) — เรียงตามคุ้มสุด
 - ✅ **[verified UI จริงบน browser 2026-06-17]** ขับ Chrome (playwright-core, ทดสอบผ่าน LAN `192.168.51.49:8080` = bypass auth) เช็คทั้ง 4 ผ่านหมด: slash menu (พิมพ์ `/` → 7 รายการ, ArrowDown+Enter เลือก "หา bug" ลง input จริง) · token pill ("45 ตัวอักษร · ~12 tokens" มุมขวาบน) · draft restore (`hw_draft_voice_default` → reload คืนค่า) · **Sleep card = Light 22 / REM 2 / Deep 2 ตรง `/api/dream/report` เป๊ะ (ไม่ใช่ 40/40/20%)**. bundle prod = `index-Cn7b8BSq.js` + overlay `?v=20260617`
   - ✅ **[แก้แล้ว 2026-06-17, deployed `02ac0c7`]** `static/enhanced.js:852` `fetch("/config")` → 404 → แก้เป็น `/api/config` (route จริง prefix `/api`, `routers/system.py:61`) + bump overlay `?v=20260617-cfgfix`. FAB Vault โผล่ตาม `OBSIDIAN_VAULT_PATH` ได้แล้ว. verified prod ผ่าน Cloudflare Tunnel. ไม่กระทบ React (ใช้ `/api/config` ถูกอยู่แล้ว)
   - ℹ️ modal "Dream Threshold Alert (memory เกิน 100)" เด้งบังจอตอนโหลด — เป็น modal จริงตามดีไซน์ (มี memory >100 จริง), ปุ่ม "ปิด"/"🌙 รัน Dream เลย"
 - ✅ **port overlay ตัวใหญ่ที่เหลือเข้า React เสร็จครบ** (pattern: pure util + vitest → wire → gate `__hwReactChatBox`): ~~Home Panel FAB~~ ✅ (#38) · ~~Export~~ ✅ · ~~Global search modal Ctrl+Shift+F~~ ✅ (`utils/globalsearch.ts`, deployed `390d031` — แก้ field `content`/`timestamp`→`snippet`/`created_at` ด้วย) · ~~File Manager §18~~ ✅ (deployed `843eca2` 2026-06-17 — `utils/filemanager.ts` `classifyUpload`+11 vitest; ขยาย attach รองรับ PDF/DOCX/XLSX + index ChromaDB `/api/documents/upload` สำหรับเอกสารหนัก + ปุ่ม 📷 กล้อง + drag&drop ลง composer; โมเดล "ขยาย attach เดิม" ไม่ทำ document side-panel; overlay `?v=20260617-filemgr`)
-- 🔐 **off-site GitHub backup ให้ `~/appscript.ui`** — ตอนนี้ remote = NAS bare repo เท่านั้น (`nas:/var/services/homes/pawin/git/appscript.ui.git`). GitHub ต้องสร้าง private repo + เพิ่ม deploy key เอง (key ที่ Mac มีผูก `hybrid-ai-workspace` ตัวเดียว, ไม่มี `gh`/token)
-- 🧹 เคลียร์ WIP `components/` ใน appscript.ui (untracked, ไม่ได้ import — ใช้หรือลบ) · quality gate ฝั่ง recall (optional)
+1. 🔑 **ใส่ key ใน NAS `.env` → recreate** (เช็คจริง 2026-06-18: ทั้ง 3 ยัง**ว่าง**) — งานเร็วสุด ไม่ต้องแก้โค้ด:
+   - `ANTHROPIC_API_KEY` → ปลด Claude ใน Model picker · `MOONSHOT_API_KEY` → ปลด Kimi K2.6 · `HA_URL`+`HA_TOKEN` → Agent สั่ง Home Assistant
+   - (GEMINI + GOOGLE_SEARCH ตั้งแล้ว ✅) · recreate: `cd /var/services/homes/pawin/ui && sudo docker compose up -d hybrid-ai`
+2. 🔐 **off-site GitHub backup ให้ `~/appscript.ui`** — remote ตอนนี้ = NAS bare repo ตัวเดียว (`nas:/var/services/homes/pawin/git/appscript.ui.git`) → NAS พัง = source หาย. ต้องสร้าง GitHub private repo + deploy key (Mac ไม่มี `gh`/token, key ที่มีผูก `hybrid-ai-workspace` ตัวเดียว)
+3. 🧠 **เลือก local model ตัวจบ** — `.env` ตอนนี้ `LMSTUDIO_CHAT_MODEL=deepseek-r1-0528-qwen3-8b`. Qwen3.5 เคยทดสอบแล้ว**ไทย leak จีน/รัสเซีย + ปิด thinking ผ่าน API ไม่ได้ → timeout**. candidate: Typhoon / Qwen2.5-Instruct
+4. 🧪 **verify + ปิดงานค้าง**: ดู File Manager drag&drop/กล้อง/index ด้วยตาบน browser · #34 web-search grounding classifier (test ยังไม่เสร็จ) · เคลียร์ WIP `components/` ใน appscript.ui (untracked ไม่ได้ import) · quality gate ฝั่ง recall (optional)
+5. 💾 **ยืนยัน infra**: DSM `db_backup.sh` รายวัน 03:30 มีจริงไหม (เช็คไม่ขึ้นเมื่อ 2026-06-18) · `poppler-utils` บน NAS (OCR PDF scan — เช็คไม่ได้ตอน backend down)
+- ⛔ พักไว้: Image Gen (free tier limit=0 ต้องเปิด billing) · fine-tune (รอ 👍 ~200-500)
 
 ## ✅ Admin unlock endpoint (2026-06-01)
 `POST /api/admin/unlock` — ล้าง auth-fail lockout สำหรับ IP ที่ระบุ (LAN/loopback เท่านั้น, 403 ถ้ามาจาก Cloudflare/public)
