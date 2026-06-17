@@ -106,3 +106,19 @@
 - **deploy:** frontend-only — static เสิร์ฟจาก disk → git pull พอ ไม่ต้อง restart container. vitest รวม utils/ **55 ผ่าน** (10 files)
 - **bundle:** index-Cn7b8BSq.js · enhanced.js ?v=20260617-dream
 - **เหลือ overlay ที่ยังไม่ port (optional):** Home Panel FAB (System/NAS/Docker/PC/WoL), Export PNG, Global search (Ctrl+Shift+F), File Manager §18 — ตัวใหญ่/UI เยอะ
+
+---
+
+## [2026-06-17] SECTION #7 (แก้บั๊ก enhanced.js เรียก /config → 404)
+**เป้าหมาย/อาการ:** bug ที่จดไว้ตอน browser-verify SECTION #6 — `static/enhanced.js` เรียก `/config` ได้ 404 → เข้า `.catch()` → FAB Vault ไม่โผล่ผ่านเส้นนี้
+
+### Breadcrumb Ledger
+| # | สมมติฐาน/สิ่งที่ลอง | วิธี | ผล | ผ่าน? |
+|---|---------------------|------|-----|-------|
+| repro | grep config fetch ใน enhanced.js | — | บรรทัด 852 = `fetch("/config")` · จุดอื่น (1487/2818) = `/api/config` → 852 ตกหล่น prefix `/api` | ✅ |
+| verify route | grep backend | routers/system.py:61 `@router.get("/config")` (router prefix `/api`) คืน `has_vault` จาก `OBSIDIAN_VAULT_PATH` → route จริง = `/api/config` | ✅ ยืนยัน path ผิด |
+| fix | แก้ string เดียว | enhanced.js:852 `/config`→`/api/config` + bump index.html `?v=20260617-home`→`-cfgfix` | grep ไม่เหลือ `/config` ผิด, จุดอื่นไม่โดนแตะ | ✅ |
+| deploy | push + DSM pull (off-LAN) | — | commit `02ac0c7` · verified prod ผ่าน Cloudflare Tunnel: enhanced.js:852 = `/api/config`, index เสิร์ฟ `?v=...-cfgfix` | ✅ end-to-end |
+
+- **Root cause:** overlay เก่าเขียน path ขาด prefix `/api` (backend router mount ที่ `/api`) — กระทบเฉพาะ FAB Vault visibility เส้นนี้ ไม่กระทบ React (ใช้ `/api/config` ถูกอยู่แล้ว)
+- **surgical:** แตะ 2 บรรทัด (enhanced.js:852 + index.html cache-bust) เท่านั้น
