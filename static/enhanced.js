@@ -849,7 +849,7 @@
 
   // โหลด config จาก server — เปิดปุ่มเฉพาะที่พร้อมใช้จริง
   // (fab-claude ตัดออกแล้ว 2026-06-15 — เลือก Claude ผ่าน Model picker ใน React แทน)
-  fetch("/config").then(r => r.json()).then(cfg => {
+  fetch("/api/config").then(r => r.json()).then(cfg => {
     if (cfg.has_vault) {
       const b = document.getElementById("fab-vault");
       if (b) b.style.display = "";
