@@ -2250,6 +2250,7 @@
   // 18. FILE MANAGER — 📎 upload PDF/DOCX/XLSX/image + doc list panel
   // ─────────────────────────────────────────────────────────────────────────────
   (function () {
+    if (window.__hwReactChatBox) return;   // ported เข้า React แล้ว (utils/filemanager.ts, 2026-06-17) — attach + index + กล้อง + drag&drop
     // ── styles ──
     const css = `
       #enh-file-bar {
