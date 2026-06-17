@@ -2,9 +2,18 @@ services:
   hybrid-ai:
     build: .
     container_name: ai-backend-1
-    restart: unless-stopped
+    # always (เดิม unless-stopped) — เคย "หาย" 2 ครั้ง (2026-06-14/15, 2026-06-17) ตอน Container Manager restart
+    # เหมือน chromadb: always = กลับมาเองแม้ exit/หลัง daemon restart. คู่กับ backend-watchdog ด้านล่าง (กันเคส container ถูก "ลบ" ที่ restart policy ช่วยไม่ได้)
+    restart: always
     ports:
       - "8080:8000"
+    healthcheck:
+      # ใช้ python urllib (มีแน่ใน image FastAPI) ยิง /api/config (open path ไม่ต้อง auth) บนพอร์ตภายใน 8000
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/config',timeout=5).status==200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s   # เผื่อ boot upsert skills เข้า ChromaDB (~30-60s)
     volumes:
       - ${NAS_DATA_PATH:-./data}/chat_history.db:/app/chat_history.db
       - ./identity.json:/app/identity.json
@@ -57,6 +66,29 @@ services:
       - 8.8.8.8
     volumes:
       - /var/services/homes/pawin/.cloudflared:/etc/cloudflared
+
+  # Watchdog: กัน ai-backend-1 "หาย/ดับ" ซ้ำ (Container Manager restart ลบ container — restart policy ช่วยไม่ได้)
+  # ทุก 60s ถ้า ai-backend-1 ไม่ running → `docker compose up -d hybrid-ai` (idempotent: recreate ถ้าหาย, start ถ้า stopped, no-op ถ้าปกติ)
+  # mount project dir ที่ path เดียวกับ host (/volume1/homes/pawin/ui) → compose-in-container resolve bind-mount เป็น host path ถูก
+  backend-watchdog:
+    image: docker:cli
+    container_name: ai-backend-watchdog
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /volume1/homes/pawin/ui:/volume1/homes/pawin/ui
+    working_dir: /volume1/homes/pawin/ui
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "[watchdog] started — เฝ้า ai-backend-1 ทุก 60s";
+        while true; do
+          if [ -z "$$(docker ps -q -f name=^ai-backend-1$$ -f status=running)" ]; then
+            echo "[watchdog] $$(date -u +%FT%TZ) ai-backend-1 ไม่ running → docker compose up -d hybrid-ai";
+            docker compose up -d hybrid-ai 2>&1 || echo "[watchdog] up failed";
+          fi;
+          sleep 60;
+        done
 
 volumes:
   chroma_data:
