@@ -623,7 +623,8 @@
   });
 
   document.addEventListener("keydown", (e) => {
-    if (e.ctrlKey && e.shiftKey && e.key === "F") {
+    // Global Search ported เข้า React แล้ว (utils/globalsearch.ts, 2026-06-17) — React owns Ctrl+Shift+F
+    if (!window.__hwReactChatBox && e.ctrlKey && e.shiftKey && e.key === "F") {
       e.preventDefault();
       searchOverlay.classList.toggle("open");
       if (searchOverlay.classList.contains("open"))
@@ -845,6 +846,9 @@
   if (window.__hwReactChatBox) {
     const _fh = document.getElementById("fab-home");
     if (_fh) _fh.remove();
+    // Global Search ported เข้า React แล้ว (utils/globalsearch.ts, 2026-06-17) — ตัดปุ่ม 🔍 overlay
+    const _fs = document.getElementById("fab-search");
+    if (_fs) _fs.remove();
   }
 
   // โหลด config จาก server — เปิดปุ่มเฉพาะที่พร้อมใช้จริง
@@ -856,7 +860,7 @@
     }
   }).catch(() => {});
 
-  document.getElementById("fab-search").addEventListener("click", () => {
+  document.getElementById("fab-search")?.addEventListener("click", () => {
     searchOverlay.classList.toggle("open");
     if (searchOverlay.classList.contains("open"))
       setTimeout(() => gsInput.focus(), 50);
