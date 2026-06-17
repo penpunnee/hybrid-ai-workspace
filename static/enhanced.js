@@ -840,6 +840,13 @@
   `;
   document.body.appendChild(toolbar);
 
+  // Home Panel ported เข้า React แล้ว (utils/homepanel.ts, 2026-06-17) — ตัดปุ่ม 🏠 overlay
+  // ทิ้งเพื่อกัน trigger ซ้ำ (React มีปุ่ม 🏠 ใน header). section 14 ด้านล่าง gate ด้วย flag เดียวกัน
+  if (window.__hwReactChatBox) {
+    const _fh = document.getElementById("fab-home");
+    if (_fh) _fh.remove();
+  }
+
   // โหลด config จาก server — เปิดปุ่มเฉพาะที่พร้อมใช้จริง
   // (fab-claude ตัดออกแล้ว 2026-06-15 — เลือก Claude ผ่าน Model picker ใน React แทน)
   fetch("/config").then(r => r.json()).then(cfg => {
@@ -1317,11 +1324,13 @@
     _hwRefresh();
   }
 
-  _fabHome && _fabHome.addEventListener("click", _hwToggle);
-  document.addEventListener("click", (e) => {
-    if (_hwOpen && !hcPanel.contains(e.target) && e.target !== _fabHome && !(_fabHome && _fabHome.contains(e.target)))
-      _hwClose();
-  });
+  if (!window.__hwReactChatBox) {   // ported เข้า React แล้ว (utils/homepanel.ts, 2026-06-17)
+    _fabHome && _fabHome.addEventListener("click", _hwToggle);
+    document.addEventListener("click", (e) => {
+      if (_hwOpen && !hcPanel.contains(e.target) && e.target !== _fabHome && !(_fabHome && _fabHome.contains(e.target)))
+        _hwClose();
+    });
+  }
 
   async function _hwRefresh() {
     const h = _authToken ? { "x-auth-token": _authToken } : {};
