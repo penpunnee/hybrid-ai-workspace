@@ -236,12 +236,16 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
             await websocket.send_json({"type": "connected", "voice": voice})
             stop = asyncio.Event()
 
+            logger.info(f"[VoiceDBG] session open slug={assistant_slug} model={GEMINI_LIVE_MODEL}")
+
             async def recv_loop():
+                _chunks = 0
                 try:
                     while not stop.is_set():
                         try:
                             msg = await asyncio.wait_for(websocket.receive_json(), timeout=60.0)
                         except asyncio.TimeoutError:
+                            logger.info(f"[VoiceDBG] recv 60s idle (chunks so far={_chunks})")
                             continue
                         t = msg.get("type", "")
                         if t == "audio":
@@ -250,19 +254,31 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                             await session.send(input=types.LiveClientRealtimeInput(
                                 media_chunks=[types.Blob(data=pcm, mime_type="audio/pcm;rate=16000")]
                             ))
+                            _chunks += 1
+                            if _chunks % 25 == 1:
+                                logger.info(f"[VoiceDBG] recv audio chunk #{_chunks}")
                         elif t == "end_turn":
+                            logger.info("[VoiceDBG] recv end_turn → send end_of_turn")
                             await session.send(input=".", end_of_turn=True)
                         elif t == "text":
                             await session.send(input=msg.get("text", ""), end_of_turn=True)
                         elif t == "close":
+                            logger.info("[VoiceDBG] recv close")
                             stop.set()
-                except (WebSocketDisconnect, Exception):
+                except WebSocketDisconnect:
+                    logger.info("[VoiceDBG] recv_loop WebSocketDisconnect")
                     stop.set()
+                except Exception as e:
+                    logger.error(f"[VoiceDBG] recv_loop EXC {type(e).__name__}: {e}")
+                    stop.set()
+                finally:
+                    logger.info(f"[VoiceDBG] recv_loop ended (total chunks={_chunks})")
 
             async def send_loop():
                 import base64
                 user_transcript = ""
                 ai_transcript = ""
+                _turns = 0
                 try:
                     async for response in session.receive():
                         if stop.is_set():
@@ -272,14 +288,23 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                 "type": "audio",
                                 "data": base64.b64encode(response.data).decode()
                             })
+                        # diagnostic: surface session-level signals จาก Gemini Live
+                        if getattr(response, "go_away", None) is not None:
+                            logger.info(f"[VoiceDBG] go_away time_left={getattr(response.go_away,'time_left',None)}")
                         sc = getattr(response, "server_content", None)
                         if sc:
+                            if getattr(sc, "interrupted", False):
+                                logger.info("[VoiceDBG] sc.interrupted")
+                            if getattr(sc, "generation_complete", False):
+                                logger.info("[VoiceDBG] sc.generation_complete")
                             events, user_delta, ai_delta = live_server_content_events(sc)
                             user_transcript += user_delta
                             ai_transcript += ai_delta
                             for evt in events:
                                 await websocket.send_json(evt)
                             if getattr(sc, "turn_complete", False):
+                                _turns += 1
+                                logger.info(f"[VoiceDBG] turn_complete #{_turns} user='{user_transcript[:40]}' ai_len={len(ai_transcript)}")
                                 await websocket.send_json({"type": "done"})
                                 if user_transcript.strip():
                                     _save_msg(asst_name, "user", user_transcript.strip(), "gemini_live", session_id)
@@ -287,15 +312,19 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                 if ai_transcript.strip():
                                     _save_msg(asst_name, "assistant", ai_transcript.strip(), "gemini_live", session_id)
                                     ai_transcript = ""
+                    logger.info(f"[VoiceDBG] send_loop: session.receive() generator ENDED (turns={_turns}, stop={stop.is_set()})")
                 except Exception as e:
-                    logger.error(f"[Voice send_loop] {type(e).__name__}: {e}")
+                    logger.error(f"[VoiceDBG] send_loop EXC {type(e).__name__}: {e}")
                     stop.set()
                     try:
                         await websocket.send_json({"type": "error", "message": str(e)})
                     except Exception:
                         pass
+                finally:
+                    logger.info(f"[VoiceDBG] send_loop ended (turns={_turns})")
 
             await asyncio.gather(recv_loop(), send_loop())
+            logger.info("[VoiceDBG] gather done → session closing")
     except WebSocketDisconnect:
         pass
     except Exception as e:
