@@ -280,39 +280,40 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                 ai_transcript = ""
                 _turns = 0
                 try:
-                    async for response in session.receive():
-                        if stop.is_set():
-                            break
-                        if response.data:
-                            await websocket.send_json({
-                                "type": "audio",
-                                "data": base64.b64encode(response.data).decode()
-                            })
-                        # diagnostic: surface session-level signals จาก Gemini Live
-                        if getattr(response, "go_away", None) is not None:
-                            logger.info(f"[VoiceDBG] go_away time_left={getattr(response.go_away,'time_left',None)}")
-                        sc = getattr(response, "server_content", None)
-                        if sc:
-                            if getattr(sc, "interrupted", False):
-                                logger.info("[VoiceDBG] sc.interrupted")
-                            if getattr(sc, "generation_complete", False):
-                                logger.info("[VoiceDBG] sc.generation_complete")
-                            events, user_delta, ai_delta = live_server_content_events(sc)
-                            user_transcript += user_delta
-                            ai_transcript += ai_delta
-                            for evt in events:
-                                await websocket.send_json(evt)
-                            if getattr(sc, "turn_complete", False):
-                                _turns += 1
-                                logger.info(f"[VoiceDBG] turn_complete #{_turns} user='{user_transcript[:40]}' ai_len={len(ai_transcript)}")
-                                await websocket.send_json({"type": "done"})
-                                if user_transcript.strip():
-                                    _save_msg(asst_name, "user", user_transcript.strip(), "gemini_live", session_id)
-                                    user_transcript = ""
-                                if ai_transcript.strip():
-                                    _save_msg(asst_name, "assistant", ai_transcript.strip(), "gemini_live", session_id)
-                                    ai_transcript = ""
-                    logger.info(f"[VoiceDBG] send_loop: session.receive() generator ENDED (turns={_turns}, stop={stop.is_set()})")
+                    # ⚠️ session.receive() yield แค่ turn เดียวแล้ว generator จบ —
+                    # ต้องวน while เรียกใหม่ทุก turn ไม่งั้น turn 2 เป็นต้นไปไม่มีใครอ่านคำตอบ
+                    while not stop.is_set():
+                        async for response in session.receive():
+                            if stop.is_set():
+                                break
+                            if response.data:
+                                await websocket.send_json({
+                                    "type": "audio",
+                                    "data": base64.b64encode(response.data).decode()
+                                })
+                            if getattr(response, "go_away", None) is not None:
+                                logger.info(f"[VoiceDBG] go_away time_left={getattr(response.go_away,'time_left',None)}")
+                            sc = getattr(response, "server_content", None)
+                            if sc:
+                                if getattr(sc, "interrupted", False):
+                                    logger.info("[VoiceDBG] sc.interrupted")
+                                events, user_delta, ai_delta = live_server_content_events(sc)
+                                user_transcript += user_delta
+                                ai_transcript += ai_delta
+                                for evt in events:
+                                    await websocket.send_json(evt)
+                                if getattr(sc, "turn_complete", False):
+                                    _turns += 1
+                                    logger.info(f"[VoiceDBG] turn_complete #{_turns} user='{user_transcript[:40]}' ai_len={len(ai_transcript)}")
+                                    await websocket.send_json({"type": "done"})
+                                    if user_transcript.strip():
+                                        _save_msg(asst_name, "user", user_transcript.strip(), "gemini_live", session_id)
+                                        user_transcript = ""
+                                    if ai_transcript.strip():
+                                        _save_msg(asst_name, "assistant", ai_transcript.strip(), "gemini_live", session_id)
+                                        ai_transcript = ""
+                        # generator ของ turn นี้จบ → วนกลับไปรับ turn ถัดไป
+                    logger.info(f"[VoiceDBG] send_loop while exited (turns={_turns}, stop={stop.is_set()})")
                 except Exception as e:
                     logger.error(f"[VoiceDBG] send_loop EXC {type(e).__name__}: {e}")
                     stop.set()
