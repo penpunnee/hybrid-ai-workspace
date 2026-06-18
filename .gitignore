@@ -14,3 +14,6 @@ server.log
 # agent skills installed via `npx skills add` (เก็บแบบ global ที่ ~/.agents — ไม่ปนกับ repo)
 .agents/
 skills-lock.json
+
+# pytest coverage artifact
+.coverage

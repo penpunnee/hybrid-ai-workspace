@@ -44,6 +44,13 @@ def live_server_content_events(sc) -> tuple[list[dict], str, str]:
     user_delta = ""
     ai_delta = ""
 
+    # barge-in / ตัดจังหวะ: Gemini Live ส่ง interrupted=True เมื่อผู้ใช้พูดแทรก
+    # หรือโมเดลถูกตัดจังหวะ — บอก UI ให้ flush คิวเสียงเก่าทันที (กันเสียง turn
+    # ถัดไปต่อท้ายคิวเก่า เล่นช้า/ทับกัน → รู้สึกเหมือนค้าง). ส่งก่อน text ของ
+    # turn ใหม่เสมอ เพื่อให้ client หยุดเสียงเก่าก่อน schedule เสียงใหม่
+    if getattr(sc, "interrupted", False):
+        events.append({"type": "interrupted"})
+
     it = getattr(sc, "input_transcription", None)
     if it and getattr(it, "text", None):
         user_delta += it.text
