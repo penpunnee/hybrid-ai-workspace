@@ -275,10 +275,13 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                     logger.info(f"[VoiceDBG] recv_loop ended (total chunks={_chunks})")
 
             async def send_loop():
-                import base64
+                import base64, time
                 user_transcript = ""
                 ai_transcript = ""
                 _turns = 0
+                _aud = 0          # นับ audio chunk ที่ Gemini ส่งออก
+                _aud_bytes = 0
+                _last_aud = 0.0   # เวลาส่ง audio ล่าสุด (วัด gap = cadence ของ Gemini)
                 try:
                     # ⚠️ session.receive() yield แค่ turn เดียวแล้ว generator จบ —
                     # ต้องวน while เรียกใหม่ทุก turn ไม่งั้น turn 2 เป็นต้นไปไม่มีใครอ่านคำตอบ
@@ -287,6 +290,16 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                             if stop.is_set():
                                 break
                             if response.data:
+                                now = time.monotonic()
+                                gap = (now - _last_aud) if _last_aud else 0.0
+                                # gap ใหญ่ระหว่าง audio chunk = Gemini ส่งเสียงไม่ต่อเนื่อง (ต้นทางขาด)
+                                if _last_aud and gap > 0.25:
+                                    logger.info(f"[VoiceDBG] audio GAP {gap*1000:.0f}ms ก่อน chunk #{_aud+1}")
+                                _last_aud = now
+                                _aud += 1
+                                _aud_bytes += len(response.data)
+                                if _aud % 50 == 1:
+                                    logger.info(f"[VoiceDBG] audio out #{_aud} ({len(response.data)}B)")
                                 await websocket.send_json({
                                     "type": "audio",
                                     "data": base64.b64encode(response.data).decode()
