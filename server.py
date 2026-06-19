@@ -229,6 +229,13 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
         system_instruction=types.Content(parts=[types.Part(text=sys_prompt)]),
         output_audio_transcription=types.AudioTranscriptionConfig(),
         input_audio_transcription=types.AudioTranscriptionConfig(),
+        # push-to-talk: ปิด automatic VAD → โมเดลตอบเฉพาะตอน client ส่ง activity_end
+        # (ไม่เดา turn จากเสียง = ไม่สับประโยค) + NO_INTERRUPTION = echo/เสียงรอบข้าง
+        # แทรกตัดคำตอบไม่ได้ (client คุม activity_start/end เอง)
+        realtime_input_config=types.RealtimeInputConfig(
+            automatic_activity_detection=types.AutomaticActivityDetection(disabled=True),
+            activity_handling=types.ActivityHandling.NO_INTERRUPTION,
+        ),
     )
 
     try:
@@ -251,15 +258,20 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                         if t == "audio":
                             import base64
                             pcm = base64.b64decode(msg["data"])
-                            await session.send(input=types.LiveClientRealtimeInput(
-                                media_chunks=[types.Blob(data=pcm, mime_type="audio/pcm;rate=16000")]
-                            ))
+                            await session.send_realtime_input(
+                                audio=types.Blob(data=pcm, mime_type="audio/pcm;rate=16000")
+                            )
                             _chunks += 1
                             if _chunks % 25 == 1:
                                 logger.info(f"[VoiceDBG] recv audio chunk #{_chunks}")
-                        elif t == "end_turn":
-                            logger.info("[VoiceDBG] recv end_turn → send end_of_turn")
-                            await session.send(input=".", end_of_turn=True)
+                        elif t == "activity_start":
+                            # push-to-talk: ผู้ใช้กดเริ่มพูด (manual VAD)
+                            logger.info("[VoiceDBG] recv activity_start")
+                            await session.send_realtime_input(activity_start=types.ActivityStart())
+                        elif t in ("activity_end", "end_turn"):
+                            # push-to-talk: ผู้ใช้ปล่อยปุ่ม → จบ turn → โมเดลตอบ
+                            logger.info("[VoiceDBG] recv activity_end")
+                            await session.send_realtime_input(activity_end=types.ActivityEnd())
                         elif t == "text":
                             await session.send(input=msg.get("text", ""), end_of_turn=True)
                         elif t == "close":
