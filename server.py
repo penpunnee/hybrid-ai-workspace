@@ -229,11 +229,11 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
         system_instruction=types.Content(parts=[types.Part(text=sys_prompt)]),
         output_audio_transcription=types.AudioTranscriptionConfig(),
         input_audio_transcription=types.AudioTranscriptionConfig(),
-        # push-to-talk: ปิด automatic VAD → โมเดลตอบเฉพาะตอน client ส่ง activity_end
-        # (ไม่เดา turn จากเสียง = ไม่สับประโยค) + NO_INTERRUPTION = echo/เสียงรอบข้าง
-        # แทรกตัดคำตอบไม่ได้ (client คุม activity_start/end เอง)
+        # hands-free: เปิด automatic VAD → Gemini จับเริ่ม/หยุดพูดจากเสียงเอง (พูดได้เลยไม่ต้องกด)
+        # กัน echo ที่ฝั่ง client (half-duplex: ปิดไมค์ตอน AI พูด) แทนการพึ่ง manual VAD.
+        # NO_INTERRUPTION = เผื่อ echo หลุดขอบ tail ก็ไม่ตัดคำตอบ AI กลางคัน (belt-and-suspenders)
         realtime_input_config=types.RealtimeInputConfig(
-            automatic_activity_detection=types.AutomaticActivityDetection(disabled=True),
+            automatic_activity_detection=types.AutomaticActivityDetection(),
             activity_handling=types.ActivityHandling.NO_INTERRUPTION,
         ),
     )
@@ -264,14 +264,11 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                             _chunks += 1
                             if _chunks % 25 == 1:
                                 logger.info(f"[VoiceDBG] recv audio chunk #{_chunks}")
-                        elif t == "activity_start":
-                            # push-to-talk: ผู้ใช้กดเริ่มพูด (manual VAD)
-                            logger.info("[VoiceDBG] recv activity_start")
-                            await session.send_realtime_input(activity_start=types.ActivityStart())
-                        elif t in ("activity_end", "end_turn"):
-                            # push-to-talk: ผู้ใช้ปล่อยปุ่ม → จบ turn → โมเดลตอบ
-                            logger.info("[VoiceDBG] recv activity_end")
-                            await session.send_realtime_input(activity_end=types.ActivityEnd())
+                        elif t in ("activity_start", "activity_end", "end_turn"):
+                            # automatic VAD เปิดอยู่ → Gemini จับ turn เอง. ไม่ forward
+                            # activity_* (จะ error "supported only when auto VAD disabled").
+                            # ไว้รับ client เก่าที่ cache ไว้ → ละเลยเฉย ๆ กัน session ตาย
+                            logger.info(f"[VoiceDBG] ignore manual VAD signal '{t}' (auto VAD on)")
                         elif t == "text":
                             await session.send(input=msg.get("text", ""), end_of_turn=True)
                         elif t == "close":
