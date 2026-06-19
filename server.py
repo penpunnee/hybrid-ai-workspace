@@ -236,6 +236,12 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
             automatic_activity_detection=types.AutomaticActivityDetection(),
             activity_handling=types.ActivityHandling.NO_INTERRUPTION,
         ),
+        # session มีลิมิตอายุ default → ใกล้หมด Gemini ส่ง go_away → ถ้าไม่จัดการจะโดน 1008
+        # ตัด response กลางคัน ("หายตอนท้าย" โดยเฉพาะ session ยาวบนมือถือ). เปิด sliding-window
+        # compression → บีบ context → session "ไม่มีลิมิตอายุ" → ไม่มี go_away จาก duration
+        context_window_compression=types.ContextWindowCompressionConfig(
+            sliding_window=types.SlidingWindow(),
+        ),
     )
 
     try:
