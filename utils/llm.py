@@ -518,6 +518,50 @@ def _stream_ollama(messages: list[dict], model: str = ""):
             return
 
 
+def _extract_grounding_sources(candidate) -> list[dict]:
+    """ดึงแหล่งอ้างอิงจาก grounding_metadata ของ Gemini response → shape ที่
+    citations.add_web_results ใช้ได้ (title/href/body). pure + ทนทุก field หาย"""
+    out: list[dict] = []
+    gm = getattr(candidate, "grounding_metadata", None)
+    if not gm:
+        return out
+    for ch in (getattr(gm, "grounding_chunks", None) or []):
+        web = getattr(ch, "web", None)
+        if not web:
+            continue
+        uri = getattr(web, "uri", "") or ""
+        title = getattr(web, "title", "") or ""
+        if uri:
+            out.append({"title": title or uri, "href": uri, "body": title or uri})
+    return out
+
+
+def gemini_web_search(query: str, model: str = "") -> tuple[str, list[dict]]:
+    """ค้นเว็บด้วย Gemini + Google Search grounding (Google จริง) แล้วคืน (สรุป, แหล่ง)
+    ให้โมเดลอื่น (local/Claude/Kimi) เอาไป inject — แทน DDG. คืน ("", []) ถ้า Gemini ไม่พร้อม/ล้ม.
+    ⚠️ กิน Gemini quota ต่อการค้น 1 ครั้ง (ตั้ง GEMINI_SEARCH_MODEL เป็นตัว quota สูงได้)"""
+    if not gemini_client:
+        return "", []
+    try:
+        prompt = (
+            f"ค้นข้อมูลล่าสุดจากอินเทอร์เน็ตเกี่ยวกับ: {query}\n"
+            "สรุปข้อเท็จจริงที่เกี่ยวข้องเป็นภาษาไทยสั้นๆ ตรงประเด็น เน้นตัวเลข/วันที่/ชื่อที่เป็น"
+            "ข้อมูลจริง ห้ามแต่ง ถ้าไม่พบให้บอกว่าไม่พบ"
+        )
+        cfg = types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
+        search_model = model or os.getenv("GEMINI_SEARCH_MODEL", "") or GEMINI_MODEL
+        resp = gemini_client.models.generate_content(model=search_model, contents=prompt, config=cfg)
+        text = (getattr(resp, "text", "") or "").strip()
+        cands = getattr(resp, "candidates", None) or []
+        results = _extract_grounding_sources(cands[0]) if cands else []
+        if text:
+            logger.info(f"[gemini_web_search] grounded {len(text)} chars, {len(results)} sources (model={search_model})")
+        return text, results
+    except Exception as e:
+        logger.warning(f"[gemini_web_search] {type(e).__name__}: {e}")
+        return "", []
+
+
 def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = "",
                    agent_mode: bool = False, model: str = "",
                    thinking: bool | None = None, effort: str = "",

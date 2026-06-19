@@ -63,23 +63,31 @@ def test_chat_normal_str_prompt_unchanged(monkeypatch):
 
 # ── web-search grounding สำหรับ path ที่เลือกโมเดลเฉพาะ (Work A, 2026-06-15) ──
 def test_chat_injects_websearch_for_realtime_query(monkeypatch):
+    """คำถาม real-time + โมเดล local → ยืม Gemini grounding ค้นแล้ว inject context
+    (เปลี่ยนจาก DDG-first เป็น Gemini-grounding-first 2026-06-20)"""
+    import utils.llm as llm
     import utils.websearch as ws
     cap = {}
+    ddg_called = {"n": 0}
 
     def fake_stream(messages, **k):
         cap["messages"] = messages
         yield "ok"
 
-    def fake_search(prompt, **k):
-        return ("[1] One Piece ตอนล่าสุดคือ 1120",
-                [{"title": "x", "url": "http://x", "snippet": "1120"}])
+    def fake_gemini_search(prompt, **k):
+        return ("One Piece ตอนล่าสุดคือ 1120", [{"title": "x", "href": "http://x", "body": "1120"}])
+
+    def fake_ddg(prompt, **k):  # fallback — ไม่ควรถูกเรียกเมื่อ Gemini สำเร็จ
+        ddg_called["n"] += 1
+        return ("DDG ไม่ควรถูกใช้", [])
 
     monkeypatch.setattr(chatmod, "stream_response", fake_stream)
-    monkeypatch.setattr(ws, "web_search_with_results", fake_search)
+    monkeypatch.setattr(llm, "gemini_web_search", fake_gemini_search)
+    monkeypatch.setattr(ws, "web_search_with_results", fake_ddg)
     r = client.post("/api/chat", json={
         "session_id": "scrut-ws",
         "prompt": "One Piece ออกตอนล่าสุดกี่ตอนแล้ว",   # needs_internet → ควรเสิร์ช
-        "provider": "lmstudio",                          # โมเดล local → ใช้ DDG inject
+        "provider": "lmstudio",                          # โมเดล local → ยืม Gemini grounding
         "model": "qwen/qwen3.5-9b",                      # เลือกโมเดลเฉพาะ (req_model)
         "active_learning": False,
         "response_cache": False,
@@ -87,8 +95,9 @@ def test_chat_injects_websearch_for_realtime_query(monkeypatch):
     assert r.status_code == 200
     _ = r.text
     sys_msg = cap["messages"][0]["content"]
-    assert "INTERNET CONTEXT" in sys_msg, "คำถาม real-time + โมเดล local ต้อง inject web context (DDG)"
+    assert "INTERNET CONTEXT" in sys_msg, "คำถาม real-time + โมเดล local ต้อง inject web context"
     assert "1120" in sys_msg
+    assert ddg_called["n"] == 0, "Gemini grounding สำเร็จ → ไม่ควร fallback ไป DDG"
 
 
 def test_chat_gemini_uses_builtin_grounding_not_ddg(monkeypatch):

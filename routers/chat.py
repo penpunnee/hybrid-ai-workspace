@@ -34,8 +34,17 @@ def _inject_web_context(messages: list, prompt: str, citations) -> bool:
     สำหรับคำถาม real-time. คืน True ถ้า inject สำเร็จ. ใช้ร่วมกันทั้ง auto→lmstudio_web และ
     path ที่เลือกโมเดลเฉพาะ"""
     try:
-        from utils.websearch import web_search_with_results
-        web_ctx, web_results = web_search_with_results(prompt)
+        # ให้ local/Claude/Kimi "ยืม" Gemini grounding (Google จริง) เป็นหลัก — คุณภาพดีกว่า DDG
+        # + ไม่ต้องมี Custom Search API key. ถ้า Gemini ไม่พร้อม/ล้ม → fallback DDG
+        web_ctx, web_results = "", []
+        try:
+            from utils.llm import gemini_web_search
+            web_ctx, web_results = gemini_web_search(prompt)
+        except Exception as ge:
+            logger.debug(f"[Chat] gemini grounding skipped: {ge}")
+        if not web_ctx:
+            from utils.websearch import web_search_with_results
+            web_ctx, web_results = web_search_with_results(prompt)
         if not web_ctx:
             return False
         try:
