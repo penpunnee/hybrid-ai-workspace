@@ -249,16 +249,12 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
             await websocket.send_json({"type": "connected", "voice": voice})
             stop = asyncio.Event()
 
-            logger.info(f"[VoiceDBG] session open slug={assistant_slug} model={GEMINI_LIVE_MODEL}")
-
             async def recv_loop():
-                _chunks = 0
                 try:
                     while not stop.is_set():
                         try:
                             msg = await asyncio.wait_for(websocket.receive_json(), timeout=60.0)
                         except asyncio.TimeoutError:
-                            logger.info(f"[VoiceDBG] recv 60s idle (chunks so far={_chunks})")
                             continue
                         t = msg.get("type", "")
                         if t == "audio":
@@ -267,36 +263,25 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                             await session.send_realtime_input(
                                 audio=types.Blob(data=pcm, mime_type="audio/pcm;rate=16000")
                             )
-                            _chunks += 1
-                            if _chunks % 25 == 1:
-                                logger.info(f"[VoiceDBG] recv audio chunk #{_chunks}")
                         elif t in ("activity_start", "activity_end", "end_turn"):
                             # automatic VAD เปิดอยู่ → Gemini จับ turn เอง. ไม่ forward
                             # activity_* (จะ error "supported only when auto VAD disabled").
                             # ไว้รับ client เก่าที่ cache ไว้ → ละเลยเฉย ๆ กัน session ตาย
-                            logger.info(f"[VoiceDBG] ignore manual VAD signal '{t}' (auto VAD on)")
+                            pass
                         elif t == "text":
                             await session.send(input=msg.get("text", ""), end_of_turn=True)
                         elif t == "close":
-                            logger.info("[VoiceDBG] recv close")
                             stop.set()
                 except WebSocketDisconnect:
-                    logger.info("[VoiceDBG] recv_loop WebSocketDisconnect")
                     stop.set()
                 except Exception as e:
-                    logger.error(f"[VoiceDBG] recv_loop EXC {type(e).__name__}: {e}")
+                    logger.error(f"[Voice WS] recv_loop {type(e).__name__}: {e}")
                     stop.set()
-                finally:
-                    logger.info(f"[VoiceDBG] recv_loop ended (total chunks={_chunks})")
 
             async def send_loop():
-                import base64, time
+                import base64
                 user_transcript = ""
                 ai_transcript = ""
-                _turns = 0
-                _aud = 0          # นับ audio chunk ที่ Gemini ส่งออก
-                _aud_bytes = 0
-                _last_aud = 0.0   # เวลาส่ง audio ล่าสุด (วัด gap = cadence ของ Gemini)
                 try:
                     # ⚠️ session.receive() yield แค่ turn เดียวแล้ว generator จบ —
                     # ต้องวน while เรียกใหม่ทุก turn ไม่งั้น turn 2 เป็นต้นไปไม่มีใครอ่านคำตอบ
@@ -305,34 +290,18 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                             if stop.is_set():
                                 break
                             if response.data:
-                                now = time.monotonic()
-                                gap = (now - _last_aud) if _last_aud else 0.0
-                                # gap ใหญ่ระหว่าง audio chunk = Gemini ส่งเสียงไม่ต่อเนื่อง (ต้นทางขาด)
-                                if _last_aud and gap > 0.25:
-                                    logger.info(f"[VoiceDBG] audio GAP {gap*1000:.0f}ms ก่อน chunk #{_aud+1}")
-                                _last_aud = now
-                                _aud += 1
-                                _aud_bytes += len(response.data)
-                                if _aud % 50 == 1:
-                                    logger.info(f"[VoiceDBG] audio out #{_aud} ({len(response.data)}B)")
                                 await websocket.send_json({
                                     "type": "audio",
                                     "data": base64.b64encode(response.data).decode()
                                 })
-                            if getattr(response, "go_away", None) is not None:
-                                logger.info(f"[VoiceDBG] go_away time_left={getattr(response.go_away,'time_left',None)}")
                             sc = getattr(response, "server_content", None)
                             if sc:
-                                if getattr(sc, "interrupted", False):
-                                    logger.info("[VoiceDBG] sc.interrupted")
                                 events, user_delta, ai_delta = live_server_content_events(sc)
                                 user_transcript += user_delta
                                 ai_transcript += ai_delta
                                 for evt in events:
                                     await websocket.send_json(evt)
                                 if getattr(sc, "turn_complete", False):
-                                    _turns += 1
-                                    logger.info(f"[VoiceDBG] turn_complete #{_turns} user='{user_transcript[:40]}' ai_len={len(ai_transcript)}")
                                     await websocket.send_json({"type": "done"})
                                     if user_transcript.strip():
                                         _save_msg(asst_name, "user", user_transcript.strip(), "gemini_live", session_id)
@@ -341,19 +310,15 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                         _save_msg(asst_name, "assistant", ai_transcript.strip(), "gemini_live", session_id)
                                         ai_transcript = ""
                         # generator ของ turn นี้จบ → วนกลับไปรับ turn ถัดไป
-                    logger.info(f"[VoiceDBG] send_loop while exited (turns={_turns}, stop={stop.is_set()})")
                 except Exception as e:
-                    logger.error(f"[VoiceDBG] send_loop EXC {type(e).__name__}: {e}")
+                    logger.error(f"[Voice WS] send_loop {type(e).__name__}: {e}")
                     stop.set()
                     try:
                         await websocket.send_json({"type": "error", "message": str(e)})
                     except Exception:
                         pass
-                finally:
-                    logger.info(f"[VoiceDBG] send_loop ended (turns={_turns})")
 
             await asyncio.gather(recv_loop(), send_loop())
-            logger.info("[VoiceDBG] gather done → session closing")
     except WebSocketDisconnect:
         pass
     except Exception as e:
