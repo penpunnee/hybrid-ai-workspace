@@ -18,8 +18,10 @@ OLLAMA_REPEAT_PENALTY = float(os.getenv("OLLAMA_REPEAT_PENALTY", "1.1"))
 GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL     = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 # Live API (bidiGenerateContent) — gemini-2.0-flash-exp ถูกถอดออกจาก v1alpha แล้ว
-# ใช้ native-audio "latest" alias (เสถียร ไม่ rot ตามวันที่ preview) — verify ผ่าน ListModels
-GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.5-flash-native-audio-latest")
+# default = gemini-3.1-flash-live-preview (verified ผ่าน ListModels + Live session จริง 2026-06-19;
+# "gemini-3-flash-live" ไม่มีบน API). ของเดิม gemini-2.5-flash-native-audio-latest ก็ยังใช้ได้
+# ⚠️ ชื่อต้องเป๊ะ ไม่งั้น bidiGenerateContent → 1008 not found
+GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
 
 # ── Database ─────────────────────────────────────────────────────────────────
 DB_PATH      = os.getenv("DB_PATH", "./chat_history.db")
