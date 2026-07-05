@@ -474,6 +474,20 @@ async def chat(request: Request):
                 return
 
         record_timing("llm_stream", (_time.perf_counter() - llm_start) * 1000)
+
+        # ── Empty-response guard (เจอจริง qwen3.5-9b 2026-07-05) ─────────────
+        # reasoning model "คิด" จนหมด token ไม่เคยตอบจริง → stream จบว่างเปล่า
+        # เดิม: บับเบิลว่างค้างบนจอ + save '' ลง DB (ปนเปื้อน history/fine-tune)
+        # ชั้นแรก salvage อยู่ที่ parser (stream_with_thinking) — ชั้นนี้กันทุก provider
+        empty_guard_fired = False
+        if not full_response.strip():
+            empty_guard_fired = True
+            notice = ("⚠️ โมเดลไม่ได้ให้คำตอบ (อาจใช้เวลาคิดจนหมดโควตา token) — "
+                      "ลองกด Regenerate หรือเปลี่ยนโมเดลดูนะคะ")
+            logger.warning(f"[Chat] empty response from provider={provider_used} — inject notice")
+            yield f"data: {json.dumps({'chunk': notice}, ensure_ascii=False)}\n\n"
+            full_response = notice
+
         message_id = save_message(assistant, "assistant", full_response, provider_used, session_id)
 
         # ── Reflection: ตรวจคำตอบหลัง stream เสร็จ → ส่ง revision เป็น SSE event ─
@@ -495,10 +509,15 @@ async def chat(request: Request):
 
         push_working(session_id, "user", prompt)
         push_working(session_id, "assistant", full_response)
-        remember(assistant, prompt, full_response)
-        teach(assistant, prompt, ai_response=full_response)
+        # empty-guard notice ห้ามเข้า episodic memory/teach — ไม่ใช่คำตอบจริง
+        # (กัน contamination แบบเดียวกับ clarify ของ active learning)
+        if not empty_guard_fired:
+            remember(assistant, prompt, full_response)
+            teach(assistant, prompt, ai_response=full_response)
 
         _learn_ok, _learn_reason = should_auto_learn(prompt)
+        if empty_guard_fired:
+            _learn_ok, _learn_reason = False, "empty_response_notice"
         if not _learn_ok:
             logger.info(f"[Chat/auto-learn] skip lesson — reason={_learn_reason}")
         if len(full_response) > 100 and _learn_ok:

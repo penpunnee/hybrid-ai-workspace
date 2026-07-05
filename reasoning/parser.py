@@ -90,25 +90,43 @@ def parse_think_stream(chunks: Iterator[str]) -> Generator[dict, None, None]:
         yield {"type": "answer", "text": buffer}
 
 
+# salvage: เก็บส่วนท้ายของ think ไว้กี่ตัวอักษร — ส่วนท้ายคือส่วนที่ใกล้ข้อสรุปสุด
+_SALVAGE_TAIL_CHARS = 1500
+
+
 def stream_with_thinking(chunks: Iterator[str], show_thinking: bool = False):
     """
     Generator สำหรับ SSE streaming
     show_thinking=True → ส่ง thinking process ด้วย (prefix ด้วย 💭)
     show_thinking=False → ส่งแค่ final answer
+
+    Salvage (เจอจริงกับ qwen3.5-9b 2026-07-05): reasoning model บางตัว "คิด"
+    จนหมด token โดยไม่เคยหลุดจาก <think> มาตอบจริง → เดิม yield ว่างเปล่า
+    (บับเบิลว่าง + save '' ลง DB). ตอนนี้ถ้าจบ stream แล้วไม่มี answer เลย
+    แต่มี think → คายส่วนท้ายของความคิดออกมาเป็นคำตอบแทน
     """
     has_thinking = False
-    answer_started = False
+    answer_yielded = False
+    think_accum = ""  # เก็บ think ทั้งหมดไว้เผื่อ salvage ตอนจบ
 
     for event in parse_think_stream(chunks):
         if event["type"] == "think":
             has_thinking = True
+            think_accum += event["text"]
             if show_thinking:
                 # ส่ง thinking block เป็น special marker
                 yield f"\n💭 **กำลังคิด...**\n```\n{event['text'][:500]}\n```\n\n"
         elif event["type"] == "answer":
-            if has_thinking and not answer_started:
-                answer_started = True
+            if event["text"].strip():
+                answer_yielded = True
             yield event["text"]
+
+    # ── Salvage: ไม่มีคำตอบจริงเลยทั้ง stream แต่มีความคิด ──
+    # show_thinking=True ไม่ต้อง salvage ซ้ำ (think ถูก yield ไปแล้วข้างบน)
+    if has_thinking and not answer_yielded and not show_thinking and think_accum.strip():
+        tail = think_accum.strip()[-_SALVAGE_TAIL_CHARS:]
+        yield ("⚠️ *โมเดลใช้เวลาคิดจนไม่ได้สรุปคำตอบ — นี่คือส่วนท้ายของความคิด "
+               "(ลองกด Regenerate หรือเปลี่ยนโมเดล):*\n\n" + tail)
 
 
 def extract_final_answer(full_text: str) -> tuple[str, str]:

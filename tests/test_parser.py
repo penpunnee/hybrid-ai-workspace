@@ -65,6 +65,40 @@ def test_stream_plain_text_passthrough():
     assert "".join(stream_with_thinking(["just text"])) == "just text"
 
 
+# ── salvage: โมเดล "คิด" จนหมด token ไม่เคยหลุดออกมาตอบ (เจอจริง qwen3.5-9b 2026-07-05) ──
+def test_stream_salvages_unclosed_think_as_answer():
+    """<think> ไม่เคยปิด + show_thinking=False → ห้าม yield ว่างเปล่า
+    ต้อง salvage เนื้อความคิดออกมาเป็นคำตอบแทน (ดีกว่าบับเบิลว่าง)"""
+    out = "".join(stream_with_thinking(["<think>กำลังไล่เหตุผล... สรุปคือ 42"]))
+    assert out != ""
+    assert "42" in out
+
+
+def test_stream_salvages_closed_think_with_no_answer():
+    """<think>...</think> ปิดแล้วแต่ไม่มีคำตอบตามหลัง → salvage เช่นกัน"""
+    out = "".join(stream_with_thinking(["<think>reasoning only</think>", "   "]))
+    assert "reasoning only" in out
+
+
+def test_stream_salvage_truncates_long_think():
+    """think ยาวมาก → salvage เฉพาะส่วนท้าย (ส่วนท้ายใกล้ข้อสรุปสุด) ไม่ flood จอ"""
+    long_think = "x" * 10_000 + "END_MARKER"
+    out = "".join(stream_with_thinking([f"<think>{long_think}"]))
+    assert "END_MARKER" in out
+    assert len(out) < 3_000
+
+
+def test_stream_no_salvage_when_answer_exists():
+    """มีคำตอบจริงแล้ว → ไม่ต้อง salvage (พฤติกรรมเดิมห้ามเปลี่ยน)"""
+    out = "".join(stream_with_thinking(["<think>reasoning</think>real answer"]))
+    assert out == "real answer"
+
+
+def test_stream_truly_empty_input_stays_empty():
+    """input ว่างจริงๆ (ไม่มีทั้ง think และ answer) → คงว่างไว้ (ให้ router จัดการต่อ)"""
+    assert "".join(stream_with_thinking([""])) == ""
+
+
 # ── extract_final_answer ──
 def test_extract_separates_think_and_answer():
     thinking, answer = extract_final_answer("<think>because reasons</think>The result is 42")
