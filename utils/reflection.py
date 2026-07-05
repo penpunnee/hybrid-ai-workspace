@@ -19,7 +19,7 @@ from openai import OpenAI
 logger = logging.getLogger(__name__)
 
 _LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
-_REFLECT_MODEL = os.getenv("REFLECTION_MODEL", os.getenv("LMSTUDIO_REASON_MODEL", "deepseek/deepseek-r1-0528-qwen3-8b"))
+_REFLECT_MODEL = os.getenv("REFLECTION_MODEL", os.getenv("LMSTUDIO_REASON_MODEL", "qwen/qwen3.5-9b"))
 _REFLECT_TIMEOUT = int(os.getenv("REFLECTION_TIMEOUT", "30"))
 _REFLECT_THRESHOLD = float(os.getenv("REFLECTION_THRESHOLD", "0.7"))
 

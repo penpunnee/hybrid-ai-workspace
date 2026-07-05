@@ -62,18 +62,18 @@ GEMINI_LIVE_MODEL=gemini-2.0-flash-exp   # สำหรับ voice WebSocket
 **Config:**
 ```env
 LMSTUDIO_BASE_URL=http://192.168.51.235:1234/v1
-LMSTUDIO_CHAT_MODEL=google/gemma-4-e4b
-LMSTUDIO_REASON_MODEL=deepseek/deepseek-r1-0528-qwen3-8b
-LMSTUDIO_VISION_MODEL=llama-3.2-11b-vision-instruct
+LMSTUDIO_CHAT_MODEL=qwen/qwen3.5-9b
+LMSTUDIO_REASON_MODEL=qwen/qwen3.5-9b
+LMSTUDIO_VISION_MODEL=qwen/qwen3.5-9b
 LMSTUDIO_TIMEOUT=180
 SHOW_THINKING=false   # toggle เพื่อแสดง <think>...</think> block
 ```
 
 **OpenAI-compatible** — ใช้ `OpenAI()` client เหมือน Ollama
 
-**Vision:** ใช้ `LMSTUDIO_VISION_MODEL` (llama-3.2-11b-vision-instruct) ถ้ามี `image_b64`
+**Vision:** ใช้ `LMSTUDIO_VISION_MODEL` (qwen/qwen3.5-9b) ถ้ามี `image_b64`
 
-**Reasoning model:** `deepseek-r1` มี `<think>...</think>` ส่วนความคิด — `reasoning/parser.py:stream_with_thinking()` กรองออกก่อนแสดง (เว้น SHOW_THINKING=true)
+**Reasoning model:** เปลี่ยนจาก deepseek-r1-0528-qwen3-8b → qwen3.5-9b แล้ว (2026-07-05) — ถ้าโมเดลส่ง `<think>...</think>` มา `reasoning/parser.py:stream_with_thinking()` กรองออกก่อนแสดง (เว้น SHOW_THINKING=true)
 
 ## 🌐 Web Search Augmentation (`lmstudio_web`)
 

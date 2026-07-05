@@ -245,9 +245,9 @@ OLLAMA_NUM_CTX=4096
 OLLAMA_EMBED_MODEL=nomic-embed-text   # ใช้เป็น fallback embeddings เมื่อ LM Studio ล่ม (ต้อง `ollama pull nomic-embed-text`)
 LMSTUDIO_BASE_URL=          # opt-in: ปล่อยว่าง=ปิด (local หลักคือ Ollama). ใส่ค่าเฉพาะเมื่อรัน LM Studio จริง
 LMSTUDIO_API_KEY=lmstudio   # ⚠️ LM Studio รุ่นใหม่บังคับ token — ใส่ให้ตรง (หรือปิด "Require API key" ใน LM Studio)
-LMSTUDIO_CHAT_MODEL=google/gemma-4-e4b
-LMSTUDIO_REASON_MODEL=deepseek/deepseek-r1-0528-qwen3-8b
-LMSTUDIO_VISION_MODEL=llama-3.2-11b-vision-instruct
+LMSTUDIO_CHAT_MODEL=qwen/qwen3.5-9b
+LMSTUDIO_REASON_MODEL=qwen/qwen3.5-9b
+LMSTUDIO_VISION_MODEL=qwen/qwen3.5-9b
 LMSTUDIO_EMBED_MODEL=text-embedding-nomic-embed-text-v1.5
 LMSTUDIO_TIMEOUT=180
 SHOW_THINKING=false
@@ -546,8 +546,8 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 1. 🔑 **ใส่ key ใน NAS `.env` → recreate** (เช็คจริง 2026-06-18: ทั้ง 3 ยัง**ว่าง**) — งานเร็วสุด ไม่ต้องแก้โค้ด:
    - `ANTHROPIC_API_KEY` → ปลด Claude ใน Model picker · `MOONSHOT_API_KEY` → ปลด Kimi K2.6 · `HA_URL`+`HA_TOKEN` → Agent สั่ง Home Assistant
    - (GEMINI + GOOGLE_SEARCH ตั้งแล้ว ✅) · recreate: `cd /var/services/homes/pawin/ui && sudo docker compose up -d hybrid-ai`
-2. 🔐 **off-site GitHub backup ให้ `~/appscript.ui`** — remote ตอนนี้ = NAS bare repo ตัวเดียว (`nas:/var/services/homes/pawin/git/appscript.ui.git`) → NAS พัง = source หาย. ต้องสร้าง GitHub private repo + deploy key (Mac ไม่มี `gh`/token, key ที่มีผูก `hybrid-ai-workspace` ตัวเดียว)
-3. 🧠 **เลือก local model ตัวจบ** — `.env` ตอนนี้ `LMSTUDIO_CHAT_MODEL=deepseek-r1-0528-qwen3-8b`. Qwen3.5 เคยทดสอบแล้ว**ไทย leak จีน/รัสเซีย + ปิด thinking ผ่าน API ไม่ได้ → timeout**. candidate: Typhoon / Qwen2.5-Instruct
+2. ✅ **off-site GitHub backup ให้ `~/appscript.ui`** (2026-07-05) — เพิ่ม remote `github` (`github.com/penpunnee/appscript-ui`, private) คู่กับ `origin` (NAS bare repo) ใช้ SSH key ที่มีอยู่แล้ว (`id_ed25519_penpunnee`, account-level ไม่ต้องผูก deploy key ใหม่) push ครบทั้ง 2 remote ทุกครั้งที่ commit นับจากนี้
+3. ✅ **เปลี่ยน local model → Qwen3.5-9B** (2026-07-05, เลิกใช้ deepseek-r1-0528-qwen3-8b) — `LMSTUDIO_CHAT_MODEL`/`LMSTUDIO_REASON_MODEL`/`LMSTUDIO_VISION_MODEL` ทั้ง 3 ตัวชี้ไป `qwen/qwen3.5-9b`, local `.env` อัปเดตแล้ว, NAS `.env` ยังค้าง `LMSTUDIO_CHAT_MODEL=deepseek/...` (ต้องแก้ + recreate ให้ตรงกัน — ดู session log ล่าสุด)
 4. 🧪 **verify + ปิดงานค้าง**: ดู File Manager drag&drop/กล้อง/index ด้วยตาบน browser · #34 web-search grounding classifier (test ยังไม่เสร็จ) · เคลียร์ WIP `components/` ใน appscript.ui (untracked ไม่ได้ import) · quality gate ฝั่ง recall (optional)
 5. 💾 **ยืนยัน infra**: DSM `db_backup.sh` รายวัน 03:30 มีจริงไหม (เช็คไม่ขึ้นเมื่อ 2026-06-18) · `poppler-utils` บน NAS (OCR PDF scan — เช็คไม่ได้ตอน backend down)
 - ⛔ พักไว้: Image Gen (free tier limit=0 ต้องเปิด billing) · fine-tune (รอ 👍 ~200-500)

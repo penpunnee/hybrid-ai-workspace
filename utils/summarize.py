@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 _LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "")
 _LMSTUDIO_API_KEY  = os.getenv("LMSTUDIO_API_KEY", "lmstudio")
-_LMSTUDIO_REASON_MODEL = os.getenv("LMSTUDIO_REASON_MODEL", "deepseek/deepseek-r1-0528-qwen3-8b")
+_LMSTUDIO_REASON_MODEL = os.getenv("LMSTUDIO_REASON_MODEL", "qwen/qwen3.5-9b")
 _LMSTUDIO_TIMEOUT  = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
 
 _OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")

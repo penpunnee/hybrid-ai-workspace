@@ -122,7 +122,7 @@ curl "http://192.168.51.49:8080/api/memory/recall/kwan?q=test"   # manual recall
 
 ### Reflection ไม่ทำงาน
 - ต้องส่ง `{"reflect": true}` ใน chat request (opt-in)
-- ต้องมี LMStudio reasoning model loaded (`deepseek-r1-0528-qwen3-8b`)
+- ต้องมี LMStudio reasoning model loaded (`qwen/qwen3.5-9b`)
 
 ### Active learning ถามกลับบ่อยเกิน
 - ปิดผ่าน `{"active_learning": false}` ใน chat request

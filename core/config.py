@@ -51,7 +51,7 @@ EMBED_CACHE_DB = os.path.join(NAS_DATA_PATH, "embed_cache.db")
 # (default ว่าง — local LLM หลักของระบบนี้คือ Ollama ดู OLLAMA_BASE_URL ด้านบน)
 LMSTUDIO_BASE_URL     = os.getenv("LMSTUDIO_BASE_URL", "")
 LMSTUDIO_CHAT_MODEL   = os.getenv("LMSTUDIO_CHAT_MODEL", "google/gemma-4-e4b")
-LMSTUDIO_REASON_MODEL = os.getenv("LMSTUDIO_REASON_MODEL", "deepseek/deepseek-r1-0528-qwen3-8b")
+LMSTUDIO_REASON_MODEL = os.getenv("LMSTUDIO_REASON_MODEL", "qwen/qwen3.5-9b")
 LMSTUDIO_VISION_MODEL = os.getenv("LMSTUDIO_VISION_MODEL", "llama-3.2-11b-vision-instruct")
 LMSTUDIO_TIMEOUT      = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
 SHOW_THINKING         = os.getenv("SHOW_THINKING", "false").lower() == "true"
