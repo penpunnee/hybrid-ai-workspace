@@ -6,7 +6,8 @@ import os
 import logging
 from typing import List, Dict, Optional
 import chromadb
-from chromadb.utils import embedding_functions
+
+from utils.memory import _get_embedding_function, get_collection
 
 logger = logging.getLogger(__name__)
 
@@ -34,15 +35,16 @@ class SkillsSearch:
             self.collection_name = "skills_collection"
             
             # Get or create collection
+            ef = _get_embedding_function()
             try:
-                self.collection = self.client.get_collection(self.collection_name)
+                self.collection = get_collection(self.client, self.collection_name)
                 logger.info(f"Skills search loaded existing collection: {self.collection_name}")
             except Exception as e:
                 logger.debug(f"Skills search collection '{self.collection_name}' not found, creating new: {e}")
-                self.collection = self.client.create_collection(
-                    name=self.collection_name,
-                    metadata={"description": "Skills Semantic Search"}
-                )
+                create_kwargs = {"name": self.collection_name, "metadata": {"description": "Skills Semantic Search"}}
+                if ef is not None:
+                    create_kwargs["embedding_function"] = ef
+                self.collection = self.client.create_collection(**create_kwargs)
                 logger.info(f"Skills search created new collection: {self.collection_name}")
                 
             self.available = True

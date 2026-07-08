@@ -21,10 +21,8 @@ def _get_chroma_client():
 
 def _get_collection(client, name: str):
     try:
-        return client.get_or_create_collection(
-            name,
-            metadata={"hnsw:space": "cosine"},
-        )
+        from utils.memory import get_or_create_collection
+        return get_or_create_collection(client, name)
     except Exception as e:
         logger.error(f"Cannot get collection '{name}': {e}")
         return None
@@ -64,7 +62,8 @@ def search_entries(assistant: str, query: str, n_results: int = 5,
 
     col_name = f"memory_{resolve_slug(assistant)}"
     try:
-        col = client.get_collection(col_name)
+        from utils.memory import get_collection
+        col = get_collection(client, col_name)
     except Exception:
         return []
 
@@ -131,7 +130,8 @@ def update_confidence(assistant: str, content_snippet: str, new_confidence: floa
         return False
     col_name = f"memory_{resolve_slug(assistant)}"
     try:
-        col = client.get_collection(col_name)
+        from utils.memory import get_collection
+        col = get_collection(client, col_name)
         res = col.query(query_texts=[content_snippet], n_results=1)
         ids = res.get("ids", [[]])[0]
         metas = res.get("metadatas", [[]])[0]
@@ -154,7 +154,8 @@ def bump_access_count(assistant: str, doc_ids: list[str]) -> None:
         return
     col_name = f"memory_{resolve_slug(assistant)}"
     try:
-        col = client.get_collection(col_name)
+        from utils.memory import get_collection
+        col = get_collection(client, col_name)
         res = col.get(ids=doc_ids)
         metas = res.get("metadatas", [])
         updated_metas = []
@@ -175,7 +176,8 @@ def search_long_term(query: str, n_results: int = 3) -> list[dict]:
     if client is None:
         return []
     try:
-        col = client.get_collection("long_term_memory")
+        from utils.memory import get_collection
+        col = get_collection(client, "long_term_memory")
         res = col.query(query_texts=[query], n_results=n_results)
         docs  = res.get("documents", [[]])[0]
         metas = res.get("metadatas", [[]])[0]
@@ -206,7 +208,8 @@ def search_user_facts(query: str, n_results: int = 3,
     if client is None:
         return []
     try:
-        col = client.get_collection("user_facts")
+        from utils.memory import get_collection
+        col = get_collection(client, "user_facts")
         res = col.query(query_texts=[query], n_results=n_results)
         docs  = res.get("documents", [[]])[0]
         metas = res.get("metadatas", [[]])[0]

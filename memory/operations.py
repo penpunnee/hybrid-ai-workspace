@@ -82,13 +82,14 @@ def push_working(session_id: str, role: str, content: str) -> None:
 def get_memory_summary(assistant: str) -> dict:
     """สรุปสถานะ memory ทั้งหมด"""
     from .store import _get_chroma_client, resolve_slug
+    from utils.memory import get_collection
     client = _get_chroma_client()
     result = {"episodic": 0, "long_term": 0, "verified_facts": 0, "available": False}
     if client is None:
         return result
     try:
         col_name = f"memory_{resolve_slug(assistant)}"
-        col = client.get_collection(col_name)
+        col = get_collection(client, col_name)
         all_data = col.get()
         metas = all_data.get("metadatas", [])
         result["episodic"] = len(metas)
@@ -97,7 +98,7 @@ def get_memory_summary(assistant: str) -> dict:
     except Exception:
         pass
     try:
-        lt_col = client.get_collection("long_term_memory")
+        lt_col = get_collection(client, "long_term_memory")
         result["long_term"] = lt_col.count()
     except Exception:
         pass

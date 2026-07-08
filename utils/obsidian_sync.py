@@ -15,15 +15,12 @@ COLLECTION_NAME = "obsidian_notes"
 
 
 def _get_collection():
-    from utils.memory import _get_client
+    from utils.memory import _get_client, get_or_create_collection
     client = _get_client()
     if client is None:
         return None
     try:
-        return client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            metadata={"hnsw:space": "cosine"},
-        )
+        return get_or_create_collection(client, COLLECTION_NAME)
     except Exception as e:
         logger.warning(f"obsidian_sync: failed to get or create ChromaDB collection '{COLLECTION_NAME}': {e}")
         return None

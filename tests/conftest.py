@@ -17,6 +17,9 @@ os.environ["UI_PASSWORD"] = ""
 os.environ["CHROMA_HOST"] = "localhost"
 os.environ["OLLAMA_BASE_URL"] = "http://localhost:11434/v1"
 os.environ["LMSTUDIO_BASE_URL"] = ""        # ปิด LM Studio ใน test
+os.environ["EMBEDDING_MODEL"] = ""          # ปิด Ollama embedding_function ใน test
+# (ไม่งั้น fake chroma client ใน test เดิม ที่ get_collection ไม่รับ **kwargs จะพัง
+# เมื่อ wrapper พยายามส่ง embedding_function= เข้าไป)
 # ปิด rate limit เป็น default — กัน state สะสมข้ามเทสต์ทำ 429 ปลอม
 # (test_ratelimit.py เปิดเอง + monkeypatch limit เล็ก + reset)
 os.environ["RATE_LIMIT_ENABLED"] = "false"

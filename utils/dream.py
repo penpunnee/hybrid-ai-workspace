@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from collections import Counter
 from pathlib import Path
 
-from utils.memory import _get_client
+from utils.memory import _get_client, get_collection, get_or_create_collection
 from utils.llm import stream_response
 from utils.skills import save_skill
 
@@ -93,7 +93,7 @@ def light_sleep(hours: int = 24) -> list[dict]:
         for col_info in collections:
             name = col_info.name if hasattr(col_info, "name") else str(col_info)
             if name.startswith("memory_"):
-                col = client.get_collection(name)
+                col = get_collection(client, name)
                 data = col.get()
                 for i, doc in enumerate(data.get("documents", [])):
                     meta = data.get("metadatas", [{}])[i] or {}
@@ -265,7 +265,7 @@ def memory_decay(decay_rate: float = 0.05, min_confidence: float = 0.2) -> dict:
             if not name.startswith("memory_"):
                 continue
             try:
-                col = client.get_collection(name)
+                col = get_collection(client, name)
                 data = col.get()
                 ids = data.get("ids", [])
                 metas = data.get("metadatas", [])
@@ -351,7 +351,7 @@ def memory_prune(cap: int = None, max_age_days: int = 30, min_confidence: float 
             if not name.startswith("memory_"):
                 continue
             try:
-                col = client.get_collection(name)
+                col = get_collection(client, name)
                 data = col.get()
                 ids = data.get("ids", [])
                 metas = data.get("metadatas", [])
@@ -468,10 +468,7 @@ def deep_sleep(memories: list[dict], themes: list[dict]) -> dict:
     # บันทึกเฉพาะ memory-type themes เข้า ChromaDB long_term_memory
     if client is not None and memory_promoted:
         try:
-            col = client.get_or_create_collection(
-                "long_term_memory",
-                metadata={"hnsw:space": "cosine"},
-            )
+            col = get_or_create_collection(client, "long_term_memory")
             for theme_name in memory_promoted:
                 matching = next((t for t in themes if t.get("name") == theme_name), {})
                 summary = matching.get("summary", "")

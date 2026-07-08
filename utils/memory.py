@@ -32,9 +32,71 @@ def _detect_chroma_host() -> tuple:
 
 CHROMA_HOST, CHROMA_PORT = _detect_chroma_host()
 
+# ChromaDB default embedding function (MiniLM) มองอักษรไทยเป็น UNK ทั้งหมด →
+# ทุกประโยคไทยได้ vector เดียวกัน (cosine score = 1.000 ทุกคู่ไม่ว่าคนละเรื่องแค่ไหน)
+# → semantic recall ภาษาไทยเป็น noise ล้วนมาตั้งแต่ day 1 (พิสูจน์แล้วในโปรเจกต์ JARVIS
+# 2026-07-08, ดู wiki concepts/thai-embedding-chromadb.md) แก้ด้วย Ollama multilingual
+# model ผ่าน EMBEDDING_MODEL — ปล่อยว่าง (default) = ปิด/ใช้ default MiniLM เดิม
+# (ตาม convention ของโปรเจกต์นี้ที่ฟีเจอร์ optional เป็น opt-in ด้วย env ว่าง — ตั้งเป็น
+# "paraphrase-multilingual" ใน .env เพื่อเปิดใช้จริง หลัง migrate ข้อมูลเก่าแล้วเท่านั้น)
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "")
+
 _client = None
 _collections = {}
 _lock = threading.Lock()
+_embedding_function = None
+_embedding_function_attempted = False
+_ef_lock = threading.Lock()
+
+
+def _ollama_native_url() -> str:
+    """OLLAMA_BASE_URL ของโปรเจกต์นี้เป็น OpenAI-compat endpoint (ลงท้าย /v1) —
+    chromadb OllamaEmbeddingFunction ต้องการ native Ollama API base แทน"""
+    base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    return base[:-len("/v1")] if base.endswith("/v1") else base
+
+
+def _get_embedding_function():
+    """คืน OllamaEmbeddingFunction (multilingual, รองรับไทยจริง) singleton —
+    คืน None ถ้าปิดด้วย EMBEDDING_MODEL="" หรือสร้างไม่สำเร็จ (เช่นไม่มีแพ็กเกจ
+    `ollama`) แล้วปล่อยให้ collection ต่อ fallback ไปใช้ default embedder ของ chroma"""
+    global _embedding_function, _embedding_function_attempted
+    if not EMBEDDING_MODEL:
+        return None
+    with _ef_lock:
+        if not _embedding_function_attempted:
+            _embedding_function_attempted = True
+            try:
+                from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
+                url = _ollama_native_url()
+                _embedding_function = OllamaEmbeddingFunction(url=url, model_name=EMBEDDING_MODEL)
+                logger.info(f"Embedding function ready: Ollama '{EMBEDDING_MODEL}' @ {url}")
+            except Exception as e:
+                logger.warning(
+                    f"Embedding function init failed (EMBEDDING_MODEL={EMBEDDING_MODEL}): {e} "
+                    "— falling back to ChromaDB default embedder (ภาษาไทยจะ recall ไม่ได้)"
+                )
+        return _embedding_function
+
+
+def get_or_create_collection(client, name: str, **kwargs):
+    """wrapper รอบ client.get_or_create_collection ที่ inject embedding_function
+    ไทย-multilingual อัตโนมัติถ้าพร้อมใช้งาน — ทุกจุดที่สร้าง/ดึง collection ควรผ่านนี่
+    แทนเรียก client ตรงๆ กันหลุดไปใช้ default MiniLM"""
+    ef = _get_embedding_function()
+    if ef is not None:
+        kwargs.setdefault("embedding_function", ef)
+    kwargs.setdefault("metadata", {"hnsw:space": "cosine"})
+    return client.get_or_create_collection(name, **kwargs)
+
+
+def get_collection(client, name: str, **kwargs):
+    """wrapper รอบ client.get_collection ที่ inject embedding_function เดียวกับ
+    get_or_create_collection ด้านบน"""
+    ef = _get_embedding_function()
+    if ef is not None:
+        kwargs.setdefault("embedding_function", ef)
+    return client.get_collection(name, **kwargs)
 
 
 def _safe_slug(name: str) -> str:
@@ -79,10 +141,7 @@ def _get_collection(assistant_name: str):
     with _lock:
         if slug not in _collections:
             try:
-                _collections[slug] = client.get_or_create_collection(
-                    name=f"memory_{slug}",
-                    metadata={"hnsw:space": "cosine"},
-                )
+                _collections[slug] = get_or_create_collection(client, f"memory_{slug}")
             except Exception as e:
                 logger.warning(f"Failed to get or create collection for {slug}: {e}")
                 return None
@@ -143,7 +202,7 @@ def save_lesson(topic: str, lesson: str) -> bool:
     if client is None:
         return False
     try:
-        col = client.get_or_create_collection("lessons", metadata={"hnsw:space": "cosine"})
+        col = get_or_create_collection(client, "lessons")
         doc_id = f"lesson_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
         col.add(
             documents=[f"[บทเรียน: {topic}]\n{lesson}"],
@@ -162,7 +221,7 @@ def save_preference(key: str, value: str) -> bool:
     if client is None:
         return False
     try:
-        col = client.get_or_create_collection("preferences", metadata={"hnsw:space": "cosine"})
+        col = get_or_create_collection(client, "preferences")
         col.upsert(
             documents=[f"[preference: {key}]\n{value}"],
             ids=[f"pref_{key}"],
@@ -180,7 +239,7 @@ def get_lessons(query: str = "", n_results: int = 3) -> str:
     if client is None:
         return ""
     try:
-        col = client.get_or_create_collection("lessons", metadata={"hnsw:space": "cosine"})
+        col = get_or_create_collection(client, "lessons")
         count = col.count()
         if count == 0:
             return ""
@@ -202,7 +261,7 @@ def get_preferences() -> str:
     if client is None:
         return ""
     try:
-        col = client.get_or_create_collection("preferences", metadata={"hnsw:space": "cosine"})
+        col = get_or_create_collection(client, "preferences")
         results = col.get()
         docs = results.get("documents", [])
         return "\n".join(docs) if docs else ""
@@ -217,7 +276,7 @@ def search_long_term_memory(query: str, n_results: int = 3) -> str:
     if client is None:
         return ""
     try:
-        col = client.get_or_create_collection("long_term_memory", metadata={"hnsw:space": "cosine"})
+        col = get_or_create_collection(client, "long_term_memory")
         count = col.count()
         if count == 0:
             return ""
@@ -237,7 +296,7 @@ def list_lessons(n: int = 50) -> list:
     if client is None:
         return []
     try:
-        col = client.get_or_create_collection("lessons", metadata={"hnsw:space": "cosine"})
+        col = get_or_create_collection(client, "lessons")
         results = col.get(include=["documents", "metadatas"])
         docs = results.get("documents", [])
         metas = results.get("metadatas", [])
@@ -264,7 +323,7 @@ def list_preferences() -> list:
     if client is None:
         return []
     try:
-        col = client.get_or_create_collection("preferences", metadata={"hnsw:space": "cosine"})
+        col = get_or_create_collection(client, "preferences")
         results = col.get(include=["documents", "metadatas"])
         docs = results.get("documents", [])
         metas = results.get("metadatas", [])
@@ -290,7 +349,7 @@ def delete_lesson(doc_id: str) -> bool:
     if client is None:
         return False
     try:
-        col = client.get_or_create_collection("lessons", metadata={"hnsw:space": "cosine"})
+        col = get_or_create_collection(client, "lessons")
         col.delete(ids=[doc_id])
         return True
     except Exception as e:
@@ -304,7 +363,7 @@ def delete_preference(doc_id: str) -> bool:
     if client is None:
         return False
     try:
-        col = client.get_or_create_collection("preferences", metadata={"hnsw:space": "cosine"})
+        col = get_or_create_collection(client, "preferences")
         col.delete(ids=[doc_id])
         return True
     except Exception as e:
@@ -323,7 +382,7 @@ def get_memory_stats() -> dict:
         for col_info in all_collections:
             name = col_info.name if hasattr(col_info, "name") else str(col_info)
             try:
-                col = client.get_collection(name)
+                col = get_collection(client, name)
                 stats["collections"][name] = col.count()
             except Exception as e:
                 logger.warning(f"get_memory_stats: failed to get count for collection '{name}': {e}")
@@ -353,7 +412,7 @@ def cleanup_old_memories(days: int = 30) -> dict:
             if name in skip_collections:
                 continue
             try:
-                col = client.get_collection(name)
+                col = get_collection(client, name)
                 results = col.get(include=["metadatas"])
                 ids_to_delete = [
                     results["ids"][i]
