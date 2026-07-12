@@ -1,6 +1,22 @@
 
 ---
 
+## [2026-07-12 19:50] SECTION — audit ทั้งโปรเจกต์ + ROADMAP session 1 (งาน NAS)
+**เป้าหมาย:** audit ทั้งโปรเจกต์ → `ROADMAP.md` แล้วทำ session 1: backup + key + poppler
+
+### Breadcrumb Ledger (บั๊กหลักที่เจอ: db_backup ได้ archive เปล่า)
+| # | สมมติฐาน/สิ่งที่ลอง | วิธีที่ใช้แก้ | ผลที่ได้ | ผ่าน? | เพราะอะไร (ถ้าไม่ผ่าน) |
+|---|---------------------|-------------|---------|-------|------------------------|
+| repro | test-run `db_backup.sh` จริงบน NAS ก่อนตั้ง schedule | — | ✅ script รันผ่าน แต่ archive แค่ **989 bytes** (DB จริง 933KB) | ❌ | ขนาดผิดปกติ = backup ผิดไฟล์ |
+| H1 | script ชี้ path ผิด | เทียบ DBS list กับ compose mounts | script อ่าน `$UI_DIR/chat_history.db` (root repo, 12KB, เม.ย.) แต่ compose mount DB จริงจาก `$UI_DIR/data/chat_history.db` (933KB) | ✅ | root cause: layout host ≠ ที่ script เดา |
+| fix | TDD: test seed ทั้ง 2 ตำแหน่ง + marker table → assert ได้ตัว data/ | prefer `data/chat_history.db` ถ้ามี, fallback root | archive 144KB (เดิม 989B) | ✅ | |
+
+- **Root cause:** `scripts/db_backup.sh` เขียนตาม layout dev (Mac: DB อยู่ root repo) แต่ prod mount DB จาก `data/` — root repo มีไฟล์ค้างเก่าชื่อเดียวกันหลอกให้ script "สำเร็จ" ด้วยข้อมูลผิด. บทเรียน: **backup ต้อง test-run + ดูขนาด archive จริงก่อนตั้ง schedule เสมอ**
+- **งานอื่นใน session:** in-app backup job 03:30 (`utils/db_backup.py` + APScheduler — ตั้ง DSM task จาก SSH ไม่ได้เพราะ sudo จำกัด docker) + mount `data/db_backups` · poppler จบ (พัง 2 ชั้น: image ไม่มี poppler + `pdf2image` ไม่อยู่ใน requirements) · `requirements.lock` pin 137 pkgs จาก pip freeze container จริง · Icon\r recur รอบ 5 (2,668 ไฟล์ ลามเข้า .venv block pytest — ลบแล้ว)
+- **Validation:** suite 697 passed · deployed `ecf005d`+`8d6ac25` rebuild+recreate · verified ใน container: `pdftoppm 25.03.0`, `import pdf2image` OK, trigger `run_db_backup()` ได้ archive 143KB บน host · `/api/status` healthy
+- **ค้างเช็ค:** หลัง 2026-07-13 03:30 → `ls ui/data/db_backups/` บน NAS ต้องมีไฟล์ใหม่อัตโนมัติ
+---
+
 ## [2026-06-16 01:56] SECTION #1 (mode 1 — หาบั๊กในโปรเจค)
 **เป้าหมาย/อาการ:** หาบั๊กในโปรเจค — รัน test suite แล้วเจอ 1 fail: `test_claude_llm.py::test_unconfigured_no_key`
 
