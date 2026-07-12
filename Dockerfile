@@ -12,9 +12,10 @@ RUN apt-get update \
 COPY requirements.lock .
 RUN pip install --no-cache-dir -r requirements.lock
 
-# Pre-download ONNX embedding model — ไม่ต้อง download ใหม่ทุกครั้งที่ start
-RUN python3 -c "from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import ONNXMiniLM_L6_V2; ONNXMiniLM_L6_V2()" || true
-
+# หมายเหตุ: layer pre-download ONNX MiniLM ถูกตัดออก (2026-07-12) — embedding จริงใช้
+# Ollama multilingual (EMBEDDING_MODEL ใน .env) ตั้งแต่ 5a26ba5; MiniLM เหลือแค่ fallback
+# ที่ถ้าถูกใช้จริง recall ก็เพี้ยนอยู่แล้ว (คนละ model กับข้อมูลใน collection) — ถ้าจำเป็น
+# chromadb จะ download เองครั้งเดียวลง volume chroma_model_cache
 COPY . .
 
 EXPOSE 8000

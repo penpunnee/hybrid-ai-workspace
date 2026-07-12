@@ -9,7 +9,7 @@ from utils.rag import build_rag_context, inject_context_to_system
 from utils.history import save_message, load_history, clear_session, get_sessions, export_history_md
 from utils.tokens import count_tokens_approx, get_context_limit, get_token_status
 from utils.memory import save_memory, search_memory, is_memory_available, save_lesson, save_preference, get_lessons, get_preferences
-from utils.skills import get_all_skills, search_skills, auto_extract_skills, get_skill_count
+from utils.skills import search_skills, auto_extract_skills, get_skill_count
 try:
     from streamlit_ace import st_ace
     ACE_AVAILABLE = True
@@ -487,7 +487,7 @@ with st.sidebar:
         provider_choice = st.radio(
             "AI Engine",
             options=["ollama", "gemini"],
-            format_func=lambda x: f"🏠 Local" if x == "ollama" else f"☁️ Gemini",
+            format_func=lambda x: "🏠 Local" if x == "ollama" else "☁️ Gemini",
             index=0 if st.session_state.provider == "ollama" else 1,
         )
         st.session_state.provider = provider_choice

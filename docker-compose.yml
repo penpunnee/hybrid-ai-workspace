@@ -35,7 +35,6 @@ services:
       - ./reasoning:/app/reasoning
       - ./agents:/app/agents
       - ./server.py:/app/server.py
-      - ./app.py:/app/app.py
       - ./tests:/app/tests
       - chroma_model_cache:/root/.cache/chroma
     environment:

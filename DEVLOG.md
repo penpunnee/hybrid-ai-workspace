@@ -1,6 +1,28 @@
 
 ---
 
+## [2026-07-12] SECTION — ROADMAP session 2 (คุณภาพ): ruff เข้า CI + ตัด Streamlit
+**เป้าหมาย:** P2-7 (pyflakes findings + ruff CI) + P2-8 (ตัด Streamlit legacy) ตาม ROADMAP
+
+### P2-7 — ตรวจ 3 จุด smell ก่อนกวาด (ไม่ใช่แค่ลบตามเครื่องบอก)
+| จุด | ผลตรวจ | สรุป |
+|---|---|---|
+| `cached_mid` (routers/chat.py) | ทุก short-circuit path (image_gen/active_learning) ก็ save user msg โดยไม่เก็บ id, `done` ส่งเฉพาะ assistant id ตาม schema | ไม่ใช่ logic หล่นหาย → ลบ binding |
+| `nonlocal messages` (generate) | ใน generate() มีแต่ `messages[0] = {...}` (item assignment) ไม่มี rebinding | nonlocal ไม่จำเป็น → ตัดออก |
+| `genai_types` loop shadow (orchestrator) | ruff สะอาด — ถูกแก้ไปแล้วตอนงาน `Part.from_text` 2026-06-12 | ปิดได้ ไม่มีงาน |
+
+- กวาด ruff F ทั้ง repo: 58 จุด (43 F401 unused import / 9 F541 f-string / 6 F841 unused var) — F841 แก้มือทีละตัว
+- ⚠️ บทเรียน: replace `results = _collect(` แบบเหมาโดน 4 จุดทั้งที่ flag แค่ 2 — อีก 2 tests ใช้ `results` ต่อจริง (พังแบบ NameError) → เช็ค grep ก่อน/หลังเสมอ แก้คืนแล้ว
+- **ruff เข้า CI:** `ruff.toml` (F-rules, exclude legacy/.venv/data/sandbox) + step `Lint (ruff)` pin `0.15.17` ใน `tests.yml` ก่อน pytest
+
+### P2-8 — ตัด Streamlit legacy
+- `git mv app.py legacy/` + ตัด mount `./app.py` ใน compose + ตัด `streamlit`/`streamlit-ace` จาก requirements.txt
+- **regen lock แบบแม่น (ไม่มี py3.11 บน Mac):** รัน `pip install --dry-run --report` ใน container `python:3.11-slim` บน NAS โดย `-r requirements.txt -c requirements.lock` (constraint = lock เดิม) → closure 121 pkgs, ตัด 17 (streamlit×2 + orphans: altair/pandas/pyarrow/pydeck/jinja2/markupsafe/gitpython/gitdb/smmap/blinker/cachetools/itsdangerous/narwhals/toml/watchdog), **ADDED 0 / VERSION CHANGED 0** + grep ยืนยันไม่มี source import ตัวที่ตัด
+- **ตัด layer pre-download ONNX MiniLM ใน Dockerfile:** EF จริง = Ollama multilingual (`EMBEDDING_MODEL`) ตั้งแต่ `5a26ba5`; MiniLM เหลือเป็น fallback ที่ถ้าถูกใช้จริง recall ก็เพี้ยนอยู่แล้ว (คนละ model กับข้อมูล) — จำเป็นจริง chromadb download เองลง volume `chroma_model_cache`
+- 🧿 **หลักฐาน Icon\r P0-1:** `Icon\r` โผล่ใน `.ruff_cache/` ที่เพิ่งสร้างระหว่าง session = ตัวเขียน (iCloud) ยัง active อยู่ตอนนี้ ไม่ใช่ซากเก่า — session 3 ต้องปิดที่ต้นตอ
+- **Validation:** suite 697 passed (เพิ่มจาก 690 — มี test ใหม่จาก session 1) · ruff clean · deploy = rebuild image บน NAS (lock+Dockerfile เปลี่ยน)
+---
+
 ## [2026-07-12 19:50] SECTION — audit ทั้งโปรเจกต์ + ROADMAP session 1 (งาน NAS)
 **เป้าหมาย:** audit ทั้งโปรเจกต์ → `ROADMAP.md` แล้วทำ session 1: backup + key + poppler
 

@@ -24,7 +24,7 @@
 
 ### 3. Pin dependencies ✅ จบ 2026-07-12 (ดึงมาทำก่อน rebuild poppler)
 - [x] `requirements.lock` จาก `pip freeze` ของ container prod จริง (137 packages) — Dockerfile install จาก lock, `requirements.txt` เป็น spec หลวมไว้อ่าน
-- [ ] ถือโอกาสไล่ dep ตาย: `streamlit`, `streamlit-ace` (ดู P2-8 — ตอนตัดต้อง regenerate lock)
+- [x] ถือโอกาสไล่ dep ตาย: `streamlit`, `streamlit-ace` ✅ 2026-07-12 (ดู P2-8 — lock regen ด้วย pip dry-run resolve บน py3.11 container: 138→121 pkgs)
 
 ---
 
@@ -47,17 +47,17 @@
 
 ## P2 — คุณภาพโค้ด / ลดหนี้เทคนิค
 
-### 7. เก็บ pyflakes findings ที่ค้างจาก DEVLOG 2026-06-16 (ยังอยู่ครบ — ตรวจซ้ำวันนี้)
-- [ ] `routers/chat.py:147` `cached_mid` assigned ไม่เคยใช้ — **ตรวจว่าเป็น logic ที่หล่นหาย** (message_id ของ cache hit ไม่ถูกส่งกลับ?) ไม่ใช่แค่ลบตัวแปร
-- [ ] `routers/chat.py:390` `nonlocal messages` ไม่เคย assign — smell, ไล่เจตนาเดิม
-- [ ] `agents/orchestrator.py` import `genai_types` โดน loop variable บัง (DEVLOG ระบุ — เช็คว่ายังจริง)
-- [ ] unused imports กองใหญ่ใน `routers/chat.py` (os, base64, asyncio, WebSocket, GEMINI_*, VOICE_MAP...) — กวาดทิ้ง
-- [ ] **กันถาวร: เพิ่ม ruff เข้า CI** (แทน pyflakes ad-hoc) — `ruff check` ใน `.github/workflows/tests.yml` + config ขั้นต่ำ (F-rules ก่อน ค่อยเปิดเพิ่ม)
+### 7. เก็บ pyflakes findings ✅ จบ 2026-07-12
+- [x] `cached_mid` — ตรวจแล้ว**ไม่ใช่** logic หล่นหาย (ทุก short-circuit path ส่งเฉพาะ assistant id ใน `done` เหมือนกันหมด) → ลบ binding
+- [x] `nonlocal messages` — ใน `generate()` มีแต่ `messages[0] = {...}` (item assignment ไม่ต้อง nonlocal) → ตัดออกจากบรรทัด nonlocal
+- [x] `genai_types` loop shadow — **แก้ไปแล้ว**ตอนงาน `Part.from_text` 2026-06-12 (ruff สะอาด) ไม่เหลืออะไรทำ
+- [x] กวาด ruff F ทั้ง repo 58 จุด (43 unused import + 9 f-string + 6 unused var) — 697 tests ผ่าน
+- [x] **ruff เข้า CI แล้ว** — `ruff.toml` (F-rules, exclude legacy/) + step `Lint (ruff)` ใน workflow (pin 0.15.17)
 
-### 8. ตัด Streamlit legacy
-- `app.py` (Streamlit UI เก่า ไม่ได้ใช้ตั้งแต่ 2026-05-10) ยังลาก `streamlit`+`streamlit-ace` เข้า Docker image ทุก build — image หนักฟรี + attack surface
-- [ ] ย้าย `app.py` → `legacy/` หรือลบ (git history เก็บไว้แล้ว) + ตัด 2 deps ออกจาก requirements
-- [ ] Dockerfile: layer pre-download ONNX MiniLM — เช็คว่ายังจำเป็นไหมหลังย้ายเป็น Ollama multilingual EF (`5a26ba5`) ถ้า EF เก่าไม่ถูกเรียกแล้ว ตัด layer นี้ = build เร็วขึ้น image เล็กลง
+### 8. ตัด Streamlit legacy ✅ จบ 2026-07-12
+- [x] ย้าย `app.py` → `legacy/app.py` + ตัด mount `./app.py` ใน compose + ตัด `streamlit`/`streamlit-ace` จาก requirements.txt
+- [x] regen lock แบบแม่น: pip dry-run resolve บน `python:3.11-slim` (ตรง image) constraint=lock เดิม → ตัด 17 pkgs (streamlit×2 + orphan transitives: altair/pandas/pyarrow/pydeck/jinja2/gitpython ฯลฯ) 138→121, เวอร์ชันที่เหลือไม่ขยับ, grep ยืนยันไม่มี source import ตัวที่ตัด
+- [x] ตัด layer pre-download ONNX MiniLM ใน Dockerfile — EF จริง = Ollama multilingual; fallback MiniLM ถ้าถูกใช้ recall ก็เพี้ยนอยู่แล้ว, จำเป็นจริง chromadb download เองลง volume `chroma_model_cache`
 
 ### 9. Admin API ลบ episodic memory (แก้ pain "memory ปนเปื้อนจากการเทส")
 - ทุกวันนี้เทส `/api/chat` บน prod แล้วต้องต่อ ChromaDB ตรงเพื่อลบขยะ (Known Quirks) — ทำผิดพลาดง่ายและเคยเกิด contamination จริง (2026-06-11)
