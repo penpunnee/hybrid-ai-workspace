@@ -26,8 +26,15 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$DEST"
 
 # databases ที่จะ backup — chat_history = สำคัญสุด; cache dbs = bonus (regenerable)
+# prod (NAS): DB จริง mount จาก data/chat_history.db — ตัวที่ root repo เป็นไฟล์ค้างเก่า
+# (เจอจริง 2026-07-12: backup ได้ตัว root 12KB แทนตัวจริง 933KB)
+if [ -f "$UI_DIR/data/chat_history.db" ]; then
+  CHAT_DB="$UI_DIR/data/chat_history.db"
+else
+  CHAT_DB="$UI_DIR/chat_history.db"
+fi
 DBS=(
-  "$UI_DIR/chat_history.db"
+  "$CHAT_DB"
   "$UI_DIR/data/embed_cache.db"
   "$UI_DIR/data/response_cache.db"
 )

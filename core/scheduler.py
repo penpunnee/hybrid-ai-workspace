@@ -26,6 +26,16 @@ def _scheduled_dream():
             pass
 
 
+def _scheduled_db_backup():
+    from utils.db_backup import run_db_backup
+    try:
+        archive = run_db_backup()
+        if archive:
+            logger.info(f"[Scheduler] DB backup เสร็จ → {archive}")
+    except Exception as e:
+        logger.error(f"[Scheduler] DB backup error: {e}")
+
+
 def start_scheduler():
     scheduler.add_job(
         _scheduled_dream,
@@ -33,5 +43,13 @@ def start_scheduler():
         id="dream_nightly",
         replace_existing=True,
     )
+    # 03:30 — ก่อน chroma backup (DSM task 00:01 คนละตัว); ตั้งใน DSM ไม่ได้เพราะ
+    # sudo จาก SSH จำกัดแค่ docker เลยฝัง job ในแอปแทน
+    scheduler.add_job(
+        _scheduled_db_backup,
+        CronTrigger(hour=3, minute=30),
+        id="db_backup_nightly",
+        replace_existing=True,
+    )
     scheduler.start()
-    logger.info("[Scheduler] ตั้ง Dream รันทุกคืนตี 2 แล้ว")
+    logger.info("[Scheduler] ตั้ง Dream ตี 2 + DB backup 03:30 แล้ว")

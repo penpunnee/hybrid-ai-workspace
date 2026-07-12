@@ -24,6 +24,8 @@ services:
       - ${NAS_DATA_PATH:-./data}/skills:/app/skills
       # mount logs dir → ดู server.log จาก host ได้ + persist หลัง restart
       - ${NAS_DATA_PATH:-./data}/logs:/app/logs
+      # DB backup 03:30 (core/scheduler.py) เขียนที่นี่ — ต้อง mount ไม่งั้นหายตอน recreate
+      - ${NAS_DATA_PATH:-./data}/db_backups:/app/db_backups
       - ./static:/app/static
       - ./utils:/app/utils
       - ./assistants:/app/assistants

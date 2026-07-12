@@ -1,0 +1,120 @@
+# ROADMAP — Hybrid AI Workspace (Khim AI)
+
+> จัดทำจากการ audit ทั้งโปรเจกต์ 2026-07-12 · สถานะ ณ วันตรวจ: backend 690 tests ผ่านหมด ·
+> frontend (appscript.ui) 111 vitest ผ่านหมด, git clean, backup 2 remotes ✅ ·
+> โครงหลักแข็งแรง — งานที่เหลือส่วนใหญ่เป็น "ปิด loose ends" ไม่ใช่สร้างใหม่
+> ⚠️ สถานะฝั่ง NAS prod ในเอกสารนี้อ้างจากบันทึกล่าสุด (2026-06-18/07-05) — session นี้ตรวจสดไม่ได้ ให้ verify ตอนลงมือ
+
+---
+
+## P0 — ปัญหาที่เจอจริงวันนี้ / เสี่ยงข้อมูล-เสถียรภาพ
+
+### 1. Icon\r recur รอบ 5 (เจอ+ลบแล้ว 2,668 ไฟล์ 2026-07-12) — ต้องแก้ที่ต้นตอ
+- อาการรอบนี้: ลามเข้า `.venv/` ทำ **pytest collection พังทั้ง suite** (NotADirectoryError)
+- ลบแล้วรอบที่ 5 — การลบซ้ำไม่ใช่ทางแก้ ต้องปิดที่ต้นตอ:
+  - [ ] เช็คว่า iCloud Desktop & Documents sync ถูกปิดจริง (`System Settings → iCloud → Drive → Desktop & Documents`) — เคย "ปิดแล้ว" แต่ recur แสดงว่ายังมีตัวเขียนอยู่
+  - [ ] ถ้าปิดไม่ได้/ไม่อยากปิด: ทำ launchd job หรือ cron ลบ `Icon\r` รายวัน + เพิ่มบรรทัด `Icon?` ใน `.gitignore` ทุก repo ที่โดน
+  - [ ] ระยะยาว: พิจารณาย้ายโปรเจกต์ dev ออกจาก `~/Desktop` (โฟลเดอร์ที่ iCloud จับ) ไป `~/dev/` — ตัดปัญหาถาวร
+
+### 2. Backup ฐานข้อมูล prod ยังไม่ยืนยันว่ารันจริง
+- `scripts/db_backup.sh` เขียนเสร็จแล้ว + มี test แต่ **DSM task 03:30 เช็คครั้งสุดท้าย (2026-06-18) ยังไม่พบ**
+- chat_history.db บน NAS = feedback 👍 ที่จะใช้ fine-tune + ประวัติทั้งหมด — พังแล้วหายจริง
+- [ ] ตั้ง DSM Task Scheduler รายวัน 03:30 (user=root) เรียก `db_backup.sh` แล้วดูว่า `/volume1/homes/pawin/db_backups` มี tar.gz โผล่จริง
+- [ ] ยืนยัน `chroma_backup.sh` 04:00 ยังทำงาน (ดูไฟล์ล่าสุดใน dest)
+
+### 3. Pin dependencies — requirements.txt เป็น `>=` ทั้งไฟล์
+- rebuild image ครั้งไหนก็ได้เวอร์ชันใหม่ → prod แตกแบบเดาไม่ได้ (chromadb / google-genai / anthropic ขยับ API บ่อย)
+- [ ] `pip freeze` จาก container จริง → สร้าง `requirements.lock` ใช้ใน Dockerfile, คง `requirements.txt` เป็น spec หลวมไว้อ่าน
+- [ ] ถือโอกาสไล่ dep ตาย: `streamlit`, `streamlit-ace` (ดู P2-8)
+
+---
+
+## P1 — ปลดฟีเจอร์ที่เขียนเสร็จแล้วแต่ยังไม่ทำงาน (งานสั้น, คุ้มสุด)
+
+### 4. ใส่ key ใน NAS `.env` + recreate (บันทึกล่าสุดยังว่างทั้ง 3)
+- [ ] `ANTHROPIC_API_KEY` → ปลด Claude ใน Model picker (โค้ด+UI พร้อมหมดแล้ว รวม prompt caching)
+- [ ] `MOONSHOT_API_KEY` → ปลด Kimi K2.6
+- [ ] `HA_URL` + `HA_TOKEN` → Agent สั่ง Home Assistant ได้จริง (tools เขียนเสร็จ 3 ตัว: search/get_state/call_service)
+- recreate: `cd /var/services/homes/pawin/ui && sudo docker compose up -d hybrid-ai --force-recreate` (จำ gotcha: `docker restart` ไม่ reload .env)
+
+### 5. ติดตั้ง `poppler-utils` บน NAS
+- [ ] OCR PDF scan (`utils/ocr.py` + pdf2image) เขียนเสร็จแล้วแต่ไม่มี poppler = พังเงียบบน prod
+- [ ] เทส upload PDF scan จริง 1 ไฟล์หลังติดตั้ง
+
+### 6. แยก `GEMINI_SEARCH_MODEL` (ค้างจาก session 2026-07-05)
+- [ ] ตอนนี้ `gemini_web_search()` ใช้โมเดลเดียวกับ chat — แยก env ให้เลือกตัวถูก/โควตาเหลือสำหรับ grounding โดยเฉพาะ
+
+---
+
+## P2 — คุณภาพโค้ด / ลดหนี้เทคนิค
+
+### 7. เก็บ pyflakes findings ที่ค้างจาก DEVLOG 2026-06-16 (ยังอยู่ครบ — ตรวจซ้ำวันนี้)
+- [ ] `routers/chat.py:147` `cached_mid` assigned ไม่เคยใช้ — **ตรวจว่าเป็น logic ที่หล่นหาย** (message_id ของ cache hit ไม่ถูกส่งกลับ?) ไม่ใช่แค่ลบตัวแปร
+- [ ] `routers/chat.py:390` `nonlocal messages` ไม่เคย assign — smell, ไล่เจตนาเดิม
+- [ ] `agents/orchestrator.py` import `genai_types` โดน loop variable บัง (DEVLOG ระบุ — เช็คว่ายังจริง)
+- [ ] unused imports กองใหญ่ใน `routers/chat.py` (os, base64, asyncio, WebSocket, GEMINI_*, VOICE_MAP...) — กวาดทิ้ง
+- [ ] **กันถาวร: เพิ่ม ruff เข้า CI** (แทน pyflakes ad-hoc) — `ruff check` ใน `.github/workflows/tests.yml` + config ขั้นต่ำ (F-rules ก่อน ค่อยเปิดเพิ่ม)
+
+### 8. ตัด Streamlit legacy
+- `app.py` (Streamlit UI เก่า ไม่ได้ใช้ตั้งแต่ 2026-05-10) ยังลาก `streamlit`+`streamlit-ace` เข้า Docker image ทุก build — image หนักฟรี + attack surface
+- [ ] ย้าย `app.py` → `legacy/` หรือลบ (git history เก็บไว้แล้ว) + ตัด 2 deps ออกจาก requirements
+- [ ] Dockerfile: layer pre-download ONNX MiniLM — เช็คว่ายังจำเป็นไหมหลังย้ายเป็น Ollama multilingual EF (`5a26ba5`) ถ้า EF เก่าไม่ถูกเรียกแล้ว ตัด layer นี้ = build เร็วขึ้น image เล็กลง
+
+### 9. Admin API ลบ episodic memory (แก้ pain "memory ปนเปื้อนจากการเทส")
+- ทุกวันนี้เทส `/api/chat` บน prod แล้วต้องต่อ ChromaDB ตรงเพื่อลบขยะ (Known Quirks) — ทำผิดพลาดง่ายและเคยเกิด contamination จริง (2026-06-11)
+- [ ] `GET /api/admin/memory/{assistant}?q=...` (list+preview) + `DELETE /api/admin/memory/{assistant}/{id}` — จำกัด LAN-only เหมือน `/api/admin/unlock`
+- [ ] ตัวเลือกเสริม: header/flag `X-Test-Request` ให้ chat ข้าม remember/teach ตอน smoke test — ตัดปัญหาที่ต้นทาง
+
+### 10. โครงไฟล์เริ่มโต — เฝ้าดู ยังไม่ต้องผ่า
+- `utils/llm.py` 860 บรรทัด (5 provider ในไฟล์เดียว), `routers/chat.py` 597, `agents/tools.py` 675
+- [ ] ถ้าจะเพิ่ม provider ใหม่อีกตัว → ค่อยแยก `utils/llm/` package ต่อ provider ตอนนั้น (อย่า refactor ลอยๆ)
+
+---
+
+## P3 — งานฟีเจอร์ค้าง (ตามลำดับคุ้ม)
+
+### 11. Local model: หาตัวแทน qwen3.5-9b ที่นิ่งกว่า
+- ปัญหาที่บันทึกไว้: ไทย leak จีน/รัสเซีย + ปิด thinking ผ่าน API ไม่ได้ → timeout + บับเบิลว่าง (guard กันไว้แล้ว แต่เป็นปลายเหตุ)
+- [ ] ทดลอง candidates ตาม checklist ใน vault `concepts/local-llm-selection-lessons.md`: Typhoon 2.1 / Qwen2.5-Instruct / Gemma3
+- [ ] เกณฑ์ผ่าน: ไทยไม่ leak · คุม thinking ได้ (หรือไม่มี) · tool-calling ใช้ได้ · ตอบใน timeout
+- [ ] แถม: timeout safety net ฝั่ง server (cap เวลารวมต่อ request แล้วตอบ partial + ขอโทษ แทนปล่อยค้าง 131s)
+
+### 12. Web-search grounding classifier (#34 ค้างตั้งแต่ 2026-06-11)
+- [ ] เขียน test ที่ค้างให้จบ + ตัดสินว่าจะขยาย `needs_internet()` ตามบริบท หรือเปิด grounding ทุก call ของ Gemini
+- [ ] วัดผลด้วยชุดคำถาม real-time (ราคาทอง/อากาศ/ข่าว) ก่อน-หลัง
+
+### 13. สะสม 👍 → fine-tune ขวัญ (pipeline พร้อมทั้งเส้นแล้ว)
+- [ ] เช็คยอดปัจจุบัน: `GET /api/feedback/stats` (เป้า ~200-500)
+- [ ] ระหว่างรอ: รัน `scripts/auto_score.py` (RLAIF) สะสมคู่ auto-scored แยกไว้
+- [ ] ครบเป้า → `scripts/improve_loop.sh` บน PC GPU (.235) — **ห้าม deploy ถ้า eval gate FAIL**
+
+### 14. Verify ด้วยตาที่ค้าง (งานเปิด browser 15 นาที)
+- [ ] File Manager: drag&drop / กล้อง 📷 / index toast บน prod จริง
+- [ ] Dream cycle บน prod ยังผลิต report รายคืนไหม (local มี report เดียว 2026-05-08 — ปกติเพราะ dev ไม่ได้เปิดค้าง แต่ prod ควรมีทุกคืน) → `ls dream_reports/` บน NAS + ดู Sleep card
+
+### 15. พักไว้ตามการตัดสินใจเดิม (อย่าหยิบมาทำจนกว่าเงื่อนไขเปลี่ยน)
+- ⛔ Image Gen — โค้ดพร้อม รอเปิด billing Google (~$0.04/รูป)
+- ⛔ Ollama เป็น provider หลัก — คงเป็น dormant fallback
+
+---
+
+## สิ่งที่ตรวจแล้ว "ดีอยู่แล้ว" (ไม่ต้องแตะ)
+
+| ด้าน | สถานะ |
+|---|---|
+| Test coverage | 690 backend + 111 frontend + JS `node --test` ใน CI — ครอบดีมากสำหรับโปรเจกต์ส่วนตัว |
+| Security | fail-closed auth, rate limit + brute-force lockout, LAN bypass spoof-resistant, secrets ใน .env/PropertiesService ไม่ hardcode |
+| Resilience prod | restart:always + healthcheck + backend-watchdog (recovery path พิสูจน์จริงแล้ว) |
+| Anti-hallucination | 4 ชั้น (system guard / tool guard / learn gate / ข้อมูลจริง) + Agent mode |
+| Backup โค้ด | ui → GitHub ✅ · appscript.ui → NAS + GitHub ✅ (เพิ่งปิดช่องโหว่ 2026-07-05) |
+| Thai embedding | แก้ทั้งระบบแล้ว (`5a26ba5`) — MiniLM → Ollama multilingual |
+| Docs | CLAUDE.md / CONTEXT.md / DEVLOG.md ละเอียดผิดปกติ (ในทางดี) — รักษาวินัยนี้ไว้ |
+
+---
+
+## ลำดับแนะนำ (ถ้าทำทีละ session)
+
+1. **Session แรก (infra, ~1 ชม.):** P0-2 backup task + P1-4 ใส่ key 3 ตัว + P1-5 poppler — งาน NAS ล้วน จบแล้วฟีเจอร์ที่จ่ายเงินเขียนไปแล้วเริ่มทำงานครบ
+2. **Session สอง (คุณภาพ, ~1-2 ชม.):** P0-3 pin requirements + P2-7 pyflakes/ruff เข้า CI + P2-8 ตัด streamlit — ลดความเสี่ยง rebuild + กัน regression ระยะยาว
+3. **Session สาม (ต้นตอ):** P0-1 Icon\r ถาวร + P2-9 admin memory API
+4. **จากนั้น:** P3 ตามลำดับ 11 → 12 → 13 (13 ขึ้นกับยอด 👍 ไม่ใช่ effort)

@@ -59,6 +59,33 @@ def test_backup_fails_when_no_dbs(tmp_path):
     assert "ไม่พบ database" in (r.stdout + r.stderr)
 
 
+def test_backup_prefers_data_layout_over_stale_root_db(tmp_path):
+    # prod (NAS): DB จริงอยู่ data/chat_history.db — root chat_history.db เป็นไฟล์ค้างเก่า
+    # เจอจริง 2026-07-12: script หยิบตัว root (12KB เม.ย.) แทนตัวจริง (933KB) → backup เปล่า
+    ui = tmp_path / "ui"
+    _seed_db(str(ui / "chat_history.db"))
+    real = str(ui / "data" / "chat_history.db")
+    _seed_db(real)
+    conn = sqlite3.connect(real)
+    conn.execute("CREATE TABLE real_marker (x INTEGER)")
+    conn.commit()
+    conn.close()
+
+    dest = tmp_path / "backups"
+    r = _run(ui, dest)
+    assert r.returncode == 0, r.stderr
+
+    archive = next(dest.glob("db_backup_*.tar.gz"))
+    extract = tmp_path / "extract"
+    with tarfile.open(archive) as tf:
+        tf.extractall(extract)
+    conn = sqlite3.connect(extract / "chat_history.db")
+    tables = {row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    conn.close()
+    assert "real_marker" in tables, "ต้อง backup ตัว data/ (DB จริง) ไม่ใช่ตัว root ที่ค้างเก่า"
+
+
 def test_backup_still_runs_with_only_chat_history(tmp_path):
     # cache dbs หาย แต่ chat_history (สำคัญสุด) ยังอยู่ → ต้อง backup ได้
     ui = tmp_path / "ui"
