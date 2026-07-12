@@ -1,0 +1,7 @@
+# config ขั้นต่ำ — เริ่มจาก F-rules (pyflakes: unused import/var, undefined name) ก่อน
+# ค่อยเปิดเพิ่ม (E/W/B) เมื่อกวาดหมวดนั้นเสร็จ
+target-version = "py312"
+exclude = ["legacy", ".venv", "data", "sandbox"]
+
+[lint]
+select = ["F"]

@@ -160,7 +160,7 @@ def test_gemini_quota_not_retried(monkeypatch):
 
 def test_gemini_nonstr_content_coerced(monkeypatch):
     # content เป็น list/dict → เคย crash ด้วย pydantic "valid part type" → ต้อง coerce เป็น str
-    fake = _patch_gemini_seq(monkeypatch, [["ok"]])
+    _patch_gemini_seq(monkeypatch, [["ok"]])
     out = "".join(llm._stream_gemini([{"role": "user", "content": ["a", "b"]}]))
     assert "ok" in out
 

@@ -230,7 +230,7 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
                       ("INTERNET CONTEXT", "Wikipedia", "wttr.in", "ข้อมูลล่าสุดจากอินเตอร์เน็ต"))
     if is_grounded:
         temperature = 0.2
-        logger.info(f"[LMStudio] grounded context detected → temp=0.2")
+        logger.info("[LMStudio] grounded context detected → temp=0.2")
     else:
         temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.7"))
 

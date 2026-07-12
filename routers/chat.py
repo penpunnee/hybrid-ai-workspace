@@ -1,14 +1,11 @@
-import os
 import json
 import logging
 import threading
-import base64
-import asyncio
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from assistants.config import ASSISTANTS
-from core.config import GEMINI_API_KEY, GEMINI_LIVE_MODEL, SKILLS_DIR
+from core.config import SKILLS_DIR
 from utils.llm import stream_response
 from utils.rag import inject_context_to_system, load_skills_relevant
 from utils.history import (
@@ -21,7 +18,6 @@ from utils.skills import search_skills
 from utils.obsidian_sync import search_vault
 from utils.home_tools import detect_home_tools, build_tool_context
 from reasoning.learn_gate import should_auto_learn
-from utils.tts import VOICE_MAP, DEFAULT_VOICE
 from utils.tokens import count_tokens_approx
 from core.observability import log_timing, current_request_id, get_timings
 
@@ -144,7 +140,7 @@ async def chat(request: Request):
             hit = _rc_lookup(assistant, prompt)
             if hit:
                 cached_resp = hit["response"]
-                cached_mid = save_message(assistant, "user", prompt, "cache", session_id)
+                save_message(assistant, "user", prompt, "cache", session_id)
                 cached_aid = save_message(assistant, "assistant", cached_resp, "cache", session_id)
 
                 def gen_cached():
@@ -387,7 +383,7 @@ async def chat(request: Request):
             logger.warning(f"[Chat] grounding check failed: {e}")
 
     def generate():
-        nonlocal provider_used, model_used, messages
+        nonlocal provider_used, model_used
         import time as _time
         from core.observability import record_timing
         full_response = ""
@@ -419,7 +415,7 @@ async def chat(request: Request):
             # เลือก local provider: LM Studio ถ้าตั้งค่าไว้ ไม่งั้นใช้ Ollama
             if isinstance(e, (GeminiQuotaExhausted, GeminiUnavailable)) and _provider in ("gemini", "gemini_agent"):
                 try:
-                    from core.config import LMSTUDIO_BASE_URL, LMSTUDIO_CHAT_MODEL, OLLAMA_MODEL
+                    from core.config import OLLAMA_MODEL
                     from reasoning.classifier import needs_internet
                     # router ตัดสินใจ local provider — LMStudio/DeepSeek ก่อน, Ollama เป็น last resort
                     from reasoning.router import route as _route

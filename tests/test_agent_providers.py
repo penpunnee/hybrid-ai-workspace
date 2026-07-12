@@ -10,7 +10,6 @@ import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import pytest
 from unittest.mock import patch, MagicMock
 
 
@@ -24,7 +23,7 @@ class TestRunAgentProviderRouting:
         with patch("agents.orchestrator._run_agent_gemini") as mock_gemini:
             mock_gemini.return_value = iter([("chunk", "ok")])
             from agents.orchestrator import run_agent
-            results = _collect(run_agent(
+            _collect(run_agent(
                 [{"role": "user", "content": "ping NAS"}],
                 provider="gemini",
             ))
@@ -34,7 +33,7 @@ class TestRunAgentProviderRouting:
         with patch("agents.orchestrator._run_agent_lmstudio") as mock_lm:
             mock_lm.return_value = iter([("chunk", "ok")])
             from agents.orchestrator import run_agent
-            results = _collect(run_agent(
+            _collect(run_agent(
                 [{"role": "user", "content": "ping NAS"}],
                 provider="lmstudio",
             ))

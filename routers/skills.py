@@ -5,7 +5,7 @@ from fastapi import APIRouter, Request, UploadFile, File
 from core.config import SKILLS_DIR
 from utils.skills import (
     get_skill_count, auto_extract_skills, _load_skills_db, _save_skills_db,
-    search_skills, cleanup_junk_skills,
+    cleanup_junk_skills,
 )
 from utils.llm import stream_response
 

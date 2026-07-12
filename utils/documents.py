@@ -6,10 +6,9 @@
 import hashlib
 import logging
 import time
-from dataclasses import dataclass
 from typing import Optional
 
-from utils.chunking import Chunk, chunk_text, chunk_stats
+from utils.chunking import chunk_text, chunk_stats
 
 logger = logging.getLogger(__name__)
 

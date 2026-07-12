@@ -70,7 +70,7 @@ def test_state_roundtrip(tmp_path):
 # ── _fetch_unscored ───────────────────────────────────────────────────────────
 def test_fetch_unscored_pairs_with_user(clean_msgs):
     _add("user", "q1")
-    aid = _add("assistant", "a1")
+    _add("assistant", "a1")
     conn = _get_conn()
     try:
         items = a._fetch_unscored(conn, 0, 50)

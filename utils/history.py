@@ -2,7 +2,7 @@ import sqlite3
 import os
 import logging
 import threading
-from datetime import datetime, date, timedelta
+from datetime import datetime
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)

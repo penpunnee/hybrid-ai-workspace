@@ -8,8 +8,7 @@ import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import pytest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 from memory.teach import process_teaching
 from memory.store import search_user_facts
 from memory.operations import recall

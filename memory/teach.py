@@ -83,7 +83,7 @@ def process_teaching(assistant: str, user_text: str, ai_response: str = "") -> b
     # ถ้า user แก้ไข AI → ลด confidence ของ memory ที่เกี่ยวข้อง
     if detect_correction(user_text) and ai_response:
         update_confidence(assistant, ai_response[:200], new_confidence=0.3)
-        logger.info(f"[Teach] ตรวจเจอการแก้ไข → ลด confidence ของ response ก่อนหน้า")
+        logger.info("[Teach] ตรวจเจอการแก้ไข → ลด confidence ของ response ก่อนหน้า")
         if len(user_text) > 10:
             entry = MemoryEntry(
                 content=f"[การแก้ไข] {user_text[:300]}",

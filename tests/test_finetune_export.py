@@ -10,7 +10,6 @@ import sqlite3
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import pytest
 from utils.finetune_export import export_sft, _build_example
 
 

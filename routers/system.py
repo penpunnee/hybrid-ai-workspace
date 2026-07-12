@@ -12,7 +12,7 @@ from utils.llm import OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health, check_lms
 from utils.memory import is_memory_available, get_memory_stats
 from utils.skills import get_skill_count
 from utils.dream import get_latest_report
-from utils.tts import generate_tts, VOICE_MAP
+from utils.tts import generate_tts
 from utils.history import search_messages
 
 router = APIRouter(prefix="/api", tags=["system"])
@@ -161,8 +161,6 @@ def status():
 
 @router.get("/health")
 def health_detail():
-    import logging
-    logger = logging.getLogger(__name__)
     try:
         data_path = NAS_DATA_PATH
         usage = shutil.disk_usage(data_path if os.path.exists(data_path) else ".")

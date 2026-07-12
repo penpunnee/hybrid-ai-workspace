@@ -10,7 +10,6 @@ import os
 import base64
 import logging
 import io
-from typing import Generator
 
 logger = logging.getLogger(__name__)
 

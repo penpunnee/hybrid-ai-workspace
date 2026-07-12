@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.config import CORS_ORIGINS_LIST, RELOAD, GEMINI_API_KEY, GEMINI_LIVE_MODEL
 from core.auth import auth_middleware
 from core.ratelimit import rate_limit_middleware
-from core.observability import install_logging, start_request, current_request_id, timing_summary
+from core.observability import install_logging, start_request, timing_summary
 from core.scheduler import start_scheduler
 from utils.skills import _load_skills_db
 
@@ -113,7 +113,6 @@ async def root():
 @app.get("/shared/{token}", response_class=HTMLResponse)
 async def shared_page(token: str):
     """Shared chat page — HTML served here, data fetched via /api/shared/{token}"""
-    import json
     html = f"""<!DOCTYPE html>
 <html lang="th">
 <head>

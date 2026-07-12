@@ -4,8 +4,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import pytest
-from utils.citations import CitationTracker, Citation
+from utils.citations import CitationTracker
 
 
 def test_empty_tracker_len_bool_nextid():

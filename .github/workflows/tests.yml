@@ -27,6 +27,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Lint (ruff)
+        # กติกาอยู่ใน ruff.toml (F-rules) — pin เวอร์ชันให้ตรงกับที่ใช้บนเครื่อง dev
+        run: |
+          pip install ruff==0.15.17
+          ruff check .
+
       - name: Run tests
         # conftest.py ชี้ host → localhost (ไม่มี ChromaDB/Ollama จริงใน CI = connect refused เร็ว)
         # UI_PASSWORD="" + DB_PATH temp file ถูกตั้งใน tests/conftest.py แล้ว

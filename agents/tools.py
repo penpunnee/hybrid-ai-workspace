@@ -5,11 +5,10 @@
   - parameters: JSON schema สำหรับ arguments
   - fn: ฟังก์ชัน Python ที่รันจริง (รับ **kwargs คืน string)
 """
-import json
 import logging
 import re
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 

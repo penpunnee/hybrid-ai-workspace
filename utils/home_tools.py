@@ -232,7 +232,7 @@ def wol_pc() -> dict:
             "error": (
                 "ยังไม่ตั้งค่า PC_MAC ใน .env\n"
                 "ดู MAC ด้วย: ipconfig /all (Windows) หรือ ip link show (Linux)\n"
-                f"แล้วเพิ่ม: PC_MAC=xx:xx:xx:xx:xx:xx"
+                "แล้วเพิ่ม: PC_MAC=xx:xx:xx:xx:xx:xx"
             )
         }
     try:

@@ -1,8 +1,6 @@
 import uuid
-import json
 from datetime import datetime
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
 
 from core.state import share_store_set, share_store_get
 from utils.history import (

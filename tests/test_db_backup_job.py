@@ -9,7 +9,6 @@ import sqlite3
 import tarfile
 import time
 
-import pytest
 
 from utils.db_backup import run_db_backup
 

@@ -192,7 +192,7 @@ def print_report(r: dict) -> None:
         print(f"    lookups={s['lookups']}  hits={s['hits']}  misses={s['misses']}")
         print(f"    hit_rate = {_pct(s['hit_rate'])}")
     e = r["embed"]
-    print(f"\n▸ Embed (LMStudio)")
+    print("\n▸ Embed (LMStudio)")
     print(f"    lru_hit_rate={_pct(e['lru_hit_rate'])}  lru_hits={e['lru_hits']} "
           f"lru_misses={e['lru_misses']}  sqlite_hits={e['sqlite_hits']}  api_calls={e['api_calls']}")
     print(f"\n⏱  estimated latency saved ≈ {r['estimated_ms_saved']/1000:.1f}s")

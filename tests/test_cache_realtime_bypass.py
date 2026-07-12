@@ -7,9 +7,8 @@ import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import pytest
 from utils.response_cache import is_realtime_query, lookup
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 class TestIsRealtimeQuery:
