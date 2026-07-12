@@ -40,8 +40,10 @@
 - [x] เจอว่าพังสองชั้น: ไม่มีทั้ง poppler **และ** `pdf2image` ใน requirements — ใส่ทั้งคู่ใน image (Dockerfile apt + lock) verified `pdftoppm 25.03.0` + import ผ่านใน container
 - [ ] เทส upload PDF scan จริง 1 ไฟล์ผ่าน UI (ยังไม่ได้ทำ — ต้องมีไฟล์ scan จริง)
 
-### 6. แยก `GEMINI_SEARCH_MODEL` (ค้างจาก session 2026-07-05)
-- [ ] ตอนนี้ `gemini_web_search()` ใช้โมเดลเดียวกับ chat — แยก env ให้เลือกตัวถูก/โควตาเหลือสำหรับ grounding โดยเฉพาะ
+### 6. แยก `GEMINI_SEARCH_MODEL` ✅ ปิด 2026-07-13 (พบว่า implement ไปแล้ว)
+- [x] ตรวจพบโค้ดรองรับอยู่แล้วตั้งแต่ `7087f88` (2026-06-20): `utils/llm.py` — precedence `model arg > GEMINI_SEARCH_MODEL > GEMINI_MODEL` (รายการ "ค้าง" ใน memory/ROADMAP stale)
+- [x] เก็บส่วนที่ขาดจริง: test precedence 3 เคส (`test_gemini_web_search.py`) + docs env ใน CLAUDE.md
+- ตั้งค่าใน NAS `.env` = optional tuning (ว่าง = ใช้ `GEMINI_MODEL` flash ตามเดิม ซึ่งโอเคอยู่) — ตั้งเมื่ออยากแยกโควตา grounding ออกจาก chat จริงๆ
 
 ---
 

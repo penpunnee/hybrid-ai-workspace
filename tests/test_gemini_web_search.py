@@ -38,3 +38,41 @@ def test_extract_skips_chunk_without_uri():
 def test_extract_empty_chunks():
     cand = SimpleNamespace(grounding_metadata=SimpleNamespace(grounding_chunks=[]))
     assert _extract_grounding_sources(cand) == []
+
+
+# ── model precedence ของ gemini_web_search (arg > GEMINI_SEARCH_MODEL > GEMINI_MODEL) ──
+# แยก env สำหรับ grounding (P1-6) — กัน regression ถ้าใครแก้ลำดับ fallback
+
+class _RecClient:
+    """fake gemini_client ที่จดชื่อ model ที่ถูกเรียก"""
+    def __init__(self, sink):
+        self.models = SimpleNamespace(generate_content=lambda model, contents, config: (
+            sink.__setitem__("model", model),
+            SimpleNamespace(text="ok", candidates=[]),
+        )[1])
+
+
+def _call_with(monkeypatch, env_val, arg=""):
+    from utils import llm
+    sink = {}
+    monkeypatch.setattr(llm, "gemini_client", _RecClient(sink))
+    monkeypatch.setattr(llm, "GEMINI_MODEL", "chat-default")
+    if env_val is None:
+        monkeypatch.delenv("GEMINI_SEARCH_MODEL", raising=False)
+    else:
+        monkeypatch.setenv("GEMINI_SEARCH_MODEL", env_val)
+    text, results = llm.gemini_web_search("ราคาทอง", model=arg)
+    assert text == "ok"
+    return sink["model"]
+
+
+def test_search_model_arg_wins(monkeypatch):
+    assert _call_with(monkeypatch, env_val="env-model", arg="arg-model") == "arg-model"
+
+
+def test_search_model_env_over_chat_default(monkeypatch):
+    assert _call_with(monkeypatch, env_val="search-flash") == "search-flash"
+
+
+def test_search_model_falls_back_to_gemini_model(monkeypatch):
+    assert _call_with(monkeypatch, env_val=None) == "chat-default"

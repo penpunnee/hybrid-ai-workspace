@@ -20,7 +20,13 @@
 - **regen lock แบบแม่น (ไม่มี py3.11 บน Mac):** รัน `pip install --dry-run --report` ใน container `python:3.11-slim` บน NAS โดย `-r requirements.txt -c requirements.lock` (constraint = lock เดิม) → closure 121 pkgs, ตัด 17 (streamlit×2 + orphans: altair/pandas/pyarrow/pydeck/jinja2/markupsafe/gitpython/gitdb/smmap/blinker/cachetools/itsdangerous/narwhals/toml/watchdog), **ADDED 0 / VERSION CHANGED 0** + grep ยืนยันไม่มี source import ตัวที่ตัด
 - **ตัด layer pre-download ONNX MiniLM ใน Dockerfile:** EF จริง = Ollama multilingual (`EMBEDDING_MODEL`) ตั้งแต่ `5a26ba5`; MiniLM เหลือเป็น fallback ที่ถ้าถูกใช้จริง recall ก็เพี้ยนอยู่แล้ว (คนละ model กับข้อมูล) — จำเป็นจริง chromadb download เองลง volume `chroma_model_cache`
 - 🧿 **หลักฐาน Icon\r P0-1:** `Icon\r` โผล่ใน `.ruff_cache/` ที่เพิ่งสร้างระหว่าง session = ตัวเขียน (iCloud) ยัง active อยู่ตอนนี้ ไม่ใช่ซากเก่า — session 3 ต้องปิดที่ต้นตอ
-- **Validation:** suite 697 passed (เพิ่มจาก 690 — มี test ใหม่จาก session 1) · ruff clean · deploy = rebuild image บน NAS (lock+Dockerfile เปลี่ยน)
+- **Validation:** suite 697 passed (เพิ่มจาก 690 — มี test ใหม่จาก session 1) · ruff clean · CI #143 เขียว (ruff step แรกผ่าน)
+- **Deploy (2026-07-13 00:1x):** rebuild image บน NAS — **1.11GB → 769MB (−341MB)** · recreate ชนซากชื่อ `8d8498f72f30_ai-backend-1` รอบแรก (watchdog race — ซากหายเอง) → `compose up -d` รอบสองผ่าน · verified ใน container: STREAMLIT-GONE, `pdftoppm 25.03.0` อยู่ครบ, `import pdf2image/chromadb/anthropic` ผ่าน, pip 126 รายการ · `/api/status` healthy (local_ok/gemini/memory true)
+
+### P1-6 GEMINI_SEARCH_MODEL — ปิดโดยไม่ต้องเขียนฟีเจอร์
+- ตรวจก่อนทำ → **พบว่า implement ไปแล้ว**ตั้งแต่ `7087f88` (2026-06-20): precedence `arg > GEMINI_SEARCH_MODEL > GEMINI_MODEL` — รายการค้างใน ROADMAP/memory stale
+- เก็บที่ขาดจริง: test precedence 3 เคส (`test_gemini_web_search.py` 4→7) + docs env ใน CLAUDE.md · ตั้งค่าใน NAS `.env` = optional tuning (ว่าง = flash เดิม)
+- บทเรียน: รายการ "ค้าง" ที่จดข้าม session ต้อง grep โค้ดก่อนลงมือเสมอ
 ---
 
 ## [2026-07-12 19:50] SECTION — audit ทั้งโปรเจกต์ + ROADMAP session 1 (งาน NAS)
