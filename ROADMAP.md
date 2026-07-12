@@ -16,30 +16,29 @@
   - [ ] ถ้าปิดไม่ได้/ไม่อยากปิด: ทำ launchd job หรือ cron ลบ `Icon\r` รายวัน + เพิ่มบรรทัด `Icon?` ใน `.gitignore` ทุก repo ที่โดน
   - [ ] ระยะยาว: พิจารณาย้ายโปรเจกต์ dev ออกจาก `~/Desktop` (โฟลเดอร์ที่ iCloud จับ) ไป `~/dev/` — ตัดปัญหาถาวร
 
-### 2. Backup ฐานข้อมูล prod ยังไม่ยืนยันว่ารันจริง
-- `scripts/db_backup.sh` เขียนเสร็จแล้ว + มี test แต่ **DSM task 03:30 เช็คครั้งสุดท้าย (2026-06-18) ยังไม่พบ**
-- chat_history.db บน NAS = feedback 👍 ที่จะใช้ fine-tune + ประวัติทั้งหมด — พังแล้วหายจริง
-- [ ] ตั้ง DSM Task Scheduler รายวัน 03:30 (user=root) เรียก `db_backup.sh` แล้วดูว่า `/volume1/homes/pawin/db_backups` มี tar.gz โผล่จริง
-- [ ] ยืนยัน `chroma_backup.sh` 04:00 ยังทำงาน (ดูไฟล์ล่าสุดใน dest)
+### 2. Backup ฐานข้อมูล prod ✅ จบ 2026-07-12
+- เจอ+แก้บั๊กจริง: script หยิบ `ui/chat_history.db` (ค้างเก่า 12KB) แทน `ui/data/chat_history.db` (ตัวจริง 933KB) → backup เปล่า
+- [x] backup รายคืน 03:30 — ฝังเป็น APScheduler job ในแอป (`utils/db_backup.py`) แทน DSM task (ตั้งจาก SSH ไม่ได้) — verified ได้ archive 143KB จริง
+- [x] `chroma_backup` ยืนยันรันจริงทุกคืน 00:01 (ไม่ใช่ 04:00 ตาม docs เดิม)
+- [ ] เช็คหลัง 2026-07-13 03:30: `ls ui/data/db_backups/` ต้องมีไฟล์ใหม่รายวัน
 
-### 3. Pin dependencies — requirements.txt เป็น `>=` ทั้งไฟล์
-- rebuild image ครั้งไหนก็ได้เวอร์ชันใหม่ → prod แตกแบบเดาไม่ได้ (chromadb / google-genai / anthropic ขยับ API บ่อย)
-- [ ] `pip freeze` จาก container จริง → สร้าง `requirements.lock` ใช้ใน Dockerfile, คง `requirements.txt` เป็น spec หลวมไว้อ่าน
-- [ ] ถือโอกาสไล่ dep ตาย: `streamlit`, `streamlit-ace` (ดู P2-8)
+### 3. Pin dependencies ✅ จบ 2026-07-12 (ดึงมาทำก่อน rebuild poppler)
+- [x] `requirements.lock` จาก `pip freeze` ของ container prod จริง (137 packages) — Dockerfile install จาก lock, `requirements.txt` เป็น spec หลวมไว้อ่าน
+- [ ] ถือโอกาสไล่ dep ตาย: `streamlit`, `streamlit-ace` (ดู P2-8 — ตอนตัดต้อง regenerate lock)
 
 ---
 
 ## P1 — ปลดฟีเจอร์ที่เขียนเสร็จแล้วแต่ยังไม่ทำงาน (งานสั้น, คุ้มสุด)
 
-### 4. ใส่ key ใน NAS `.env` + recreate (บันทึกล่าสุดยังว่างทั้ง 3)
+### 4. ใส่ key ใน NAS `.env` + recreate (ยืนยันสด 2026-07-12: ว่างทั้ง 4 — **user เลือกข้ามไปก่อน**, Kimi ยังไม่มีบัญชี)
 - [ ] `ANTHROPIC_API_KEY` → ปลด Claude ใน Model picker (โค้ด+UI พร้อมหมดแล้ว รวม prompt caching)
 - [ ] `MOONSHOT_API_KEY` → ปลด Kimi K2.6
 - [ ] `HA_URL` + `HA_TOKEN` → Agent สั่ง Home Assistant ได้จริง (tools เขียนเสร็จ 3 ตัว: search/get_state/call_service)
 - recreate: `cd /var/services/homes/pawin/ui && sudo docker compose up -d hybrid-ai --force-recreate` (จำ gotcha: `docker restart` ไม่ reload .env)
 
-### 5. ติดตั้ง `poppler-utils` บน NAS
-- [ ] OCR PDF scan (`utils/ocr.py` + pdf2image) เขียนเสร็จแล้วแต่ไม่มี poppler = พังเงียบบน prod
-- [ ] เทส upload PDF scan จริง 1 ไฟล์หลังติดตั้ง
+### 5. ติดตั้ง `poppler-utils` ✅ จบ 2026-07-12
+- [x] เจอว่าพังสองชั้น: ไม่มีทั้ง poppler **และ** `pdf2image` ใน requirements — ใส่ทั้งคู่ใน image (Dockerfile apt + lock) verified `pdftoppm 25.03.0` + import ผ่านใน container
+- [ ] เทส upload PDF scan จริง 1 ไฟล์ผ่าน UI (ยังไม่ได้ทำ — ต้องมีไฟล์ scan จริง)
 
 ### 6. แยก `GEMINI_SEARCH_MODEL` (ค้างจาก session 2026-07-05)
 - [ ] ตอนนี้ `gemini_web_search()` ใช้โมเดลเดียวกับ chat — แยก env ให้เลือกตัวถูก/โควตาเหลือสำหรับ grounding โดยเฉพาะ

@@ -130,9 +130,10 @@ Ollama branch: context cap 2000 chars; trim history to <3000 tokens.
 | Embedding cache (Phase E) | `data/embed_cache.db` (SQLite WAL, float32 blobs) |
 | Response cache (Phase E) | `data/response_cache.db` (SQLite WAL) |
 
-**Backups (DSM Task Scheduler รายวัน, user=root):**
-- `scripts/db_backup.sh` — `chat_history.db` (sessions/messages/**feedback**/pins) + `data/*.db` → `sqlite3 .backup` (online, WAL-safe) → tar.gz เก็บ 7 วัน ที่ `$DB_BACKUP_DEST` (default `/volume1/homes/pawin/db_backups`). แนะนำ **03:30** (ก่อน chroma 04:00)
-- `chroma_backup.sh` — ChromaDB volume `ui_chroma_data` (อยู่บน NAS, 04:00)
+**Backups (สถานะจริง ยืนยัน 2026-07-12):**
+- **DB backup = in-app job 03:30** (`core/scheduler.py` → `utils/db_backup.py`) — sqlite3 backup API (online, WAL-safe) ของ `chat_history.db` + cache dbs → tar.gz เก็บ 7 วันที่ `/app/db_backups` (mount → `ui/data/db_backups` บน NAS). เลือกฝังในแอปเพราะตั้ง DSM task จาก SSH ไม่ได้ (sudo จำกัดแค่ docker) — verified จริง: trigger ใน container ได้ archive 143KB
+- `scripts/db_backup.sh` — ทางเลือกรันมือฝั่ง host (dest `/volume1/homes/pawin/db_backups`). ⚠️ แก้แล้ว 2026-07-12: เดิมหยิบ `ui/chat_history.db` (ไฟล์ค้างเก่า 12KB) แทน `ui/data/chat_history.db` (DB จริงที่ compose mount) → backup เปล่า
+- **chroma backup = DSM task รายคืน 00:01** (ไม่ใช่ 04:00 ตามที่เคยเขียน) → `/volume1/homes/pawin/chroma_backups/` — ยืนยันมีไฟล์รายวันจริง
 
 ### Key Files
 
