@@ -33,10 +33,10 @@
 
 ## P1 — ปลดฟีเจอร์ที่เขียนเสร็จแล้วแต่ยังไม่ทำงาน (งานสั้น, คุ้มสุด)
 
-### 4. ใส่ key ใน NAS `.env` + recreate (ยืนยันสด 2026-07-12: ว่างทั้ง 4 — **user เลือกข้ามไปก่อน**, Kimi ยังไม่มีบัญชี)
+### 4. ใส่ key ใน NAS `.env` + recreate
 - [ ] `ANTHROPIC_API_KEY` → ปลด Claude ใน Model picker (โค้ด+UI พร้อมหมดแล้ว รวม prompt caching)
-- [ ] `MOONSHOT_API_KEY` → ปลด Kimi K2.6
-- [ ] `HA_URL` + `HA_TOKEN` → Agent สั่ง Home Assistant ได้จริง (tools เขียนเสร็จ 3 ตัว: search/get_state/call_service)
+- [ ] `MOONSHOT_API_KEY` → ปลด Kimi K2.6 (ยังไม่มีบัญชี)
+- [x] **`HA_URL` + `HA_TOKEN` ✅ 2026-07-14** — token จาก user (ผ่าน clipboard pipe ตรงเข้า SSH ไม่เคยพิมพ์ในหน้าจอ) เดิม `.env` ไม่มี key นี้อยู่เลย (ไม่ใช่แค่ว่าง — ต้อง append ไม่ใช่ sed แทนที่) + gotcha: `ha.pawinhome.com` ที่แนะนำใน docs เดิม**ไม่มี DNS จริง** (NXDOMAIN แม้จาก Pi-hole) — ตัวจริงคือ LAN IP `http://192.168.51.109:8123`. verified: `docker compose up -d hybrid-ai --force-recreate` + เรียก `GET /api/` จาก HA ตรงในคอนเทนเนอร์ได้ `200 {"message":"API running."}` — Agent สั่ง Home Assistant ได้จริงแล้ว (tools 3 ตัว: search/get_state/call_service)
 - recreate: `cd /var/services/homes/pawin/ui && sudo docker compose up -d hybrid-ai --force-recreate` (จำ gotcha: `docker restart` ไม่ reload .env)
 
 ### 5. ติดตั้ง `poppler-utils` ✅ จบ 2026-07-12
