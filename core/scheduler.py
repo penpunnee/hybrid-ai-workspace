@@ -37,9 +37,13 @@ def _scheduled_db_backup():
 
 
 def start_scheduler():
+    # ⚠️ CronTrigger ต้องส่ง timezone ตรงๆ — BackgroundScheduler(timezone=...) ไม่ inject
+    # เข้า CronTrigger ที่สร้างแยกไว้ก่อน add_job() เอง มันเลย fallback เป็น OS-local
+    # (container ไม่ตั้ง TZ = UTC) ทำให้ยิงเพี้ยนไป 7 ชม. (เจอจริง 2026-07-13: Dream ยิงตี 9
+    # แทนที่จะเป็นตี 2 บางกอก — ดู tests/test_scheduler.py ที่กันไม่ให้ regression กลับมา)
     scheduler.add_job(
         _scheduled_dream,
-        CronTrigger(hour=2, minute=0),
+        CronTrigger(hour=2, minute=0, timezone="Asia/Bangkok"),
         id="dream_nightly",
         replace_existing=True,
     )
@@ -47,9 +51,9 @@ def start_scheduler():
     # sudo จาก SSH จำกัดแค่ docker เลยฝัง job ในแอปแทน
     scheduler.add_job(
         _scheduled_db_backup,
-        CronTrigger(hour=3, minute=30),
+        CronTrigger(hour=3, minute=30, timezone="Asia/Bangkok"),
         id="db_backup_nightly",
         replace_existing=True,
     )
     scheduler.start()
-    logger.info("[Scheduler] ตั้ง Dream ตี 2 + DB backup 03:30 แล้ว")
+    logger.info("[Scheduler] ตั้ง Dream ตี 2 + DB backup 03:30 แล้ว (Asia/Bangkok)")
