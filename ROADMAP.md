@@ -84,9 +84,11 @@
 - [ ] เกณฑ์ผ่าน: ไทยไม่ leak · คุม thinking ได้ (หรือไม่มี) · tool-calling ใช้ได้ · ตอบใน timeout
 - [ ] แถม: timeout safety net ฝั่ง server (cap เวลารวมต่อ request แล้วตอบ partial + ขอโทษ แทนปล่อยค้าง 131s)
 
-### 12. Web-search grounding classifier (#34 ค้างตั้งแต่ 2026-06-11)
-- [ ] เขียน test ที่ค้างให้จบ + ตัดสินว่าจะขยาย `needs_internet()` ตามบริบท หรือเปิด grounding ทุก call ของ Gemini
-- [ ] วัดผลด้วยชุดคำถาม real-time (ราคาทอง/อากาศ/ข่าว) ก่อน-หลัง
+### 12. Web-search grounding classifier ✅ จบ 2026-07-13 (#34 ค้างตั้งแต่ 2026-06-11)
+- **ตัดสินใจ**: คงตัว `needs_internet()` แบบ pattern-based ตามบริบท (ไม่เปิด grounding ทุก call ของ Gemini) — เหตุผล: Gemini free tier มี quota จำกัด (429 limit=0 เจอมาแล้วหลายเคส) เปิด grounding ทุก call จะเผา quota กับ chitchat/coding โดยเปล่าประโยชน์ + เพิ่ม latency ทุกข้อความ ส่วน pattern-based มี test coverage หนาแน่น (45+ เคส) เป็น deterministic ไม่มี side-effect
+- **integration test ที่ "ค้าง" จริงๆ มีอยู่แล้ว** พบตอนตรวจ — `tests/test_chat_input.py` เทส wiring ใน `routers/chat.py` ครบ 3 เคส (local model ยืม Gemini grounding / Gemini ใช้ built-in google_search ไม่ inject DDG / casual query ไม่เสิร์ช) เข้าใจผิดว่ายังไม่มีจาก session เก่า
+- **วัดผลก่อน-หลัง**: เขียน probe script ยิงคำถาม real-time 16 แบบ (ราคาทอง/อากาศ/ข่าว + กีฬา/จราจร/หุ้น/ภัยพิบัติ/ไฟฟ้าขัดข้อง) ผ่าน `needs_internet()` ตรงๆ → **เจอ 10 gap จริง** (เช่น "ทองคำตอนนี้ราคาเท่าไหร่" สลับลำดับคำไม่ตรง `ราคาทอง`, ไม่มีหมวดกีฬา/จราจร/หุ้น/ภัยพิบัติ/ไฟดับเลย) → เพิ่ม pattern ปิดครบ 8 หมวดใหม่ (`reasoning/classifier.py`) — รันซ้ำผ่านหมด 16/16 + กัน over-trigger คำใกล้เคียง (เช่น "ชอบดูบอลไหม" ไม่ trigger)
+- test: 14 เคสใหม่ใน `tests/test_classifier.py` — suite รวม 728 ผ่านหมด
 
 ### 13. สะสม 👍 → fine-tune ขวัญ (pipeline พร้อมทั้งเส้นแล้ว)
 - [ ] เช็คยอดปัจจุบัน: `GET /api/feedback/stats` (เป้า ~200-500)
