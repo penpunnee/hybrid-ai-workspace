@@ -41,7 +41,8 @@
 
 ### 5. ติดตั้ง `poppler-utils` ✅ จบ 2026-07-12
 - [x] เจอว่าพังสองชั้น: ไม่มีทั้ง poppler **และ** `pdf2image` ใน requirements — ใส่ทั้งคู่ใน image (Dockerfile apt + lock) verified `pdftoppm 25.03.0` + import ผ่านใน container
-- [ ] เทส upload PDF scan จริง 1 ไฟล์ผ่าน UI (ยังไม่ได้ทำ — ต้องมีไฟล์ scan จริง)
+- [x] **เทส upload PDF scan จริงผ่าน backend จริง ✅ 2026-07-13** — สร้าง synthetic scan (PIL render ข้อความไทย+อังกฤษเป็นรูป → PDF ไม่มี text layer, verify ด้วย `pdftotext` คืนว่างเปล่าจริง) upload ผ่าน `curl` จาก trusted network ของ NAS เอง (หลีกเลี่ยงกรอก `UI_PASSWORD` เข้า browser form — ไม่ทำแทนแม้เป็น app ของ user เอง) log ยืนยัน auto-detect ทำงานถูก: "PDF scan detected → OCR" → Gemini Vision อ่านได้ 492 ตัวอักษรตรงกับที่ฝังไว้ ✅ **OCR pipeline เองไม่มีปัญหา**
+  - 🐛 **เจอบั๊กจริงคนละตัวตอน verify**: `POST /api/documents/search` คืน `results: []` เสมอ ทุกครั้ง แม้เพิ่ง index สำเร็จ — log: `Collection expecting embedding with dimension of 768, got 384`. root cause: `utils/documents.py:index_document()` insert ด้วย vector explicit จาก `embed_texts()` (LM Studio nomic-embed-text, 768-dim) แต่ `retrieve_chunks()` เดิมส่ง `query_texts` เฉยๆ ให้ ChromaDB auto-embed ด้วย **default embedder (MiniLM 384-dim)** — มิติไม่ตรงกับที่ persist ไว้ ไม่เกี่ยวกับ Thai-embedding migration (บั๊กนี้น่าจะมีมาตั้งแต่ Phase B ถูกสร้าง) **แปลว่า document RAG ใน chat (`docs_ctx`) น่าจะไม่เคย retrieve อะไรได้เลย** แก้แล้ว: `retrieve_chunks()` embed query ด้วย `embed_texts()` ตัวเดียวกันส่ง `query_embeddings` แทน (fallback `query_texts` ถ้า embed ล้ม) — เทส 3 เคสใหม่ (`tests/test_documents.py`) suite รวม 738 ผ่านหมด — **ยังไม่ deploy**
 
 ### 6. แยก `GEMINI_SEARCH_MODEL` ✅ ปิด 2026-07-13 (พบว่า implement ไปแล้ว)
 - [x] ตรวจพบโค้ดรองรับอยู่แล้วตั้งแต่ `7087f88` (2026-06-20): `utils/llm.py` — precedence `model arg > GEMINI_SEARCH_MODEL > GEMINI_MODEL` (รายการ "ค้าง" ใน memory/ROADMAP stale)

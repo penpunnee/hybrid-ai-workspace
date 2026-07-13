@@ -134,11 +134,27 @@ def retrieve_chunks(
     if col is None:
         return []
 
+    # ต้อง embed query ด้วย embed_texts() ตัวเดียวกับตอน insert (index_document
+    # เก็บ vector explicit ผ่าน LM Studio nomic-embed-text) ไม่งั้น ChromaDB จะ
+    # auto-embed query_texts ด้วย default embedder (MiniLM 384-dim) ซึ่งมิติไม่ตรง
+    # กับ vector ที่ persist ไว้ (768-dim) → query พังทุกครั้งแบบเงียบๆ (เจอจริง
+    # 2026-07-13 ทดสอบ upload PDF scan — ดู tests/test_documents_retrieve.py)
+    query_vec: list = []
+    try:
+        from utils.embed import embed_texts
+        query_vec = embed_texts([query])
+    except Exception as e:
+        logger.debug(f"[Documents] query embed failed, fallback to query_texts: {e}")
+
     where = {"source": source_filter} if source_filter else None
     try:
         # query มากกว่า top_k เพื่อ rerank
         n = min(top_k * 2, 20)
-        kwargs = {"query_texts": [query], "n_results": n}
+        kwargs = {"n_results": n}
+        if query_vec:
+            kwargs["query_embeddings"] = query_vec
+        else:
+            kwargs["query_texts"] = [query]
         if where:
             kwargs["where"] = where
         res = col.query(**kwargs)

@@ -31,7 +31,10 @@ class FakeCollection:
                       if m.get("source") == where["source"]]:
                 self.records.pop(k)
 
-    def query(self, query_texts, n_results, where=None):
+    def query(self, n_results, query_texts=None, query_embeddings=None, where=None):
+        self.last_query_kwargs = {
+            "query_texts": query_texts, "query_embeddings": query_embeddings, "where": where,
+        }
         return self.query_result
 
     def get(self, include=None):
@@ -116,12 +119,41 @@ def test_retrieve_returns_scored_items(fake_col):
 
 def test_retrieve_source_filter_passes_where(fake_col, monkeypatch):
     captured = {}
-    def fake_query(query_texts, n_results, where=None):
+    def fake_query(n_results, query_texts=None, query_embeddings=None, where=None):
         captured["where"] = where
         return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
     fake_col.query = fake_query
     docs.retrieve_chunks("q", source_filter="only.txt")
     assert captured["where"] == {"source": "only.txt"}
+
+
+# ── retrieve_chunks embedding dimension bug (เจอจริง 2026-07-13 ทดสอบ upload PDF scan) ──
+# index_document() ใส่ vector explicit ผ่าน embed_texts() (LM Studio nomic-embed-text,
+# 768-dim) แต่ retrieve_chunks() เดิมส่ง query_texts เฉยๆ → ChromaDB auto-embed ด้วย
+# default embedder (MiniLM 384-dim) มิติไม่ตรง → query พังเงียบๆ ทุกครั้ง (คืน [] เสมอ)
+def test_retrieve_uses_query_embeddings_when_embed_succeeds(fake_col):
+    """ต้อง embed query ด้วยฟังก์ชันเดียวกับตอน insert ไม่ใช่ปล่อยให้ ChromaDB
+    auto-embed ด้วย default embedder (มิติไม่ตรงกับที่ persist ไว้)"""
+    docs.retrieve_chunks("คำถาม", top_k=3)
+    assert fake_col.last_query_kwargs["query_embeddings"] == [[0.1, 0.2, 0.3]]
+    assert fake_col.last_query_kwargs["query_texts"] is None
+
+
+def test_retrieve_falls_back_to_query_texts_when_embed_raises(fake_col, monkeypatch):
+    """embed_texts โยน exception (เช่น LM Studio ล่ม) → fallback ไป query_texts
+    เหมือนเดิม ดีกว่า query ไม่ได้เลย"""
+    monkeypatch.setattr(embed, "embed_texts", lambda texts: (_ for _ in ()).throw(Exception("LM Studio down")))
+    docs.retrieve_chunks("คำถาม", top_k=3)
+    assert fake_col.last_query_kwargs["query_texts"] == ["คำถาม"]
+    assert fake_col.last_query_kwargs["query_embeddings"] is None
+
+
+def test_retrieve_falls_back_to_query_texts_when_embed_returns_empty(fake_col, monkeypatch):
+    """embed_texts คืน [] ตามสัญญา (ไม่ throw) เมื่อ embed ไม่สำเร็จ — ต้อง fallback เหมือนกัน"""
+    monkeypatch.setattr(embed, "embed_texts", lambda texts: [])
+    docs.retrieve_chunks("คำถาม", top_k=3)
+    assert fake_col.last_query_kwargs["query_texts"] == ["คำถาม"]
+    assert fake_col.last_query_kwargs["query_embeddings"] is None
 
 
 # ── list_documents ────────────────────────────────────────────────────────────
