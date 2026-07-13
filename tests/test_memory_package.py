@@ -251,6 +251,62 @@ def test_search_entries_bumps_access_count(monkeypatch):
     assert _metas[0]["last_accessed"], "ต้อง refresh last_accessed"
 
 
+def test_list_entries_no_client_returns_empty(monkeypatch):
+    monkeypatch.setattr(store, "_get_chroma_client", lambda: None)
+    assert store.list_entries("logic") == []
+
+
+def test_list_entries_no_query_uses_get_sorted_by_timestamp_desc(monkeypatch):
+    """ไม่มี q → list ล่าสุดก่อน (สำหรับ preview ก่อนลบ)"""
+    get_res = {
+        "ids": ["a", "b"],
+        "documents": ["doc-a", "doc-b"],
+        "metadatas": [
+            {"confidence": 0.8, "timestamp": "2026-07-01T00:00:00"},
+            {"confidence": 0.6, "timestamp": "2026-07-13T00:00:00"},
+        ],
+    }
+    col = SimpleNamespace(get=lambda **k: get_res)
+    client = SimpleNamespace(get_collection=lambda name: col)
+    monkeypatch.setattr(store, "_get_chroma_client", lambda: client)
+
+    out = store.list_entries("logic")
+    assert [r["id"] for r in out] == ["b", "a"]  # newest ก่อน
+
+
+def test_list_entries_with_query_uses_semantic_search(monkeypatch):
+    query_res = {
+        "ids": [["m1"]],
+        "documents": [["hello"]],
+        "metadatas": [[{"confidence": 0.9, "type": "fact", "timestamp": "2026-07-01"}]],
+    }
+    col = SimpleNamespace(query=lambda **k: query_res)
+    client = SimpleNamespace(get_collection=lambda name: col)
+    monkeypatch.setattr(store, "_get_chroma_client", lambda: client)
+
+    out = store.list_entries("logic", query="hi")
+    assert out == [{
+        "id": "m1", "content": "hello", "confidence": 0.9, "verified": False,
+        "type": "fact", "source": "conversation", "timestamp": "2026-07-01",
+    }]
+
+
+def test_delete_entry_no_client_returns_false(monkeypatch):
+    monkeypatch.setattr(store, "_get_chroma_client", lambda: None)
+    assert store.delete_entry("logic", "mem_1") is False
+
+
+def test_delete_entry_calls_col_delete_with_id(monkeypatch):
+    deleted_ids = []
+    col = SimpleNamespace(delete=lambda ids: deleted_ids.extend(ids))
+    client = SimpleNamespace(get_collection=lambda name: col)
+    monkeypatch.setattr(store, "_get_chroma_client", lambda: client)
+
+    ok = store.delete_entry("logic", "mem_1")
+    assert ok is True
+    assert deleted_ids == ["mem_1"]
+
+
 # ════════════════════════ operations.py ════════════════════════
 import memory.operations as ops
 

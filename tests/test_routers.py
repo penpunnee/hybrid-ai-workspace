@@ -139,3 +139,46 @@ def test_admin_unlock_clears_authfail_from_lan(monkeypatch):
     assert r.status_code == 200
     assert r.json()["unlocked"] == "9.9.9.9"
     assert rl._authfail_limiter.over_limit("9.9.9.9")[0] is False
+
+
+# ── GET/DELETE /api/admin/memory/{assistant} ─────────────────────────────────
+def test_admin_memory_list_forbidden_from_public(monkeypatch):
+    import core.auth as auth
+    monkeypatch.setattr(auth, "is_local_request", lambda req: False)
+    r = client.get("/api/admin/memory/kwan")
+    assert r.status_code == 403
+
+
+def test_admin_memory_list_from_lan(monkeypatch):
+    import core.auth as auth
+    import memory.store as store
+    monkeypatch.setattr(auth, "is_local_request", lambda req: True)
+    monkeypatch.setattr(
+        store, "list_entries",
+        lambda assistant, query="", limit=50: [
+            {"id": "mem_1", "content": "test entry", "confidence": 0.8, "verified": False,
+             "type": "event", "source": "conversation", "timestamp": "2026-07-13T00:00:00"},
+        ],
+    )
+    r = client.get("/api/admin/memory/kwan")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["count"] == 1
+    assert body["items"][0]["id"] == "mem_1"
+
+
+def test_admin_memory_delete_forbidden_from_public(monkeypatch):
+    import core.auth as auth
+    monkeypatch.setattr(auth, "is_local_request", lambda req: False)
+    r = client.delete("/api/admin/memory/kwan/mem_1")
+    assert r.status_code == 403
+
+
+def test_admin_memory_delete_from_lan(monkeypatch):
+    import core.auth as auth
+    import memory.store as store
+    monkeypatch.setattr(auth, "is_local_request", lambda req: True)
+    monkeypatch.setattr(store, "delete_entry", lambda assistant, doc_id: True)
+    r = client.delete("/api/admin/memory/kwan/mem_1")
+    assert r.status_code == 200
+    assert r.json()["deleted"] is True

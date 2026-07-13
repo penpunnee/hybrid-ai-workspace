@@ -338,3 +338,26 @@ async def admin_unlock(request: Request):
     ip = body.get("ip") or client_key(request)
     unlock_ip(ip)
     return {"unlocked": ip}
+
+
+@router.get("/admin/memory/{assistant}")
+async def admin_list_memory(assistant: str, request: Request, q: str = "", limit: int = 50):
+    """List/preview episodic memory ของ assistant — LAN/loopback เท่านั้น
+    (ตัดปัญหาต้องต่อ ChromaDB ตรงเพื่อดู/ลบ memory ปนเปื้อนจากการเทส)"""
+    from core.auth import is_local_request
+    if not is_local_request(request):
+        return JSONResponse({"error": "forbidden — LAN only"}, status_code=403)
+    from memory.store import list_entries
+    items = list_entries(assistant, query=q, limit=limit)
+    return {"assistant": assistant, "query": q, "count": len(items), "items": items}
+
+
+@router.delete("/admin/memory/{assistant}/{entry_id}")
+async def admin_delete_memory(assistant: str, entry_id: str, request: Request):
+    """ลบ episodic memory entry เดี่ยว — LAN/loopback เท่านั้น"""
+    from core.auth import is_local_request
+    if not is_local_request(request):
+        return JSONResponse({"error": "forbidden — LAN only"}, status_code=403)
+    from memory.store import delete_entry
+    ok = delete_entry(assistant, entry_id)
+    return {"deleted": ok, "id": entry_id}

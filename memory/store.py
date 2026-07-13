@@ -231,6 +231,69 @@ def search_user_facts(query: str, n_results: int = 3,
         return []
 
 
+def list_entries(assistant: str, query: str = "", limit: int = 50) -> list[dict]:
+    """List/preview episodic memory entries — สำหรับ admin cleanup (แก้ pain ที่ต้อง
+    ต่อ ChromaDB ตรงเวลาลบ memory ปนเปื้อนจากการเทส). query ว่าง = ล่าสุดก่อน,
+    มี query = semantic search preview (เหมือนที่โมเดลจะเห็นตอน recall จริง)"""
+    client = _get_chroma_client()
+    if client is None:
+        return []
+
+    col_name = f"memory_{resolve_slug(assistant)}"
+    try:
+        from utils.memory import get_collection
+        col = get_collection(client, col_name)
+    except Exception:
+        return []
+
+    try:
+        if query:
+            res = col.query(query_texts=[query], n_results=min(limit, 50))
+            ids   = res.get("ids", [[]])[0]
+            docs  = res.get("documents", [[]])[0]
+            metas = res.get("metadatas", [[]])[0]
+        else:
+            res = col.get(limit=limit, include=["documents", "metadatas"])
+            ids   = res.get("ids", [])
+            docs  = res.get("documents", [])
+            metas = res.get("metadatas", [])
+    except Exception as e:
+        logger.error(f"list_entries failed: {e}")
+        return []
+
+    items = [
+        {
+            "id":         doc_id,
+            "content":    doc,
+            "confidence": (meta or {}).get("confidence", 0.7),
+            "verified":   (meta or {}).get("verified", False),
+            "type":       (meta or {}).get("type", "event"),
+            "source":     (meta or {}).get("source", "conversation"),
+            "timestamp":  (meta or {}).get("timestamp", ""),
+        }
+        for doc_id, doc, meta in zip(ids, docs, metas)
+    ]
+    if not query:
+        items.sort(key=lambda x: x["timestamp"], reverse=True)
+    return items
+
+
+def delete_entry(assistant: str, doc_id: str) -> bool:
+    """ลบ episodic memory entry เดี่ยวตาม id"""
+    client = _get_chroma_client()
+    if client is None:
+        return False
+    col_name = f"memory_{resolve_slug(assistant)}"
+    try:
+        from utils.memory import get_collection
+        col = get_collection(client, col_name)
+        col.delete(ids=[doc_id])
+        return True
+    except Exception as e:
+        logger.error(f"delete_entry failed for id '{doc_id}': {e}")
+        return False
+
+
 def _safe_slug(name: str) -> str:
     import re
     ascii_only = name.encode("ascii", "ignore").decode("ascii")
