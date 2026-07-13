@@ -170,151 +170,156 @@ async def chat(request: Request):
             logger.debug(f"[Chat] response cache lookup skipped: {e}")
 
     # ── ดึง context จากทุก tier ──────────────────────────────────────────────
-    from utils.citations import CitationTracker
-    citations = CitationTracker()
+    # หมายเหตุสถาปัตยกรรม (2026-07-13): งานทั้งหมดข้างล่างนี้ (context assembly →
+    # retrieval → routing → LLM stream) ย้ายเข้ามาอยู่ใน generator เดียวกัน (แทนที่จะ
+    # รันแบบ sync ก่อน return StreamingResponse เหมือนเดิม) เพื่อให้ยิง SSE
+    # {"phase": "..."} บอกความคืบหน้าจริงระหว่างที่ backend ยังไม่มี token ให้นับ —
+    # ก่อนหน้านี้ frontend เห็นแค่ "0 tokens" ค้างนิ่งช่วง 1-3 วิแรกทั้งที่ backend
+    # กำลังทำงานอยู่จริง (คนหา context/routing model) เพราะ headers/body ยังไม่เริ่ม
+    # ส่งเลยจนกว่างานทั้งหมดนี้จะเสร็จ (ดู utils/streamstatus.ts formatPhaseStatus)
+    def generate():
+        import time as _time
+        from core.observability import record_timing
+        from utils.citations import CitationTracker
+        citations = CitationTracker()
 
-    with log_timing("context_assembly"):
-        lessons    = get_lessons(prompt)
-        prefs      = get_preferences()
-        skills_dir = SKILLS_DIR
-        skills_md  = load_skills_relevant(skills_dir, prompt)
+        yield f"data: {json.dumps({'phase': 'recall'}, ensure_ascii=False)}\n\n"
+        with log_timing("context_assembly"):
+            lessons    = get_lessons(prompt)
+            prefs      = get_preferences()
+            skills_dir = SKILLS_DIR
+            skills_md  = load_skills_relevant(skills_dir, prompt)
 
-        # New: tiered memory recall (working + episodic + long-term)
-        memory_ctx = recall(assistant, prompt, session_id=session_id)
+            # New: tiered memory recall (working + episodic + long-term)
+            memory_ctx = recall(assistant, prompt, session_id=session_id)
 
-    vault_ctx = ""
-    if obsidian_inject:
-        vault_results = search_vault(prompt, n=3)
-        if vault_results:
-            vault_ctx = "\n\n".join([f"[Note: {r['title']}]\n{r['content'][:500]}" for r in vault_results])
+        yield f"data: {json.dumps({'phase': 'retrieval'}, ensure_ascii=False)}\n\n"
+        vault_ctx = ""
+        if obsidian_inject:
+            vault_results = search_vault(prompt, n=3)
+            if vault_results:
+                vault_ctx = "\n\n".join([f"[Note: {r['title']}]\n{r['content'][:500]}" for r in vault_results])
+                try:
+                    citations.add_vault_notes(vault_results)
+                except Exception as e:
+                    logger.debug(f"[Chat] vault citations skipped: {e}")
+
+        home_tool_ctx = ""
+        home_tools_needed = detect_home_tools(prompt)
+        if home_tools_needed:
+            home_tool_ctx = build_tool_context(home_tools_needed)
+
+        # ── Document retrieval (RAG จาก uploaded docs) ──────────────────────────
+        # ใช้ per-session cache — ถ้า topic เดิม ไม่ต้องเรียก ChromaDB ใหม่
+        docs_ctx = ""
+        doc_chunks: list[dict] = []
+        with log_timing("retrieval"):
             try:
-                citations.add_vault_notes(vault_results)
-            except Exception as e:
-                logger.debug(f"[Chat] vault citations skipped: {e}")
+                from utils.retrieval_cache import get_cached as _retr_get, store as _retr_store
+                from utils.documents import retrieve_chunks, format_for_context as _doc_fmt
 
-    home_tool_ctx = ""
-    home_tools_needed = detect_home_tools(prompt)
-    if home_tools_needed:
-        home_tool_ctx = build_tool_context(home_tools_needed)
+                cached = _retr_get(session_id, prompt)
+                if cached:
+                    doc_chunks = cached["chunks"]
+                    logger.info(f"[Chat] retrieval cache hit (sim={cached['similarity']})")
+                else:
+                    doc_chunks = retrieve_chunks(prompt, top_k=3, min_score=0.3)
+                    if doc_chunks:
+                        _retr_store(session_id, prompt, doc_chunks)
 
-    # ── Document retrieval (RAG จาก uploaded docs) ──────────────────────────
-    # ใช้ per-session cache — ถ้า topic เดิม ไม่ต้องเรียก ChromaDB ใหม่
-    docs_ctx = ""
-    doc_chunks: list[dict] = []
-    with log_timing("retrieval"):
-        try:
-            from utils.retrieval_cache import get_cached as _retr_get, store as _retr_store
-            from utils.documents import retrieve_chunks, format_for_context as _doc_fmt
-
-            cached = _retr_get(session_id, prompt)
-            if cached:
-                doc_chunks = cached["chunks"]
-                logger.info(f"[Chat] retrieval cache hit (sim={cached['similarity']})")
-            else:
-                doc_chunks = retrieve_chunks(prompt, top_k=3, min_score=0.3)
                 if doc_chunks:
-                    _retr_store(session_id, prompt, doc_chunks)
+                    docs_ctx = _doc_fmt(doc_chunks, max_chars=1500)
+                    citations.add_doc_chunks(doc_chunks)
+                    logger.info(f"[Chat] retrieved {len(doc_chunks)} doc chunks")
+            except Exception as e:
+                logger.debug(f"[Chat] doc retrieval skipped: {e}")
 
-            if doc_chunks:
-                docs_ctx = _doc_fmt(doc_chunks, max_chars=1500)
-                citations.add_doc_chunks(doc_chunks)
-                logger.info(f"[Chat] retrieved {len(doc_chunks)} doc chunks")
+        # ── Prefix-stable context ordering ─────────────────────────────────────
+        # หลักการ: ส่วนที่เปลี่ยนน้อย (prefs/lessons) ขึ้นก่อน — llama.cpp KV cache hit
+        # ส่วน volatile (memory/skill search/docs/home tools) ลงท้าย — miss แค่ตอนท้าย
+        stable_block = "\n\n".join(filter(None, [
+            f"[ความชอบของผู้ใช้]\n{prefs}" if prefs else "",
+            f"[บทเรียนสะสม]\n{lessons}" if lessons else "",
+            f"[Skills & Knowledge]\n{skills_md}" if skills_md else "",
+        ]))
+        volatile_block = "\n\n".join(filter(None, [
+            memory_ctx,
+            search_skills(prompt, n_results=3),
+            f"[Obsidian Vault Notes]\n{vault_ctx}" if vault_ctx else "",
+            f"[ข้อมูลจากบ้านแบบ Real-time]\n{home_tool_ctx}" if home_tool_ctx else "",
+            docs_ctx,
+            citations.format_inline_legend(),
+        ]))
+        full_context = "\n\n".join(filter(None, [stable_block, volatile_block]))
+
+        if provider == "ollama" and len(full_context) > 2000:
+            full_context = full_context[:2000]
+        system_prompt = inject_context_to_system(base_prompt, full_context)
+
+        history = load_history(assistant, session_id)
+
+        yield f"data: {json.dumps({'phase': 'thinking'}, ensure_ascii=False)}\n\n"
+
+        # ── Active Learning: ตรวจว่าควรให้ AI ถามกลับก่อนตอบไหม ─────────────────
+        al_decision = None
+        try:
+            from reasoning.active_learning import decide as _al_decide
+            retrieval_scores = [c.score for c in citations._items if c.score > 0]
+            # ข้อความ user ก่อนหน้า — ใช้หา location ที่เคยบอกแล้ว (กันถามซ้ำ)
+            recent_user = " ".join(m["content"] for m in history[-6:] if m.get("role") == "user")
+            al_decision = _al_decide(
+                prompt, retrieval_scores=retrieval_scores,
+                history_length=len(history),
+                enabled=bool(active_learning),
+                recent_user_text=recent_user,
+            )
+            if al_decision.should_ask and not al_decision.clarify_directly:
+                system_prompt = system_prompt + al_decision.instruction
+                logger.info(f"[Chat/AL] {al_decision.reason}")
         except Exception as e:
-            logger.debug(f"[Chat] doc retrieval skipped: {e}")
+            logger.debug(f"[Chat/AL] skipped: {e}")
 
-    # ── Prefix-stable context ordering ─────────────────────────────────────
-    # หลักการ: ส่วนที่เปลี่ยนน้อย (prefs/lessons) ขึ้นก่อน — llama.cpp KV cache hit
-    # ส่วน volatile (memory/skill search/docs/home tools) ลงท้าย — miss แค่ตอนท้าย
-    stable_block = "\n\n".join(filter(None, [
-        f"[ความชอบของผู้ใช้]\n{prefs}" if prefs else "",
-        f"[บทเรียนสะสม]\n{lessons}" if lessons else "",
-        f"[Skills & Knowledge]\n{skills_md}" if skills_md else "",
-    ]))
-    volatile_block = "\n\n".join(filter(None, [
-        memory_ctx,
-        search_skills(prompt, n_results=3),
-        f"[Obsidian Vault Notes]\n{vault_ctx}" if vault_ctx else "",
-        f"[ข้อมูลจากบ้านแบบ Real-time]\n{home_tool_ctx}" if home_tool_ctx else "",
-        docs_ctx,
-        citations.format_inline_legend(),
-    ]))
-    full_context = "\n\n".join(filter(None, [stable_block, volatile_block]))
+        # ── Deterministic clarify (weather ไม่มี location ฯลฯ) ───────────────────
+        # ถามกลับเองโดยไม่เรียก LLM — โมเดลกุข้อมูล real-time ไม่ได้เลย (root cause
+        # บั๊ก "อำเภอละเว" 2026-06-14). ไม่ remember() กัน episodic ปนเปื้อนคำถาม clarify
+        if al_decision and al_decision.clarify_directly:
+            clarify = al_decision.clarify_message
+            logger.info(f"[Chat/AL] {al_decision.reason} — short-circuit clarify (no LLM)")
+            save_message(assistant, "user", prompt, provider, session_id)
+            clarify_aid = save_message(assistant, "assistant", clarify, "active_learning", session_id)
+            push_working(session_id, "user", prompt)
+            push_working(session_id, "assistant", clarify)
 
-    if provider == "ollama" and len(full_context) > 2000:
-        full_context = full_context[:2000]
-    system_prompt = inject_context_to_system(base_prompt, full_context)
-
-    history = load_history(assistant, session_id)
-
-    # ── Active Learning: ตรวจว่าควรให้ AI ถามกลับก่อนตอบไหม ─────────────────
-    al_decision = None
-    try:
-        from reasoning.active_learning import decide as _al_decide
-        retrieval_scores = [c.score for c in citations._items if c.score > 0]
-        # ข้อความ user ก่อนหน้า — ใช้หา location ที่เคยบอกแล้ว (กันถามซ้ำ)
-        recent_user = " ".join(m["content"] for m in history[-6:] if m.get("role") == "user")
-        al_decision = _al_decide(
-            prompt, retrieval_scores=retrieval_scores,
-            history_length=len(history),
-            enabled=bool(active_learning),
-            recent_user_text=recent_user,
-        )
-        if al_decision.should_ask and not al_decision.clarify_directly:
-            system_prompt = system_prompt + al_decision.instruction
-            logger.info(f"[Chat/AL] {al_decision.reason}")
-    except Exception as e:
-        logger.debug(f"[Chat/AL] skipped: {e}")
-
-    # ── Deterministic clarify (weather ไม่มี location ฯลฯ) ───────────────────
-    # ถามกลับเองโดยไม่เรียก LLM — โมเดลกุข้อมูล real-time ไม่ได้เลย (root cause
-    # บั๊ก "อำเภอละเว" 2026-06-14). ไม่ remember() กัน episodic ปนเปื้อนคำถาม clarify
-    if al_decision and al_decision.clarify_directly:
-        clarify = al_decision.clarify_message
-        logger.info(f"[Chat/AL] {al_decision.reason} — short-circuit clarify (no LLM)")
-        save_message(assistant, "user", prompt, provider, session_id)
-        clarify_aid = save_message(assistant, "assistant", clarify, "active_learning", session_id)
-        push_working(session_id, "user", prompt)
-        push_working(session_id, "assistant", clarify)
-
-        def gen_clarify():
             yield f"data: {json.dumps({'active_learning': al_decision.to_dict()}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'chunk': clarify}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'done': True, 'model': 'active_learning', 'provider': 'active_learning', 'message_id': clarify_aid}, ensure_ascii=False)}\n\n"
+            return
 
-        return StreamingResponse(gen_clarify(), media_type="text/event-stream",
-                                 headers={
-                                     "Cache-Control": "no-cache",
-                                     "X-Accel-Buffering": "no",
-                                     "X-Model-Used": "active_learning",
-                                     "X-Provider-Used": "active_learning",
-                                     "Access-Control-Expose-Headers": "X-Model-Used, X-Provider-Used",
-                                 })
+        # ── Plan mode (§22 ChatBox) — ฉีด instruction เข้า system prompt เท่านั้น ──
+        # ห้ามแตะ prompt: save_message/push_working/remember ใช้ prompt เดิม
+        # → DB/memory/fine-tune corpus สะอาด (scrutinize 2026-06-10, Major 2)
+        if plan_mode:
+            system_prompt += "\n\n[โหมดวางแผน] ผู้ใช้เปิดโหมด Plan: ช่วยวางแผนเป็นขั้นตอนสั้นๆ ก่อน แล้วค่อยลงรายละเอียด"
+            logger.info("[Chat] plan_mode on — inject plan instruction (system prompt)")
 
-    # ── Plan mode (§22 ChatBox) — ฉีด instruction เข้า system prompt เท่านั้น ──
-    # ห้ามแตะ prompt: save_message/push_working/remember ใช้ prompt เดิม
-    # → DB/memory/fine-tune corpus สะอาด (scrutinize 2026-06-10, Major 2)
-    if plan_mode:
-        system_prompt += "\n\n[โหมดวางแผน] ผู้ใช้เปิดโหมด Plan: ช่วยวางแผนเป็นขั้นตอนสั้นๆ ก่อน แล้วค่อยลงรายละเอียด"
-        logger.info("[Chat] plan_mode on — inject plan instruction (system prompt)")
+        save_message(assistant, "user", prompt, provider, session_id)
 
-    save_message(assistant, "user", prompt, provider, session_id)
+        messages = [{"role": "system", "content": system_prompt}]
+        messages += [{"role": m["role"], "content": m["content"]} for m in history]
+        messages.append({"role": "user", "content": prompt})
 
-    messages = [{"role": "system", "content": system_prompt}]
-    messages += [{"role": m["role"], "content": m["content"]} for m in history]
-    messages.append({"role": "user", "content": prompt})
+        if provider == "ollama":
+            if len(messages[0]["content"]) > 4000:
+                messages[0] = {"role": "system", "content": messages[0]["content"][:4000]}
+            while len(messages) > 2 and count_tokens_approx(messages) > 3000:
+                messages.pop(1)
 
-    if provider == "ollama":
-        if len(messages[0]["content"]) > 4000:
-            messages[0] = {"role": "system", "content": messages[0]["content"][:4000]}
-        while len(messages) > 2 and count_tokens_approx(messages) > 3000:
-            messages.pop(1)
+        # ── Tool Agent branch ───────────────────────────────────────────────────
+        # เปิดด้วย {"tool_agent": true} → route ไป agent orchestrator (multi-step tool use)
+        if tool_agent:
+            from agents.orchestrator import run_agent
 
-    # ── Tool Agent branch ───────────────────────────────────────────────────
-    # เปิดด้วย {"tool_agent": true} → route ไป agent orchestrator (multi-step tool use)
-    if tool_agent:
-        from agents.orchestrator import run_agent
-
-        def gen_agent():
+            yield f"data: {json.dumps({'phase': 'agent'}, ensure_ascii=False)}\n\n"
             full_response = ""
             if citations:
                 yield f"data: {json.dumps({'citations': citations.to_list()}, ensure_ascii=False)}\n\n"
@@ -341,66 +346,56 @@ async def chat(request: Request):
                 logger.warning(f"[Chat/agent] persist failed: {e}")
 
             yield f"data: {json.dumps({'done': True, 'model': 'agent', 'provider': 'agent', 'message_id': agent_msg_id}, ensure_ascii=False)}\n\n"
+            return
 
-        return StreamingResponse(gen_agent(), media_type="text/event-stream",
-                                 headers={
-                                     "Cache-Control": "no-cache",
-                                     "X-Accel-Buffering": "no",
-                                     "X-Model-Used": "agent",
-                                     "X-Provider-Used": "agent",
-                                     "Access-Control-Expose-Headers": "X-Model-Used, X-Provider-Used",
-                                 })
+        # ── Get routing decision ก่อน stream เพื่อส่ง model info ─────────────────
+        model_used = ""
+        provider_used = provider
+        model_override = ""
+        web_injected = False
+        if provider == "auto":
+            try:
+                from reasoning.router import route
+                decision = route(prompt, provider_hint="auto",
+                                 has_image=bool(image_b64), agent_mode=agent_mode)
+                provider_used = decision.provider
+                model_override = decision.model
+                model_used = decision.model.split("/")[-1] if decision.model else decision.provider
+                logger.info(f"[Chat] route → {decision.provider}/{decision.model} ({decision.reason})")
 
-    # ── Get routing decision ก่อน stream เพื่อส่ง model info ─────────────────
-    model_used = ""
-    provider_used = provider
-    model_override = ""
-    web_injected = False
-    if provider == "auto":
-        try:
-            from reasoning.router import route
-            decision = route(prompt, provider_hint="auto",
-                             has_image=bool(image_b64), agent_mode=agent_mode)
-            provider_used = decision.provider
-            model_override = decision.model
-            model_used = decision.model.split("/")[-1] if decision.model else decision.provider
-            logger.info(f"[Chat] route → {decision.provider}/{decision.model} ({decision.reason})")
-
-            # ── Web search: ค้นแล้ว inject context (router เลือก lmstudio_web) ──
-            if decision.provider == "lmstudio_web":
-                web_injected = _inject_web_context(messages, prompt, citations)
-                provider_used = "lmstudio"
-
-        except Exception as e:
-            logger.warning(f"[Chat] route failed: {e}")
-    elif req_model:
-        # provider ชัดเจน + เลือกโมเดลจาก dropdown → ใช้ตัวนั้น (per-request override)
-        model_override = req_model
-        model_used = req_model.split("/")[-1]
-
-    # ── Grounding ทุกโมเดล: คำถาม real-time → เสิร์ชเว็บ inject ───────────────────
-    # เดิมเสิร์ชเฉพาะ auto→lmstudio_web เท่านั้น → เลือกโมเดลเฉพาะ (qwen/Gemini/Gemma)
-    # ตอบ real-time จาก training กว้างๆ. ทำให้ทุกโมเดลได้ข้อมูลจริงก่อนตอบ
-    # (ข้าม agent — เสิร์ชเอง · vision — คนละโหมด · ที่ inject แล้ว — กันซ้ำ)
-    # Option B (2026-06-15): โมเดล Gemini → ใช้ Google Search grounding ในตัว (real Google)
-    # แทน DDG · provider อื่น (local/Claude/Kimi) ยัง inject DDG เหมือนเดิม
-    gemini_grounding = False
-    if not web_injected and not agent_mode and not image_b64:
-        try:
-            from reasoning.classifier import needs_internet
-            if needs_internet(prompt):
-                _eff = provider_used if provider_used and provider_used != "auto" else provider
-                if _eff in ("gemini", "gemini_agent"):
-                    gemini_grounding = True
-                else:
+                # ── Web search: ค้นแล้ว inject context (router เลือก lmstudio_web) ──
+                if decision.provider == "lmstudio_web":
                     web_injected = _inject_web_context(messages, prompt, citations)
-        except Exception as e:
-            logger.warning(f"[Chat] grounding check failed: {e}")
+                    provider_used = "lmstudio"
 
-    def generate():
-        nonlocal provider_used, model_used
-        import time as _time
-        from core.observability import record_timing
+            except Exception as e:
+                logger.warning(f"[Chat] route failed: {e}")
+        elif req_model:
+            # provider ชัดเจน + เลือกโมเดลจาก dropdown → ใช้ตัวนั้น (per-request override)
+            model_override = req_model
+            model_used = req_model.split("/")[-1]
+
+        # ── Grounding ทุกโมเดล: คำถาม real-time → เสิร์ชเว็บ inject ───────────────────
+        # เดิมเสิร์ชเฉพาะ auto→lmstudio_web เท่านั้น → เลือกโมเดลเฉพาะ (qwen/Gemini/Gemma)
+        # ตอบ real-time จาก training กว้างๆ. ทำให้ทุกโมเดลได้ข้อมูลจริงก่อนตอบ
+        # (ข้าม agent — เสิร์ชเอง · vision — คนละโหมด · ที่ inject แล้ว — กันซ้ำ)
+        # Option B (2026-06-15): โมเดล Gemini → ใช้ Google Search grounding ในตัว (real Google)
+        # แทน DDG · provider อื่น (local/Claude/Kimi) ยัง inject DDG เหมือนเดิม
+        gemini_grounding = False
+        if not web_injected and not agent_mode and not image_b64:
+            try:
+                from reasoning.classifier import needs_internet
+                if needs_internet(prompt):
+                    _eff = provider_used if provider_used and provider_used != "auto" else provider
+                    if _eff in ("gemini", "gemini_agent"):
+                        gemini_grounding = True
+                    else:
+                        web_injected = _inject_web_context(messages, prompt, citations)
+            except Exception as e:
+                logger.warning(f"[Chat] grounding check failed: {e}")
+
+        yield f"data: {json.dumps({'phase': 'generating', 'model': model_used, 'provider': provider_used}, ensure_ascii=False)}\n\n"
+
         full_response = ""
         llm_start = _time.perf_counter()
         _provider = provider_used if provider_used and provider_used != "auto" else provider
@@ -441,11 +436,14 @@ async def chat(request: Request):
                     else:
                         fb_provider, fb_model = "ollama", ""
                         fb_model_label = OLLAMA_MODEL
-                    fallback_msg = ("⚠️ Gemini quota หมด — กำลังลอง local model + web search...\n\n"
-                                    if isinstance(e, GeminiQuotaExhausted)
-                                    else "⚠️ Gemini ใช้ไม่ได้ — fallback เป็น local model...\n\n")
-                    yield f"data: {json.dumps({'chunk': fallback_msg})}\n\n"
-                    full_response += fallback_msg
+                    # แจ้งเป็น SSE event แยกต่างหาก (เหมือน active_learning/reflection)
+                    # ห้ามปนเข้า chunk/full_response — ไม่งั้นติดหน้าคำตอบจริงที่ผู้ใช้เห็น
+                    # + ถูก save ลง DB + เข้า remember()/teach() ปนเปื้อน episodic memory
+                    fb_reason = "quota" if isinstance(e, GeminiQuotaExhausted) else "unavailable"
+                    fb_message = ("Gemini quota หมด — กำลังลอง local model + web search..."
+                                  if fb_reason == "quota"
+                                  else "Gemini ใช้ไม่ได้ — fallback เป็น local model...")
+                    yield f"data: {json.dumps({'provider_fallback': {'from': 'gemini', 'to': fb_provider, 'reason': fb_reason, 'message': fb_message}}, ensure_ascii=False)}\n\n"
 
                     if needs_internet(prompt):
                         try:
@@ -564,8 +562,11 @@ async def chat(request: Request):
                              headers={
                                  "Cache-Control": "no-cache",
                                  "X-Accel-Buffering": "no",
-                                 "X-Model-Used": model_used,
-                                 "X-Provider-Used": provider_used,
+                                 # model/provider ตัดสินใจ "ระหว่าง" stream แล้ว (ดูเหตุผลบน generate())
+                                 # ไม่ใช่ก่อน response เริ่มเหมือนเดิม จึงไม่ทราบค่าจริงตอนตั้ง header —
+                                 # ค่าจริงอยู่ใน SSE {"phase":"generating", model, provider} และ {"done":...}
+                                 # เสมอ (ไม่มี consumer ฝั่ง frontend อ่าน header คู่นี้แล้ว — ย้ายไปอ่านจาก
+                                 # SSE ใน static/enhanced.js แทน ดู commit นี้)
                                  "Access-Control-Expose-Headers": "X-Model-Used, X-Provider-Used",
                              })
 
