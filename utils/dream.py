@@ -90,24 +90,35 @@ def light_sleep(hours: int = 24) -> list[dict]:
 
     try:
         collections = client.list_collections()
-        for col_info in collections:
-            name = col_info.name if hasattr(col_info, "name") else str(col_info)
-            if name.startswith("memory_"):
-                col = get_collection(client, name)
-                data = col.get()
-                for i, doc in enumerate(data.get("documents", [])):
-                    meta = data.get("metadatas", [{}])[i] or {}
-                    ts = meta.get("timestamp", "")
-                    if ts >= since:
-                        raw_memories.append({
-                            "collection": name,
-                            "id": data.get("ids", [""])[i],
-                            "doc": doc,
-                            "timestamp": ts,
-                            "assistant": meta.get("assistant", ""),
-                        })
     except Exception as e:
         logger.error(f"Dream/LightSleep error: {str(e)}")
+        return raw_memories
+
+    for col_info in collections:
+        name = col_info.name if hasattr(col_info, "name") else str(col_info)
+        if not name.startswith("memory_"):
+            continue
+        # per-collection try/except (เหมือน memory_decay/memory_prune) — กัน collection
+        # เดียวพังแล้วลาก Light Sleep ทั้งเฟสร่วง (เจอจริง 2026-07-09: collection backup
+        # จาก Thai-embedding migration `*__minilm_backup_*` ยังผูก default embedder เดิม
+        # → conflict กับ ollama embedding function ปัจจุบัน → ทั้งฟังก์ชัน return [] ทุกคืน
+        # แม้ memory_kwan/memory_logic ตัวจริงจะมีข้อมูลอยู่ก็ตาม)
+        try:
+            col = get_collection(client, name)
+            data = col.get()
+            for i, doc in enumerate(data.get("documents", [])):
+                meta = data.get("metadatas", [{}])[i] or {}
+                ts = meta.get("timestamp", "")
+                if ts >= since:
+                    raw_memories.append({
+                        "collection": name,
+                        "id": data.get("ids", [""])[i],
+                        "doc": doc,
+                        "timestamp": ts,
+                        "assistant": meta.get("assistant", ""),
+                    })
+        except Exception as e:
+            logger.warning(f"Dream/LightSleep: skip collection '{name}': {e}")
 
     return raw_memories
 

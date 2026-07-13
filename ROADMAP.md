@@ -97,7 +97,8 @@
 
 ### 14. Verify ด้วยตาที่ค้าง (งานเปิด browser 15 นาที)
 - [ ] File Manager: drag&drop / กล้อง 📷 / index toast บน prod จริง
-- [ ] Dream cycle บน prod ยังผลิต report รายคืนไหม (local มี report เดียว 2026-05-08 — ปกติเพราะ dev ไม่ได้เปิดค้าง แต่ prod ควรมีทุกคืน) → `ls dream_reports/` บน NAS + ดู Sleep card
+- [x] Dream cycle บน prod ✅ เจอ+แก้บั๊กจริง 2026-07-13: `ls dream_reports/` มีไฟล์ทุกคืนจริง แต่ report กลวง (278 bytes, "no memories") **ทุกคืนตั้งแต่ 2026-07-09** (วันที่ deploy Thai-embedding migration) — root cause: `light_sleep()` (Phase 1, `utils/dream.py`) ครอบ loop สแกน `memory_*` collection ทั้งหมดด้วย try/except **เดียว** (ไม่เหมือน `memory_decay`/`memory_prune` ที่ทำ per-collection ถูกอยู่แล้ว) พอเจอ collection backup จาก migration (`*__minilm_backup_20260709`, ยังผูก default embedder เดิม) → embedding function conflict กับ ollama ef ปัจจุบัน → **ทั้งฟังก์ชัน return `[]` ทันที แม้ `memory_kwan`(79)/`memory_logic`(69) ตัวจริงจะมีข้อมูลจริงอยู่ก็ตาม** — Dream ไม่เห็น memory เลยเงียบๆ 4+ คืนติด. แก้เป็น per-collection try/except แบบเดียวกับอีก 2 phase (commit ถัดไป) + เทส 5 เคสใหม่ (`tests/test_dream_light_sleep.py`)
+  - ⚠️ **พบเพิ่ม ยังไม่ได้ไล่ต่อ**: log โชว์ Dream cycle รันวันละ **2 รอบ** ไม่ใช่รอบเดียว — รอบ ~02:00 Bangkok (ผ่าน `POST /api/dream` จาก peer `172.23.0.1`, ที่มาไม่ทราบ — `synoschedtask --get` เช็คไม่ได้เพราะ sudo ต้องรหัส) + รอบ ~09:00 Bangkok (จาก in-app APScheduler ตรงๆ ไม่ผ่าน HTTP — ทั้งที่ตั้ง `CronTrigger(hour=2, minute=0)` ควรเป็น 02:00 ไม่ใช่ 09:00). ไม่กระทบข้อมูลเสียหาย (แค่รันซ้ำ/เผา LLM quota เพิ่ม) — ต้องเปิด DSM GUI เช็ค Task Scheduler หา task เก่าที่อาจเหลือค้าง + ตรวจว่าทำไม APScheduler ยิงผิดเวลา
 
 ### 15. พักไว้ตามการตัดสินใจเดิม (อย่าหยิบมาทำจนกว่าเงื่อนไขเปลี่ยน)
 - ⛔ Image Gen — โค้ดพร้อม รอเปิด billing Google (~$0.04/รูป)
