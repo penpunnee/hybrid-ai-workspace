@@ -9,12 +9,15 @@
 
 ## P0 — ปัญหาที่เจอจริงวันนี้ / เสี่ยงข้อมูล-เสถียรภาพ
 
-### 1. Icon\r recur รอบ 5 (เจอ+ลบแล้ว 2,668 ไฟล์ 2026-07-12) — ต้องแก้ที่ต้นตอ
-- อาการรอบนี้: ลามเข้า `.venv/` ทำ **pytest collection พังทั้ง suite** (NotADirectoryError)
-- ลบแล้วรอบที่ 5 — การลบซ้ำไม่ใช่ทางแก้ ต้องปิดที่ต้นตอ:
-  - [ ] เช็คว่า iCloud Desktop & Documents sync ถูกปิดจริง (`System Settings → iCloud → Drive → Desktop & Documents`) — เคย "ปิดแล้ว" แต่ recur แสดงว่ายังมีตัวเขียนอยู่
-  - [ ] ถ้าปิดไม่ได้/ไม่อยากปิด: ทำ launchd job หรือ cron ลบ `Icon\r` รายวัน + เพิ่มบรรทัด `Icon?` ใน `.gitignore` ทุก repo ที่โดน
-  - [ ] ระยะยาว: พิจารณาย้ายโปรเจกต์ dev ออกจาก `~/Desktop` (โฟลเดอร์ที่ iCloud จับ) ไป `~/dev/` — ตัดปัญหาถาวร
+### 1. Icon\r recur — ✅ ต้นตอเจอแล้ว + mitigation วางครบ 2026-07-13 (session 3)
+- **ต้นตอจริง = Google Drive for desktop ไม่ใช่ iCloud** (iCloud Drive ปิดอยู่จริง `Enabled=0`) — DriveFS mirror ทั้ง `~/Desktop` (root ใน `root_preference_sqlite.db`) แล้วแปะ custom folder icon (รูป home 163KB rsrc) ให้**ทุกโฟลเดอร์** ใน mirror root: sweep ใหญ่ตอน Drive start (~15k ไฟล์/8 นาที) + แปะโฟลเดอร์ใหม่ real-time ภายใน ~60s
+- พิสูจน์: trap folder (Icon โผล่ใน 90s) + A/B ปิด Drive (ไม่โผล่ใน 120s) + relaunch แล้วกลับมา · `~/appscript.ui` นอก Desktop ไม่โดน = ยืนยัน scope
+- [x] global gitignore: `Icon\r` ใน `~/.config/git/ignore` — คุ้มกันทุก repo (verified `git check-ignore`)
+- [x] cleanup script `~/.local/bin/icon-cleanup.sh` (ลบ+log ที่ `~/.local/state/icon-cleanup.log`) — ลบรอบ 6 แล้ว ~25k ไฟล์ (Drive re-stamp ระหว่างลบ)
+- [x] **SessionStart hook** ใน `~/.claude/settings.json` รัน script ทุกครั้งที่เปิด Claude Code (async) — เส้นทางที่ทำงานได้จริงเพราะรันใน TCC context ของ Terminal
+- [x] LaunchAgent `com.pawin.icon-cleanup` (hourly) ติดตั้งแล้วแต่**โดน TCC บล็อก** (`Operation not permitted` — launchd-bash ไม่มีสิทธิ์ Desktop) — จะ active ก็ต่อเมื่อ user ให้ Full Disk Access กับ `/bin/bash` ใน System Settings (เลือกเองว่าจะให้หรือถอน agent ทิ้ง)
+- [ ] ทางแก้ขาดจริง (user ตัดสินใจ): เลิก mirror Desktop ใน Google Drive (Settings → Folders from your computer) หรือย้ายโปรเจกต์ dev ไป `~/dev/` — แถม: ตอนนี้ Drive เผาโควตา/CPU checksum `node_modules` ทั้งยวงด้วย
+- 📝 รายละเอียดเต็ม: vault `wiki/concepts/google-drive-icon-cr.md`
 
 ### 2. Backup ฐานข้อมูล prod ✅ จบ 2026-07-12
 - เจอ+แก้บั๊กจริง: script หยิบ `ui/chat_history.db` (ค้างเก่า 12KB) แทน `ui/data/chat_history.db` (ตัวจริง 933KB) → backup เปล่า
@@ -61,10 +64,11 @@
 - [x] regen lock แบบแม่น: pip dry-run resolve บน `python:3.11-slim` (ตรง image) constraint=lock เดิม → ตัด 17 pkgs (streamlit×2 + orphan transitives: altair/pandas/pyarrow/pydeck/jinja2/gitpython ฯลฯ) 138→121, เวอร์ชันที่เหลือไม่ขยับ, grep ยืนยันไม่มี source import ตัวที่ตัด
 - [x] ตัด layer pre-download ONNX MiniLM ใน Dockerfile — EF จริง = Ollama multilingual; fallback MiniLM ถ้าถูกใช้ recall ก็เพี้ยนอยู่แล้ว, จำเป็นจริง chromadb download เองลง volume `chroma_model_cache`
 
-### 9. Admin API ลบ episodic memory (แก้ pain "memory ปนเปื้อนจากการเทส")
-- ทุกวันนี้เทส `/api/chat` บน prod แล้วต้องต่อ ChromaDB ตรงเพื่อลบขยะ (Known Quirks) — ทำผิดพลาดง่ายและเคยเกิด contamination จริง (2026-06-11)
-- [ ] `GET /api/admin/memory/{assistant}?q=...` (list+preview) + `DELETE /api/admin/memory/{assistant}/{id}` — จำกัด LAN-only เหมือน `/api/admin/unlock`
-- [ ] ตัวเลือกเสริม: header/flag `X-Test-Request` ให้ chat ข้าม remember/teach ตอน smoke test — ตัดปัญหาที่ต้นทาง
+### 9. Admin API ลบ episodic memory ✅ จบ 2026-07-13 (แก้ pain "memory ปนเปื้อนจากการเทส")
+- เดิมเทส `/api/chat` บน prod แล้วต้องต่อ ChromaDB ตรงเพื่อลบขยะ (Known Quirks) — ทำผิดพลาดง่ายและเคยเกิด contamination จริง (2026-06-11)
+- [x] `GET /api/admin/memory/{assistant}?q=...` (list+preview) + `DELETE /api/admin/memory/{assistant}/{id}` — LAN-only เหมือน `/api/admin/unlock` (`memory/store.py:list_entries/delete_entry`, commit `5e03fca`)
+- [x] `X-Test-Request` header ให้ `/api/chat` ข้าม `remember()`/`teach()`/auto-learn lesson thread ทั้งเส้น — ตัดปัญหาที่ต้นทางแทนต้องลบทีหลัง (`routers/chat.py:_is_test_request`, ครอบทั้ง path ปกติและ agent/`tool_agent` ผ่าน `persist_agent_turn`)
+- test: 15 เคสใหม่ (`tests/test_memory_package.py`, `tests/test_routers.py`, `tests/test_test_request_header.py`) — suite รวม 714 ผ่านหมด
 
 ### 10. โครงไฟล์เริ่มโต — เฝ้าดู ยังไม่ต้องผ่า
 - `utils/llm.py` 860 บรรทัด (5 provider ในไฟล์เดียว), `routers/chat.py` 597, `agents/tools.py` 675

@@ -25,6 +25,13 @@ router = APIRouter(prefix="/api", tags=["chat"])
 logger = logging.getLogger(__name__)
 
 
+def _is_test_request(request: Request) -> bool:
+    """`X-Test-Request` header → smoke test เรียก /api/chat จริงได้โดยไม่ปนเปื้อน
+    episodic memory/lessons/preferences (แก้ pain ที่ต้องต่อ ChromaDB ตรงลบทีหลัง —
+    ดู P2-9 ROADMAP.md + Known Quirks ใน CLAUDE.md)"""
+    return bool(request.headers.get("x-test-request"))
+
+
 def _inject_web_context(messages: list, prompt: str, citations) -> bool:
     """เสิร์ชเว็บแล้ว inject ผลเป็น system context — ground คำตอบทุกโมเดล (local/Gemini/Gemma)
     สำหรับคำถาม real-time. คืน True ถ้า inject สำเร็จ. ใช้ร่วมกันทั้ง auto→lmstudio_web และ
@@ -65,13 +72,18 @@ def _inject_web_context(messages: list, prompt: str, citations) -> bool:
         return False
 
 
-def persist_agent_turn(assistant: str, prompt: str, full_response: str, session_id: str) -> int:
+def persist_agent_turn(assistant: str, prompt: str, full_response: str, session_id: str,
+                        is_test_request: bool = False) -> int:
     """persist คำตอบ agent → save_message + push_working เสมอ, แต่ **gate** remember()
     (episodic) ด้วย should_auto_learn — คำตอบ agent มาจาก tool real-time เสมอ
-    ดังนั้นงาน realtime/home-tool ไม่ควรตกผลึกลง episodic (กันปนเปื้อน volatile)"""
+    ดังนั้นงาน realtime/home-tool ไม่ควรตกผลึกลง episodic (กันปนเปื้อน volatile).
+    is_test_request (P2-9): smoke test ผ่าน X-Test-Request ก็ข้าม remember เหมือนกัน"""
     agent_msg_id = save_message(assistant, "assistant", full_response, "agent", session_id)
     push_working(session_id, "user", prompt)
     push_working(session_id, "assistant", full_response)
+    if is_test_request:
+        logger.info("[Chat/agent] skip remember (episodic): test_request")
+        return agent_msg_id
     ok, reason = should_auto_learn(prompt)
     if ok:
         remember(assistant, prompt, full_response)
@@ -83,6 +95,7 @@ def persist_agent_turn(assistant: str, prompt: str, full_response: str, session_
 @router.post("/chat")
 async def chat(request: Request):
     data = await request.json()
+    is_test_request = _is_test_request(request)
     assistant   = data.get("assistant", list(ASSISTANTS.keys())[0])
     session_id  = data.get("session_id", "default")
     prompt      = data.get("prompt", "")
@@ -131,7 +144,8 @@ async def chat(request: Request):
                                           "X-Provider-Used": "image_gen"})
 
     # ── ตรวจจับ Teaching signal จาก user ────────────────────────────────────
-    teach(assistant, prompt)
+    if not is_test_request:
+        teach(assistant, prompt)
 
     # ── Semantic response cache (short-circuit ถ้า Q ใกล้ของที่ thumbs-up) ─
     if use_response_cache and prompt:
@@ -321,7 +335,8 @@ async def chat(request: Request):
             # persist เหมือน /api/chat ปกติ (gate remember ด้วย should_auto_learn)
             agent_msg_id = 0
             try:
-                agent_msg_id = persist_agent_turn(assistant, prompt, full_response, session_id)
+                agent_msg_id = persist_agent_turn(assistant, prompt, full_response, session_id,
+                                                   is_test_request=is_test_request)
             except Exception as e:
                 logger.warning(f"[Chat/agent] persist failed: {e}")
 
@@ -507,13 +522,16 @@ async def chat(request: Request):
         push_working(session_id, "assistant", full_response)
         # empty-guard notice ห้ามเข้า episodic memory/teach — ไม่ใช่คำตอบจริง
         # (กัน contamination แบบเดียวกับ clarify ของ active learning)
-        if not empty_guard_fired:
+        # is_test_request: smoke test ผ่าน X-Test-Request ก็ข้ามเหมือนกัน (P2-9)
+        if not empty_guard_fired and not is_test_request:
             remember(assistant, prompt, full_response)
             teach(assistant, prompt, ai_response=full_response)
 
         _learn_ok, _learn_reason = should_auto_learn(prompt)
         if empty_guard_fired:
             _learn_ok, _learn_reason = False, "empty_response_notice"
+        if is_test_request:
+            _learn_ok, _learn_reason = False, "test_request"
         if not _learn_ok:
             logger.info(f"[Chat/auto-learn] skip lesson — reason={_learn_reason}")
         if len(full_response) > 100 and _learn_ok:
