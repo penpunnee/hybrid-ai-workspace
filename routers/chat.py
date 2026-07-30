@@ -428,8 +428,12 @@ async def chat(request: Request):
                     from core.config import OLLAMA_MODEL
                     from reasoning.classifier import needs_internet
                     # router ตัดสินใจ local provider — LMStudio/DeepSeek ก่อน, Ollama เป็น last resort
+                    # exclude_gemini=True กัน route() เลือก gemini/gemini_agent ซ้ำ — Gemini เพิ่ง fail
+                    # มาหมาดๆ แต่ GEMINI_API_KEY ยังตั้งอยู่ (แค่ quota หมด ไม่ใช่ key หาย) ทำให้เดิม
+                    # route() คืน "gemini_agent" กลับมาซ้ำ แล้วโค้ดข้างล่างไม่รู้จัก provider นี้ →
+                    # ตกไป else (Ollama) ทันทีทั้งที่ LM Studio ว่างอยู่จริง (เจอบั๊กนี้ 2026-07-30)
                     from reasoning.router import route as _route
-                    _fb_decision = _route(prompt, provider_hint="auto")
+                    _fb_decision = _route(prompt, provider_hint="auto", exclude_gemini=True)
                     if _fb_decision.provider in ("lmstudio", "lmstudio_web"):
                         fb_provider, fb_model = "lmstudio", _fb_decision.model
                         fb_model_label = _fb_decision.model.split("/")[-1] if _fb_decision.model else "LMStudio"

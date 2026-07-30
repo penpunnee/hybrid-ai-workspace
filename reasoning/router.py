@@ -92,6 +92,7 @@ def route(
     provider_hint: str = "auto",
     has_image: bool = False,
     agent_mode: bool = False,
+    exclude_gemini: bool = False,
 ) -> RouteDecision:
     """
     ตัดสินใจว่าจะส่ง request ไปหา provider/model ไหน
@@ -101,6 +102,9 @@ def route(
         provider_hint: "auto" | "ollama" | "gemini" | "lmstudio"
         has_image: มีรูปภาพแนบมาไหม
         agent_mode: เปิด agent mode ไหม
+        exclude_gemini: ห้ามเลือก Gemini/Gemini Agent เด็ดขาด — ใช้ตอน re-route
+            หลัง Gemini เพิ่ง fail มา (quota/unavailable) กัน route() เลือก Gemini
+            ซ้ำเพราะ GEMINI_API_KEY ยังตั้งอยู่ (แค่ quota หมด ไม่ใช่ key หาย)
     """
     from core.config import (
         LMSTUDIO_CHAT_MODEL, LMSTUDIO_REASON_MODEL, LMSTUDIO_VISION_MODEL,
@@ -108,7 +112,7 @@ def route(
     )
 
     # ── Forced providers ────────────────────────────────────────────────────
-    if agent_mode:
+    if agent_mode and not exclude_gemini:
         return RouteDecision("gemini", "", Complexity.NORMAL, "agent mode → Gemini")
 
     # ── Internet search detection ─────────────────────────────────────────
@@ -116,7 +120,7 @@ def route(
     if needs_internet(prompt):
         # Gemini Agent มี Google Search ในตัว — quality ดีกว่า DDG+Gemma มาก
         # ใช้ Gemini ก่อน fallback เป็น local+web search เมื่อไม่มี API key
-        if GEMINI_API_KEY:
+        if GEMINI_API_KEY and not exclude_gemini:
             return RouteDecision("gemini_agent", "", Complexity.NORMAL,
                                  "🌐 internet search → Gemini Agent (Google Search)")
         if LMSTUDIO_BASE_URL and LMSTUDIO_CHAT_MODEL and _is_model_available(
@@ -135,6 +139,9 @@ def route(
         ):
             return RouteDecision("lmstudio", vision_model, Complexity.NORMAL,
                                  f"vision → {vision_model.split('/')[-1]} (local)")
+        if exclude_gemini:
+            return RouteDecision("ollama", OLLAMA_MODEL, Complexity.NORMAL,
+                                 "vision → Ollama (vision model + Gemini ทั้งคู่ใช้ไม่ได้)")
         return RouteDecision("gemini", "", Complexity.NORMAL, "vision → Gemini (vision model unavailable)")
 
     if provider_hint == "gemini":
