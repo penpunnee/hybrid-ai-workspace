@@ -132,3 +132,35 @@ class TestLastAssistantAnswer:
         assert last_assistant_answer([{"role": "user", "content": "สวัสดี"}]) == ""
         assert last_assistant_answer([]) == ""
         assert last_assistant_answer(None) == ""
+
+
+class TestCleanExtraction:
+    """ทำความสะอาดผลดิบจาก LLM ก่อนเอาไปใช้
+
+    เจอจริงบน prod (2026-08-02): Qwen3.5 ปิด thinking ผ่าน API ไม่ได้ →
+    max_tokens ถูก reasoning trace กินหมด ได้ `<think>...` ที่ยังไม่ปิดกลับมา
+    พอตัด think tag แบบ non-greedy ก็ไม่แมตช์อะไรเลย → เหลือข้อความครุ่นคิดล้วน
+    ที่เกือบถูกเก็บเป็น "ข้อเท็จจริง"
+    """
+
+    def test_strips_closed_think_block(self):
+        from memory.correction import clean_extraction
+
+        assert clean_extraction("<think>ครุ่นคิด</think>NAS ที่บ้านคือ DS923+") == "NAS ที่บ้านคือ DS923+"
+
+    def test_unterminated_think_block_is_rejected(self):
+        from memory.correction import clean_extraction
+
+        assert clean_extraction("<think>กำลังคิดว่าผู้ใช้หมายถึงอะไร แล้วก็ยังคิดไม่จบ") is None
+
+    def test_strips_leading_arrow(self):
+        from memory.correction import clean_extraction
+
+        assert clean_extraction("→ NAS ที่บ้านคือ DS923+") == "NAS ที่บ้านคือ DS923+"
+
+    def test_blank_returns_none(self):
+        from memory.correction import clean_extraction
+
+        assert clean_extraction("") is None
+        assert clean_extraction("   \n ") is None
+        assert clean_extraction(None) is None

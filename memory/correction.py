@@ -100,8 +100,28 @@ def build_correction_record(
             if not _looks_like_garbage(fact):
                 return fact[:MAX_RECORD_LEN]
             logger.info(f"[Correction] ผลจาก LLM ใช้ไม่ได้ ({fact[:60]!r}) → fallback")
+        else:
+            # เส้นทางนี้เคยเงียบสนิท → เห็นแค่ว่าได้ fallback แต่ไม่รู้ว่าทำไม
+            # (ความล้มเหลวที่หน้าตาเหมือนสำเร็จ — บทเรียนข้อ 7 ของ audit)
+            logger.info("[Correction] extractor ไม่คืนข้อความ → fallback")
 
     return _fallback(correction, wrong_answer)
+
+
+def clean_extraction(text: Optional[str]) -> Optional[str]:
+    """ทำความสะอาดผลดิบจาก LLM → None ถ้าไม่เหลืออะไรที่ใช้ได้
+
+    ⚠️ `<think>` ที่ **ยังไม่ปิด** = โมเดลคิดยังไม่จบแล้วโดน max_tokens ตัด
+    (Qwen3.5 ปิด thinking ผ่าน API ไม่ได้ — ดู CLAUDE.md) ข้อความที่เหลือเป็น
+    บทครุ่นคิด ไม่ใช่คำตอบ ต้องทิ้งทั้งก้อน ห้ามเก็บเป็น "ข้อเท็จจริง"
+    """
+    if not text:
+        return None
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    if "<think>" in text:
+        return None
+    text = text.lstrip("→").strip()
+    return text or None
 
 
 def last_assistant_answer(buffer: Optional[list]) -> str:
@@ -136,9 +156,9 @@ def llm_extractor(correction: str, wrong_answer: str) -> Optional[str]:
                                         f"ผู้ใช้แก้ว่า: {correction[:500]}\n→"},
         ],
         temperature=0.2,
-        max_tokens=200,
+        # เผื่อ reasoning trace — Qwen3.5 ปิด thinking ผ่าน API ไม่ได้ ถ้าตั้งแค่ 200
+        # โควตาจะถูก <think> กินหมดจนไม่เหลือคำตอบ (เจอจริงบน prod 2026-08-02)
+        max_tokens=900,
         stream=False,
     )
-    text = (resp.choices[0].message.content or "").strip()
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
-    return text.lstrip("→").strip() or None
+    return clean_extraction(resp.choices[0].message.content)
