@@ -10,6 +10,10 @@ load_dotenv()
 # Configure logging for obsidian sync
 logger = logging.getLogger(__name__)
 
+# คะแนนความคล้ายขั้นต่ำที่จะถือว่าโน้ต "เกี่ยวข้อง" พอจะยัดเข้า context/อ้างอิง
+# วัดจาก prod 2026-08-02: คำถามที่ไม่เกี่ยวกับ vault ทำได้ ≤0.40 · ที่ตรงจริง 0.72-0.74
+_VAULT_MIN_SCORE = float(os.getenv("VAULT_MIN_SCORE", "0.5"))
+
 VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH", "")
 COLLECTION_NAME = "obsidian_notes"
 
@@ -108,19 +112,35 @@ def sync_vault(vault_path: str = "") -> dict:
     return {"ok": True, "total": len(md_files), "synced": added, "skipped": skipped}
 
 
-def search_vault(query: str, n: int = 5) -> list[dict]:
-    """Search obsidian notes by semantic similarity."""
+def search_vault(query: str, n: int = 5, min_score: float | None = None) -> list[dict]:
+    """Search obsidian notes by semantic similarity (กรองด้วยเกณฑ์ความเกี่ยวข้อง)
+
+    ⚠️ เดิมทิ้ง `distances` ทั้งดุ้นแล้วคืน top-N เสมอ → คำถามที่ไม่เกี่ยวกับ vault
+    เลยก็ได้โน้ต 3 อันติดมาทุกครั้ง ถูกยัดเข้า context + โชว์เป็น citation
+    (เห็นกับตาบน prod 2026-08-02: ถามราคาน้ำมัน แล้วอ้างโน้ตส่วนตัวที่ไม่เกี่ยวข้อง
+    = ชื่อโน้ตส่วนตัวรั่วออกมาในคำถามที่ไม่เกี่ยวเลย)
+
+    เกณฑ์วัดจาก prod จริง: คำถามไม่เกี่ยว ≤0.40 · โน้ตที่ตรงจริง 0.72-0.74
+    """
     col = _get_collection()
     if col is None:
         logger.warning("Vault search failed: ChromaDB not available")
         return []
+    threshold = _VAULT_MIN_SCORE if min_score is None else min_score
     try:
         results = col.query(query_texts=[query], n_results=min(n, col.count()))
+        docs  = results.get("documents", [[]])[0]
+        metas = results.get("metadatas", [[]])[0]
+        dists = results.get("distances", [[]])[0]
         out = []
-        for i, doc in enumerate(results["documents"][0]):
-            meta = results["metadatas"][0][i]
-            out.append({"title": meta.get("title", ""), "content": doc, "path": meta.get("path", "")})
-        logger.info(f"Vault search: Found {len(out)} results for query: {query[:50]}")
+        for doc, meta, dist in zip(docs, metas, dists):
+            score = round(1 - float(dist), 4)
+            if score < threshold:
+                continue
+            meta = meta or {}
+            out.append({"title": meta.get("title", ""), "content": doc,
+                        "path": meta.get("path", ""), "score": score})
+        logger.info(f"Vault search: {len(out)}/{len(docs)} ผ่านเกณฑ์ {threshold} — query: {query[:50]}")
         return out
     except Exception as e:
         logger.error(f"Vault search error: {str(e)}")
