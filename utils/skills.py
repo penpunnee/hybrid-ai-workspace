@@ -51,14 +51,22 @@ def save_skill(topic: str, summary: str, source: str = "auto", sync: bool = True
 
 
 def search_skills(query: str, n_results: int = 3) -> str:
-    """ค้นหา skills ที่เกี่ยวข้องกับ query โดยใช้ semantic search"""
+    """ค้นหา skills ที่เกี่ยวข้องกับ query โดยใช้ semantic search
+
+    ล้มเหลว = คืนว่าง ไม่ใช่คืนทั้งคลัง (fail-closed)
+    เดิม fallback เป็น `get_all_skills()` → ChromaDB ไม่พร้อมเมื่อไหร่ก็ยัดทุกหัวข้อ
+    เข้า context ทุกเทิร์น (วัดบน prod: 22 รายการ = 7,455 chars ≈ 1,863 tokens)
+    ทั้งที่ไม่มีอะไรบอกว่ามันเกี่ยวกับคำถาม — และบนเส้น ollama ที่ตัด context ที่
+    2,000 chars ยังไปเบียดข้อมูล real-time กับ citations ตกท้ายอีก
+    ความรู้ยังเข้าได้ทาง `load_skills_relevant()` ซึ่งอ่าน .md ตรงและไม่พึ่ง ChromaDB
+    """
     try:
         from utils.skills_search import get_skills_search
         search = get_skills_search()
 
         if not search.available:
-            logger.warning("Skills search not available, using fallback")
-            return get_all_skills()
+            logger.warning("Skills search ใช้ไม่ได้ — ข้ามการฉีด skill เทิร์นนี้")
+            return ""
 
         results = search.search(query, n_results=n_results)
 
@@ -73,8 +81,8 @@ def search_skills(query: str, n_results: int = 3) -> str:
 
         return "\n".join(lines)
     except Exception as e:
-        logger.error(f"Skills search failed: {e}")
-        return get_all_skills()
+        logger.error(f"Skills search failed: {e} — ข้ามการฉีด skill เทิร์นนี้")
+        return ""
 
 
 def get_all_skills() -> str:
