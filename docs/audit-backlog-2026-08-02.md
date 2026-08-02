@@ -177,7 +177,9 @@ verified prod: 0 → 2 รายการ (`style=ชอบคำตอบสั
 
 ## P2 — ยังไม่ได้ตรวจเลย (ไม่รู้ว่ามีปัญหาไหม)
 
-### 5. routers อีก 12 ตัว — ตรวจลึกแค่ `chat.py` (667 บรรทัด)
+### ~~5.~~ ✅ routers อีก 12 ตัว — **ตรวจแล้ว 2026-08-03** (เจอ 3 ปิดแล้ว + 2 ค้าง — ดูท้ายไฟล์)
+
+เดิม: ตรวจลึกแค่ `chat.py` (667 บรรทัด)
 ```
 system.py 363 · skills.py 255 · documents.py 223 · sessions.py 128
 agent.py 92 · sandbox.py 90 · memory.py 77 · feedback.py 55
@@ -679,3 +681,81 @@ chat history** ได้ · แอปเปิด public ผ่าน Cloudflare
 (A: overcorrection จากบั๊กเก่า · B: middleware ที่ไม่ครอบทุก scope ของ framework)
 เทสหน่วยของทั้ง `auth.py` และ `ratelimit.py` **เขียวมาตลอด** เพราะไม่มีใครเคยเขียนเทส
 ที่ยิง *login* หรือ *WebSocket* — **ช่องโหว่อยู่ในเส้นที่ไม่มีเทส ไม่ใช่ในเทสที่แดง**
+
+---
+
+## ~~5.~~ ✅ routers อีก 12 ตัว + `sandbox.py` — **ตรวจแล้ว 2026-08-03**
+
+ไล่ครบ: `sandbox.py` `vault.py` `tools.py` `dream.py` `feedback.py` `auth.py` `memory.py`
+`agent.py` `sessions.py` `skills.py` `system.py` `documents.py` + `utils/fs_tools.py`
++ `utils/code_sandbox.py` — **ยิงจริงบนเซิร์ฟเวอร์ที่รันอยู่ ไม่ใช่อ่านโค้ดอย่างเดียว**
+
+### 🔴 A. `POST /api/fs/search` ทำให้ทั้งแอปค้างถาวรได้ด้วย request เดียว
+
+ยิง `{"pattern": "(a+)+$"}` ใส่ไฟล์ที่มี `"aaaa…b"` → **แอปไม่ตอบอะไรอีกเลย**
+`/api/config` timeout ทุกครั้งจนกว่าจะ restart (วัดจริง: baseline 14 ms → ไม่ตอบเลย)
+
+เป็น **สองต้นเหตุที่คูณกัน** ต้องแก้ทั้งคู่ แก้อันเดียวไม่พอ:
+1. **ReDoS** — `pattern` มาจาก user/โมเดล ถูก `re.compile` แล้วยิงทุกบรรทัด ·
+   `(a+)+$` = catastrophic backtracking · **`re` ของ CPython ไม่มี timeout และ
+   หยุดกลางคันไม่ได้** — ไม่ว่าจะเอาไปรันที่ไหนก็กินเธรดนั้นตลอดกาล
+2. **บล็อก event loop** — handler เป็น `async def` (เพราะต้อง `await request.json()`)
+   แล้วเรียก `search_files` แบบ sync ตรงๆ → ทั้ง loop หยุด = SSE ของแชททุกคนหยุด
+
+**แก้:**
+- กันที่ pattern: ปฏิเสธ nested quantifier (`_NESTED_QUANT`) + จำกัดความยาว 200 ตัวอักษร
+  · ⚠️ **heuristic ไม่ใช่การพิสูจน์** — ไม่ครอบ `(a|a)*` ซึ่งกันไม่ได้โดยไม่ทิ้ง
+  `(foo|bar)+` ที่ใช้งานจริง (มีเทสตรึงไว้ว่าอันหลังต้องผ่าน)
+- `deadline` 5 วิ เช็คระหว่างไฟล์ → บอก `timed_out: true` แทนที่จะไล่ทั้ง tree ไม่จบ
+- ทุก handler ใน `sandbox.py` ผ่าน `run_in_threadpool`
+- verified: ยิง pattern เดิมซ้ำ → ตอบ `unsafe pattern` ทันที · `/api/config` = 1.2 ms · ค้นปกติยังทำงาน
+
+### 🔴 B. `POST /api/vault/sync` รับ path จาก body → index ไฟล์นอก vault
+
+`vault_path` จาก body ส่งตรงเข้า `sync_vault()` → ชี้ไปโฟลเดอร์ไหนก็ได้ในคอนเทนเนอร์
+→ `rglob("*.md")` ดูดเข้า ChromaDB แล้วอ่านกลับผ่าน `/api/vault/search` ·
+นอกจากอ่านไฟล์นอก vault ได้ ยัง**ยัดขยะลง index ที่ระบบใช้ตอบคำถาม** (index poisoning)
+- ผู้เรียกจริงมีที่เดียวและส่ง body ว่างอยู่แล้ว (`app.tsx:522` → `JSON.stringify({})`)
+  → เลิกรับ path จาก body ไม่กระทบใคร
+
+### 🟠 C. `POST /api/dream` แช่ event loop ได้ถึง 10 นาที
+
+`ThreadPoolExecutor(...).result(timeout=600)` เป็น call แบบบล็อกที่เรียกอยู่ใน `async def`
+→ กดปุ่ม "🌙 รัน Dream เลย" บน UI = ทั้งแอปหยุดตอบจนกว่า dream จะจบ
+- ซ่อนอยู่อีกชั้น: `with ThreadPoolExecutor(...)` ตอนออกจะ `shutdown(wait=True)` →
+  **บนเส้น timeout จะกลับไปแช่รอ dream ที่เพิ่งบอกว่าไม่รอ** → เปลี่ยนเป็น `shutdown(wait=False)`
+
+### ⚠️ ยังไม่แก้ — เป็นระบบ ไม่ใช่จุดเดียว (ตัดสินใจแยกเป็นงานของตัวเอง)
+
+**`async def` + งาน sync ที่ช้า = คลาสเดียวกับ A และ C และมีอีกหลายที่**
+เพราะ handler ที่อ่าน body **ถูกบังคับให้เป็น `async def`** แล้วโค้ดที่เรียกต่อเป็น sync ล้วน:
+`documents.py` (upload/ocr/summarize/search — เรียก OCR + LLM + embedding) ·
+`skills.py:skills_extract` (รอ Gemini generate จบ) · `memory.py` (teach/cleanup → ChromaDB) ·
+`agent.py` · `chat.py` (ช่วง context assembly ก่อนเริ่ม stream)
+
+**ไม่รวบแก้ทีเดียวในรอบนี้เพราะ** `run_in_threadpool` ย้ายโค้ดที่เคยรันทีละอันไปรันพร้อมกัน —
+โค้ดพวกนี้แตะ global state (`skills_db`, memory, cache) ที่ไม่เคยถูกออกแบบมาให้ concurrent
+→ ต้องมีเทส concurrency ของตัวเองก่อน ไม่ใช่แก้ทีละ import (A/C แก้ได้เพราะไม่แตะ global state)
+
+**`POST /api/documents/upload` อ่านไฟล์เข้า RAM ก่อนเช็คขนาด** — `await file.read()` มาก่อน
+`if len(raw) > _MAX_BYTES` (10 MB) → body 5 GB = กิน RAM 5 GB ก่อนจะถูกปฏิเสธ ·
+ต้องมี auth ก่อน และ compose ไม่ได้ตั้ง mem limit ให้ `ai-backend-1` → ควรกันด้วย
+`content-length` ก่อนอ่าน หรือตั้ง limit ที่ container
+
+### ที่ตรวจแล้วไม่มีปัญหา
+- `utils/fs_tools.py:_resolve_safe()` — resolve symlink ก่อนเทียบ + `Path.relative_to`
+  (เทียบทีละ segment ไม่ใช่ string prefix) → `..`, absolute path, symlink ชี้ออกนอก ปิดครบ ✅
+- `utils/code_sandbox.py` docker mode — `--network none` `--read-only` `--memory` `--cpus`
+  + mount `:ro` + tmpfs · fallback local ปิดโดย default (`CODE_SANDBOX_ALLOW_LOCAL=false`) ✅
+- `tools.py:home_ping` — `ping_device` ใช้ `socket.create_connection` + `subprocess` แบบ list
+  (ไม่มี `shell=True`) → regex `^[\d.]+$` ที่หลวมนิดหน่อยไม่กลายเป็น command injection ✅
+- `skills.py` — `safe_topic` sanitize เหลือ alnum/-/_ · `skills_delete` บล็อก `..` และ `/` ✅
+- `dream.py` — `dream_lock` กัน concurrent run ✅ · `feedback.py` cast ชนิดครบ ✅
+
+### 🔑 บทเรียนของรอบนี้ — **เทสที่เขียวเพราะวัดผิดจุด**
+
+เทส concurrency ตัวแรกที่เขียนไว้ **เขียวทั้งที่ยังไม่ได้แก้อะไรเลย** จับได้ตอนลองถอด fix
+ออกแล้วเทสไม่แดง · สาเหตุ: จับเวลา *หลัง* `await asyncio.sleep()` ซึ่งตัว sleep เองก็ถูก
+event loop ที่ถูกบล็อกดองไว้ด้วย → เลยวัดได้แต่ช่วงหลังบล็อกจบ
+> **เขียนเทสเสร็จต้องถอดโค้ดที่แก้ออกแล้วดูให้เห็นว่ามันแดงจริง** ไม่งั้นได้แค่ความรู้สึกปลอดภัย
+> — ต่อยอดจากบทเรียน "assert ว่าเป็น array ไม่พิสูจน์อะไร" ของ Phrae Data Map
