@@ -243,22 +243,50 @@ auto-discovered + ห้าม skill ที่เป็น error ล้วน + 
 ### 10. UI ฟีเจอร์ที่ยังไม่ได้ลองบนจอจริง
 upload ไฟล์ · export · global search (Ctrl+Shift+F) · voice · drag&drop · กล้อง
 
-### 18. `skills_db.json` — 48 entry แต่ตรวจแล้วแค่ 16 (เจอระหว่างทำข้อ 9, ยังไม่แก้)
+### ~~18.~~ ✅ `skills_db.json` — **ปิดแล้ว 2026-08-03** (48 → 16, verified prod)
 
 `skills_db.json` เป็นคนละคลังกับ `skills/*.md` — ป้อน `search_skills()` (semantic top-3,
-volatile block) ส่วน .md ป้อน `load_skills_relevant()` (keyword, stable block) · ล้างข้อ 9
-ไปแล้วแต่คลังนี้ยังไม่ได้แตะ นอกจากลบ orphan 4 ตัว (52 → 48)
+volatile block) ส่วน .md ป้อน `load_skills_relevant()` (keyword, stable block)
 
-| ที่มา | จำนวน | สภาพ |
+**root cause ที่หาเจอ: `auto_extract_skills()` ไม่รู้จัก code fence**
+`.env`/shell ใช้ `#` เป็นคอมเมนต์ → ทุกคอมเมนต์ในบล็อก ```env ถูกอ่านเป็นหัวข้อ markdown
+· ทำซ้ำได้ตรงเป๊ะกับของบน prod รวม `` ``` `` ที่ติดท้าย entry ที่ 3:
+
+| topic ที่ได้ | summary |
+|---|---|
+| `============ AI Models ============` | `GEMINI_API_KEY=your_key_here` |
+| `⚠️ ต้องเป็น gemini-2.0-flash ขึ้นไป (สำหรับ Agent Mode)` | `GEMINI_MODEL=gemini-2.0-flash …` |
+| `============ Ollama (Local) ============` | `OLLAMA_MODEL=llama3 … ` `` ``` `` |
+
+**บั๊กเดียวทำสองทาง** — ไม่ใช่แค่ขยะเข้า: หัวข้อจริงที่อยู่*เหนือ*บล็อกถูกทิ้งด้วย เพราะ
+loop เก็บเนื้อหาไปหยุดที่คอมเมนต์บรรทัดแรก → summary เหลือแค่ `` ```env `` สั้นเกินเกณฑ์
+· แก้ที่ `utils/skills.py:_fence_flags()` + `tests/test_auto_extract_skills.py` (6 เทส)
+
+**ล้างข้อมูล:** `scripts/clean_skills_db.py` (dry-run default, backup อัตโนมัติ) +
+`tests/test_clean_skills_db.py` (13 เทส) — เกณฑ์ = **entry ต้องมี .md คู่กันใน SKILLS_DIR จริง**
+เกณฑ์เดียวกับ guard ของข้อ 9 ไม่ใช่รายชื่อที่คนเลือกเอง
+
+| ที่มา | ลบ | เหตุผล |
 |---|---:|---|
-| `GUIDE.md` หั่นตามหัวข้อ | 25 | **มีขยะปน** — `============ AI Models ============`, `� Regenerate Response` (mojibake), `⚠️ ต้องเป็น gemini-2.0-flash ขึ้นไป` = คำแนะนำล้าสมัยกลายเป็นชื่อ skill |
-| `schemas.md` | 7 | **ไม่มีไฟล์นี้ในโปรเจกต์** — history/grading/metrics/benchmark/comparison/analysis ดูเหมือนมาจากโปรเจกต์อื่น |
-| `.md` จริง | 16 | ตรวจแล้วในข้อ 9 |
+| `GUIDE.md` | 25 | ไฟล์อยู่ repo root ไม่ใช่ `skills/` · **ตรวจทีละหัวข้อแล้วซ้ำกับ `skills/*.md` ครบทั้ง 25 ไม่มีความรู้ใหม่เลย** และเป็นฉบับ เม.ย. ค่าเก่ากว่า |
+| `schemas.md` | 7 | ไม่มีไฟล์นี้ในโปรเจกต์ — เนื้อหาคือเอกสารของ `skill-creator` (plugin คนละระบบ) |
 
-**หลักฐานว่ามันโผล่จริง (verified prod หลัง restart):** ถาม `"openclaw คืออะไร"` → ได้
-`============ Ollama (Local) ============` พร้อม `OLLAMA_BASE_URL=http://host.docker.internal…`
-ซึ่งเป็นค่าที่ผิดจากปัจจุบัน · และเป็นคำตอบที่**ไม่เกี่ยวกับคำถามเลย** = ไม่มีพื้นความเกี่ยวข้อง
-→ บั๊กตระกูล "query โดยไม่ดู distances" (ข้อ 3/4) **อีกเส้นที่ยังไม่ได้ไล่**
+### 🔴 บทเรียนสำคัญที่สุดของรอบนี้ — ข้อ 9 ปิดไม่ครบ และ guard ของผมเองก็ไม่จับ
+
+`summary` ใน `skills_db.json` เป็น **snapshot ตอน ingest ไม่ใช่ pointer ไป .md**
+→ แก้ `.md` ในข้อ 9 แล้ว **`search_skills()` ยังฉีดข้อความเก่าอยู่** (`GEMINI_MODEL=gemini-2.5-pro`
+ที่ควรตายไปแล้ว ยังโผล่บน prod) · เส้น stable block ได้ของใหม่ เส้น volatile block ยังค้าง
+— **เป็นบทเรียน "แก้ 3 ใน 4 จุดแล้วคิดว่าจบ" ของ audit นี้ซ้ำอีกรอบ คราวนี้ผมเป็นคนทำเอง**
+· แก้: `resync_summaries()` + `--resync` (idempotent) · ต้องรัน**ทุกครั้ง**ที่แก้ `skills/*.md`
+
+**และการเข้ารหัสกฎเป็นเทสได้ผลจริง:** เติม pattern `Ollama` คู่กับ `:1234` (พอร์ต LM Studio)
+เข้า BANNED → guard จับเพิ่มได้ **5 จุดใน 5 ไฟล์** ซึ่ง **4 จุดผมหาไม่เจอเองตอนไล่ด้วยมือในข้อ 9**
+(`troubleshooting.md` · `project-architecture.md` · `pawin-context.md` · `system-manual.md`)
+→ กฎที่เขียนไว้จับได้มากกว่าคนอ่านทีละบรรทัด **แต่จับได้เฉพาะสิ่งที่คิดจะเข้ารหัส**
+
+**ยังค้างจากข้อนี้:** ถาม `"openclaw คืออะไร"` ยังได้ skill ที่ไม่เกี่ยวเลยขึ้นมา
+= `search_skills()` ไม่มีพื้นความเกี่ยวข้อง → บั๊กตระกูล "query โดยไม่ดู distances"
+(ข้อ 3/4) **อีกเส้นที่ยังไม่ได้ไล่**
 
 ### 19. `search_skills()` fail-open → ฉีด skill ทั้งคลัง (ยังไม่แก้)
 
