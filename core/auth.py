@@ -1,8 +1,11 @@
 import hmac
 import ipaddress
-from fastapi import Request
+from fastapi import Request, WebSocket
 from fastapi.responses import JSONResponse
 from core.config import UI_PASSWORD
+
+# endpoint ที่รับรหัสผ่านใน body (ไม่ใช่ header) — ratelimit ต้องรู้เพื่อนับ brute-force
+LOGIN_PATH = "/api/auth/login"
 
 
 def token_matches(provided: str) -> bool:
@@ -48,11 +51,32 @@ def is_local_request(request: Request) -> bool:
     return False
 
 
+def _under_open_prefix(path: str) -> bool:
+    """prefix ต้องตรงทั้ง segment — `startswith` ดิบๆ ทำให้ route ที่ชื่อขึ้นต้นเหมือน
+    open prefix (`/api/sharedsecrets`) หลุด public เงียบๆ ขัดเจตนา fail-closed"""
+    return any(path == p or path.startswith(p + "/") for p in _OPEN_PREFIXES)
+
+
+def websocket_authorized(websocket: WebSocket, token: str = "") -> bool:
+    """gate ของ WebSocket — ต้องเรียกเองใน handler ก่อน accept()
+
+    Why: `app.middleware("http")` = BaseHTTPMiddleware ซึ่งลัดผ่านทุก scope ที่ไม่ใช่ http
+    → auth/rate-limit ไม่เคยแตะ WebSocket เลย (endpoint หลุด public แม้ตั้ง UI_PASSWORD)
+    How: กติกาเดียวกับ auth_middleware — password ปิด → ผ่าน, LAN peer → ผ่าน, ไม่งั้นต้องมี token
+    token มาทาง query param เพราะ browser ตั้ง header บน WebSocket ไม่ได้
+    """
+    if not UI_PASSWORD:
+        return True
+    if is_local_request(websocket):   # WebSocket มี .headers/.client เหมือน Request
+        return True
+    return token_matches(token)
+
+
 async def auth_middleware(request: Request, call_next):
     if not UI_PASSWORD:
         return await call_next(request)
     path = request.url.path
-    if path in _OPEN_PATHS or any(path.startswith(p) for p in _OPEN_PREFIXES):
+    if path in _OPEN_PATHS or _under_open_prefix(path):
         return await call_next(request)
     if is_local_request(request):
         return await call_next(request)

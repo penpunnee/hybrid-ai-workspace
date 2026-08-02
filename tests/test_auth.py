@@ -111,6 +111,22 @@ def test_middleware_public_write_without_token_is_401(monkeypatch):
     assert getattr(resp, "status_code", None) == 401
 
 
+@pytest.mark.parametrize("path", ["/static/enhanced.js", "/assets/index.js", "/shared/tok",
+                                  "/api/shared/tok", "/ws/voice/kwan", "/gen/a.png"])
+def test_middleware_open_prefixes_still_pass(monkeypatch, path):
+    monkeypatch.setattr(auth, "UI_PASSWORD", "secret")
+    assert _run_mw(_FakeRequest(path=path, host="8.8.8.8")) == "PASSED"
+
+
+@pytest.mark.parametrize("path", ["/api/sharedsecrets", "/staticky", "/gen-keys", "/wsx"])
+def test_middleware_open_prefix_is_segment_bounded(monkeypatch, path):
+    """prefix ต้องตรงทั้ง segment — `startswith` ดิบๆ ทำให้ route ใหม่ที่ชื่อขึ้นต้นเหมือนกัน
+    (เช่น `/api/sharedsecrets`) หลุด public เงียบๆ ซึ่งขัดเจตนา fail-closed"""
+    monkeypatch.setattr(auth, "UI_PASSWORD", "secret")
+    resp = _run_mw(_FakeRequest(path=path, host="8.8.8.8"))
+    assert getattr(resp, "status_code", None) == 401
+
+
 def test_middleware_public_write_with_correct_token(monkeypatch):
     monkeypatch.setattr(auth, "UI_PASSWORD", "secret")
     req = _FakeRequest(path="/api/memory/x", method="POST", host="8.8.8.8",
