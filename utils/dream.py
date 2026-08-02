@@ -206,21 +206,43 @@ def rem_sleep(memories: list[dict], provider: str = "auto") -> dict:
         for m in memories[:30]
     )
 
-    # Few-shot prompt — แสดง output จริงไม่ใช่ placeholder
+    # ⚠️ ตัวอย่างใน prompt เดิมสอนให้ตอบผิด — summary ตัวอย่างคือ "User frequently
+    # deploys to NAS using docker compose" ซึ่งเป็น "บันทึกว่าเคยคุย" ไม่ใช่ความรู้
+    # โมเดลลอกรูปแบบนั้นตรงๆ มา 3 เดือน ได้ skill 60 อันที่ใช้ได้จริง 1 อัน
+    # (audit 2026-08-02) → เขียนใหม่ให้สกัด "ความรู้ที่ใช้ซ้ำได้" พร้อมตัวอย่างที่ถูก
     system_msg = (
-        "You are a memory consolidation system. "
-        "Analyze conversation memories and output ONLY valid JSON — no markdown, no explanation.\n\n"
-        "Output format example (use real content, not these placeholder words):\n"
-        '{"themes":[{"name":"Docker Deployment","summary":"User frequently deploys to NAS using docker compose","count":3}],'
-        '"insights":["User prefers concise Thai responses","System uses LM Studio for local inference"],'
-        '"connections":[{"from":"Docker","to":"NAS","reason":"All deployments target the Synology NAS"}]}'
+        "You extract DURABLE, REUSABLE KNOWLEDGE from conversation logs. "
+        "Output ONLY valid JSON — no markdown, no explanation.\n\n"
+        "A theme qualifies ONLY if someone could act on it months later without the "
+        "original conversation. Write the KNOWLEDGE ITSELF, never a description of "
+        "what was discussed.\n\n"
+        "GOOD summary (states the fact/procedure, with specifics):\n"
+        '  "deploy ขึ้น NAS: git reset --hard origin/main แล้ว docker restart ai-backend-1 '
+        '— ต้อง rebuild เฉพาะตอน requirements.txt เปลี่ยน"\n'
+        "BAD summary (describes the conversation — NEVER do this):\n"
+        '  "User frequently deploys to NAS"  /  "A request was made about deployment"  /  '
+        '"User asked how to deploy"\n\n'
+        "SKIP a theme entirely if it is:\n"
+        "  - a record of what was asked/discussed rather than an answer\n"
+        "  - a value that expires (prices, weather, ping results, episode numbers, "
+        "system status, dates) — these are wrong by next week\n"
+        "  - a failure/error/limitation ('system cannot X', 'quota exceeded')\n"
+        "  - a greeting, chitchat, or a statement about which language to reply in\n\n"
+        "Returning an empty themes list is CORRECT and expected when the logs contain "
+        "no durable knowledge. Do not invent themes to fill the list.\n\n"
+        "Format:\n"
+        '{"themes":[{"name":"short topic","summary":"the actual knowledge, with specifics","count":2}],'
+        '"insights":["durable fact about the user or system"],'
+        '"connections":[{"from":"A","to":"B","reason":"why they relate"}]}'
     )
 
     user_msg = (
-        f"Analyze these {len(memories)} memories from the past {memories[0].get('timestamp','')[:10] if memories else 'N/A'}.\n"
-        "Find recurring themes, extract insights, and identify connections.\n"
+        f"Extract durable knowledge from these {len(memories)} conversation logs "
+        f"({memories[0].get('timestamp','')[:10] if memories else 'N/A'}).\n"
+        "Only include themes that are still useful months from now. "
+        "Prefer an empty list over low-value themes.\n"
         "Respond with JSON only — no other text.\n\n"
-        f"=== MEMORIES ===\n{combined}"
+        f"=== LOGS ===\n{combined}"
     )
 
     messages = [
