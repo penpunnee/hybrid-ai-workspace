@@ -70,9 +70,14 @@ def recall(assistant: str, query: str, session_id: str = "",
     return "\n\n".join(parts)
 
 
-def teach(assistant: str, user_text: str, ai_response: str = "") -> bool:
-    """ตรวจจับและบันทึก teaching signal จาก user"""
-    return process_teaching(assistant, user_text, ai_response)
+def teach(assistant: str, user_text: str, ai_response: str = "",
+          prev_answer: str = "") -> bool:
+    """ตรวจจับและบันทึก teaching signal จาก user
+
+    `prev_answer` = คำตอบของเทิร์นก่อน (ตัวที่ user บอกว่าผิด) — ใช้เป็นบริบท
+    ตอนสกัดข้อเท็จจริง และเป็นเป้าของการลด confidence
+    """
+    return process_teaching(assistant, user_text, ai_response, prev_answer=prev_answer)
 
 
 def push_working(session_id: str, role: str, content: str) -> None:

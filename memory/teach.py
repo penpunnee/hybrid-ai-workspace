@@ -5,6 +5,7 @@
 """
 import re
 import logging
+from .correction import build_correction_record, llm_extractor
 from .schema import MemoryEntry
 from .store import save_entry, update_confidence
 
@@ -84,10 +85,18 @@ def detect_correction(text: str) -> bool:
     return False
 
 
-def process_teaching(assistant: str, user_text: str, ai_response: str = "") -> bool:
+def process_teaching(assistant: str, user_text: str, ai_response: str = "",
+                     prev_answer: str = "") -> bool:
     """
     ประมวลผล user message เพื่อหา teaching signal
     คืนค่า True ถ้าบันทึก memory ใหม่
+
+    Args:
+        ai_response: คำตอบของ **เทิร์นปัจจุบัน** (คำตอบที่ AI ตอบรับการแก้ไข)
+        prev_answer: คำตอบของ **เทิร์นก่อน** = ตัวที่ user บอกว่าผิด
+            ตัวนี้คือบริบทเดียวที่บอกว่า "ds923+" หมายถึงอะไร และเป็นตัวที่
+            ควรถูกลด confidence — เดิมโค้ดใช้ `ai_response` ทำงานทั้งสองหน้าที่
+            จึงไปลด confidence ของข้อความผิดตัวมาตลอด
     """
     knowledge, mem_type = detect_teaching(user_text)
     if knowledge:
@@ -104,20 +113,26 @@ def process_teaching(assistant: str, user_text: str, ai_response: str = "") -> b
             logger.info(f"[Teach] บันทึก {mem_type} → user_facts: '{knowledge[:60]}...'")
         return ok
 
-    # ถ้า user แก้ไข AI → ลด confidence ของ memory ที่เกี่ยวข้อง
-    if detect_correction(user_text) and ai_response:
-        update_confidence(assistant, ai_response[:200], new_confidence=0.3)
-        logger.info("[Teach] ตรวจเจอการแก้ไข → ลด confidence ของ response ก่อนหน้า")
+    # ถ้า user แก้ไข AI → ลด confidence ของคำตอบที่ผิด + เก็บข้อเท็จจริงที่ถูก
+    if detect_correction(user_text) and (ai_response or prev_answer):
+        # ลด confidence ของ *คำตอบที่ผิด* — fallback เป็น ai_response เฉพาะตอนที่
+        # ผู้เรียกยังไม่ส่ง prev_answer มา (เส้นเก่า/เทสเดิม) จะได้ไม่พังเงียบๆ
+        target = prev_answer or ai_response
+        update_confidence(assistant, target[:200], new_confidence=0.3)
+        logger.info("[Teach] ตรวจเจอการแก้ไข → ลด confidence ของคำตอบที่ผิด")
         if len(user_text) > 10:
-            entry = MemoryEntry(
-                content=f"[การแก้ไข] {user_text[:300]}",
-                assistant=assistant,
-                type="correction",
-                confidence=0.9,
-                source="user_taught",
-                verified=True,
-            )
-            save_entry(entry, collection_name="user_facts")
+            record = build_correction_record(user_text, prev_answer, extractor=llm_extractor)
+            if record:
+                entry = MemoryEntry(
+                    content=record,
+                    assistant=assistant,
+                    type="correction",
+                    confidence=0.9,
+                    source="user_taught",
+                    verified=True,
+                )
+                save_entry(entry, collection_name="user_facts")
+                logger.info(f"[Teach] เก็บข้อเท็จจริงจากการแก้ไข: {record[:80]!r}")
         return True
 
     return False

@@ -214,3 +214,70 @@ class TestCorrectionDetectionMatchesRealSpeech:
                 assert detect_correction(text), (
                     f"learn_gate บอกว่าเป็น negative_feedback แต่ teach จับไม่ได้: {text!r}"
                 )
+
+
+class TestCorrectionUsesPreviousWrongAnswer:
+    """`ai_response` ที่ chat.py ส่งเข้ามาคือคำตอบของ *เทิร์นปัจจุบัน*
+    (คำตอบที่ AI ตอบรับการแก้ไข) ไม่ใช่คำตอบผิดของเทิร์นก่อน
+
+    ผลคือเดิม `update_confidence()` ไปลด confidence ของข้อความผิดตัวมาตลอด
+    และ record ที่เก็บก็ไม่มีบริบทว่า user กำลังแก้เรื่องอะไร
+    """
+
+    WRONG = "NAS ที่บ้านคือ Synology DS918+ ครับ"
+    ACK = "เข้าใจแล้วค่ะ ขวัญจะจำไว้"
+    FIX = "ผิดแล้ว ds923+ ต่างหาก"
+
+    def test_record_is_built_from_previous_wrong_answer(self):
+        from unittest.mock import patch
+
+        import memory.teach as teach
+
+        seen = {}
+
+        def spy_build(correction, wrong_answer="", extractor=None):
+            seen["correction"], seen["wrong"] = correction, wrong_answer
+            return "NAS ที่บ้านคือ Synology DS923+"
+
+        with (
+            patch.object(teach, "build_correction_record", side_effect=spy_build),
+            patch.object(teach, "save_entry", return_value=True),
+            patch.object(teach, "update_confidence"),
+        ):
+            teach.process_teaching("kwan", self.FIX, ai_response=self.ACK, prev_answer=self.WRONG)
+
+        assert seen["wrong"] == self.WRONG, "ต้องใช้คำตอบผิดของเทิร์นก่อน ไม่ใช่คำตอบเทิร์นนี้"
+
+    def test_confidence_is_lowered_on_the_wrong_answer(self):
+        from unittest.mock import patch
+
+        import memory.teach as teach
+
+        seen = {}
+
+        with (
+            patch.object(teach, "save_entry", return_value=True),
+            patch.object(teach, "update_confidence",
+                         side_effect=lambda a, t, new_confidence: seen.update(target=t)),
+        ):
+            teach.process_teaching("kwan", self.FIX, ai_response=self.ACK, prev_answer=self.WRONG)
+
+        assert "DS918+" in seen["target"], "ต้องลด confidence ของคำตอบที่ผิด ไม่ใช่คำตอบที่รับทราบการแก้"
+
+    def test_saves_extracted_record_not_raw_complaint(self):
+        from unittest.mock import patch
+
+        import memory.teach as teach
+
+        saved = {}
+
+        with (
+            patch.object(teach, "build_correction_record", return_value="NAS ที่บ้านคือ Synology DS923+"),
+            patch.object(teach, "save_entry",
+                         side_effect=lambda e, collection_name=None: saved.update(content=e.content) or True),
+            patch.object(teach, "update_confidence"),
+        ):
+            teach.process_teaching("kwan", self.FIX, ai_response=self.ACK, prev_answer=self.WRONG)
+
+        assert saved["content"] == "NAS ที่บ้านคือ Synology DS923+"
+        assert "ผิดแล้ว" not in saved["content"]

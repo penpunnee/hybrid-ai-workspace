@@ -558,6 +558,16 @@ async def chat(request: Request):
             except Exception as e:
                 logger.warning(f"[Chat/reflect] failed: {e}")
 
+        # คำตอบที่ผิดของเทิร์นก่อน — ต้องอ่าน **ก่อน** push เทิร์นนี้ ไม่งั้นจะได้
+        # คำตอบที่เพิ่ง generate (ตัวที่ *รับทราบ* การแก้ไข) แทนตัวที่ user บอกว่าผิด
+        try:
+            from memory.correction import last_assistant_answer
+            from memory.working import working_memory
+            _prev_answer = last_assistant_answer(working_memory.get_recent(session_id, n=6))
+        except Exception as e:
+            logger.debug(f"[Chat/teach] อ่านคำตอบก่อนหน้าไม่ได้: {e}")
+            _prev_answer = ""
+
         push_working(session_id, "user", prompt)
         push_working(session_id, "assistant", full_response)
         # empty-guard notice ห้ามเข้า episodic memory/teach — ไม่ใช่คำตอบจริง
@@ -572,7 +582,7 @@ async def chat(request: Request):
                 remember(assistant, prompt, full_response)
             else:
                 logger.info(f"[Chat/remember] ข้าม episodic — reason={_rem_reason}")
-            teach(assistant, prompt, ai_response=full_response)
+            teach(assistant, prompt, ai_response=full_response, prev_answer=_prev_answer)
 
         # preference detection แยกจากเธรด lesson — เดิมฝังอยู่ข้างในทำให้ทำงานเฉพาะ
         # ตอนคำตอบยาว >100 ตัวอักษร + ผ่าน gate ของ lesson → preferences ว่าง 0 รายการ

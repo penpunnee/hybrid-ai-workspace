@@ -340,8 +340,11 @@ def test_recall_assembles_all_tiers(monkeypatch):
 
 
 def test_teach_delegates_to_process_teaching(monkeypatch):
-    monkeypatch.setattr(ops, "process_teaching", lambda a, u, r="": ("called", a, u))
-    assert ops.teach("logic", "จำไว้ว่า x") == ("called", "logic", "จำไว้ว่า x")
+    monkeypatch.setattr(ops, "process_teaching",
+                        lambda a, u, r="", prev_answer="": ("called", a, u, prev_answer))
+    assert ops.teach("logic", "จำไว้ว่า x") == ("called", "logic", "จำไว้ว่า x", "")
+    # prev_answer ต้องถูกส่งต่อ ไม่ใช่ถูกกลืนหาย
+    assert ops.teach("logic", "ผิดแล้ว", prev_answer="คำตอบเก่า")[3] == "คำตอบเก่า"
 
 
 def test_push_working_delegates():
