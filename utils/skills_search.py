@@ -96,6 +96,36 @@ class SkillsSearch:
                 category="learned",
                 source=data.get("source", "unknown")
             )
+
+    @staticmethod
+    def _skill_id(topic: str) -> str:
+        """id scheme เดียวกับ add_skill() — แยกออกมาให้ sync ใช้ร่วมได้"""
+        return f"skill_{topic.replace(' ', '_').lower()}"
+
+    def sync_from_db(self, skills_db: Dict):
+        """sync จริง = upsert ของที่มี + **ลบของที่หายไปจาก skills_db**
+
+        เดิม `add_skills_from_db()` มีแต่ upsert ไม่เคยลบ → ลบ skill ออกจาก
+        skills_db.json แล้วมันยังค้างใน ChromaDB ตลอดไป และยังถูกดึงเข้า context
+        ต่อ (เจอจริง 2026-08-02 ตอนล้าง Dream skills: ไฟล์เหลือ 52 แต่ index 128)
+        """
+        if not self.available or not self.collection:
+            logger.warning("Skills search not available, skipping sync_from_db")
+            return
+        wanted = {self._skill_id(t) for t in skills_db}
+        try:
+            existing = set(self.collection.get().get("ids", []) or [])
+        except Exception as e:
+            logger.warning(f"sync_from_db: อ่าน id เดิมไม่ได้ ({e}) — ทำแค่ upsert")
+            existing = set()
+        stale = sorted(existing - wanted)
+        if stale:
+            try:
+                self.collection.delete(ids=stale)
+                logger.info(f"sync_from_db: ลบ skill ที่ไม่มีใน db แล้ว {len(stale)} รายการ")
+            except Exception as e:
+                logger.error(f"sync_from_db: ลบ stale ids ล้มเหลว: {e}")
+        self.add_skills_from_db(skills_db)
     
     def search(self, query: str, n_results: int = 3, category: Optional[str] = None) -> List[Dict]:
         """
@@ -181,5 +211,5 @@ def sync_skills_to_search(skills_db: Dict):
     """
     search = get_skills_search()
     if search.available:
-        search.add_skills_from_db(skills_db)
+        search.sync_from_db(skills_db)     # upsert + ลบของที่หายไปจาก db
         logger.info(f"Synced {len(skills_db)} skills to search index")
