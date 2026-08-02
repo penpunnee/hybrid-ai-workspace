@@ -90,17 +90,18 @@ def build_correction_record(
         return ""
 
     if extractor is not None:
+        failed = False
         try:
             fact = extractor(correction, wrong_answer or "")
         except Exception as e:
             logger.warning(f"[Correction] extractor ล้ม ใช้ fallback: {e}")
-            fact = None
+            fact, failed = None, True
         if fact:
             fact = fact.strip()
             if not _looks_like_garbage(fact):
                 return fact[:MAX_RECORD_LEN]
             logger.info(f"[Correction] ผลจาก LLM ใช้ไม่ได้ ({fact[:60]!r}) → fallback")
-        else:
+        elif not failed:
             # เส้นทางนี้เคยเงียบสนิท → เห็นแค่ว่าได้ fallback แต่ไม่รู้ว่าทำไม
             # (ความล้มเหลวที่หน้าตาเหมือนสำเร็จ — บทเรียนข้อ 7 ของ audit)
             logger.info("[Correction] extractor ไม่คืนข้อความ → fallback")
@@ -147,7 +148,10 @@ def llm_extractor(correction: str, wrong_answer: str) -> Optional[str]:
     from openai import OpenAI
 
     model = os.getenv("LMSTUDIO_REASON_MODEL", "qwen/qwen3.5-9b")
-    client = OpenAI(base_url=base_url, api_key=os.getenv("LMSTUDIO_API_KEY", "lmstudio"), timeout=20)
+    # timeout กว้างได้เพราะผู้เรียกอยู่ในเธรดเบื้องหลัง (ดู routers/chat.py) —
+    # ผู้ใช้ไม่ได้รอผลนี้ · โมเดล reasoning ใช้เวลาจริง ~40-60 วิ
+    timeout = float(os.getenv("CORRECTION_EXTRACT_TIMEOUT", "60"))
+    client = OpenAI(base_url=base_url, api_key=os.getenv("LMSTUDIO_API_KEY", "lmstudio"), timeout=timeout)
     resp = client.chat.completions.create(
         model=model,
         messages=[

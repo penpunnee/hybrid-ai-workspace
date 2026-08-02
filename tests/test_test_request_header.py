@@ -62,9 +62,11 @@ def test_without_header_calls_remember_teach_and_lesson_thread(monkeypatch):
     resp, mock_remember, mock_teach = _post(monkeypatch)
     assert resp.status_code == 200
     mock_remember.assert_called_once()
-    # teach() ถูกเรียก 2 จุด: signal detection ต้น request + หลัง stream จบ (ai_response=)
-    assert mock_teach.call_count == 2
-    assert len(_RecordingThread.instances) == 1, "ปกติต้อง spawn auto-learn lesson thread"
+    # teach() เรียกตรงๆ ครั้งเดียว (signal detection ต้น request) — ส่วนรอบหลัง stream จบ
+    # ย้ายไปเธรดเบื้องหลังแล้ว เพราะมันเรียก LLM สกัดข้อเท็จจริง (~40-60 วิ) ซึ่งถ้าค้าง
+    # อยู่ในสาย SSE ผู้ใช้จะเห็น stream ไม่ปิดทั้งที่คำตอบพิมพ์จบแล้ว (วัดจริง prod: 61 วิ)
+    mock_teach.assert_called_once()
+    assert len(_RecordingThread.instances) == 2, "ต้อง spawn ทั้งเธรด teach และ auto-learn lesson"
 
 
 def test_is_test_request_helper_reads_header_case_insensitive():

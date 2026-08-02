@@ -582,7 +582,17 @@ async def chat(request: Request):
                 remember(assistant, prompt, full_response)
             else:
                 logger.info(f"[Chat/remember] ข้าม episodic — reason={_rem_reason}")
-            teach(assistant, prompt, ai_response=full_response, prev_answer=_prev_answer)
+            # เธรดเบื้องหลัง — teach() เรียก LLM สกัดข้อเท็จจริงเมื่อเจอการแก้ไข
+            # (~40-60 วิบนโมเดล reasoning) ถ้าปล่อยไว้ในสาย SSE ผู้ใช้จะเห็น stream
+            # ค้างต่ออีกนาทีทั้งที่คำตอบพิมพ์จบไปแล้ว — วัดจริงบน prod: เทิร์นเดียว 61 วิ
+            # pattern เดียวกับเธรด _learn() ด้านล่าง
+            def _teach(a=assistant, p=prompt, r=full_response, pa=_prev_answer):
+                try:
+                    teach(a, p, ai_response=r, prev_answer=pa)
+                except Exception as e:
+                    logger.debug(f"[Chat/teach] failed: {e}")
+
+            threading.Thread(target=_teach, daemon=True).start()
 
         # preference detection แยกจากเธรด lesson — เดิมฝังอยู่ข้างในทำให้ทำงานเฉพาะ
         # ตอนคำตอบยาว >100 ตัวอักษร + ผ่าน gate ของ lesson → preferences ว่าง 0 รายการ
