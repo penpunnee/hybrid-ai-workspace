@@ -13,6 +13,7 @@ Configure ผ่าน env:
 import logging
 import os
 import re
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -25,6 +26,14 @@ _ROOTS = [Path(p).expanduser().resolve() for p in _ROOTS_ENV.split(":") if p.str
 _MAX_READ = int(os.getenv("FS_TOOLS_MAX_READ", str(1024 * 1024)))      # 1MB
 _MAX_WRITE = int(os.getenv("FS_TOOLS_MAX_WRITE", str(256 * 1024)))     # 256KB
 _MAX_LIST = int(os.getenv("FS_TOOLS_MAX_LIST", "500"))                  # entries
+_MAX_PATTERN = int(os.getenv("FS_TOOLS_MAX_PATTERN", "200"))            # chars
+_SEARCH_DEADLINE = float(os.getenv("FS_TOOLS_SEARCH_DEADLINE", "5"))    # วินาที
+
+# quantifier ซ้อน quantifier — คลาสคลาสสิกของ catastrophic backtracking
+# ((a+)+ / (a*)* / (a+){3,}) · `re` ของ CPython ไม่มี timeout และ **หยุดกลางคันไม่ได้**
+# → กันที่ตัว pattern เป็นทางเดียวที่ได้ผลจริง (deadline ด้านล่างช่วยได้เฉพาะสแกนที่ช้าแบบปกติ)
+# ⚠️ heuristic ไม่ใช่การพิสูจน์ — ไม่ครอบ (a|a)* ซึ่งกันไม่ได้โดยไม่ทิ้ง (foo|bar)+ ที่ใช้จริง
+_NESTED_QUANT = re.compile(r"\((?![?#])[^)]*[*+][^)]*\)\s*[*+{]")
 
 # ensure default root exists
 for r in _ROOTS:
@@ -176,6 +185,13 @@ def search_files(
     """
     if not pattern:
         return {"ok": False, "error": "empty pattern"}
+    if len(pattern) > _MAX_PATTERN:
+        return {"ok": False, "error": f"pattern too long (>{_MAX_PATTERN} chars)"}
+    if _NESTED_QUANT.search(pattern):
+        return {"ok": False, "error": (
+            "unsafe pattern — nested quantifier ทำให้ regex ระเบิด (catastrophic "
+            "backtracking) และหยุดกลางคันไม่ได้ · ใช้ pattern ที่ง่ายกว่านี้หรือค้นแบบ literal"
+        )}
     try:
         root = _resolve_safe(path or str(_ROOTS[0]))
         if not root.is_dir():
@@ -189,9 +205,14 @@ def search_files(
 
         matches = []
         files_scanned = 0
+        timed_out = False
+        deadline = time.monotonic() + _SEARCH_DEADLINE
         for file in root.rglob(file_glob):
             if not file.is_file():
                 continue
+            if time.monotonic() > deadline:
+                timed_out = True
+                break
             files_scanned += 1
             if file.stat().st_size > _MAX_READ:
                 continue
@@ -216,6 +237,7 @@ def search_files(
         return {
             "ok": True, "pattern": pattern, "matches": matches,
             "files_scanned": files_scanned, "count": len(matches),
+            "timed_out": timed_out,
         }
     except FSError as e:
         return {"ok": False, "error": str(e)}

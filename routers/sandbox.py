@@ -11,12 +11,19 @@ Endpoints:
 """
 import logging
 from fastapi import APIRouter, Request, HTTPException
+from starlette.concurrency import run_in_threadpool
 
 from utils.code_sandbox import run_python, info as sandbox_info
 from utils.fs_tools import list_dir, read_file, write_file, search_files, info as fs_info
 
 router = APIRouter(prefix="/api", tags=["sandbox-fs"])
 logger = logging.getLogger(__name__)
+
+# ⚠️ handler พวกนี้ต้องเป็น async def เพราะอ่าน body (`await request.json()`)
+# แต่ของที่เรียกต่อเป็น sync ล้วนและช้าได้ (subprocess ของ sandbox ถึง 62 วิ · rglob ทั้ง tree)
+# → เรียกตรงๆ = บล็อก event loop ทั้งเส้น = SSE ของแชททุกคนหยุด (พิสูจน์แล้ว 2026-08-03:
+# fs/search ด้วย regex ระเบิด ทำให้ /api/config ไม่ตอบอีกเลยจนกว่าจะ restart)
+# → ทุกอันต้องผ่าน run_in_threadpool
 
 
 @router.post("/sandbox/python")
@@ -30,7 +37,7 @@ async def sandbox_python(request: Request):
         timeout = int(data.get("timeout", 10))
     except (TypeError, ValueError):
         timeout = 10
-    result = run_python(code, timeout=timeout)
+    result = await run_in_threadpool(run_python, code, timeout=timeout)
     return result.to_dict()
 
 
@@ -42,7 +49,7 @@ def sandbox_status():
 @router.post("/fs/list")
 async def fs_list(request: Request):
     data = await request.json()
-    return list_dir(path=str(data.get("path", "")))
+    return await run_in_threadpool(list_dir, path=str(data.get("path", "")))
 
 
 @router.post("/fs/read")
@@ -55,7 +62,7 @@ async def fs_read(request: Request):
         max_bytes = int(data.get("max_bytes", 0))
     except (TypeError, ValueError):
         max_bytes = 0
-    return read_file(path, max_bytes=max_bytes or None)
+    return await run_in_threadpool(read_file, path, max_bytes=max_bytes or None)
 
 
 @router.post("/fs/write")
@@ -67,7 +74,8 @@ async def fs_write(request: Request):
         raise HTTPException(400, "path required")
     if not isinstance(content, str):
         raise HTTPException(400, "content (string) required")
-    return write_file(path, content, overwrite=bool(data.get("overwrite", False)))
+    return await run_in_threadpool(write_file, path, content,
+                                   overwrite=bool(data.get("overwrite", False)))
 
 
 @router.post("/fs/search")
@@ -76,7 +84,8 @@ async def fs_search(request: Request):
     pattern = str(data.get("pattern", ""))
     if not pattern:
         raise HTTPException(400, "pattern required")
-    return search_files(
+    return await run_in_threadpool(
+        search_files,
         pattern,
         path=str(data.get("path", "")),
         file_glob=str(data.get("file_glob", "*")),

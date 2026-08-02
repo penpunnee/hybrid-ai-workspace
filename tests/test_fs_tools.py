@@ -142,3 +142,67 @@ def test_search_files_finds_pattern(sandbox):
 
 def test_search_empty_pattern_rejected(sandbox):
     assert fs.search_files("")["ok"] is False
+
+
+# ─────────────────────────────────────────────────────────────
+# ReDoS guard — pattern ของ search_files มาจาก user/โมเดล
+#
+# พิสูจน์แล้ว 2026-08-03: POST /api/fs/search {"pattern": "(a+)+$"} บนไฟล์ที่มี
+# "aaaa...b" ทำให้ **ทั้งแอปค้างถาวร** (catastrophic backtracking ใน re + handler
+# เป็น async def → บล็อก event loop) — /api/config ไม่ตอบอีกเลยจนกว่าจะ restart
+# ─────────────────────────────────────────────────────────────
+@pytest.fixture
+def bait(sandbox):
+    """ไฟล์ที่จุดระเบิด backtracking: a ยาว ๆ แล้วปิดท้ายด้วยตัวที่ทำให้ match ไม่ได้"""
+    (sandbox / "bait.txt").write_text("a" * 40 + "b\n", encoding="utf-8")
+    return sandbox
+
+
+@pytest.mark.parametrize("pattern", ["(a+)+$", "(a*)*$", "(a+)*b", "(a+){3,}"])
+def test_search_rejects_nested_quantifier(bait, pattern):
+    """nested quantifier = คลาสคลาสสิกของ catastrophic backtracking → ต้องปฏิเสธ ไม่ใช่ค้าง"""
+    r = fs.search_files(pattern, path=str(bait))
+    assert r["ok"] is False
+    assert "unsafe" in r["error"].lower()
+
+
+def test_search_rejects_overlong_pattern(sandbox):
+    r = fs.search_files("a" * (fs._MAX_PATTERN + 1), path=str(sandbox))
+    assert r["ok"] is False
+    assert "too long" in r["error"].lower()
+
+
+def test_search_normal_regex_still_works(sandbox):
+    (sandbox / "a.txt").write_text("hello world\nfoo bar\n", encoding="utf-8")
+    r = fs.search_files(r"^foo\s+bar$", path=str(sandbox))
+    assert r["ok"] is True and r["count"] == 1
+    assert r["matches"][0]["line"] == 2
+
+
+def test_search_common_alternation_not_rejected(sandbox):
+    """`(foo|bar)+` มี quantifier ต่อท้ายกลุ่ม แต่ไม่มี quantifier ข้างใน → ต้องผ่าน
+    (guard ต้องไม่กว้างจนกินของที่ใช้จริง)"""
+    (sandbox / "a.txt").write_text("foobar\n", encoding="utf-8")
+    r = fs.search_files("(foo|bar)+", path=str(sandbox))
+    assert r["ok"] is True and r["count"] == 1
+
+
+def test_search_invalid_regex_falls_back_to_literal(sandbox):
+    (sandbox / "a.txt").write_text("cost is 5*3 baht\n", encoding="utf-8")
+    r = fs.search_files("5*3", path=str(sandbox))      # regex ถูกต้องแต่ literal ก็เจอ
+    assert r["ok"] is True
+    r2 = fs.search_files("a[", path=str(sandbox))      # regex พัง → literal
+    assert r2["ok"] is True and r2["count"] == 0
+
+
+def test_search_deadline_stops_long_scan(sandbox, monkeypatch):
+    """สแกนที่ช้าแบบไม่ระเบิด (ไฟล์เยอะ) ต้องหยุดเมื่อครบ deadline แล้วบอกว่าไม่ครบ"""
+    for i in range(30):
+        (sandbox / f"f{i}.txt").write_text("needle\n" * 50, encoding="utf-8")
+
+    ticks = iter([0.0] + [100.0] * 500)         # เรียกครั้งแรก = t0, หลังจากนั้นเลย deadline
+    monkeypatch.setattr(fs.time, "monotonic", lambda: next(ticks))
+    r = fs.search_files("needle", path=str(sandbox), max_results=10_000)
+    assert r["ok"] is True
+    assert r["timed_out"] is True
+    assert r["count"] < 1500                    # ไม่ได้สแกนครบทุกไฟล์

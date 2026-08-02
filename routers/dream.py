@@ -1,6 +1,7 @@
 import logging
 import os
 from fastapi import APIRouter, Request
+from starlette.concurrency import run_in_threadpool
 
 from core.state import dream_lock
 from utils.dream import run_dream_cycle, get_latest_report, list_reports
@@ -29,17 +30,24 @@ async def trigger_dream(request: Request):
     provider = data.get("provider", _default_dream_provider()) if isinstance(data, dict) else _default_dream_provider()
     hours = data.get("hours", 24) if isinstance(data, dict) else 24
 
+    # ⚠️ `.result(timeout=...)` เป็น call แบบบล็อก — เรียกตรงๆ ใน async def จะแช่
+    # event loop ได้ถึง _DREAM_TIMEOUT (10 นาที) = ทั้งแอปหยุดตอบ · ต้องรอผ่าน threadpool
     from concurrent.futures import ThreadPoolExecutor
     async with dream_lock:
-        with ThreadPoolExecutor(max_workers=1) as ex:
-            try:
-                result = ex.submit(run_dream_cycle, provider, hours).result(timeout=_DREAM_TIMEOUT)
-            except TimeoutError:
-                logger.error(f"Dream cycle timed out after {_DREAM_TIMEOUT}s")
-                return {"ok": False, "error": {"code": "DREAM_TIMEOUT", "message": f"Dream Cycle ใช้เวลานานเกิน {_DREAM_TIMEOUT//60} นาที"}}
-            except Exception as e:
-                logger.error(f"Dream cycle error: {e}")
-                return {"ok": False, "error": {"code": "DREAM_ERROR", "message": str(e)}}
+        ex = ThreadPoolExecutor(max_workers=1)
+        fut = ex.submit(run_dream_cycle, provider, hours)
+        try:
+            result = await run_in_threadpool(fut.result, timeout=_DREAM_TIMEOUT)
+        except TimeoutError:
+            logger.error(f"Dream cycle timed out after {_DREAM_TIMEOUT}s")
+            return {"ok": False, "error": {"code": "DREAM_TIMEOUT", "message": f"Dream Cycle ใช้เวลานานเกิน {_DREAM_TIMEOUT//60} นาที"}}
+        except Exception as e:
+            logger.error(f"Dream cycle error: {e}")
+            return {"ok": False, "error": {"code": "DREAM_ERROR", "message": str(e)}}
+        finally:
+            # wait=False เสมอ — `with ThreadPoolExecutor` เดิม shutdown(wait=True) ตอนออก
+            # ซึ่งบนเส้น timeout แปลว่ากลับไปแช่ event loop รอ dream ที่เพิ่งบอกว่าไม่รอ
+            ex.shutdown(wait=False)
 
     return {"ok": True, "report": result}
 
