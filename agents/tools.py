@@ -317,7 +317,7 @@ def _t_generate_image(prompt: str) -> str:
 
 # ── Registry ─────────────────────────────────────────────────────────────────
 
-TOOL_REGISTRY: dict[str, dict[str, Any]] = {
+_ALL_TOOLS: dict[str, dict[str, Any]] = {
     "generate_image": {
         "description": (
             "สร้าง/วาดรูปภาพจากคำบรรยายด้วย Gemini Image "
@@ -654,9 +654,44 @@ def get_openai_tools() -> list[dict]:
     ]
 
 
+# ── Capability gate ──────────────────────────────────────────────────────────
+# ทะเบียน tool คือ "สัญญาว่าทำได้" ไม่ใช่รายการความหวัง — tool ที่รันไม่ได้ในสภาพแวดล้อม
+# นี้ต้องไม่โผล่ให้โมเดลเลือก ไม่งั้นมันจะเสียเทิร์นไปกับการเรียกแล้วได้ error
+# (เจอจริงบน prod 2026-08-03: `run_python` blocked ทุกครั้งเพราะ container ไม่มี
+# /var/run/docker.sock แต่ยังอยู่ในทะเบียนมาตลอด — backlog ข้อ 6)
+
+
+def _sandbox_available() -> bool:
+    """รัน Python ได้จริงไหม — มี Docker หรือเปิด local ไว้"""
+    from utils import code_sandbox
+    return bool(code_sandbox._has_docker() or code_sandbox._ALLOW_LOCAL)
+
+
+# lambda เพื่อให้ lookup `_sandbox_available` เกิดตอน "เรียก" ไม่ใช่ตอน import
+# (ผูก reference ตรงๆ จะ patch ในเทสไม่ได้ และ gate จะค้างค่าที่อ่านตอน boot ตลอดอายุ process)
+_GATED = {"run_python": lambda: _sandbox_available()}
+
+
+def build_registry() -> dict[str, dict[str, Any]]:
+    """ทะเบียนเฉพาะ tool ที่ใช้ได้จริงตอนนี้"""
+    return {
+        name: spec
+        for name, spec in _ALL_TOOLS.items()
+        if name not in _GATED or _GATED[name]()
+    }
+
+
+TOOL_REGISTRY: dict[str, dict[str, Any]] = build_registry()
+
+
 def execute_tool(name: str, args: dict) -> str:
     """รัน tool แล้วคืน string result (clamp ความยาว)"""
     if name not in TOOL_REGISTRY:
+        if name in _ALL_TOOLS:
+            return (
+                f"❌ tool '{name}' ใช้ไม่ได้ในสภาพแวดล้อมนี้ "
+                "(run_python ต้องมี Docker หรือตั้ง CODE_SANDBOX_ALLOW_LOCAL=true)"
+            )
         return f"❌ ไม่รู้จัก tool ชื่อ '{name}'"
     fn = TOOL_REGISTRY[name]["fn"]
     try:
