@@ -4,7 +4,8 @@
 
 | ปัญหา | วิธีแก้ |
 |---|---|
-| Ollama ไม่ตอบ | ตรวจว่า PC เปิดอยู่ + `curl http://192.168.51.235:1234/v1/models` |
+| LM Studio ไม่ตอบ (local หลัก) | ตรวจว่า PC เปิดอยู่ + `curl http://192.168.51.235:1234/v1/models` |
+| Ollama ไม่ตอบ (fallback) | `curl http://192.168.51.235:11434/v1/models` — ⚠️ Ollama คือ 11434 ไม่ใช่ 1234 |
 | Gemini error 401 | ตรวจ `GEMINI_API_KEY` ใน `.env` |
 | Gemini quota หมด | auto-fallback ไป LMStudio + web search (ดู routers/chat.py) |
 | AI ตอบทั้ง 2 ฝั่ง | ดู enhanced.js fetch override — ต้องมีแค่ 1 layer |

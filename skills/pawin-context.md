@@ -33,7 +33,7 @@
 ## การตั้งค่าระบบ NAS
 
 - **NAS IP**: 192.168.51.49
-- **Ollama PC IP**: 192.168.51.235 (port 1234)
+- **PC ที่รันโมเดล local**: 192.168.51.235 — LM Studio port **1234** (ตัวหลัก) · Ollama port **11434** (fallback)
 - **ChromaDB**: container `chromadb` port 8000
 - **AI Backend**: container `ai-backend` / `hybrid-ai` port 8080→8000
 - **NAS path**: /var/services/homes/pawin/ui

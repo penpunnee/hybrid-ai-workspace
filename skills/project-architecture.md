@@ -15,7 +15,7 @@ Infra:     Docker + Synology NAS + Cloudflare Tunnel
 ```
 ui/
 ├── server.py              ← FastAPI main app (1200+ lines)
-├── app.py                 ← Streamlit app (legacy)
+├── legacy/app.py          ← Streamlit ที่ปลดระวางแล้ว (ถอดออกจาก image 2026-07-12 — ห้าม import)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
@@ -86,7 +86,8 @@ Internet → Cloudflare → NAS (192.168.51.49:8080)
                          Docker: ai-backend-1
                               ↓
                     ChromaDB (192.168.51.49:8000)
-                    Ollama PC (192.168.51.235:1234)
+                    LM Studio PC (192.168.51.235:1234) ← local หลัก
+                    Ollama PC   (192.168.51.235:11434) ← fallback
 ```
 
 ## Auth System

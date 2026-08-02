@@ -144,7 +144,8 @@ sudo docker compose build hybrid-ai && sudo docker compose up -d hybrid-ai
 ## .env ที่สำคัญ (NAS)
 
 ```env
-OLLAMA_BASE_URL=http://192.168.51.235:1234/v1
+LMSTUDIO_BASE_URL=http://192.168.51.235:1234/v1    # local หลัก
+OLLAMA_BASE_URL=http://192.168.51.235:11434/v1     # fallback (11434 ไม่ใช่ 1234)
 CHROMA_HOST=chromadb
 CHROMA_PORT=8000
 DB_PATH=/app/chat_history.db

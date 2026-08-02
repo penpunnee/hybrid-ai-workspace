@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import re
 
 from core.config import SKILLS_DB_PATH
 
@@ -139,6 +140,31 @@ def cleanup_junk_skills() -> dict:
     return {"removed": removed, "remaining": len(kept)}
 
 
+_FENCE_RE = re.compile(r"^(```|~~~)")
+
+
+def _fence_flags(lines: list[str]) -> list[bool]:
+    """คืน list ขนานกับ lines: True = บรรทัดนั้นอยู่ใน code fence (รวมตัว fence เอง)
+
+    รองรับทั้ง ``` และ ~~~ ตาม CommonMark · fence ที่เปิดค้างไม่ปิด ให้ถือว่าครอบถึงท้ายไฟล์
+    (ปลอดภัยกว่าเดาว่าปิดเอง — ความไม่แน่ใจเอียงไปทางไม่เก็บ ดีกว่าเก็บขยะ)
+    """
+    flags = []
+    marker = None
+    for line in lines:
+        stripped = line.strip()
+        m = _FENCE_RE.match(stripped)
+        if marker is None and m:
+            marker = m.group(1)
+            flags.append(True)
+        elif marker is not None and stripped.startswith(marker):
+            marker = None
+            flags.append(True)
+        else:
+            flags.append(marker is not None)
+    return flags
+
+
 def auto_extract_skills(text: str, assistant_name: str) -> list[str]:
     """
     สรุป skills จากไฟล์ที่ upload อัตโนมัติ
@@ -168,8 +194,15 @@ def auto_extract_skills(text: str, assistant_name: str) -> list[str]:
         pass
 
     # สกัดจาก Markdown headings — ต้องมี content ข้างใต้ด้วย
+    # ⚠️ ต้องรู้ว่าบรรทัดไหนอยู่ใน code fence: `.env`/shell ใช้ `#` เป็นคอมเมนต์
+    # ถ้าไม่เช็ค คอมเมนต์ทุกบรรทัดจะกลายเป็น "หัวข้อความรู้" และหัวข้อจริงที่อยู่เหนือบล็อก
+    # จะถูกทิ้งเพราะ loop เก็บเนื้อหาไปหยุดที่คอมเมนต์บรรทัดแรก (เจอจริงบน prod, backlog ข้อ 18)
     lines = text.split("\n")
+    in_fence = _fence_flags(lines)
+
     for i, line in enumerate(lines):
+        if in_fence[i]:
+            continue
         line = line.strip()
         if line.startswith("## ") or line.startswith("# "):
             topic = line.lstrip("#").strip()
@@ -179,8 +212,10 @@ def auto_extract_skills(text: str, assistant_name: str) -> list[str]:
             content_lines = []
             for j in range(i + 1, min(i + 10, len(lines))):
                 next_line = lines[j].strip()
-                if next_line.startswith("#"):
+                if next_line.startswith("#") and not in_fence[j]:
                     break
+                if _FENCE_RE.match(next_line):
+                    continue  # ตัว fence เองไม่ใช่เนื้อหา
                 if next_line:
                     content_lines.append(next_line)
             summary = " ".join(content_lines[:3]).strip()[:200]

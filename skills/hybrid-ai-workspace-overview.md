@@ -10,9 +10,9 @@
 
 | Layer | Tech |
 |---|---|
-| Frontend | React 18 + Vite + Tailwind CSS (pre-built static) + Streamlit (legacy) |
+| Frontend | React 18 + Vite + Tailwind CSS (pre-built static) — source อยู่ที่ `~/appscript.ui` |
 | Backend | FastAPI (Python), single `server.py` + routers/ |
-| Local LLM | Ollama (`llama3`), LMStudio (Gemma 4B, DeepSeek R1 8B, Llama 3.2 11B Vision) |
+| Local LLM | **LM Studio (`qwen/qwen3.5-9b`)** = ตัวหลัก · Ollama (`llama3`) = dormant fallback |
 | Cloud LLM | Gemini 2.5 Flash, Gemini Live (voice) |
 | Memory | ChromaDB (vector store) + SQLite (chat history) |
 | Tunnel | Cloudflare Tunnel |
@@ -63,7 +63,7 @@ dream_reports/dream_YYYYMMDD_HHMMSS.json
 ```
 ui/
 ├── server.py              # FastAPI entry + middleware + lifespan
-├── app.py                 # Streamlit UI (legacy)
+├── legacy/app.py          # Streamlit UI ที่ปลดระวางแล้ว (ถอดออกจาก image 2026-07-12 — ห้าม import)
 ├── core/
 │   ├── config.py          # env vars
 │   ├── auth.py            # auth middleware (LAN bypass + token)
