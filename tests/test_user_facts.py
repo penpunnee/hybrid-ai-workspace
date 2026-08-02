@@ -161,3 +161,56 @@ class TestRecallIncludesUserFacts:
             result = recall("kwan", "style")
 
         assert "[ข้อมูลของคุณ]" in result
+
+
+class TestCorrectionDetectionMatchesRealSpeech:
+    """เทสจากภาษาจริงบน prod (audit 2026-08-02)
+
+    ต้นเหตุที่ collection `user_facts` ว่างเปล่า 2 เดือน: pattern บังคับภาษาทางการ
+    ที่พี่ปอยไม่เคยพูด — รัน `detect_correction()` กับ prompt จริงบน prod ทั้ง 156 ข้อ
+    ได้ 0 hit ทั้งที่ในนั้นมี "ผิดแล้ว ds923+ ต่างหาก" อยู่จริง
+
+    ตัวอย่างทั้งหมดข้างล่างคัดจาก ChromaDB prod (`memory_kwan`/`memory_logic`)
+    ไม่ใช่ประโยคที่แต่งขึ้น
+    """
+
+    REAL_CORRECTIONS = [
+        "ผิดแล้ว ds923+ ต่างหาก ตรวจสอบยังไงเนี่ย",
+        "Synology ds918+หรอ  ไม่ใช่มั้ง",
+        "ไม่ใช่ละ",
+    ]
+
+    # ประโยคปกติที่ *ห้าม* ถูกจับว่าเป็นการแก้ไข (กัน false positive)
+    NOT_CORRECTIONS = [
+        "ช่วยอธิบาย FastAPI หน่อย",
+        "ราคาทองวันนี้",
+        "ไม่ใช่เรื่องด่วนนะ แต่ช่วยดู log ให้หน่อย",
+    ]
+
+    def test_real_corrections_are_detected(self):
+        from memory.teach import detect_correction
+
+        missed = [t for t in self.REAL_CORRECTIONS if not detect_correction(t)]
+        assert missed == [], f"จับการแก้ไขจริงไม่ได้: {missed}"
+
+    def test_normal_prompts_are_not_flagged(self):
+        from memory.teach import detect_correction
+
+        false_pos = [t for t in self.NOT_CORRECTIONS if detect_correction(t)]
+        assert false_pos == [], f"false positive: {false_pos}"
+
+    def test_correction_vocabulary_shared_with_learn_gate(self):
+        """learn_gate บล็อกเทิร์นไหนว่าเป็น negative_feedback → teach ต้องเรียนจากเทิร์นนั้นได้
+
+        เดิมสองโมดูลใช้นิยาม "การแก้ไข" คนละชุด: learn_gate รู้พอที่จะ *ทิ้ง* เทิร์นนั้น
+        แต่ teach ไม่รู้พอที่จะ *เรียน* จากมัน → ของผิดเดิมค้างในคลังตลอดไป
+        """
+        from memory.teach import detect_correction
+        from reasoning.learn_gate import should_auto_learn
+
+        for text in self.REAL_CORRECTIONS:
+            ok, reason = should_auto_learn(text)
+            if reason == "negative_feedback":
+                assert detect_correction(text), (
+                    f"learn_gate บอกว่าเป็น negative_feedback แต่ teach จับไม่ได้: {text!r}"
+                )
