@@ -293,3 +293,45 @@ class TestDeletionStaysInSync:
             delete_with_keys(client, "memory_kwan", [])
         client.get_collection.assert_not_called()
         mock_dk.assert_not_called()
+
+
+class TestUserFactsWiring:
+    """ต่อ dual-vector ให้ครบทุกเส้น — บทเรียนซ้ำของ audit นี้คือ 'แก้ 3 ใน 4 จุดแล้วคิดว่าจบ'"""
+
+    def test_search_user_facts_uses_key_vector(self):
+        from unittest.mock import MagicMock, patch
+
+        import memory.store as ms
+
+        col = MagicMock()
+        col.query.return_value = {
+            "ids": [["f1"]],
+            "documents": [["เราเตอร์ที่บ้านคือ ASUS RT-BE92U"]],
+            "metadatas": [[{"confidence": 0.95, "verified": True, "type": "fact",
+                            "source": "user_taught"}]],
+            "distances": [[0.45]],          # 0.55 — ต่ำกว่าเกณฑ์ 0.6 ของ user_facts
+        }
+        with patch.object(ms, "_get_chroma_client", return_value=MagicMock()), \
+             patch("utils.memory.get_collection", return_value=col), \
+             patch.object(ms, "key_hits", return_value=({"f1": 0.72}, {})):
+            out = ms.search_user_facts("เราเตอร์ที่บ้านยี่ห้ออะไร")
+
+        assert len(out) == 1
+        assert out[0]["score"] == 0.72
+
+    def test_search_user_facts_still_rejects_noise(self):
+        from unittest.mock import MagicMock, patch
+
+        import memory.store as ms
+
+        col = MagicMock()
+        col.query.return_value = {
+            "ids": [["f1"]],
+            "documents": [["เราเตอร์ที่บ้านคือ ASUS RT-BE92U"]],
+            "metadatas": [[{"confidence": 0.95, "verified": True}]],
+            "distances": [[0.90]],
+        }
+        with patch.object(ms, "_get_chroma_client", return_value=MagicMock()), \
+             patch("utils.memory.get_collection", return_value=col), \
+             patch.object(ms, "key_hits", return_value=({"f1": 0.17}, {})):
+            assert ms.search_user_facts("อาหารเย็นกินอะไรดี") == []

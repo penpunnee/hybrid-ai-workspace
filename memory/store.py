@@ -62,6 +62,20 @@ def save_entry(entry: MemoryEntry, collection_name: str | None = None) -> bool:
         return False
 
 
+def _ids_or_placeholder(res: dict, n: int) -> list:
+    """ids จากผล query — สร้าง placeholder ถ้าไม่มี/ไม่ครบ
+
+    โค้ด dual-vector ใช้ id เป็นตัวเชื่อมกับฝั่งกุญแจ ถ้าปล่อยให้ ids ว่างแล้ว zip
+    ต่อไปเลย ผลลัพธ์จะกลายเป็นว่างทั้งชุด **เงียบๆ** ทั้งที่ query สำเร็จ —
+    รูปแบบ "ล้มเหลวที่หน้าตาเหมือนสำเร็จ" ที่ไล่แก้มาทั้ง audit
+    placeholder จะไม่แมตช์กับกุญแจใดๆ = เสียแค่ประโยชน์ของ vector ที่สอง ไม่เสียผลหลัก
+    """
+    ids = (res.get("ids") or [[]])[0]
+    if len(ids) == n:
+        return list(ids)
+    return [f"_noid_{i}" for i in range(n)]
+
+
 def search_entries(assistant: str, query: str, n_results: int = 5,
                    min_confidence: float = 0.0,
                    verified_only: bool = False) -> list[dict]:
@@ -83,10 +97,10 @@ def search_entries(assistant: str, query: str, n_results: int = 5,
         logger.error(f"search_entries query failed: {e}")
         return []
 
-    ids   = res.get("ids", [[]])[0]
     docs  = res.get("documents", [[]])[0]
     metas = res.get("metadatas", [[]])[0]
     dists = res.get("distances", [[]])[0]
+    ids   = _ids_or_placeholder(res, len(docs))
 
     floor = _recall_min_score()
     candidates = []
@@ -236,10 +250,13 @@ def search_user_facts(query: str, n_results: int = 3,
         col = get_collection(client, "user_facts")
         res = col.query(query_texts=[query], n_results=n_results)
         docs  = res.get("documents", [[]])[0]
+        # id เป็นตัวเชื่อมกับฝั่งกุญแจ — ถ้าหายไปต้องไม่ทำให้ผลว่างทั้งชุดเงียบๆ
+        ids   = _ids_or_placeholder(res, len(docs))
         metas = res.get("metadatas", [[]])[0]
         dists = res.get("distances", [[]])[0]
-        return [
+        candidates = [
             {
+                "id":         doc_id,
                 "content":    doc,
                 "confidence": meta.get("confidence", 0.95) if meta else 0.95,
                 "verified":   True,
@@ -247,9 +264,15 @@ def search_user_facts(query: str, n_results: int = 3,
                 "source":     meta.get("source", "user_taught") if meta else "user_taught",
                 "score":      round(1 - dist, 3),
             }
-            for doc, meta, dist in zip(docs, metas, dists)
-            if (1 - dist) >= min_score
+            for doc_id, doc, meta, dist in zip(ids, docs, metas, dists)
         ]
+        # vector ที่สอง (ข้อ 17) — สำหรับ fact สั้น กุญแจคือตัวมันเองที่ถอดตัวระบุออก
+        # (วัดจริง: "Synology รุ่นไหน" ↔ "…Synology DS923+" 0.578 → ถอดรุ่นออกได้ 0.791)
+        # ⚠️ ยังไม่พอปิดข้อ 16 — เคส "เราเตอร์ที่บ้านยี่ห้ออะไร" ได้ max 0.505 ยังต่ำกว่า 0.6
+        # ต่อไว้เพื่อให้กลไกเหมือนกันทุกเส้น (บทเรียนซ้ำของ audit: แก้ 3 ใน 4 จุดแล้วคิดว่าจบ)
+        ks, _ = key_hits(client, "user_facts", query, n_results=n_results * 2)
+        merged = merge_max(candidates, ks)
+        return [r for r in merged if r["score"] >= min_score]
     except Exception as e:
         logger.debug(f"search_user_facts: {e}")
         return []

@@ -78,10 +78,14 @@ class TestSearchUserFacts:
             "distances": [[0.05]],
         }
 
-        with patch("memory.store._get_chroma_client", return_value=mock_client):
+        # patch key_hits — mock client ตัวเดียวจะตอบ query ของทั้ง user_facts และ
+        # user_facts__keys ด้วยผลชุดเดียวกัน ทำให้เทสวัดสิ่งที่ตั้งใจไม่ได้
+        with patch("memory.store._get_chroma_client", return_value=mock_client), \
+             patch("memory.store.key_hits", return_value=({}, {})):
             results = search_user_facts("dark mode")
 
-        mock_client.get_collection.assert_called_with("user_facts")
+        called = [c.args[0] for c in mock_client.get_collection.call_args_list]
+        assert "user_facts" in called
         assert len(results) == 1
         assert "dark mode" in results[0]["content"]
 
@@ -121,7 +125,8 @@ class TestSearchUserFacts:
             "distances": [[0.3]],  # score = 1 - 0.3 = 0.7 >= 0.6
         }
 
-        with patch("memory.store._get_chroma_client", return_value=mock_client):
+        with patch("memory.store._get_chroma_client", return_value=mock_client), \
+             patch("memory.store.key_hits", return_value=({}, {})):
             results = search_user_facts("dark mode preference")
 
         assert len(results) == 1
