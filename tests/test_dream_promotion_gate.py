@@ -89,3 +89,49 @@ def test_below_min_hits_blocked_even_if_good_content():
         "วิธี deploy ด้วย docker compose", "ขั้นตอน deploy อย่างละเอียด", hits=1)
     assert ok is False
     assert reason == "too_few_hits"
+
+
+# ── ปิดการสร้าง skill อัตโนมัติ (user ตัดสินใจ 2026-08-02) ─────────────────────
+# เหตุผล: รัน 3 เดือนได้ skill 60 อัน ใช้ได้จริง 1 อัน (อัตรา 1:59) และมี 1 อัน
+# บันทึกรุ่น router ผิดไว้ถาวร — ต้นเหตุคือ REM sleep สรุปออกมาเป็น "หัวข้อที่คุย"
+# ไม่ใช่ "ความรู้" ต่อให้เพิ่ม keyword gate ก็ยังได้ของแบบเดิม
+# ส่วน long_term_memory ของ Dream ยังทำงานปกติ (คนละเส้น)
+def test_skill_promotion_disabled_by_default(monkeypatch):
+    import importlib
+    import utils.dream as d
+    monkeypatch.delenv("DREAM_PROMOTE_SKILLS", raising=False)
+    importlib.reload(d)
+    assert d.PROMOTE_SKILLS_ENABLED is False, \
+        "การสร้าง skill อัตโนมัติต้องปิดเป็น default"
+
+
+_GOOD_THEME = {
+    "name": "วิธี deploy ด้วย docker compose",
+    "summary": "ขั้นตอน deploy: git reset --hard แล้ว docker compose up -d",
+    "count": 5,
+}
+
+
+def _run_deep_sleep(monkeypatch, enabled: bool) -> list:
+    """รัน deep_sleep ด้วย fake ChromaDB — ห้ามใส่ client=None เพราะ deep_sleep
+    จะ return ตั้งแต่ต้นแล้วเทสจะผ่านแบบหลอกๆ (ไม่ได้พิสูจน์อะไรเลย)"""
+    import utils.dream as d
+    from unittest.mock import MagicMock
+    called = []
+    monkeypatch.setattr(d, "PROMOTE_SKILLS_ENABLED", enabled)
+    monkeypatch.setattr(d, "save_skill", lambda **k: called.append(k))
+    monkeypatch.setattr(d, "_get_client", lambda: MagicMock())
+    monkeypatch.setattr(d, "get_or_create_collection", lambda c, name: MagicMock())
+    d.deep_sleep(memories=[], themes=[_GOOD_THEME])
+    return called
+
+
+def test_deep_sleep_does_not_write_skills_when_disabled(monkeypatch):
+    assert _run_deep_sleep(monkeypatch, enabled=False) == [], \
+        "ปิดแล้วต้องไม่เขียน skills_db เลย"
+
+
+def test_deep_sleep_writes_skills_when_explicitly_enabled(monkeypatch):
+    """เปิดกลับได้ด้วย env ถ้าอนาคตแก้ prompt REM sleep แล้วอยากลองใหม่
+    (ถ้าเทสนี้ fail แปลว่า path เขียน skill พังจริง ไม่ใช่แค่ flag)"""
+    assert len(_run_deep_sleep(monkeypatch, enabled=True)) == 1

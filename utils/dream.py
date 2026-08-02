@@ -63,6 +63,15 @@ PROMOTE_MIN_SCORE = 0.5
 PROMOTE_MIN_HITS = int(os.getenv("DREAM_PROMOTE_MIN_HITS", "2"))
 PROMOTE_MIN_QUERIES = 1
 
+# ⛔ ปิดการสร้าง skill อัตโนมัติ (user ตัดสินใจ 2026-08-02 หลัง audit)
+# รันมา 3 เดือนได้ 60 skill ใช้ได้จริง 1 อัน (1:59) และมี 1 อันบันทึกรุ่น router
+# ผิดไว้ถาวร ("TP-Link Archer C7" ทั้งที่จริงคือ ASUS RT-BE92U) → ป้อนข้อมูลผิด
+# ให้ AI ทุก prompt. ต้นเหตุอยู่ที่ REM sleep สรุปออกมาเป็น "หัวข้อที่เคยคุย"
+# ("User requested…", "A question was posed…") ไม่ใช่ "ความรู้" — เพิ่ม keyword
+# gate เท่าไหร่ก็ยังได้ของแบบเดิม ต้องแก้ prompt ที่ต้นทางถึงจะเปิดกลับได้
+# ⚠️ ปิดเฉพาะขา skills_db — long_term_memory / decay / prune ยังทำงานปกติ
+PROMOTE_SKILLS_ENABLED = os.getenv("DREAM_PROMOTE_SKILLS", "false").lower() == "true"
+
 # ธีมที่เป็น "บันทึกว่าระบบทำอะไรไม่ได้" — ยิ่งป้อนให้โมเดลยิ่งชวนให้ปฏิเสธงาน
 _FAILURE_KW = (
     "ไม่สามารถ", "ไม่พบข้อมูล", "ไม่มีข้อมูล", "ขออภัย", "ผิดพลาด",
@@ -507,7 +516,7 @@ def deep_sleep(memories: list[dict], themes: list[dict]) -> dict:
         dest = classify_theme(theme_name, summary)
         promoted.append(theme_name)
 
-        if dest in ("skill", "both"):
+        if dest in ("skill", "both") and PROMOTE_SKILLS_ENABLED:
             save_skill(
                 topic=f"[Dream] {theme_name}",
                 summary=f"{summary} (consolidated {count} times on {datetime.now().strftime('%Y-%m-%d')})",
