@@ -96,7 +96,8 @@ class TestParamPassThrough:
         cap = {}
 
         def fake(messages, image_b64="", image_mime="", agent_mode=False,
-                 model="", thinking=None, effort="", web_grounding=False):
+                 model="", thinking=None, effort="", web_grounding=False,
+                 sources_sink=None):
             cap.update(model=model, thinking=thinking, effort=effort)
             yield "ok"
 
@@ -143,7 +144,8 @@ class TestParamPassThrough:
         cap = {}
 
         def fake(messages, image_b64="", image_mime="", agent_mode=False,
-                 model="", thinking="SENTINEL", effort="", web_grounding=False):
+                 model="", thinking="SENTINEL", effort="", web_grounding=False,
+                 sources_sink=None):
             cap.update(thinking=thinking)
             yield "ok"
 

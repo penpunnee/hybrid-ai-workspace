@@ -138,7 +138,7 @@ def stream_response(messages: list[dict], provider: str = "auto",
                     image_b64: str = "", image_mime: str = "",
                     agent_mode: bool = False, model_override: str = "",
                     thinking: bool | None = None, effort: str = "",
-                    web_grounding: bool = False):
+                    web_grounding: bool = False, sources_sink: list | None = None):
     """
     Stream response จาก LLM ที่เลือก
     provider: 'ollama' | 'gemini' | 'lmstudio' | 'kimi' | 'claude' | 'auto'
@@ -169,7 +169,7 @@ def stream_response(messages: list[dict], provider: str = "auto",
         _last_failover["active"] = False
         yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode,
                                   model=model_override, thinking=thinking, effort=effort,
-                                  web_grounding=web_grounding)
+                                  web_grounding=web_grounding, sources_sink=sources_sink)
         return
 
     if provider in ("lmstudio", "lmstudio_web"):
@@ -565,10 +565,14 @@ def gemini_web_search(query: str, model: str = "") -> tuple[str, list[dict]]:
 def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = "",
                    agent_mode: bool = False, model: str = "",
                    thinking: bool | None = None, effort: str = "",
-                   web_grounding: bool = False):
+                   web_grounding: bool = False, sources_sink: list | None = None):
     """
     Stream จาก Gemini Cloud ด้วย google-genai SDK ใหม่
-    
+
+    sources_sink: list ที่จะถูกเติมด้วยแหล่งอ้างอิงจาก grounding_metadata (ถ้ามี)
+    — generator yield ได้แต่ str จึงต้องส่งออกทาง out-param (แพทเทิร์นเดียวกับ
+    citations accumulator ใน routers/chat.py) ไม่ส่งมา = ไม่เก็บ (backward compat)
+
     Logic:
     1. ตรวจสอบว่า gemini_client ถูก initialize หรือไม่
     2. แยก system prompt ออกจาก messages
@@ -676,6 +680,19 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
                             if chunk.text:
                                 yielded = True
                                 yield chunk.text
+                            # grounding_metadata มักมากับ chunk ท้ายๆ — เก็บทุกครั้งที่เจอ
+                            # (เก็บชุดล่าสุดที่ไม่ว่าง) เพื่อส่งออกเป็น citation ให้ผู้ใช้
+                            # ตรวจสอบที่มาของตัวเลขได้ — ไม่งั้น Gemini = เส้นที่แม่นสุด
+                            # แต่ตรวจสอบไม่ได้เลย (audit 2026-08-02)
+                            if sources_sink is not None:
+                                try:
+                                    for cand in (getattr(chunk, "candidates", None) or []):
+                                        found = _extract_grounding_sources(cand)
+                                        if found:
+                                            sources_sink.clear()
+                                            sources_sink.extend(found)
+                                except Exception as ge:
+                                    logger.debug(f"[Gemini] grounding extract skipped: {ge}")
                         logger.info(f"Gemini stream successful (model: {_mdl}, agent_mode: {agent_mode}, thinking: {thinking})")
                         return
                     except Exception as se:

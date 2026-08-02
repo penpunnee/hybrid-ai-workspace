@@ -415,12 +415,17 @@ async def chat(request: Request):
         if al_decision and al_decision.should_ask:
             yield f"data: {json.dumps({'active_learning': al_decision.to_dict()}, ensure_ascii=False)}\n\n"
 
+        # แหล่งอ้างอิงจาก Gemini Google Search grounding — generator yield ได้แต่ str
+        # จึงรับผ่าน out-param แล้วค่อยแปลงเป็น citations หลัง stream จบ
+        grounding_sources: list[dict] = []
+
         def _try_stream(prov, mdl=""):
             for ck in stream_response(messages, provider=prov, image_b64=image_b64,
                                       image_mime=image_mime, agent_mode=agent_mode,
                                       model_override=mdl,
                                       thinking=req_thinking, effort=req_effort,
-                                      web_grounding=gemini_grounding):
+                                      web_grounding=gemini_grounding,
+                                      sources_sink=grounding_sources):
                 yield ck
 
         def _save_crash(err_text: str):
@@ -509,6 +514,17 @@ async def chat(request: Request):
                 return
 
         record_timing("llm_stream", (_time.perf_counter() - llm_start) * 1000)
+
+        # Gemini grounding → citations (ส่งหลัง stream เพราะ grounding_metadata มากับ
+        # chunk ท้ายๆ) เดิมเส้น Gemini ที่แม่นสุดกลับไม่มี citation เลย ผู้ใช้ตรวจสอบ
+        # ที่มาของตัวเลขไม่ได้ ต่างจากโมเดล local ที่ยืม gemini_web_search แล้วมี
+        if grounding_sources:
+            try:
+                citations.add_web_results(grounding_sources)
+                yield f"data: {json.dumps({'citations': citations.to_list()}, ensure_ascii=False)}\n\n"
+                logger.info(f"[Chat] Gemini grounding → {len(grounding_sources)} citations")
+            except Exception as e:
+                logger.debug(f"[Chat] grounding citations skipped: {e}")
 
         # ── Empty-response guard (เจอจริง qwen3.5-9b 2026-07-05) ─────────────
         # reasoning model "คิด" จนหมด token ไม่เคยตอบจริง → stream จบว่างเปล่า

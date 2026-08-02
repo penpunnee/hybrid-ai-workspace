@@ -21,6 +21,8 @@ from utils.embed import embed_query, cosine_similarity
 
 logger = logging.getLogger(__name__)
 
+# ของสดที่ "ค้นเว็บไม่ได้" — สถานะเครื่อง/เครือข่ายในบ้าน ซึ่ง needs_internet()
+# ไม่จับ (ไม่ใช่คำถามที่ต้องออกอินเทอร์เน็ต) จึงต้องมีรายการคำของตัวเอง
 _REALTIME_KW = (
     "ping", "disk", "docker", "container", "เครือข่าย", "network",
     "nas", "ออนไลน์", "offline", "ราคา", "price", "หุ้น", "bitcoin",
@@ -31,9 +33,25 @@ _REALTIME_KW = (
 
 
 def is_realtime_query(prompt: str) -> bool:
-    """คืน True ถ้า prompt ถามข้อมูล real-time — ต้อง bypass cache เสมอ"""
+    """คืน True ถ้า prompt ถามข้อมูล real-time — ต้อง bypass cache เสมอ
+
+    เงื่อนไข 2 ทาง (พอข้อใดข้อหนึ่ง):
+    1. `needs_internet()` = True — **อะไรที่สดพอจะต้องค้นเว็บ = สดเกินกว่าจะแคช**
+       ผูกกับ classifier ตัวเดียวกับที่ใช้ตัดสินว่าจะค้นเว็บไหม เพื่อไม่ให้ 2
+       รายการคำดริฟต์ออกจากกันอีก (บั๊กจริง 2026-08-02: ข่าว/น้ำท่วม/แผ่นดินไหว/
+       ไฟดับ/ผลบอล/จราจร ค้นเว็บให้จริงแต่ไม่กันแคช → กด 👍 แล้วคำตอบค้าง 30 วัน
+       ถูกเสิร์ฟซ้ำเหมือนเป็นข้อมูลปัจจุบัน — อันตรายเป็นพิเศษกับข้อมูลภัยพิบัติ)
+    2. keyword ของสดที่ค้นเว็บไม่ได้ (ping/disk/docker/สถานะ NAS)
+    """
     text = prompt.lower()
-    return any(kw in text for kw in _REALTIME_KW)
+    if any(kw in text for kw in _REALTIME_KW):
+        return True
+    try:
+        from reasoning.classifier import needs_internet
+        return needs_internet(prompt)
+    except Exception as e:  # classifier พังไม่ควรทำให้ทั้ง cache ล่ม
+        logger.debug(f"[ResponseCache] needs_internet check skipped: {e}")
+        return False
 
 
 _DB_PATH = os.getenv("RESPONSE_CACHE_DB", _DEFAULT_DB)
