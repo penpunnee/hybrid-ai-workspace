@@ -18,3 +18,8 @@ skills-lock.json
 # pytest coverage artifact
 .coverage
 db_backups/
+
+# skills_db.json ตัวจริงคือ data/skills_db.json ที่ compose mount เข้า /app
+# (ดูคอมเมนต์ใน core/config.py) — ตัวใน root เคย track ไว้แต่เป็นสำเนาค้างปี
+# ที่เนื้อหาซ้ำกับ skills/*.md ทั้งหมด ทำให้เข้าใจผิดว่าแก้แล้วมีผล
+skills_db.json

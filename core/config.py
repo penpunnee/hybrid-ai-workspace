@@ -37,6 +37,14 @@ RELOAD       = os.getenv("RELOAD", "false").lower() == "true"
 # ── Paths ────────────────────────────────────────────────────────────────────
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILLS_DIR = os.path.join(PROJECT_ROOT, "skills")
+# ⚠️ path เดียวแต่คนละไฟล์ระหว่าง prod กับ dev — เคยทำให้เข้าใจผิดมาแล้ว:
+#   prod (container): /app/skills_db.json = bind mount จาก ${NAS_DATA_PATH}/skills_db.json
+#                     (ดู docker-compose.yml) = ไฟล์จริงที่มีข้อมูลใช้งาน
+#   dev  (บนเครื่อง): <repo>/skills_db.json — **ไม่ถูก track ใน git แล้ว** (2026-08-02)
+#                     เพราะสำเนาที่ track ไว้เดิมค้างตั้งแต่ มิ.ย. และเนื้อหาซ้ำกับ
+#                     skills/*.md ทุกหัวข้อ → แก้ไฟล์นั้นไม่มีผลกับ prod แต่ดูเหมือนมี
+# ไม่มีไฟล์ = `_load_skills_db()` คืน {} เฉยๆ ไม่ crash (skills/*.md ยังโหลดปกติ
+# ผ่าน load_skills_relevant) — ถ้าอยากเทส semantic search บน dev ให้ copy ตัวจริงมา
 SKILLS_DB_PATH = os.path.join(PROJECT_ROOT, "skills_db.json")
 
 OBSIDIAN_VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH", "")
