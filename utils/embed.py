@@ -1,9 +1,16 @@
-"""Embedding utilities — ใช้ nomic-embed-text-v1.5 ผ่าน LM Studio
+"""Embedding utilities — ใช้ multilingual embedding ผ่าน Ollama (รองรับภาษาไทย)
 
-LM Studio รองรับ OpenAI-compatible /v1/embeddings endpoint
+⚠️ ห้ามกลับไปใช้ `nomic-embed-text` เป็นตัวหลัก — พิสูจน์บน prod แล้ว (2026-08-02)
+ว่า **แมปประโยคภาษาไทยทุกประโยคเป็น vector เดียวกันหมด** (cosine ระหว่าง
+"ราคาทองวันนี้เท่าไหร่" กับ "สุนัขน่ารักมาก" = 1.0000 เป๊ะ ส่วนภาษาอังกฤษแยกได้ปกติ
+0.38-0.44) = tokenizer มองอักษรไทยเป็น UNK ทั้งหมด บั๊กชนิดเดียวกับ ChromaDB
+default MiniLM ที่แก้ไปแล้ว 2026-07-09 แต่เส้น documents/cache นี้ถูกข้ามไปตอนนั้น
+ผลคือ: document RAG ภาษาไทยคืนผลมั่วทุกครั้ง + response cache (threshold 0.92)
+จะ match คำถามไทยอะไรก็ได้เข้าหากันที่ 1.0 → เสิร์ฟคำตอบผิดคนละเรื่อง
 
 Cache:
-  - Persistent sqlite cache (รอด server restart)
+  - Persistent sqlite cache (รอด server restart) — key = (sha256(text), model)
+    เปลี่ยนชื่อ model = invalidate ของเก่าอัตโนมัติ ไม่ต้องล้างมือ
   - In-memory LRU on top (fast path)
 """
 import hashlib
@@ -25,11 +32,15 @@ logger = logging.getLogger(__name__)
 _LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
 # LM Studio รุ่นใหม่บังคับ API token — ตั้ง LMSTUDIO_API_KEY ให้ตรง (default dummy)
 _LMSTUDIO_API_KEY = os.getenv("LMSTUDIO_API_KEY", "lmstudio")
-_EMBED_MODEL = os.getenv("LMSTUDIO_EMBED_MODEL", "text-embedding-nomic-embed-text-v1.5")
 _EMBED_TIMEOUT = int(os.getenv("LMSTUDIO_EMBED_TIMEOUT", "30"))
-# Ollama fallback — ใช้เมื่อ LM Studio ล่ม/ติด token/ปิด (ต้อง `ollama pull nomic-embed-text`)
 _OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-_OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+# ตัวหลัก = multilingual model บน Ollama (ตัวเดียวกับที่ ChromaDB memory ใช้ผ่าน
+# EMBEDDING_MODEL ตั้งแต่ 2026-07-09) — single source of truth ว่า "ตัวไหนอ่านไทยได้"
+_EMBED_MODEL = os.getenv("EMBEDDING_MODEL") or "paraphrase-multilingual"
+# fallback = โมเดล**ชื่อเดียวกัน**บน LM Studio เท่านั้น ห้าม fallback ข้ามโมเดล:
+# vector คนละโมเดล = คนละ space ถึงมิติเท่ากันก็ตาม → cosine เพี้ยนแบบเงียบๆ
+# (ถ้า LM Studio ไม่มีโมเดลนี้จะ raise → caller จัดการเอง ดีกว่าคืนค่ามั่ว)
+_EMBED_FALLBACK_ENABLED = os.getenv("EMBED_FALLBACK_LMSTUDIO", "true").lower() == "true"
 _CACHE_DB = os.getenv("EMBED_CACHE_DB", _DEFAULT_CACHE_DB)
 _CACHE_ENABLED = os.getenv("EMBED_CACHE_ENABLED", "true").lower() == "true"
 
@@ -39,25 +50,28 @@ _ollama_client = OpenAI(base_url=_OLLAMA_BASE_URL, api_key="ollama", timeout=_EM
 
 
 def _create_embeddings(inputs: list[str]) -> tuple[list[list[float]], str]:
-    """embed ผ่าน LM Studio → fallback Ollama. คืน (vecs, model_ที่ใช้จริง). raise ถ้าทั้งคู่ fail
+    """embed ผ่าน Ollama (multilingual) → fallback LM Studio ด้วยโมเดลชื่อเดียวกัน
+    คืน (vecs, model_ที่ใช้จริง). raise ถ้าทั้งคู่ fail
 
-    คืนชื่อ model ด้วยเพื่อให้ cache เก็บแยกตาม provider (W2) — กัน vec ของ Ollama
-    ถูกอ่านกลับมาตอน LM Studio กลับมา (dim/space อาจต่างกันเล็กน้อย → cosine เพี้ยน)
+    fallback ใช้ชื่อโมเดลเดิมเสมอ — คนละโมเดล = คนละ vector space ปนกันแล้ว
+    cosine เพี้ยนเงียบๆ (ดู docstring ของโมดูล: บั๊กไทย nomic-embed-text)
     """
     try:
-        resp = _client.embeddings.create(model=_EMBED_MODEL, input=inputs)
+        resp = _ollama_client.embeddings.create(model=_EMBED_MODEL, input=inputs)
         vecs = [list(d.embedding) for d in resp.data]
         with _metrics_lock:
             _metrics["api_calls"] += 1
         return vecs, _EMBED_MODEL
     except Exception as e:
-        logger.warning(f"[Embed] LM Studio embed fail ({e}) → fallback Ollama ({_OLLAMA_EMBED_MODEL})")
-        resp = _ollama_client.embeddings.create(model=_OLLAMA_EMBED_MODEL, input=inputs)
+        if not _EMBED_FALLBACK_ENABLED:
+            raise
+        logger.warning(f"[Embed] Ollama embed fail ({e}) → fallback LM Studio (model เดิม {_EMBED_MODEL})")
+        resp = _client.embeddings.create(model=_EMBED_MODEL, input=inputs)
         vecs = [list(d.embedding) for d in resp.data]
         with _metrics_lock:
             _metrics["api_calls"] += 1
             _metrics["ollama_fallback"] += 1
-        return vecs, _OLLAMA_EMBED_MODEL
+        return vecs, _EMBED_MODEL
 
 # ── Persistent cache (sqlite) ────────────────────────────────────────────────
 _cache_lock = threading.Lock()

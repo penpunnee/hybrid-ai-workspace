@@ -1,6 +1,9 @@
 """Tests สำหรับ utils/embed.py — cosine, pack/unpack, two-tier cache, rerank
 
-Mock LM Studio client (`embed._client.embeddings`) ทั้งหมด — ไม่แตะ network จริง.
+Mock Ollama client (`embed._ollama_client.embeddings`) = ตัวหลัก ทั้งหมด —
+ไม่แตะ network จริง. LM Studio (`embed._client`) เป็น fallback ด้วยชื่อโมเดลเดิม
+(สลับลำดับจากเดิม 2026-08-02 เพราะ nomic-embed-text บน LM Studio แมปประโยคไทย
+ทุกประโยคเป็น vector เดียวกัน — ดู docstring ของ utils/embed.py).
 sqlite cache ชี้ temp file ต่อ test, ล้าง lru_cache ก่อนทุกเทสต์.
 """
 import os
@@ -25,7 +28,7 @@ class FakeEmbeddings:
     def create(self, model, input):
         self.calls.append(list(input))
         if self.fail:
-            raise RuntimeError("lmstudio down")
+            raise RuntimeError("embed provider down")
         data = [SimpleNamespace(embedding=self.mapping.get(t, [float(len(t)), 1.0, 0.0]))
                 for t in input]
         return SimpleNamespace(data=data)
@@ -33,13 +36,16 @@ class FakeEmbeddings:
 
 @pytest.fixture
 def fake_client(monkeypatch, tmp_path):
-    """ชี้ sqlite cache → temp, reset conn, ล้าง LRU, ติดตั้ง fake embeddings"""
+    """ชี้ sqlite cache → temp, reset conn, ล้าง LRU, ติดตั้ง fake embeddings
+
+    fake ถูกติดตั้งที่ **Ollama** = provider หลักตามสถาปัตยกรรมปัจจุบัน
+    """
     monkeypatch.setattr(embed, "_CACHE_DB", str(tmp_path / "embed_cache.db"))
     monkeypatch.setattr(embed, "_CACHE_ENABLED", True)
     monkeypatch.setattr(embed, "_cache_conn", None)
     embed._embed_one_cached.cache_clear()
     fe = FakeEmbeddings()
-    monkeypatch.setattr(embed._client, "embeddings", fe)
+    monkeypatch.setattr(embed._ollama_client, "embeddings", fe)
     yield fe
     embed._embed_one_cached.cache_clear()
 
@@ -105,6 +111,8 @@ def test_embed_query_failure_returns_empty(monkeypatch, tmp_path):
     monkeypatch.setattr(embed, "_CACHE_DB", str(tmp_path / "c.db"))
     monkeypatch.setattr(embed, "_cache_conn", None)
     embed._embed_one_cached.cache_clear()
+    # ต้องล่มทั้งคู่ (หลัก+fallback) ถึงจะคืน [] — ล่มตัวเดียว fallback ยังทำงาน
+    monkeypatch.setattr(embed._ollama_client, "embeddings", FakeEmbeddings(fail=True))
     monkeypatch.setattr(embed._client, "embeddings", FakeEmbeddings(fail=True))
     assert embed.embed_query("x") == []
 
@@ -163,6 +171,7 @@ def test_rerank_embed_fail_fallback_to_original(monkeypatch, tmp_path):
     monkeypatch.setattr(embed, "_CACHE_DB", str(tmp_path / "c.db"))
     monkeypatch.setattr(embed, "_cache_conn", None)
     embed._embed_one_cached.cache_clear()
+    monkeypatch.setattr(embed._ollama_client, "embeddings", FakeEmbeddings(fail=True))
     monkeypatch.setattr(embed._client, "embeddings", FakeEmbeddings(fail=True))
     items = [{"body": "a"}, {"body": "b"}, {"body": "c"}]
     out = embed.rerank_by_similarity("q", items, text_keys=("body",), top_k=2)
@@ -173,18 +182,37 @@ def test_rerank_empty_items_returns_empty(fake_client):
     assert embed.rerank_by_similarity("q", []) == []
 
 
-# ── Ollama fallback เมื่อ LM Studio ล่ม/ติด token ─────────────────────────────
-def test_embed_falls_back_to_ollama(monkeypatch, tmp_path):
+# ── LM Studio fallback เมื่อ Ollama (ตัวหลัก) ล่ม ─────────────────────────────
+def test_embed_falls_back_to_lmstudio(monkeypatch, tmp_path):
     monkeypatch.setattr(embed, "_CACHE_DB", str(tmp_path / "c.db"))
     monkeypatch.setattr(embed, "_cache_conn", None)
     embed.reset_metrics()
-    # LM Studio fail (เช่น ติด token), Ollama ตอบได้
-    monkeypatch.setattr(embed._client, "embeddings", FakeEmbeddings(fail=True))
-    monkeypatch.setattr(embed._ollama_client, "embeddings",
+    # Ollama (หลัก) fail, LM Studio ตอบได้ด้วยชื่อโมเดลเดิม
+    monkeypatch.setattr(embed._ollama_client, "embeddings", FakeEmbeddings(fail=True))
+    monkeypatch.setattr(embed._client, "embeddings",
                         FakeEmbeddings(mapping={"x": [9.0, 9.0]}))
     vec = embed.embed_query("x")
-    assert vec == [9.0, 9.0]                     # ได้ vector จาก Ollama
+    assert vec == [9.0, 9.0]
     assert embed.cache_stats()["ollama_fallback"] >= 1
+
+
+def test_embed_fallback_uses_same_model_name_not_a_different_model(monkeypatch, tmp_path):
+    """fallback ต้องขอโมเดล**ชื่อเดิม**จาก LM Studio — ห้ามสลับไปโมเดลอื่น
+    (คนละโมเดล = คนละ vector space ปนใน collection เดียวกัน cosine เพี้ยนเงียบๆ)"""
+    monkeypatch.setattr(embed, "_CACHE_DB", str(tmp_path / "c.db"))
+    monkeypatch.setattr(embed, "_cache_conn", None)
+    embed.reset_metrics()
+    seen = {}
+
+    class _CaptureModel(FakeEmbeddings):
+        def create(self, model, input):
+            seen["model"] = model
+            return super().create(model, input)
+
+    monkeypatch.setattr(embed._ollama_client, "embeddings", FakeEmbeddings(fail=True))
+    monkeypatch.setattr(embed._client, "embeddings", _CaptureModel())
+    embed.embed_query("x")
+    assert seen["model"] == embed._EMBED_MODEL
 
 
 def test_embed_both_down_returns_empty(monkeypatch, tmp_path):
@@ -196,14 +224,14 @@ def test_embed_both_down_returns_empty(monkeypatch, tmp_path):
     assert embed.embed_query("x") == []          # ทั้งคู่ล่ม → [] (pipeline ไม่พัง)
 
 
-def test_w2_fallback_vec_not_contaminate_lmstudio_cache(monkeypatch, tmp_path):
-    # vec จาก Ollama-fallback ต้องเก็บใต้ชื่อ model ของ Ollama → _cache_get (LM Studio) ไม่อ่านปน
+def test_embed_fallback_can_be_disabled(monkeypatch, tmp_path):
+    """ปิด fallback ได้ด้วย EMBED_FALLBACK_LMSTUDIO=false — Ollama ล่ม = คืน [] ทันที"""
     monkeypatch.setattr(embed, "_CACHE_DB", str(tmp_path / "c.db"))
     monkeypatch.setattr(embed, "_cache_conn", None)
+    monkeypatch.setattr(embed, "_EMBED_FALLBACK_ENABLED", False)
     embed.reset_metrics()
-    monkeypatch.setattr(embed._client, "embeddings", FakeEmbeddings(fail=True))   # LM Studio ล่ม
-    monkeypatch.setattr(embed._ollama_client, "embeddings",
-                        FakeEmbeddings(mapping={"x": [9.0, 9.0]}))
-    embed.embed_query("x")                        # fallback → เก็บใต้ Ollama model
-    embed._embed_one_cached.cache_clear()         # ทิ้ง LRU เหลือแต่ sqlite
-    assert embed._cache_get("x") is None          # อ่านด้วย _EMBED_MODEL → ไม่เจอ vec ของ Ollama
+    lm = FakeEmbeddings(mapping={"x": [9.0, 9.0]})
+    monkeypatch.setattr(embed._ollama_client, "embeddings", FakeEmbeddings(fail=True))
+    monkeypatch.setattr(embed._client, "embeddings", lm)
+    assert embed.embed_query("x") == []
+    assert lm.calls == [], "ปิด fallback แล้วต้องไม่แตะ LM Studio เลย"
