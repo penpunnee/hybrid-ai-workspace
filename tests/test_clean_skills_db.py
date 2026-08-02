@@ -21,7 +21,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
-from scripts.clean_skills_db import classify_entry, plan_cleanup, resync_summaries
+from scripts.clean_skills_db import (
+    add_missing_entries,
+    classify_entry,
+    plan_cleanup,
+    resync_summaries,
+)
 
 
 @pytest.fixture
@@ -117,3 +122,54 @@ class TestResyncSummaries:
         resync_summaries(db, skills_dir)
         assert db["A"]["source"] == "deploy-cheatsheet.md"
         assert "updated" in db["A"]
+
+
+class TestAddMissingEntries:
+    """`.md` ที่ไม่มี entry จะไม่ขึ้นใน semantic search เลย — เห็นแค่เส้น keyword
+
+    เจอจริง 2026-08-03 ตอนเขียน `skills/openclaw.md` ขึ้นมาแทนไฟล์ที่โมเดลกุ:
+    ไฟล์อยู่บน prod แล้วแต่ `search_skills()` หาไม่เจอ เพราะ `skills_db.json` ไม่มีแถวของมัน
+    → invariant "db ↔ .md หนึ่งต่อหนึ่ง" ต้องบังคับทั้งสองทิศ ไม่ใช่แค่ลบของกำพร้า
+
+    **กฎตั้งชื่อ topic:** ใช้หัวข้อ `# ` บรรทัดแรกของไฟล์ (prod ส่วนใหญ่เป็นแบบนี้ เช่น
+    `ai-assistants-config.md` → "AI Assistants — Configuration") · ถ้าไม่มีหัวข้อ
+    **หรือชื่อนั้นถูกใช้ไปแล้ว** ให้ถอยไปใช้ชื่อไฟล์ — topic เป็น key ของ dict ชนกันไม่ได้
+    """
+
+    def test_adds_entry_using_heading_as_topic(self, skills_dir):
+        with open(os.path.join(skills_dir, "openclaw.md"), "w", encoding="utf-8") as f:
+            f.write("# OpenClaw — AI Agent platform\n\nแพลตฟอร์ม agent แบบ open source ที่ลงมือทำงานได้จริง\n")
+        db = {}
+        added = add_missing_entries(db, skills_dir)
+
+        assert "OpenClaw — AI Agent platform" in added, added
+        row = db["OpenClaw — AI Agent platform"]
+        assert row["source"] == "openclaw.md"
+        assert "แพลตฟอร์ม agent" in row["summary"]
+        assert "# OpenClaw" not in row["summary"], "summary ต้องตัดบรรทัดหัวข้อออก"
+
+    def test_falls_back_to_filename_when_heading_collides(self, skills_dir):
+        """fixture ทั้ง 2 ไฟล์ใช้หัวข้อ '# หัวข้อ' เหมือนกัน — ห้ามให้ไฟล์หลังทับไฟล์แรก"""
+        db = {}
+        added = add_missing_entries(db, skills_dir)
+        assert len(added) == 2, f"ต้องได้ครบ 2 ไฟล์ ไม่ใช่ทับกัน: {added}"
+        assert {v["source"] for v in db.values()} == {"deploy-cheatsheet.md", "troubleshooting.md"}
+
+    def test_falls_back_to_filename_when_no_heading(self, skills_dir):
+        with open(os.path.join(skills_dir, "no-heading.md"), "w", encoding="utf-8") as f:
+            f.write("เนื้อหาล้วนๆ ไม่มีหัวข้อนำ ยาวพอสมควรเพื่อให้เป็น summary ได้\n")
+        db = {}
+        add_missing_entries(db, skills_dir)
+        assert "no-heading" in db, list(db)
+
+    def test_does_not_touch_existing_rows(self, skills_dir):
+        db = {"ชื่อที่คนตั้งเอง": {"source": "troubleshooting.md", "summary": "เดิม"}}
+        added = add_missing_entries(db, skills_dir)
+        assert all(db[k]["source"] != "troubleshooting.md" for k in added), \
+            "มี .md นี้อยู่แล้วภายใต้ชื่ออื่น ห้ามเพิ่มซ้ำ"
+        assert db["ชื่อที่คนตั้งเอง"]["summary"] == "เดิม"
+
+    def test_idempotent(self, skills_dir):
+        db = {}
+        add_missing_entries(db, skills_dir)
+        assert add_missing_entries(db, skills_dir) == []

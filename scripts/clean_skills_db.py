@@ -90,6 +90,44 @@ def resync_summaries(db: dict, skills_dir: str) -> list:
     return changed
 
 
+def add_missing_entries(db: dict, skills_dir: str) -> list:
+    """เพิ่มแถวให้ .md ที่ยังไม่มีใน db — คืน list ของ topic ที่เพิ่ม (แก้ db ในที่)
+
+    ไม่มีแถว = ไม่ขึ้นใน `search_skills()` เลย เห็นแค่เส้น `load_skills_relevant()`
+    topic ใช้หัวข้อ `# ` บรรทัดแรก · ถ้าไม่มีหรือชนกับที่มีอยู่แล้ว ถอยไปใช้ชื่อไฟล์
+    (topic เป็น key ของ dict — ชนกันแปลว่าไฟล์หลังทับไฟล์แรกเงียบๆ)
+    """
+    if not os.path.isdir(skills_dir):
+        return []
+
+    known = {
+        (e.get("source") or "").strip().removesuffix(".md")
+        for e in db.values() if isinstance(e, dict)
+    }
+    added = []
+    for filename in sorted(os.listdir(skills_dir)):
+        if not filename.endswith(".md"):
+            continue
+        stem = filename[:-3]
+        if stem in known:
+            continue
+        path = os.path.join(skills_dir, filename)
+        with open(path, encoding="utf-8", errors="ignore") as f:
+            text = f.read()
+        heading = next(
+            (ln.lstrip("# ").strip() for ln in text.splitlines() if ln.startswith("# ")), ""
+        )
+        topic = heading if heading and heading not in db else stem
+        db[topic] = {
+            "summary": _md_summary(path),
+            "source": filename,
+            "updated": datetime.datetime.now().isoformat(),
+        }
+        known.add(stem)
+        added.append(topic)
+    return added
+
+
 def plan_cleanup(db: dict, skills_dir: str) -> tuple[list, list]:
     """คืน (keys ที่เก็บ, keys ที่ลบ) — ไม่แก้ db ที่รับเข้ามา"""
     keep, drop = [], []
@@ -131,13 +169,19 @@ def main() -> int:
         for k in drop:
             print(f"  - {k}")
 
-    stale = []
+    stale, missing = [], []
     if args.resync:
         preview = json.loads(json.dumps(db))  # deep copy — ไม่แตะของจริงตอน dry-run
+        for k in drop:
+            del preview[k]
         stale = resync_summaries(preview, args.skills_dir)
+        missing = add_missing_entries(preview, args.skills_dir)
         print(f"\nsummary ที่ล้าสมัย (จะเขียนใหม่จาก .md): {len(stale)}")
         for k in stale:
             print(f"  ~ {k}")
+        print(f"\n.md ที่ยังไม่มีแถวใน db (จะเพิ่ม): {len(missing)}")
+        for k in missing:
+            print(f"  + {k}")
 
     if not args.apply:
         print("\n(dry-run — ใส่ --apply เพื่อเขียนจริง)")
@@ -151,10 +195,12 @@ def main() -> int:
         del db[k]
     if args.resync:
         resync_summaries(db, args.skills_dir)
+        add_missing_entries(db, args.skills_dir)
     with open(args.db, "w", encoding="utf-8") as f:
         json.dump(db, f, ensure_ascii=False, indent=2)
 
-    print(f"\nลบแล้ว {len(drop)} · resync {len(stale)} · เหลือ {len(db)} · backup: {backup}")
+    print(f"\nลบ {len(drop)} · resync {len(stale)} · เพิ่ม {len(missing)} · "
+          f"เหลือ {len(db)} · backup: {backup}")
     print("⚠️ restart container เพื่อให้ sync_skills_to_search() ลบของใน ChromaDB ตาม")
     return 0
 
