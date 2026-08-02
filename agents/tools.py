@@ -299,6 +299,8 @@ def _t_ha_call_service(
     if r.get("error"):
         return f"❌ {r['error']}"
     label = f"{entity_id} " if entity_id else ""
+    if r.get("warning"):
+        return f"⚠️ {label}{domain}.{service} ส่งคำสั่งแล้วแต่ไม่ยืนยันได้ว่าสำเร็จ — {r['warning']}"
     return f"✅ {label}{domain}.{service} สำเร็จ"
 
 

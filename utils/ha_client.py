@@ -132,7 +132,16 @@ def call_service(
             timeout=HA_TIMEOUT,
         )
         resp.raise_for_status()
-        return {"ok": True, "result": resp.json() if resp.content else []}
+        result = resp.json() if resp.content else []
+        out: dict[str, Any] = {"ok": True, "result": result}
+        # HA คืน 200 พร้อม result=[] เวลา entity_id ที่ระบุไม่มีอยู่จริง/คำสั่งไม่มีผล
+        # อย่านับเป็นสำเร็จเงียบๆ — ต้องแจ้งชั้นบนว่าไม่ยืนยันได้ว่าเกิดอะไรจริง
+        if entity_id and not result:
+            out["warning"] = (
+                f"HA ไม่คืนสถานะที่เปลี่ยนของ {entity_id} — entity นี้อาจไม่มีอยู่จริง "
+                "หรือคำสั่งไม่มีผล (แนะนำเช็คด้วย get_state ก่อนสรุปว่าสำเร็จ)"
+            )
+        return out
     except Exception as e:
         logger.error(f"[HA] call_service({domain}.{service}) failed: {e}")
         return {"error": f"ต่อ HA ไม่ได้: {e}"}

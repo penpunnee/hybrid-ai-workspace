@@ -64,14 +64,21 @@ def index_document(
     if not chunks:
         return {"ok": False, "error": "no content", "source": source}
 
-    # embed batch
+    # embed batch — ต้องได้ vector จริงเท่านั้น ห้ามปล่อยให้ ChromaDB auto-embed
+    # ด้วย default embedder ตอน fallback (มิติไม่ตรงกับที่ collection ใช้จริง
+    # — ถ้าเป็นเอกสารแรกของ collection ว่างเปล่า จะปักมิติผิดถาวร ทำให้เอกสาร
+    # ที่ embed สำเร็จในอนาคตเขียนไม่ได้อีกเลย เจอจริงจาก audit 2026-08-01)
     try:
         from utils.embed import embed_texts
         texts = [c.text for c in chunks]
         vectors = embed_texts(texts)
     except Exception as e:
-        logger.warning(f"[Documents] embed failed: {e}")
-        vectors = []
+        logger.error(f"[Documents] embed failed, aborting index (no fallback write): {e}")
+        return {"ok": False, "error": f"embed failed: {e}", "source": source}
+
+    if not vectors or len(vectors) != len(chunks):
+        logger.error(f"[Documents] embed_texts returned empty/mismatched vectors for {source}, aborting index")
+        return {"ok": False, "error": "embed failed: no vectors returned", "source": source}
 
     # ลบ chunks เก่าของ source นี้ก่อน (กรณี content เปลี่ยน → จำนวน chunk เปลี่ยน)
     try:
@@ -97,11 +104,7 @@ def index_document(
         metas.append(meta)
 
     try:
-        if vectors and len(vectors) == len(docs):
-            col.upsert(ids=ids, documents=docs, metadatas=metas, embeddings=vectors)
-        else:
-            # ChromaDB จะ embed เองด้วย default embedder (ช้ากว่าแต่ใช้ได้)
-            col.upsert(ids=ids, documents=docs, metadatas=metas)
+        col.upsert(ids=ids, documents=docs, metadatas=metas, embeddings=vectors)
         stats = chunk_stats(chunks)
         logger.info(f"[Documents] indexed {source}: {stats}")
         return {"ok": True, "source": source, "chunks_count": len(chunks), "stats": stats}

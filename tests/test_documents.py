@@ -90,6 +90,23 @@ def test_index_reindex_deletes_old_first(fake_col):
     assert {"source": "doc1.txt"} in fake_col.deleted
 
 
+# ── index_document embed-failure poisons collection dimension (พบจาก audit 2026-08-01) ──
+# collection "documents" ถูกเซ็ตมิติจาก vector ตัวแรกที่เขียนจริง (LM Studio
+# nomic-embed-text, 768-dim) ถ้า embed_texts() ล้มระหว่างอัปโหลด (LM Studio ล่ม
+# ชั่วคราว) โค้ดเดิม fallback ให้ ChromaDB auto-embed ด้วย default embedder
+# (MiniLM 384-dim) แล้ว upsert ไปเลย — ถ้าเป็นเอกสารแรกของ collection ที่ว่างเปล่า
+# จะ "ปักหมุด" มิติ collection เป็น 384 ถาวร ทำให้เอกสารที่ embed สำเร็จ (768-dim)
+# ในอนาคตเขียนไม่ได้อีกเลย ต้อง fail ตรงๆ แทนเขียนด้วยมิติที่ไม่ตรงกัน
+def test_index_document_embed_failure_does_not_write_mismatched_vectors(fake_col, monkeypatch):
+    monkeypatch.setattr(embed, "embed_texts",
+                        lambda texts: (_ for _ in ()).throw(Exception("LM Studio down")))
+    res = docs.index_document("hello world content here", source="doc1.txt", chunk_size=200)
+    assert res["ok"] is False
+    assert "embed" in res["error"].lower()
+    # ต้องไม่มีการ upsert ใดๆ เกิดขึ้นเลย (กัน collection ถูกปักมิติผิดถาวร)
+    assert fake_col.records == {}
+
+
 # ── retrieve_chunks ───────────────────────────────────────────────────────────
 def test_retrieve_empty_query(fake_col):
     assert docs.retrieve_chunks("   ") == []
