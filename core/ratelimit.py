@@ -15,7 +15,7 @@ from collections import defaultdict, deque
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from core.auth import is_local_request
+from core.auth import LOGIN_PATH, is_local_request
 
 _ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
 _RPM = int(os.getenv("RATE_LIMIT_RPM", "120"))                  # req/นาที/IP
@@ -152,14 +152,17 @@ async def rate_limit_middleware(request: Request, call_next):
     if not allowed:
         return _429("rate limit exceeded", retry)
 
-    # บันทึก token ก่อน call (body อ่านซ้ำไม่ได้ แต่ header อ่านได้)
-    had_token = bool(request.headers.get("x-auth-token", "").strip())
+    # บันทึกก่อน call (body อ่านซ้ำไม่ได้ แต่ header/path อ่านได้)
+    # login ส่งรหัสใน body ไม่ใช่ header → ต้องดูจาก path ไม่งั้น endpoint เดียวที่ lockout
+    # มีไว้ป้องกันจะไม่เคยถูกนับเลย (เดารหัสได้ไม่จำกัด ติดแค่ RPM)
+    is_credential_attempt = (bool(request.headers.get("x-auth-token", "").strip())
+                             or request.url.path == LOGIN_PATH)
 
     response = await call_next(request)
 
-    # นับ auth failure เฉพาะกรณีมี token แต่ผิด (brute-force จริง)
-    # ถ้าไม่มี token เลย = client ยังไม่ได้ login → ไม่นับ (กัน false lockout ตอนโหลดหน้า)
-    if response.status_code == 401 and had_token:
+    # นับ auth failure เฉพาะ request ที่ "พยายามใช้ credential แล้วผิด" (brute-force จริง)
+    # request เปล่าที่ 401 = client ยังไม่ได้ login → ไม่นับ (กัน false lockout ตอนโหลดหน้า)
+    if response.status_code == 401 and is_credential_attempt:
         _authfail_limiter.record(key)
 
     return response

@@ -189,8 +189,7 @@ dream.py 54 · tools.py 40 · auth.py 25 · vault.py 21
 เหลือ 21 ตัวไม่เคยยิงจริงรอบนี้ (`run_python`, `fs_*`, `web_search`, `generate_image`,
 HA tools ฯลฯ) — `ha_call_service` เพิ่งแก้วันนี้แต่**ยังไม่ได้เทสกับ HA จริง**
 
-### 7. auth / rate limit / security — ไม่ได้แตะรอบนี้เลย
-ครั้งล่าสุดที่ตรวจคือ scrutinize 2026-06-01
+### ~~7.~~ ✅ auth / rate limit / security — **ตรวจแล้ว 2026-08-03** (เจอ 2 รู ปิดแล้ว — ดูท้ายไฟล์)
 
 ### 8. voice subsystem — อ่านโค้ดแล้วดูโอเค แต่ไม่มีใครเทสด้วยไมค์จริง
 ผมทำเองไม่ได้ (ต้องมีคนพูด) — ค้างมาตั้งแต่ 2026-06-18
@@ -610,3 +609,73 @@ for persistence"* ซึ่ง**ไม่จริง** และ `CLAUDE.md` �
 **บทเรียนร่วมของข้อ 6 + 23:** ทั้งสองอย่างคือ *"คอมเมนต์บอกว่าทำ แต่ไม่มีใครเคยตรวจว่าทำจริง"*
 — `for persistence` / `sandbox root` เป็นเจตนา ไม่ใช่หลักฐาน · **สิ่งที่ตรวจได้จริง
 มีอย่างเดียวคือยิงแล้วดูผล**
+
+---
+
+## ~~7.~~ ✅ auth / rate limit / security — **ตรวจแล้ว 2026-08-03** (ครั้งก่อน 2026-06-01)
+
+ผิวสัมผัสที่ไล่: `core/auth.py` · `core/ratelimit.py` · `routers/auth.py` · middleware wiring
+ใน `server.py` · admin endpoints (`/api/admin/*`) · CORS · share token · การเปิดของ
+`routers/sandbox.py` — **ทุกข้อพิสูจน์ด้วยการยิงจริงผ่าน ASGI app ไม่ใช่อ่านโค้ดอย่างเดียว**
+
+### 🔴 A. `/api/auth/login` ไม่เคยเข้าเงื่อนไข brute-force lockout เลย
+
+`rate_limit_middleware` นับ auth failure เฉพาะ request ที่มี header `x-auth-token`
+แต่ login ส่งรหัสใน **body** → **endpoint เดียวที่ lockout มีไว้ป้องกัน คือ endpoint
+เดียวที่ไม่เคยถูกนับ** เดารหัสได้ไม่จำกัด ติดแค่ RPM (120/นาที = 172,800 ครั้ง/วัน)
+และ token ที่ได้จาก login **คือ `UI_PASSWORD` ตัวเดียวกัน** = เดาได้ก็ได้ทุกอย่าง
+
+หลักฐาน (ก่อนแก้ · `AUTH_FAIL_MAX=3`): ยิงรหัสผิด 8 ครั้งติด → `401` ทั้ง 8 ครั้ง
+ขณะที่เส้น header ล็อกตั้งแต่ครั้งที่ 4 (`429`)
+
+- **ต้นเหตุ:** เงื่อนไข `had_token` ถูกใส่ไว้ 2026-06-02 เพื่อกัน false lockout ตอนหน้าเว็บ
+  โหลดครั้งแรก (ยิง API ไม่มี token) — **overcorrection** ที่กวาด login ติดไปด้วย
+- **แก้:** นับเป็น credential attempt เมื่อ *มี header token* **หรือ** *path เป็น `/api/auth/login`*
+  (`core/auth.py:LOGIN_PATH`) · เทสคุมทั้งสองด้าน: login ผิดต้องล็อก + request เปล่าที่
+  401 บน path อื่นต้องยังไม่นับ (กัน regression 2026-06-02 กลับมา)
+
+### 🔴 B. WebSocket `/ws/voice/{slug}` ไม่มี auth เลย — หลุด public ทั้งเส้น
+
+`app.middleware("http")` = `BaseHTTPMiddleware` ซึ่ง**ลัดผ่านทุก scope ที่ไม่ใช่ `http`**
+→ auth / rate limit / request-id **ไม่เคยแตะ WebSocket** แม้แต่ครั้งเดียว
+เส้นนี้เปิด session Gemini Live จริง (เผา quota ของ `GEMINI_API_KEY`) และ **เขียนลง
+chat history** ได้ · แอปเปิด public ผ่าน Cloudflare Tunnel → ใครมี URL ก็ต่อได้
+
+หลักฐาน (ก่อนแก้ · `UI_PASSWORD` ตั้งไว้): `GET /api/sessions` → `401`
+แต่ `websocket_connect("/ws/voice/kwan")` **ต่อติด** และได้ frame แรกกลับมา
+
+- ⚠️ `/ws` อยู่ใน `_OPEN_PREFIXES` อยู่แล้ว → **หน้าตาเหมือนตั้งใจเปิด** ทั้งที่ของจริงคือ
+  middleware ไปไม่ถึงตั้งแต่แรก บรรทัดนั้นจึงไม่มีผลอะไรเลย — comment/allowlist
+  ไม่ใช่หลักฐานว่ามีใครตัดสินใจ
+- **แก้:** `core.auth.websocket_authorized()` — กติกาเดียวกับ `auth_middleware`
+  (password ปิด → ผ่าน · LAN peer → ผ่าน · ไม่งั้นต้องมี token) เรียกใน handler
+  **ก่อน `accept()`** ปฏิเสธด้วย close code `1008`
+- **ฝั่ง client:** browser ตั้ง header บน WebSocket ไม่ได้ → token ไปทาง query param
+  `?token=` (`~/appscript.ui/utils/voicelive.ts:voiceWsUrl`, 4 vitest) อ่านจาก
+  `localStorage["hw_auth_token"]` · **แก้ backend อย่างเดียว = voice ของคนนอกบ้านพัง**
+  ต้อง build + `sync_static.sh` คู่กันเสมอ
+
+### 🟡 C. open prefix ใช้ `startswith` ดิบ — latent (ยังไม่มี route ที่โดน)
+
+`/api/shared` เป็น open prefix → `/api/sharedsecrets` ในอนาคตจะหลุด public เงียบๆ
+ขัดเจตนา "เพิ่ม endpoint ใหม่ = ปลอดภัยโดย default" ที่เขียนไว้ในไฟล์เดียวกัน
+· แก้เป็น match ทั้ง segment (`path == p or path.startswith(p + "/")`) + เทสทั้งสองด้าน
+
+### ที่ตรวจแล้วไม่มีปัญหา
+- `token_matches` ใช้ `hmac.compare_digest` (constant-time) ✅
+- middleware order `request_id → rate_limit → auth` ถูกและมีเทสตรึงไว้ ✅
+- `is_local_request` ใช้ TCP peer IP + ปฏิเสธเมื่อมี `cf-connecting-ip` (spoof ไม่ได้) ✅
+- `/api/admin/*` ทั้ง 3 ตัว (unlock / list memory / delete memory) เช็ค LAN-only ครบ ✅
+- CORS ไม่มี wildcard (allowlist จาก env + default 3 origin) ✅
+- `routers/sandbox.py` อยู่หลัง fail-closed auth (ไม่ได้อยู่ใน open list) ✅
+
+### ค้างไว้ ไม่แก้รอบนี้ (ตัดสินใจแล้ว)
+- **share token = `uuid.uuid4().hex[:10]`** (40 บิต) — เดาข้ามเน็ตที่ 120 req/นาที
+  ไม่คุ้มในทางปฏิบัติ แต่ถ้าจะเปิดแชร์กว้างขึ้นควรขยับเป็น `secrets.token_urlsafe(16)`
+- **`client_key` เชื่อ `cf-connecting-ip` โดยไม่ตรวจ** — สลับค่าเพื่อหนี rate limit ได้
+  ก็ต่อเมื่อยิงเข้า origin ตรงๆ ซึ่งบนวงนี้แปลว่าอยู่ LAN ซึ่ง bypass อยู่แล้ว → ไม่เพิ่มความเสี่ยงจริง
+
+**บทเรียน:** รูทั้งสองรู**ไม่ใช่ตรรกะผิด** — เป็น *"เงื่อนไขที่เขียนถูกสำหรับเส้นที่คิดถึงตอนนั้น"*
+(A: overcorrection จากบั๊กเก่า · B: middleware ที่ไม่ครอบทุก scope ของ framework)
+เทสหน่วยของทั้ง `auth.py` และ `ratelimit.py` **เขียวมาตลอด** เพราะไม่มีใครเคยเขียนเทส
+ที่ยิง *login* หรือ *WebSocket* — **ช่องโหว่อยู่ในเส้นที่ไม่มีเทส ไม่ใช่ในเทสที่แดง**

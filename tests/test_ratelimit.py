@@ -125,8 +125,9 @@ def test_unlock_ip_clears_authfail(monkeypatch, clock):
 # ── client_key ────────────────────────────────────────────────────────────────
 # หมายเหตุ: ใช้ public IP จริง (8.8.8.8 ฯลฯ) — TEST-NET (203.0.113.x) ถูก Python 3.14
 # จัดเป็น is_private=True → is_local_request bypass → rate limit ไม่ทำงาน
-def _req(host="8.8.8.8", headers=None):
-    return SimpleNamespace(headers=headers or {}, client=SimpleNamespace(host=host))
+def _req(host="8.8.8.8", headers=None, path="/api/x"):
+    return SimpleNamespace(headers=headers or {}, client=SimpleNamespace(host=host),
+                           url=SimpleNamespace(path=path))
 
 
 def test_client_key_prefers_cf_header():
@@ -196,6 +197,29 @@ def test_mw_auth_fail_lockout(fresh_limiters):
     resp = _run_mw(pub, status=200)        # over_limit ของ authfail → block ก่อนถึง route
     assert resp.status_code == 429
     assert "auth" in resp.body.decode("utf-8")
+
+
+def test_mw_login_failure_counts_as_authfail(fresh_limiters):
+    """รหัสผิดที่ POST /api/auth/login ต้อง feed lockout ด้วย
+
+    login ส่งรหัสใน body ไม่ใช่ header `x-auth-token` → เงื่อนไข had_token เดิม
+    (ใส่ไว้กัน false lockout ตอนโหลดหน้า) ทำให้ endpoint เดียวที่ lockout มีไว้ป้องกัน
+    ไม่เคยถูกนับเลย = เดารหัสได้ไม่จำกัด ติดแค่ RPM
+    """
+    pub = _req(host="8.8.4.4", path="/api/auth/login")
+    assert _run_mw(pub, status=401).status_code == 401
+    assert _run_mw(pub, status=401).status_code == 401
+    resp = _run_mw(pub, status=200)        # limit auth_fail = 2 → ครั้งถัดไปถูก lock
+    assert resp.status_code == 429
+    assert "auth" in resp.body.decode("utf-8")
+
+
+def test_mw_tokenless_401_on_other_paths_still_ignored(fresh_limiters):
+    """หน้าเว็บโหลดครั้งแรกยิง API ไม่มี token → 401 ต้องไม่นับ (regression 2026-06-02)"""
+    pub = _req(host="5.5.5.5", path="/api/sessions")
+    for _ in range(3):
+        _run_mw(pub, status=401)
+    assert rl._authfail_limiter.over_limit("5.5.5.5")[0] is False
 
 
 def test_mw_success_does_not_count_as_authfail(fresh_limiters):
