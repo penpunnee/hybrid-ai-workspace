@@ -60,6 +60,19 @@ def classify_doc(doc: str | None) -> tuple[bool, str]:
     return ok, reason
 
 
+def delete_with_keys(client, col_name: str, ids: list[str]) -> None:
+    """ลบทั้งตัวหลักและ vector ที่สอง (ข้อ 17)
+
+    ถ้าลบแต่ตัวหลัก กุญแจจะค้างเป็น orphan แล้วยัง recall ขึ้นมาได้ทั้งที่ของจริงหายไปแล้ว
+    """
+    if not ids:
+        return
+    from memory.dualvec import delete_keys
+
+    client.get_collection(col_name).delete(ids=ids)
+    delete_keys(client, col_name, ids)
+
+
 def _client():
     import chromadb
 
@@ -124,9 +137,8 @@ def main() -> int:
     for name, drop_ids in plan.items():
         if not drop_ids:
             continue
-        col = client.get_collection(name)
-        col.delete(ids=drop_ids)
-        print(f"ลบแล้ว {name}: {len(drop_ids)} รายการ · เหลือ {col.count()}")
+        delete_with_keys(client, name, drop_ids)
+        print(f"ลบแล้ว {name}: {len(drop_ids)} รายการ · เหลือ {client.get_collection(name).count()}")
     return 0
 
 

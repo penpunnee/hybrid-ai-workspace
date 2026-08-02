@@ -5,6 +5,7 @@
 import uuid
 import logging
 from datetime import datetime
+from .dualvec import key_hits, merge_max, sync_key
 from .schema import MemoryEntry
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,8 @@ def save_entry(entry: MemoryEntry, collection_name: str | None = None) -> bool:
     try:
         col.upsert(ids=[doc_id], documents=[entry.content], metadatas=[meta])
         logger.debug(f"Saved memory [{entry.type}] confidence={entry.confidence:.2f} source={entry.source}")
+        # vector ที่สอง (ข้อ 17) — ล้มได้โดยไม่ทำให้การบันทึกหลักล้มตาม
+        sync_key(client, col_name, doc_id, entry.content, metadata=meta)
         return True
     except Exception as e:
         logger.error(f"save_entry failed: {e}")
@@ -86,22 +89,17 @@ def search_entries(assistant: str, query: str, n_results: int = 5,
     dists = res.get("distances", [[]])[0]
 
     floor = _recall_min_score()
-    results = []
+    candidates = []
     for doc_id, doc, meta, dist in zip(ids, docs, metas, dists):
         confidence = meta.get("confidence", 0.7) if meta else 0.7
         verified   = meta.get("verified", False) if meta else False
 
-        # พื้นความเกี่ยวข้อง — เดิมมีแต่ตัวกรอง confidence/verified แล้วเอา score ไป
-        # *จัดอันดับ* อย่างเดียว ทำให้ memory ที่มั่นใจสูงแต่ไม่เกี่ยวกับคำถามยังถูก
-        # surface ขึ้นมาเสมอ (backlog ข้อ 4)
-        if (1 - dist) < floor:
-            continue
         if confidence < min_confidence:
             continue
         if verified_only and not verified:
             continue
 
-        results.append({
+        candidates.append({
             "id":         doc_id,
             "content":    doc,
             "confidence": confidence,
@@ -111,6 +109,16 @@ def search_entries(assistant: str, query: str, n_results: int = 5,
             "score":      round(1 - dist, 3),  # cosine similarity
             "timestamp":  meta.get("timestamp", "") if meta else "",
         })
+
+    # vector ที่สอง (ข้อ 17): เอา max ของ (doc เต็ม, กุญแจ) **ก่อน** ตัดด้วยพื้น —
+    # ประเด็นทั้งหมดคือ doc ที่ถูก dilution กดจนต่ำกว่าพื้น ต้องมีโอกาสกลับมา
+    ks, kdocs = key_hits(client, col_name, query, n_results=min(n_results * 2, 20))
+    candidates = merge_max(candidates, ks, key_docs=kdocs)
+
+    # พื้นความเกี่ยวข้อง — เดิมมีแต่ตัวกรอง confidence/verified แล้วเอา score ไป
+    # *จัดอันดับ* อย่างเดียว ทำให้ memory ที่มั่นใจสูงแต่ไม่เกี่ยวกับคำถามยังถูก
+    # surface ขึ้นมาเสมอ (backlog ข้อ 4)
+    results = [r for r in candidates if r.get("score", 0.0) >= floor]
 
     results = _rank_results(results, n_results)
 

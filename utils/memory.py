@@ -204,6 +204,35 @@ def _relevant_docs(results: dict, min_score: float | None = None) -> list:
     return [d for d, dist in zip(docs, dists) if (1 - dist) >= floor]
 
 
+def _relevant_docs_with_keys(client, col_name: str, query: str, results: dict,
+                             n_results: int = 3) -> list:
+    """เหมือน `_relevant_docs` แต่รวมคะแนนจาก vector ที่สอง (ข้อ 17) ก่อนตัดด้วยพื้น
+
+    คืน **เนื้อ doc เต็ม** เสมอ — ฝั่งกุญแจใช้แค่ตัดสินว่า "เกี่ยวไหม" ไม่ใช่เนื้อที่ฉีด
+    เข้า context (ข้อความกุญแจเป็นแค่หัวข้อ ไม่มีสาระให้โมเดลใช้)
+    """
+    from memory.dualvec import merge_max
+
+    docs = (results.get("documents") or [[]])[0]
+    dists = (results.get("distances") or [[]])[0]
+    ids = (results.get("ids") or [[]])[0]
+    if not docs:
+        return []
+    if not dists or len(dists) != len(docs) or len(ids) != len(docs):
+        return list(docs)
+
+    primary = [{"id": i, "content": d, "score": round(1 - dist, 3)}
+               for i, d, dist in zip(ids, docs, dists)]
+    try:
+        from memory.dualvec import key_hits
+        ks, _ = key_hits(client, col_name, query, n_results=n_results * 2)
+    except Exception:
+        ks = {}
+    # ไม่ส่ง key_docs — รายการที่เจอเฉพาะฝั่งกุญแจไม่มีเนื้อเต็มให้ฉีด จึงข้ามไป
+    merged = merge_max(primary, ks)
+    return [r["content"] for r in merged if r["score"] >= RECALL_MIN_SCORE]
+
+
 def search_memory(assistant_name: str, query: str, n_results: int = 3) -> str:
     """ค้นหา memory ที่เกี่ยวข้องกับ query"""
     col = _get_collection(assistant_name)
@@ -236,11 +265,16 @@ def save_lesson(topic: str, lesson: str) -> bool:
     try:
         col = get_or_create_collection(client, "lessons")
         doc_id = f"lesson_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+        document = f"[บทเรียน: {topic}]\n{lesson}"
         col.add(
-            documents=[f"[บทเรียน: {topic}]\n{lesson}"],
+            documents=[document],
             ids=[doc_id],
             metadatas=[{"topic": topic, "timestamp": datetime.now().isoformat()}]
         )
+        # vector ที่สอง (ข้อ 17) — หัวข้อบทเรียนคือสัญญาณที่ตรงกับคำถามมากที่สุด
+        # แต่ถูกเนื้อบทเรียนกลบใน doc เต็ม (วัดจริง 0.913 → 0.490)
+        from memory.dualvec import sync_key
+        sync_key(client, "lessons", doc_id, document, metadata={"topic": topic})
         return True
     except Exception as e:
         logger.warning(f"save_lesson failed for topic '{topic}': {e}")
@@ -277,8 +311,8 @@ def get_lessons(query: str = "", n_results: int = 3) -> str:
             return ""
         if query:
             results = col.query(query_texts=[query], n_results=min(n_results, count))
-            # มี query = การค้น → กรองความเกี่ยวข้อง
-            docs = _relevant_docs(results)
+            # มี query = การค้น → รวม vector ที่สอง (ข้อ 17) แล้วค่อยกรองความเกี่ยวข้อง
+            docs = _relevant_docs_with_keys(client, "lessons", query, results, n_results)
         else:
             results = col.get()
             docs = results.get("documents", [])[:n_results]
