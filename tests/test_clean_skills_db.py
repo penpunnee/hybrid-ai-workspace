@@ -13,7 +13,6 @@
   (คนละระบบ): "This document defines the JSON schemas used by skill-creator"
 - 16 ที่เหลือ = 1 ต่อ 1 กับ `skills/*.md` ที่ตรวจแล้วในข้อ 9
 """
-import json
 import os
 import sys
 
