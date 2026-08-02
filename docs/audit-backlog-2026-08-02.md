@@ -560,3 +560,53 @@ containment ไม่ใช่ Jaccard เพราะ doc ยาวกว่า
 - (ข) pin ทีละตัวใน `requirements.txt` เมื่อเจอปัญหา — ที่ทำอยู่ตอนนี้ ไม่ปิดต้นเหตุ
 - ⚠️ ถ้าจะขึ้น `mcp` 2.x ต้อง port `mcp_server.py` ไป API ใหม่ก่อน — **และตัวนี้คือสะพานที่จะใช้
   พ่วง OpenClaw** (ดู `skills/openclaw.md`) จึงไม่ใช่ไฟล์ที่ปล่อยพังได้
+
+---
+
+## ~~6.~~ ✅ agent tools 22 ตัว — **ยิงจริงครบแล้ว 2026-08-03**
+
+เดิมเทสจริงแค่ `ping_device` ตัวเดียว · ยิงครบทุกตัวบน prod เป็นครั้งแรก
+**ไม่ใช่เช็คว่า "ไม่ throw" แต่ดูผลดิบว่าสมเหตุสมผลไหม** — tool ที่คืน error string
+อย่างสุภาพจะดูเหมือนผ่านถ้าดูแค่ exception
+
+**ทำงานถูก 17 ตัว** — `current_time` `calculator` `weather` `wikipedia` `web_search`
+`memory_recall` `skill_search` `obsidian_search` `nas_disk` `nas_docker` `ping_network`
+`ping_device` `wol_pc` `ha_search_entities` `ha_get_state` `ha_call_service` `generate_image`
+- `memory_recall` → `✅ เราเตอร์ที่บ้านคือ ASUS RT-BE92U` (ของที่แก้ในข้อ 15/16 ทำงานจริง)
+- `generate_image` → แยก `limit=0` ออกจาก quota หมดชั่วคราวได้ถูก
+- `ha_call_service` → **"ส่งแล้วแต่ยืนยันไม่ได้"** = guard ปฏิเสธที่จะรายงานสำเร็จเมื่อ
+  state ไม่เปลี่ยนจริง **ถูกต้องแล้ว** ไม่ใช่บั๊ก
+- ℹ️ **`HA_TOKEN` มีค่าบน prod แล้ว** — บันทึกเก่าที่ว่า "ยังว่าง" ล้าสมัย HA ใช้งานได้จริง
+
+### 🔴 `run_python` — ตายสนิท ไม่เคยทำงานได้เลยบน prod
+container ไม่มี `/var/run/docker.sock` + `CODE_SANDBOX_ALLOW_LOCAL=false`
+→ คืน `❌ exit_code=-1 (blocked)` ทุกครั้ง แต่ยังอยู่ในทะเบียนให้โมเดลเลือก = เสียเทิร์นเปล่า
+- **แก้:** capability gate (`build_registry()` + `_sandbox_available()`) — ไม่ลบโค้ด
+  เครื่องที่มี Docker ยังใช้ได้ · `execute_tool` แยก "ใช้ไม่ได้ในสภาพแวดล้อมนี้" ออกจาก
+  "ไม่รู้จัก tool" · verified prod: โฆษณา **21 จาก 22**
+- ⚠️ **ตั้งใจไม่ mount `docker.sock`** — agent ที่จะรับคำสั่งจากแชทได้ (แผน OpenClaw)
+  ไม่ควรมี docker socket ของ NAS · "รันโค้ดไม่ได้" เป็นฟีเจอร์ ไม่ใช่บั๊ก ในบริบทนี้
+
+### 🔴 `fs_list` / `fs_read` / `fs_write` / `fs_search` — no-op เงียบทั้ง 4 ตัว
+`_DEFAULT_ROOT = ~/Desktop/ui/sandbox` (layout เครื่อง Mac) → ในคอนเทนเนอร์กลายเป็น
+`/root/Desktop/ui/sandbox` ที่**ไม่ได้ mount** → agent อ่านของจริงไม่ได้เลย
+และที่เขียนหายทุกครั้งที่ recreate · **ไม่ error แค่คืน "0 entries" ตลอด**
+- แก้: mount `${NAS_DATA_PATH}/sandbox:/app/sandbox` + `FS_TOOLS_ROOTS=/app/sandbox`
+- verified prod: เขียนไฟล์แล้วเห็นจาก host จริง = persist แล้ว
+- **บทเรียน:** เทสหน่วยของ `fs_tools` ผ่านหมดมาตลอด เพราะมันเทส*ตรรกะ* ไม่ใช่*ที่อยู่จริง
+  บน prod* — บั๊กอยู่ที่ค่า default ที่คำนวณจากสภาพแวดล้อมที่ผิด ไม่ใช่ที่โค้ด
+
+## 23. ✅ cache หายทุกครั้งที่ recreate — **แก้พร้อมข้อ 6**
+
+`/app/data` **ไม่ได้ mount เลย** ทั้งที่เป็นค่า default ของ `NAS_DATA_PATH` (env ในคอนเทนเนอร์
+ไม่ได้ตั้ง) และเป็นที่อยู่จริงของ `embed_cache.db` (**7.5 MB / 1,791 embeddings**) +
+`response_cache.db` + `gen_images` — `core/config.py:53` เขียนว่า *"under NAS_DATA_PATH
+for persistence"* ซึ่ง**ไม่จริง** และ `CLAUDE.md` เขียนว่า cache `unlimited` ก็ไม่จริงเช่นกัน
+
+`docker compose up -d --force-recreate` (วิธี deploy มาตรฐานเวลาแก้ `.env`) ล้างทิ้งหมด
+→ mount `${NAS_DATA_PATH}:/app/data` · กู้ของเดิมออกมาก่อน recreate
+· **verified หลัง recreate: embed cache 1,791 rows ครบ**
+
+**บทเรียนร่วมของข้อ 6 + 23:** ทั้งสองอย่างคือ *"คอมเมนต์บอกว่าทำ แต่ไม่มีใครเคยตรวจว่าทำจริง"*
+— `for persistence` / `sandbox root` เป็นเจตนา ไม่ใช่หลักฐาน · **สิ่งที่ตรวจได้จริง
+มีอย่างเดียวคือยิงแล้วดูผล**
