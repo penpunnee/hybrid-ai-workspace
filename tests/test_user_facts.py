@@ -99,12 +99,17 @@ class TestSearchUserFacts:
         assert results == []
 
     def test_low_score_entry_is_filtered_out(self):
-        """distance=0.5 → score=0.5 < threshold 0.6 → ต้องไม่คืนผล"""
+        """distance=0.5 → score=0.5 < threshold 0.6 → ต้องไม่คืนผล
+
+        ⚠️ ข้อความต้องไม่ใช้คำร่วมกับคำถาม — มี OR-gate ฝั่ง lexical แล้ว (ข้อ 16)
+        ของเดิมใช้ "คำถามไม่เกี่ยว" คู่กับ "ข้อมูลที่ไม่เกี่ยวข้อง" ซึ่งซ้อนกันที่คำว่า
+        "ไม่เกี่ยว" จริงๆ (lexical 0.583) = fixture บังเอิญ ไม่ใช่พฤติกรรมที่ตั้งใจวัด
+        """
         mock_client = MagicMock()
         mock_col = MagicMock()
         mock_client.get_collection.return_value = mock_col
         mock_col.query.return_value = {
-            "documents": [["ข้อมูลที่ไม่เกี่ยวข้อง"]],
+            "documents": [["สูตรทำต้มยำกุ้งแบบน้ำข้น"]],
             "metadatas": [[{"confidence": 0.95, "type": "fact", "source": "user_taught"}]],
             "distances": [[0.5]],  # score = 1 - 0.5 = 0.5 < 0.6
         }

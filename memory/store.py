@@ -6,6 +6,7 @@ import uuid
 import logging
 from datetime import datetime
 from .dualvec import key_hits, merge_max, sync_key
+from .lexical import passes_lexical
 from .schema import MemoryEntry
 
 logger = logging.getLogger(__name__)
@@ -132,7 +133,10 @@ def search_entries(assistant: str, query: str, n_results: int = 5,
     # พื้นความเกี่ยวข้อง — เดิมมีแต่ตัวกรอง confidence/verified แล้วเอา score ไป
     # *จัดอันดับ* อย่างเดียว ทำให้ memory ที่มั่นใจสูงแต่ไม่เกี่ยวกับคำถามยังถูก
     # surface ขึ้นมาเสมอ (backlog ข้อ 4)
-    results = [r for r in candidates if r.get("score", 0.0) >= floor]
+    # OR-gate กับ lexical (ข้อ 16): semantic จับตัวระบุ (รุ่น/รหัส/IP) ไม่ได้
+    # วัดจริง 50 คู่ — semantic อย่างเดียว R=0.89 · OR lexical R=1.00 โดย P ไม่ตก
+    results = [r for r in candidates
+               if r.get("score", 0.0) >= floor or passes_lexical(query, r.get("content"))]
 
     results = _rank_results(results, n_results)
 
@@ -229,7 +233,8 @@ def search_long_term(query: str, n_results: int = 3) -> list[dict]:
             }
             for doc, meta, dist in zip(docs, metas, dists)
             # เดิมไม่มีตัวกรองเลย — ธีมจาก Dream ถูกฉีดเข้า prompt ทุกครั้งที่คลังไม่ว่าง
-            if (1 - dist) >= floor
+            # OR-gate กับ lexical (ข้อ 16) ให้ตรงกับเส้นอื่น
+            if (1 - dist) >= floor or passes_lexical(query, doc)
         ]
     except Exception as e:
         logger.debug(f"search_long_term: {e}")
@@ -272,7 +277,10 @@ def search_user_facts(query: str, n_results: int = 3,
         # ต่อไว้เพื่อให้กลไกเหมือนกันทุกเส้น (บทเรียนซ้ำของ audit: แก้ 3 ใน 4 จุดแล้วคิดว่าจบ)
         ks, _ = key_hits(client, "user_facts", query, n_results=n_results * 2)
         merged = merge_max(candidates, ks)
-        return [r for r in merged if r["score"] >= min_score]
+        # OR-gate กับ lexical (ข้อ 16) — เส้นที่ปัญหาตัวระบุรุ่นรุนแรงที่สุด
+        # ("เราเตอร์ที่บ้านยี่ห้ออะไร" semantic 0.447 · lexical 0.565)
+        return [r for r in merged
+                if r["score"] >= min_score or passes_lexical(query, r.get("content"))]
     except Exception as e:
         logger.debug(f"search_user_facts: {e}")
         return []

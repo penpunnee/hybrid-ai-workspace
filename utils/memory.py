@@ -185,7 +185,8 @@ def save_memory(assistant_name: str, user_msg: str, ai_msg: str) -> bool:
         return False
 
 
-def _relevant_docs(results: dict, min_score: float | None = None) -> list:
+def _relevant_docs(results: dict, min_score: float | None = None,
+                   query: str | None = None) -> list:
     """คัดเฉพาะ doc ที่ score ผ่านพื้น — ตัวกลางของทุกจุดที่ query ในโมดูลนี้
 
     เดิมทั้ง 3 ฟังก์ชันคืน top-N เสมอโดยไม่เคยอ่าน `distances` เลย → ของที่ไม่เกี่ยว
@@ -201,7 +202,10 @@ def _relevant_docs(results: dict, min_score: float | None = None) -> list:
     if not dists or len(dists) != len(docs):
         return list(docs)
     floor = RECALL_MIN_SCORE if min_score is None else min_score
-    return [d for d, dist in zip(docs, dists) if (1 - dist) >= floor]
+    # OR-gate กับ lexical (ข้อ 16) — semantic จับตัวระบุ (รุ่น/รหัส/IP) ไม่ได้
+    from memory.lexical import passes_lexical
+    return [d for d, dist in zip(docs, dists)
+            if (1 - dist) >= floor or (query and passes_lexical(query, d))]
 
 
 def _relevant_docs_with_keys(client, col_name: str, query: str, results: dict,
@@ -230,7 +234,10 @@ def _relevant_docs_with_keys(client, col_name: str, query: str, results: dict,
         ks = {}
     # ไม่ส่ง key_docs — รายการที่เจอเฉพาะฝั่งกุญแจไม่มีเนื้อเต็มให้ฉีด จึงข้ามไป
     merged = merge_max(primary, ks)
-    return [r["content"] for r in merged if r["score"] >= RECALL_MIN_SCORE]
+    # OR-gate กับ lexical (ข้อ 16) — semantic จับตัวระบุ (รุ่น/รหัส/IP) ไม่ได้
+    from memory.lexical import passes_lexical
+    return [r["content"] for r in merged
+            if r["score"] >= RECALL_MIN_SCORE or passes_lexical(query, r["content"])]
 
 
 def search_memory(assistant_name: str, query: str, n_results: int = 3) -> str:
@@ -247,7 +254,7 @@ def search_memory(assistant_name: str, query: str, n_results: int = 3) -> str:
             query_texts=[query],
             n_results=min(n_results, count),
         )
-        docs = _relevant_docs(results)
+        docs = _relevant_docs(results, query=query)
         if not docs:
             return ""
         memory_text = "\n---\n".join(docs)
@@ -348,7 +355,7 @@ def search_long_term_memory(query: str, n_results: int = 3) -> str:
         if count == 0:
             return ""
         results = col.query(query_texts=[query], n_results=min(n_results, count))
-        docs = _relevant_docs(results)
+        docs = _relevant_docs(results, query=query)
         if not docs:
             return ""
         return "\n---\n".join(docs)
