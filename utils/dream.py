@@ -480,22 +480,30 @@ def deep_sleep(memories: list[dict], themes: list[dict]) -> dict:
     if client is not None and memory_promoted:
         try:
             col = get_or_create_collection(client, "long_term_memory")
-            for theme_name in memory_promoted:
-                matching = next((t for t in themes if t.get("name") == theme_name), {})
-                summary = matching.get("summary", "")
-                doc_id = f"lt_{datetime.now().strftime('%Y%m%d')}_{theme_name[:20]}"
-                col.upsert(
-                    ids=[doc_id],
-                    documents=[f"[{theme_name}] {summary}"],
-                    metadatas=[{
-                        "theme": theme_name,
-                        "consolidated_at": datetime.now().isoformat(),
-                        "hits": theme_counts[theme_name],
-                    }],
-                )
-            logger.info(f"Dream/DeepSleep: Promoted {len(memory_promoted)} themes to long-term memory")
         except Exception as e:
-            logger.error(f"Dream/DeepSleep error: {str(e)}")
+            logger.error(f"Dream/DeepSleep: get_or_create_collection failed: {str(e)}")
+            col = None
+
+        if col is not None:
+            saved = 0
+            for theme_name in memory_promoted:
+                try:
+                    matching = next((t for t in themes if t.get("name") == theme_name), {})
+                    summary = matching.get("summary", "")
+                    doc_id = f"lt_{datetime.now().strftime('%Y%m%d')}_{theme_name[:20]}"
+                    col.upsert(
+                        ids=[doc_id],
+                        documents=[f"[{theme_name}] {summary}"],
+                        metadatas=[{
+                            "theme": theme_name,
+                            "consolidated_at": datetime.now().isoformat(),
+                            "hits": theme_counts[theme_name],
+                        }],
+                    )
+                    saved += 1
+                except Exception as e:
+                    logger.error(f"Dream/DeepSleep: theme '{theme_name}' upsert failed (skipped): {str(e)}")
+            logger.info(f"Dream/DeepSleep: Promoted {saved}/{len(memory_promoted)} themes to long-term memory")
 
     return {"promoted": promoted, "count": len(promoted)}
 
