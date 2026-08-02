@@ -58,8 +58,54 @@ DREAM_REPORTS_DIR.mkdir(exist_ok=True)
 
 # เกณฑ์เลื่อนขั้นเข้า Deep Sleep (long-term memory)
 PROMOTE_MIN_SCORE = 0.5
-PROMOTE_MIN_HITS = 1
+# ≥2 เพราะจุดประสงค์ของ Dream promotion คือหา "รูปแบบที่เกิดซ้ำ" — เจอครั้งเดียว
+# ไม่ใช่รูปแบบตามนิยาม (เดิม =1 = ไม่มีการกรองเลย → prod ได้ skill ขยะ 60 อัน)
+PROMOTE_MIN_HITS = int(os.getenv("DREAM_PROMOTE_MIN_HITS", "2"))
 PROMOTE_MIN_QUERIES = 1
+
+# ธีมที่เป็น "บันทึกว่าระบบทำอะไรไม่ได้" — ยิ่งป้อนให้โมเดลยิ่งชวนให้ปฏิเสธงาน
+_FAILURE_KW = (
+    "ไม่สามารถ", "ไม่พบข้อมูล", "ไม่มีข้อมูล", "ขออภัย", "ผิดพลาด",
+    "unable", "cannot", "can't", "no data", "not available", "error",
+    "failed", "failure", "quota", "limitation", "limitations",
+)
+
+# ธีมที่เป็น "บันทึกว่าเคยคุยเรื่องอะไร" — ไม่ใช่ความรู้ที่เอาไปตอบคำถามได้
+_META_KW = (
+    "user frequently", "user often", "user asks", "user asked", "user prefers",
+    "a request was made", "a question was posed", "interaction involving",
+    "มีการถาม", "การถามถึง", "ผู้ใช้มักถาม", "ผู้ใช้ชอบถาม",
+    "greeting", "greetings", "ทักทาย", "การตรวจสอบระบบ",
+)
+
+
+def should_promote_theme(name: str, summary: str, hits: int) -> tuple[bool, str]:
+    """ธีมนี้ควรเลื่อนขั้นเป็นความรู้ถาวรไหม → (ok, reason)
+
+    เกิดจาก audit prod 2026-08-02: skill ที่ Dream สร้างเอง 60 อัน **ไม่มีสักอัน**
+    ที่เป็นความรู้ใช้ซ้ำได้ — เป็นบันทึกความล้มเหลว/ข้อมูลสดเน่า/บันทึกว่าเคยคุย
+    ที่แย่สุดคือบันทึกรุ่น router ผิด (TP-Link ทั้งที่จริงเป็น ASUS) ไว้ถาวร
+    """
+    text = f"{name} {summary}".strip()
+    if hits < PROMOTE_MIN_HITS:
+        return False, "too_few_hits"
+    low = text.lower()
+    if any(kw in low for kw in _FAILURE_KW):
+        return False, "failure_record"
+    # ความรู้เชิงขั้นตอนได้รับยกเว้นจาก gate ข้อมูลสด — "วิธีเช็ค ping" เป็นความรู้
+    # ที่ใช้ซ้ำได้ ต่างจาก "ping ได้ 0.1ms" ที่เป็นค่าของวันนั้น (ไม่งั้นคำว่า
+    # docker/ping/nas ในชื่อธีมจะทำให้ how-to ที่ดีถูกตัดทิ้งไปด้วย)
+    is_procedural = any(kw in low for kw in _PROCEDURAL_KW)
+    if not is_procedural:
+        try:
+            from utils.response_cache import is_realtime_query
+            if is_realtime_query(name) or is_realtime_query(summary[:120]):
+                return False, "realtime"
+        except Exception:
+            pass
+    if any(kw in low for kw in _META_KW):
+        return False, "conversation_meta"
+    return True, "ok"
 
 
 # ---------- Phase 1: Light Sleep ----------
@@ -434,13 +480,20 @@ def deep_sleep(memories: list[dict], themes: list[dict]) -> dict:
         logger.error("Dream/DeepSleep: ChromaDB client not available")
         return {"promoted": [], "count": 0}
 
-    # คำนวณคะแนนจากความถี่ของคำในธีม
+    # คำนวณคะแนนจากความถี่ของคำในธีม + กรองธีมที่ไม่ใช่ความรู้ออกก่อนเลื่อนขั้น
+    # (audit 2026-08-02: skill ที่ Dream สร้างเอง 60 อันไม่มีสักอันที่ใช้ได้จริง)
     theme_counts = Counter()
     for t in themes:
         name = t.get("name", "").strip()
         count = t.get("count", 1)  # default 1 ถ้า AI ไม่ส่ง count
-        if name and count >= PROMOTE_MIN_HITS:
-            theme_counts[name] = count
+        if not name:
+            continue
+        summary = t.get("summary", "") or ""
+        ok, why = should_promote_theme(name, summary, count)
+        if not ok:
+            logger.info(f"Dream/DeepSleep: ข้ามธีม '{name[:40]}' — {why}")
+            continue
+        theme_counts[name] = count
 
     skill_promoted = []
     memory_promoted = []
