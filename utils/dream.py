@@ -219,11 +219,18 @@ def rem_sleep(memories: list[dict], provider: str = "auto") -> dict:
         "GOOD summary (states the fact/procedure, with specifics):\n"
         '  "deploy ขึ้น NAS: git reset --hard origin/main แล้ว docker restart ai-backend-1 '
         '— ต้อง rebuild เฉพาะตอน requirements.txt เปลี่ยน"\n'
-        "BAD summary (describes the conversation — NEVER do this):\n"
-        '  "User frequently deploys to NAS"  /  "A request was made about deployment"  /  '
-        '"User asked how to deploy"\n\n'
+        "BAD summaries (NEVER do these — they describe the conversation or the "
+        "assistant instead of stating knowledge):\n"
+        '  "User frequently deploys to NAS"        (what was discussed)\n'
+        '  "A request was made about deployment"   (what was discussed)\n'
+        '  "AI can generate Python code"           (what the assistant can do)\n'
+        '  "AI is able to analyze Excel files"     (what the assistant can do)\n'
+        '  "AI cannot fetch real-time prices"      (what the assistant cannot do)\n\n'
+        "Never start a summary with the assistant's name or 'AI'. Write the fact "
+        "directly, as it would appear in a reference manual.\n\n"
         "SKIP a theme entirely if it is:\n"
         "  - a record of what was asked/discussed rather than an answer\n"
+        "  - a statement about the assistant's own abilities or limitations\n"
         "  - a value that expires (prices, weather, ping results, episode numbers, "
         "system status, dates) — these are wrong by next week\n"
         "  - a failure/error/limitation ('system cannot X', 'quota exceeded')\n"
