@@ -15,7 +15,7 @@ Infra:     Docker + Synology NAS + Cloudflare Tunnel
 ```
 ui/
 ├── server.py              ← FastAPI main app (1200+ lines)
-├── app.py                 ← Streamlit app (legacy)
+├── legacy/app.py          ← Streamlit ที่ปลดระวางแล้ว (ถอดออกจาก image 2026-07-12 — ห้าม import)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt

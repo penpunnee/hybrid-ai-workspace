@@ -195,15 +195,95 @@ HA tools ฯลฯ) — `ha_call_service` เพิ่งแก้วันน�
 ### 8. voice subsystem — อ่านโค้ดแล้วดูโอเค แต่ไม่มีใครเทสด้วยไมค์จริง
 ผมทำเองไม่ได้ (ต้องมีคนพูด) — ค้างมาตั้งแต่ 2026-06-18
 
-### 9. `skills/*.md` 26 ไฟล์ — ไม่เคยอ่านเนื้อหาว่ายังถูกต้องไหม
-**เจอของล้าสมัยแล้วจากการ grep ผิวๆ:**
-- `ollama-gemini-llm-integration.md` → อ้าง `deepseek-r1-0528-qwen3-8b`
-  (เลิกใช้ตั้งแต่ 2026-07-05 ตอนนี้เป็น `qwen/qwen3.5-9b`)
-- อีก 4 ไฟล์อ้าง `llama3` ซึ่งเป็น fallback ที่แทบไม่ได้ใช้แล้ว
-- ไฟล์พวกนี้**ถูกฉีดเข้า context จริง**ผ่าน `load_skills_relevant()` → ป้อนข้อมูลล้าสมัย
+### ~~9.~~ ✅ `skills/*.md` — **ปิดแล้ว 2026-08-02** (verified prod)
+
+**ขนาดจริงที่วัดได้ (prompt จริงบน prod 460 ข้อ หลังตัด smoke test):**
+
+| | |
+|---|---|
+| ฉีด skills เข้า context | **233/460 = 51%** ของทุกเทิร์น |
+| ขนาด median | **5,975 chars ≈ 1,500 tokens** (max 15,682) |
+| กรองด้วยอะไร | **ไม่มีเลย** — keyword ตรง 1 คำ = ฉีดทั้งไฟล์ (ต่างจาก episodic/lessons ที่ผ่าน semantic 0.55) |
+
+**สิ่งที่เจอ — คนละเรื่องกับที่ backlog เดาไว้:**
+
+1. **prod ล้าหลัง git 3 ไฟล์** — `docker-deployment-nas.md` / `ollama-gemini-llm-integration.md` /
+   `troubleshooting.md` ถูกแก้เป็น qwen3.5-9b ใน git ตั้งแต่ 2026-07-05 แต่ prod ยังอ่าน
+   `deepseek-r1-0528` / `gemma-4-e4b` / `llama-3.2-11b-vision` อยู่ **4 สัปดาห์**
+   → ต้นเหตุ: container mount `${NAS_DATA_PATH}/skills` ไม่ใช่ `skills/` ในโค้ด (gotcha ที่ CLAUDE.md
+   เตือนไว้ แต่ไม่มีอะไรบังคับ) · **แก้แล้ว: sync + `SKILLS_DIR` เทียบตรงกัน verified**
+2. **5 ไฟล์ขยะบน prod ที่ไม่เคยอยู่ใน git** (auto-discovered 2026-05-12) — ลบแล้ว
+   | ไฟล์ | ฉีด | เนื้อหา |
+   |---|---:|---|
+   | `ip-address-*.md` | 50 | สรุปคำถาม 2 ข้อ |
+   | `nas-และเคร--องจ-กร-*.md` | 45 | ไม่มีสาระ |
+   | `การร-บข-อม-ลจาก-google-forms-*.md` | 27 | คำถามเดิมซ้ำ 13 ครั้ง ไม่มีคำตอบ |
+   | `openclaw-*.md` | 24 | **นิยามที่โมเดลกุเอง** |
+   | `ได-เลย.md` | 3 | **`"❌ Gemini quota หมด..."` — error message ล้วน** |
+   → บั๊กตระกูลเดียวกับข้อ 1/14 เป๊ะ แต่คนละคลัง · episodic มี `should_remember()` ปิดทางเข้าแล้ว
+   **ฝั่ง skill-discovery ยังไม่มีอะไรปิด** (ดูข้อ 18)
+3. **เนื้อหาล้าสมัยใน git จริง 7 จุด** — แก้แล้วทั้งหมด: `GEMINI_MODEL=gemini-2.5-pro` (limit=0!) ·
+   `GEMINI_LIVE_MODEL=gemini-2.0-flash-exp` ×2 · `OLLAMA_BASE_URL=...:1234` (พอร์ต LM Studio
+   สลับกับ Ollama 11434) · LMStudio model list เก่า · `app.py` Streamlit ×2 (ย้ายเข้า `legacy/` แล้ว)
+   + เติมบล็อก `LMSTUDIO_*` ที่ `env-variables-reference.md` **ไม่เคยมีเลย** ทั้งที่เป็น local provider ตัวจริง
+4. **`UI_PASSWORD=Sapoil` เขียนเป็นค่าจริงในไฟล์ที่ถูกฉีดเข้า context** — แทนที่ด้วย placeholder แล้ว
+
+**⚠️ บทเรียนของข้อนี้: grep หาชื่อโมเดลตายให้ false positive 9 จาก 16 จุด**
+`ChromaDB :8000` (ถูกแล้ว — แอปคือ 8080) · `OLLAMA_MODEL=llama3` (ถูกแล้ว — dormant แต่โมเดลยังชื่อนี้) ·
+`Archer C7/DS918+` (เป็น*ตัวอย่างของที่โมเดลกุ*ในเอกสารกัน hallucination) · `deepseek` ในประโยค
+"เปลี่ยนจาก X → Y แล้ว" → **นับจาก grep แล้วรายงานเลย = รายงานผิด 56%** ต้องเปิดดูทีละบรรทัด
+
+**guard ที่วางไว้:** `tests/test_skills_freshness.py` (4 เทส) — BANNED patterns + ห้ามไฟล์
+auto-discovered + ห้าม skill ที่เป็น error ล้วน + **`test_every_exemption_is_still_needed`**
+(กัน allow-list เน่าเงียบ ซึ่งเป็นจุดอ่อนของการเก็บข้อยกเว้นนอกไฟล์)
+· ยกเว้นด้วย `WARNING_CONTEXT` ระดับ*บรรทัด* ไม่ใช่ระดับไฟล์ — บรรทัด "ห้ามใช้ X" ต้องเอ่ยชื่อ X
+ถึงจะสื่อได้ แต่ `KEY=X` ในไฟล์เดียวกันต้องยังโดนจับ
+· **พิสูจน์ว่าไม่ได้ทำให้หลวมเพื่อให้เขียว: รันกับไฟล์ prod ก่อนแก้ ต้องแดงครบ 11+5 จุด** ✅
 
 ### 10. UI ฟีเจอร์ที่ยังไม่ได้ลองบนจอจริง
 upload ไฟล์ · export · global search (Ctrl+Shift+F) · voice · drag&drop · กล้อง
+
+### 18. `skills_db.json` — 48 entry แต่ตรวจแล้วแค่ 16 (เจอระหว่างทำข้อ 9, ยังไม่แก้)
+
+`skills_db.json` เป็นคนละคลังกับ `skills/*.md` — ป้อน `search_skills()` (semantic top-3,
+volatile block) ส่วน .md ป้อน `load_skills_relevant()` (keyword, stable block) · ล้างข้อ 9
+ไปแล้วแต่คลังนี้ยังไม่ได้แตะ นอกจากลบ orphan 4 ตัว (52 → 48)
+
+| ที่มา | จำนวน | สภาพ |
+|---|---:|---|
+| `GUIDE.md` หั่นตามหัวข้อ | 25 | **มีขยะปน** — `============ AI Models ============`, `� Regenerate Response` (mojibake), `⚠️ ต้องเป็น gemini-2.0-flash ขึ้นไป` = คำแนะนำล้าสมัยกลายเป็นชื่อ skill |
+| `schemas.md` | 7 | **ไม่มีไฟล์นี้ในโปรเจกต์** — history/grading/metrics/benchmark/comparison/analysis ดูเหมือนมาจากโปรเจกต์อื่น |
+| `.md` จริง | 16 | ตรวจแล้วในข้อ 9 |
+
+**หลักฐานว่ามันโผล่จริง (verified prod หลัง restart):** ถาม `"openclaw คืออะไร"` → ได้
+`============ Ollama (Local) ============` พร้อม `OLLAMA_BASE_URL=http://host.docker.internal…`
+ซึ่งเป็นค่าที่ผิดจากปัจจุบัน · และเป็นคำตอบที่**ไม่เกี่ยวกับคำถามเลย** = ไม่มีพื้นความเกี่ยวข้อง
+→ บั๊กตระกูล "query โดยไม่ดู distances" (ข้อ 3/4) **อีกเส้นที่ยังไม่ได้ไล่**
+
+### 19. `search_skills()` fail-open → ฉีด skill ทั้งคลัง (ยังไม่แก้)
+
+`utils/skills.py:56-58` — ถ้า ChromaDB ไม่พร้อม `return get_all_skills()` = ฉีด **48 รายการทั้งคลัง**
+เข้า context แทนที่จะคืนว่าง · ตรงข้ามกับหลักที่ใช้ทั้ง audit นี้ (ไม่แน่ใจ → เอียงไปทาง conservative)
+· ตอนนี้ยังไม่เคยเกิดเพราะ ChromaDB ไม่เคยล่มพร้อมแอป แต่เป็นโหมดพังแบบ "ล้มเหลว → ท่วม"
+เหมือนบทเรียน "ล้มเหลว → ศูนย์" ใน vault `wiki/concepts/frontend-payload-diet.md` (คนละทิศ ปัญหาเดียวกัน)
+
+### 20. skill-discovery ไม่มี gate ฝั่งทางเข้า (ต้นเหตุของขยะในข้อ 9)
+
+ข้อ 9 ล้างของเก่าแล้ว แต่ `utils/skill_discovery.py` ยังสร้าง .md ใหม่ได้อิสระ — ไฟล์
+`ได-เลย.md` (ข้อความ error) และ `openclaw-*.md` (นิยามที่กุ) พิสูจน์ว่าไม่มีอะไรกรอง
+· ตรงกับบทเรียนข้อ 1 ของ audit เป๊ะ: episodic แก้ที่ทางเข้าด้วย `should_remember()` แล้ว
+**แต่เส้น skill ยังเปิดโล่ง** — เกณฑ์เข้าควรเป็นตัวเดียวกับเกณฑ์ออก (`test_skills_freshness.py`)
+· ⚠️ เทส guard จับได้เฉพาะไฟล์ที่ commit เข้า git — ของที่ pipeline สร้างตรงลง
+`${NAS_DATA_PATH}/skills` บน prod **ไม่ผ่านสายตาเทสเลย** ยังเป็นรูที่เปิดอยู่
+
+### 21. Thai tokenizer ใน `load_skills_relevant()` (วัดแล้ว ยังไม่แก้)
+
+`utils/rag.py:62` ใช้ `query.lower().split()` — ภาษาไทยไม่มีช่องว่าง → prompt ไทยล้วนกลายเป็น
+token เดียว match ไม่ได้ · ระบบจึงฉีด skill **เฉพาะตอน prompt มีคำ Latin ปน**
+(`"ระบบใช้โมเดลอะไร"` → 0 chars · `"memory system ทำงานยังไง"` → 8,785 chars)
+· **บั๊กตระกูลเดียวกับที่แก้ใน `memory/lexical.py` แล้ว** (character n-gram containment) — เส้นที่ 2
+· ⚠️ **ห้ามแก้ลอยๆ** — แก้แล้วอัตราฉีดจะขึ้นจาก 51% ซึ่งต้องรู้ precision ก่อนว่าที่ฉีดเพิ่มมาดีจริงไหม
+ไม่งั้นคือเพิ่ม noise 1,500 tokens ให้ทุกเทิร์น · ต้องมี ground truth ของ skills ก่อน (ข้อ 12 ฉบับ skills)
 
 ---
 

@@ -45,7 +45,8 @@ OLLAMA_REPEAT_PENALTY=1.1
 ```env
 GEMINI_API_KEY=...
 GEMINI_MODEL=gemini-2.5-flash      # default ไว
-GEMINI_LIVE_MODEL=gemini-2.0-flash-exp   # สำหรับ voice WebSocket
+GEMINI_LIVE_MODEL=gemini-2.5-flash-native-audio-latest   # สำหรับ voice WebSocket
+# ⚠️ gemini-2.0-flash-exp / gemini-live-2.0-flash-001 ถูกถอดจาก Live API แล้ว (คืน 1008 not found)
 ```
 
 **Features:**
@@ -73,7 +74,7 @@ SHOW_THINKING=false   # toggle เพื่อแสดง <think>...</think> bl
 
 **Vision:** ใช้ `LMSTUDIO_VISION_MODEL` (qwen/qwen3.5-9b) ถ้ามี `image_b64`
 
-**Reasoning model:** เปลี่ยนจาก deepseek-r1-0528-qwen3-8b → qwen3.5-9b แล้ว (2026-07-05) — ถ้าโมเดลส่ง `<think>...</think>` มา `reasoning/parser.py:stream_with_thinking()` กรองออกก่อนแสดง (เว้น SHOW_THINKING=true)
+**Reasoning model:** `qwen/qwen3.5-9b` (ตั้งแต่ 2026-07-05) — ถ้าโมเดลส่ง `<think>...</think>` มา `reasoning/parser.py:stream_with_thinking()` กรองออกก่อนแสดง (เว้น SHOW_THINKING=true)
 
 ## 🌐 Web Search Augmentation (`lmstudio_web`)
 
