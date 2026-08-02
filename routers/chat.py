@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import threading
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -23,6 +24,9 @@ from core.observability import log_timing, current_request_id, get_timings
 
 router = APIRouter(prefix="/api", tags=["chat"])
 logger = logging.getLogger(__name__)
+
+# คะแนน similarity ขั้นต่ำที่จะดึง chunk เอกสารเข้า context (ปรับได้ทาง .env)
+_DOC_MIN_SCORE = float(os.getenv("DOC_RETRIEVAL_MIN_SCORE", "0.5"))
 
 
 def _is_test_request(request: Request) -> bool:
@@ -223,7 +227,11 @@ async def chat(request: Request):
                     doc_chunks = cached["chunks"]
                     logger.info(f"[Chat] retrieval cache hit (sim={cached['similarity']})")
                 else:
-                    doc_chunks = retrieve_chunks(prompt, top_k=3, min_score=0.3)
+                    # threshold วัดจากข้อมูลจริงบน prod (2026-08-02 หลังแก้ embedding ไทย):
+                    # คำถามที่ไม่เกี่ยวกับเอกสารได้ 0.33-0.42 (outlier 0.55 คือคำถามตัวเลข
+                    # ไปตรงกับสเปรดชีตตัวเลข) ส่วนคำถามที่เกี่ยวจริงได้ 0.56-0.73
+                    # ที่ 0.3 เดิม = ดึงเอกสารมาแปะเป็น citation ทุกข้อความแม้ไม่เกี่ยวเลย
+                    doc_chunks = retrieve_chunks(prompt, top_k=3, min_score=_DOC_MIN_SCORE)
                     if doc_chunks:
                         _retr_store(session_id, prompt, doc_chunks)
 
