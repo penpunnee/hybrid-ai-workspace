@@ -59,6 +59,79 @@ _ERROR_PREFIX = ("⚠️", "❌", "🚫", "error:", "exception:")
 _MIN_LESSON_LEN = 10
 
 
+# วลีที่บ่งบอก "ความชอบ" จริง — ต้องเจาะจงพอที่จะไม่ชนคำถามปกติ
+# (เดิมใช้คำว่า "อธิบาย" เดี่ยวๆ ซึ่งโผล่ใน "ช่วยอธิบาย FastAPI หน่อย" = false positive)
+# เรียงลำดับสำคัญ: ตัวหลังในประโยคชนะ (เจตนาล่าสุดของผู้พูด)
+_PREF_PATTERNS: tuple[tuple[str, str, str], ...] = (
+    # (key, regex, value)
+    ("style",  r"ตอบสั้น|สั้นๆ|กระชับ|ย่อๆ|สรุปสั้น",              "ชอบคำตอบสั้น กระชับ"),
+    ("style",  r"ละเอียดๆ|อธิบายละเอียด|แบบละเอียด|ลงลึก",        "ชอบคำตอบละเอียด ลงลึก"),
+    ("format", r"เป็นข้อๆ|เป็นข้อ ๆ|bullet|เป็นบูลเล็ต",            "ชอบคำตอบเป็นข้อๆ"),
+    ("format", r"เป็นตาราง|ขอตาราง|ทำเป็นตาราง",                  "ชอบคำตอบเป็นตาราง"),
+    ("format", r"เป็นแผนภาพ|เป็นผัง|ไดอะแกรม|diagram|ผังงาน",      "ชอบให้มีแผนภาพประกอบ"),
+)
+
+
+def detect_preferences(prompt: str) -> list[tuple[str, str]]:
+    """หา preference ของ user จาก prompt → [(key, value)] (ว่างถ้าไม่เจอ)
+
+    แยกออกมาเป็นฟังก์ชัน pure เพราะเดิมโค้ดนี้ฝังอยู่ในเธรด `_learn()` ของ
+    `routers/chat.py` ทำให้ทำงานเฉพาะเมื่อคำตอบยาว >100 ตัวอักษร **และ** ผ่าน
+    gate ของ lesson ก่อน → collection `preferences` เลยว่างเปล่า 0 รายการ
+    ตลอด 3 เดือน (audit 2026-08-02)
+
+    key ต่างกันต่อหมวด (style/format) เพื่อไม่ให้ id ชนกันแบบบั๊กเดิมที่ทั้ง
+    "ตอบสั้น" และ "อธิบาย" map ไป key `style` ตัวเดียว
+    """
+    if not prompt:
+        return []
+    found: dict[str, str] = {}
+    for key, pattern, value in _PREF_PATTERNS:
+        if re.search(pattern, prompt, re.IGNORECASE):
+            found[key] = value          # ตัวหลังทับตัวหน้า = เจตนาล่าสุดชนะ
+    return list(found.items())
+
+
+def should_remember(prompt: str, response: str) -> tuple[bool, str]:
+    """ควรเก็บ exchange นี้ลง episodic memory ไหม → (ok, reason)
+
+    ต่างจาก `should_auto_learn()` ตรงที่ดู **คำตอบ** ด้วย ไม่ใช่แค่คำถาม
+
+    ⚠️ episodic **ควร**เป็นบันทึกบทสนทนาตามหน้าที่ของมัน (ต่างจาก lessons/skills
+    ที่ควรเป็นความรู้) จึงกันเฉพาะ 2 อย่างที่พิสูจน์แล้วว่าเป็นโทษ:
+      - ข้อมูลสด — คำตอบถูกแค่ ณ วันนั้น เก็บไว้ = ป้อนของผิดให้ตัวเองในอนาคต
+        (วัดจริง 2026-08-02: memory_kwan 57/92 · memory_logic 47/62 เป็นแบบนี้
+         รวมถึง "ราคาทองวันนี้ ขายออก 72,100" ที่ผิดจากราคาจริงวันนี้ 7,900 บาท)
+      - ข้อความ error/ระบบ — ไม่ใช่บทสนทนาจริง (27 + 21 รายการในคลัง)
+
+    เดิมเส้น chat ปกติไม่ผ่าน gate เลย ขณะที่เส้น agent (`persist_agent_turn`)
+    ผ่าน `should_auto_learn()` อยู่แล้ว — สองเส้นไม่ตรงกัน
+    """
+    ok, reason = should_auto_learn(prompt)
+    if not ok:
+        return False, reason
+    text = (response or "").strip()
+    if not text:
+        return False, "empty_response"
+    low = text.lower()
+    if any(low.startswith(p.lower()) for p in _ERROR_PREFIX):
+        return False, "error_response"
+    if any(kw in text for kw in _REFUSAL_KW):
+        return False, "error_response"
+    return True, "ok"
+
+
+# คำที่บ่งชี้ว่าคำตอบเป็นข้อความปฏิเสธ/ระบบขัดข้อง ไม่ใช่เนื้อหาจริง
+# (เลือกวลีที่ยาวพอจะไม่ชนคำตอบปกติที่บังเอิญมีคำว่า "ขอโทษ")
+_REFUSAL_KW = (
+    "ไม่สามารถช่วยเหลือในกรณีนี้ได้",
+    "การตอบหยุดกลางคัน",
+    "ยังไม่ได้ตั้งค่า",
+    "เชื่อมต่อ server ไม่ได้",
+    "โมเดลไม่ได้ให้คำตอบ",
+)
+
+
 def clean_lesson(raw: str) -> str | None:
     """ทำความสะอาดสิ่งที่โมเดลคายออกมา → คืนบทเรียนที่ใช้ได้ หรือ None ถ้าไม่ควรเก็บ
 

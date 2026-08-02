@@ -18,7 +18,7 @@ from memory.operations import remember, recall, teach, push_working
 from utils.skills import search_skills
 from utils.obsidian_sync import search_vault
 from utils.home_tools import detect_home_tools, build_tool_context
-from reasoning.learn_gate import should_auto_learn, clean_lesson
+from reasoning.learn_gate import should_auto_learn, clean_lesson, should_remember, detect_preferences
 from utils.tokens import count_tokens_approx
 from core.observability import log_timing, current_request_id, get_timings
 
@@ -563,9 +563,27 @@ async def chat(request: Request):
         # empty-guard notice ห้ามเข้า episodic memory/teach — ไม่ใช่คำตอบจริง
         # (กัน contamination แบบเดียวกับ clarify ของ active learning)
         # is_test_request: smoke test ผ่าน X-Test-Request ก็ข้ามเหมือนกัน (P2-9)
+        # gate ให้ตรงกับเส้น agent (persist_agent_turn) ที่ผ่าน should_auto_learn อยู่แล้ว
+        # เดิมเส้นนี้ไม่มี gate เลย → episodic เก็บข้อมูลสด/error ทุกเทิร์น
+        # (วัดจริง 2026-08-02: memory_kwan 57/92 · memory_logic 47/62 เป็นข้อมูลสดเน่า)
         if not empty_guard_fired and not is_test_request:
-            remember(assistant, prompt, full_response)
+            _rem_ok, _rem_reason = should_remember(prompt, full_response)
+            if _rem_ok:
+                remember(assistant, prompt, full_response)
+            else:
+                logger.info(f"[Chat/remember] ข้าม episodic — reason={_rem_reason}")
             teach(assistant, prompt, ai_response=full_response)
+
+        # preference detection แยกจากเธรด lesson — เดิมฝังอยู่ข้างในทำให้ทำงานเฉพาะ
+        # ตอนคำตอบยาว >100 ตัวอักษร + ผ่าน gate ของ lesson → preferences ว่าง 0 รายการ
+        # ตลอด 3 เดือน (audit 2026-08-02). ตรงนี้ไม่เรียก LLM จึงทำได้ทุกเทิร์น
+        if not is_test_request:
+            try:
+                for _pk, _pv in detect_preferences(prompt):
+                    save_preference(_pk, _pv)
+                    logger.info(f"[Chat/preference] บันทึก {_pk}={_pv}")
+            except Exception as e:
+                logger.debug(f"[Chat/preference] skipped: {e}")
 
         _learn_ok, _learn_reason = should_auto_learn(prompt)
         if empty_guard_fired:
@@ -589,9 +607,6 @@ async def chat(request: Request):
                         save_lesson(p[:50], lesson)
                     else:
                         logger.info(f"[Chat/auto-learn] ทิ้งบทเรียนที่ไม่ผ่านการกรอง: {raw_lesson[:60]!r}")
-                    for kw, (k, v) in {"ตอบสั้น": ("style", "ชอบสั้น"), "อธิบาย": ("style", "ชอบละเอียด")}.items():
-                        if kw in p:
-                            save_preference(k, v)
                 except Exception as e:
                     logger.debug(f"Auto-learn failed: {e}")
             threading.Thread(target=_learn, daemon=True).start()
