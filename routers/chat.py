@@ -580,8 +580,13 @@ async def chat(request: Request):
         if not is_test_request:
             try:
                 for _pk, _pv in detect_preferences(prompt):
-                    save_preference(_pk, _pv)
-                    logger.info(f"[Chat/preference] บันทึก {_pk}={_pv}")
+                    # ต้องเช็คค่าที่คืนมา — save_preference กลืน exception แล้วคืน False
+                    # (เคยพลาดตรงนี้เอง: log ว่า "บันทึกแล้ว" ทั้งที่เขียนไม่สำเร็จ
+                    #  = failure ที่หน้าตาเหมือน success ซึ่งเป็นบั๊กที่ไล่แก้มาทั้งวัน)
+                    if save_preference(_pk, _pv):
+                        logger.info(f"[Chat/preference] บันทึก {_pk}={_pv}")
+                    else:
+                        logger.warning(f"[Chat/preference] เขียนไม่สำเร็จ {_pk}={_pv}")
             except Exception as e:
                 logger.debug(f"[Chat/preference] skipped: {e}")
 
