@@ -26,6 +26,16 @@ services:
       - ${NAS_DATA_PATH:-./data}/logs:/app/logs
       # DB backup 03:30 (core/scheduler.py) เขียนที่นี่ — ต้อง mount ไม่งั้นหายตอน recreate
       - ${NAS_DATA_PATH:-./data}/db_backups:/app/db_backups
+      # ⚠️ /app/data = ค่า default ของ NAS_DATA_PATH ใน core/config.py (env ในคอนเทนเนอร์ไม่ได้ตั้ง)
+      # เป็นที่อยู่จริงของ embed_cache.db / response_cache.db / gen_images
+      # ไม่ mount = หายทุกครั้งที่ `up -d --force-recreate` ทั้งที่ config เขียนว่า
+      # "under NAS_DATA_PATH for persistence" (เจอจริง 2026-08-03: embed cache 7.5MB
+      # 1,791 embeddings อยู่ใน writable layer ล้วน — backlog ข้อ 6)
+      - ${NAS_DATA_PATH:-./data}:/app/data
+      # sandbox ของ fs_* tools — default เดิมคือ ~/Desktop/ui/sandbox (layout เครื่อง Mac)
+      # ในคอนเทนเนอร์กลายเป็น /root/Desktop/ui/sandbox ที่ว่างเปล่าและหายตอน recreate
+      # → agent อ่าน/เขียนอะไรจริงไม่ได้เลย ต้องคู่กับ FS_TOOLS_ROOTS=/app/sandbox ใน .env
+      - ${NAS_DATA_PATH:-./data}/sandbox:/app/sandbox
       - ./static:/app/static
       - ./utils:/app/utils
       - ./assistants:/app/assistants
