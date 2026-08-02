@@ -415,6 +415,18 @@ async def chat(request: Request):
                                       web_grounding=gemini_grounding):
                 yield ck
 
+        def _save_crash(err_text: str):
+            # stream พังกลางคัน — user message ถูก save ไปแล้ว (บรรทัดก่อนหน้า generate())
+            # ถ้าไม่ save assistant reply คู่กันด้วย turn นี้จะกลายเป็น orphan (user
+            # ไม่มีคำตอบคู่ใน history) และคำตอบบางส่วนที่ user เห็น stream มาแล้วบนจอ
+            # จะหายไปทันทีที่ reload — ไม่เข้า remember()/teach()/push_working เพราะ
+            # เป็นคำตอบที่ไม่สมบูรณ์ ไม่ควรถูกเรียนรู้เป็นตัวอย่าง
+            text = (full_response + "\n\n" if full_response.strip() else "") + f"⚠️ การตอบหยุดกลางคัน: {err_text}"
+            try:
+                save_message(assistant, "assistant", text, provider_used or provider, session_id)
+            except Exception as save_err:
+                logger.error(f"[Chat] save partial response after crash failed too: {save_err}")
+
         try:
             for chunk in _try_stream(_provider, model_override):
                 full_response += chunk
@@ -481,9 +493,11 @@ async def chat(request: Request):
                         yield f"data: {json.dumps({'chunk': chunk})}\n\n"
                 except Exception as e2:
                     yield f"data: {json.dumps({'error': f'Fallback ล้มด้วย: {e2}'})}\n\n"
+                    _save_crash(f"Fallback ล้มด้วย: {e2}")
                     return
             else:
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                _save_crash(str(e))
                 return
 
         record_timing("llm_stream", (_time.perf_counter() - llm_start) * 1000)
@@ -608,6 +622,14 @@ async def regenerate_response(request: Request):
                 yield f"data: {json.dumps({'chunk': chunk})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            # delete_last_assistant_message() ลบคำตอบเก่าไปแล้วก่อนเริ่ม stream —
+            # ถ้าไม่ save อะไรเลยตอนนี้ turn จะไม่มีคำตอบคู่กับ user message เลย
+            # (แย่กว่า chat() ปกติ เพราะที่นี่ลบของเดิมทิ้งไปแล้วด้วย)
+            text = (full_response + "\n\n" if full_response.strip() else "") + f"⚠️ การตอบหยุดกลางคัน: {e}"
+            try:
+                save_message(assistant, "assistant", text, provider, session_id)
+            except Exception as save_err:
+                logger.error(f"[Regenerate] save partial response after crash failed too: {save_err}")
             return
         save_message(assistant, "assistant", full_response, provider, session_id)
         yield f"data: {json.dumps({'done': True})}\n\n"

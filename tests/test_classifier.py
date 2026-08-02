@@ -78,6 +78,27 @@ def test_needs_internet_false_for_gap_audit_near_miss(text):
     assert needs_internet(text) is False, f"ไม่ควร over-trigger: {text!r}"
 
 
+# ── gap audit (2026-08-02) — พบจาก audit data flow: ราคาที่ไม่มีคำ "วันนี้"/
+# "ตอนนี้" ต่อท้าย (เช่นถามราคาคริปโต) + ข่าวทั่วไปที่ไม่มีคำว่า "ข่าว"/"ล่าสุด"
+# ยังหลุดผ่าน classifier ไปตอบจากข้อมูลเก่าโดยไม่บอก user ว่าไม่ได้ค้นเว็บ ──
+@pytest.mark.parametrize("text", [
+    "ราคา bitcoin เท่าไหร่",          # ราคาคริปโต ไม่มี "วันนี้"/"ตอนนี้"
+    "เท่าไหร่ ราคา ethereum",         # สลับลำดับ
+    "ราคาน้ำมันเท่าไหร่",             # ราคาทั่วไป ไม่มีคำเวลา
+    "วันนี้เกิดอะไรขึ้นบ้าง",           # ข่าวทั่วไป ไม่มีคำว่า "ข่าว"/"ล่าสุด"
+    "มีอะไรเกิดขึ้นบ้างวันนี้",
+])
+def test_needs_internet_true_for_gap_audit_2026_08_02(text):
+    assert needs_internet(text) is True, f"เจอจาก audit 2026-08-02 — ควรต้องใช้ internet: {text!r}"
+
+
+@pytest.mark.parametrize("text", [
+    "ของสิ่งนี้มีคุณค่าทางใจเท่าไหร่",   # มีคำว่า "เท่าไหร่" แต่ไม่ใช่ถามราคา
+])
+def test_needs_internet_false_for_gap_audit_2026_08_02_near_miss(text):
+    assert needs_internet(text) is False, f"ไม่ควร over-trigger: {text!r}"
+
+
 # ─────────────────────────────────────────────────────────────
 # classify() — REASONING (priority สูงสุด) > length > SIMPLE > NORMAL
 # ─────────────────────────────────────────────────────────────
