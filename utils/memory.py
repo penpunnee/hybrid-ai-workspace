@@ -41,6 +41,19 @@ CHROMA_HOST, CHROMA_PORT = _detect_chroma_host()
 # "paraphrase-multilingual" ใน .env เพื่อเปิดใช้จริง หลัง migrate ข้อมูลเก่าแล้วเท่านั้น)
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "")
 
+# พื้นความเกี่ยวข้องขั้นต่ำของ recall (cosine similarity) — **ไม่ใช่เลขที่เดา**
+# มาจาก ground truth 50 คู่ที่คนมาร์ค จากคำถามจริงบน prod 25 ข้อ (backlog ข้อ 12,
+# `scripts/recall_groundtruth.py`):
+#     0.40 → P=0.62 R=1.00 F1=0.77
+#     0.55 → P=0.89 R=0.89 F1=0.89   ← เลือกตัวนี้
+#     0.60 → P=0.94 R=0.89 F1=0.91   (F1 สูงกว่านิดเดียว)
+#     0.80 → P=1.00 R=0.17 F1=0.29
+# เลือก 0.55 แทน 0.60 เพราะเอียงไปทาง recall โดยตั้งใจ — "AI ลืมสิ่งที่เคยคุย"
+# ผู้ใช้รู้สึกแย่กว่ามี context เกินมาชิ้นหนึ่ง · ทนทานต่อการมาร์คผิด: พลิก label
+# ที่ไม่มั่นใจครบ 64 กรณีแล้ว เกณฑ์ที่ดีที่สุดอยู่ในช่วง 0.525-0.65 เสมอ
+# ⚠️ อย่าเอาเลขนี้ไปใช้กับ `user_facts` — คนละลักษณะข้อความ (ประโยคสั้น) ดู backlog ข้อ 16
+RECALL_MIN_SCORE = float(os.getenv("RECALL_MIN_SCORE", "0.55"))
+
 _client = None
 _collections = {}
 _lock = threading.Lock()
@@ -172,6 +185,25 @@ def save_memory(assistant_name: str, user_msg: str, ai_msg: str) -> bool:
         return False
 
 
+def _relevant_docs(results: dict, min_score: float | None = None) -> list:
+    """คัดเฉพาะ doc ที่ score ผ่านพื้น — ตัวกลางของทุกจุดที่ query ในโมดูลนี้
+
+    เดิมทั้ง 3 ฟังก์ชันคืน top-N เสมอโดยไม่เคยอ่าน `distances` เลย → ของที่ไม่เกี่ยว
+    ถูกฉีดเข้า prompt ทุกครั้งที่คลังไม่ว่าง (backlog ข้อ 3)
+
+    ถ้า chroma ไม่ส่ง distances มา (บาง path/เวอร์ชัน) → คืนทุก doc ตามเดิม
+    ดีกว่าตัดทิ้งหมดเพราะอ่านคะแนนไม่ได้
+    """
+    docs = (results.get("documents") or [[]])[0]
+    dists = (results.get("distances") or [[]])[0]
+    if not docs:
+        return []
+    if not dists or len(dists) != len(docs):
+        return list(docs)
+    floor = RECALL_MIN_SCORE if min_score is None else min_score
+    return [d for d, dist in zip(docs, dists) if (1 - dist) >= floor]
+
+
 def search_memory(assistant_name: str, query: str, n_results: int = 3) -> str:
     """ค้นหา memory ที่เกี่ยวข้องกับ query"""
     col = _get_collection(assistant_name)
@@ -186,7 +218,7 @@ def search_memory(assistant_name: str, query: str, n_results: int = 3) -> str:
             query_texts=[query],
             n_results=min(n_results, count),
         )
-        docs = results.get("documents", [[]])[0]
+        docs = _relevant_docs(results)
         if not docs:
             return ""
         memory_text = "\n---\n".join(docs)
@@ -245,7 +277,8 @@ def get_lessons(query: str = "", n_results: int = 3) -> str:
             return ""
         if query:
             results = col.query(query_texts=[query], n_results=min(n_results, count))
-            docs = results.get("documents", [[]])[0]
+            # มี query = การค้น → กรองความเกี่ยวข้อง
+            docs = _relevant_docs(results)
         else:
             results = col.get()
             docs = results.get("documents", [])[:n_results]
@@ -281,7 +314,7 @@ def search_long_term_memory(query: str, n_results: int = 3) -> str:
         if count == 0:
             return ""
         results = col.query(query_texts=[query], n_results=min(n_results, count))
-        docs = results.get("documents", [[]])[0]
+        docs = _relevant_docs(results)
         if not docs:
             return ""
         return "\n---\n".join(docs)

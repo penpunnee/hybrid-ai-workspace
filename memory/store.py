@@ -9,6 +9,13 @@ from .schema import MemoryEntry
 
 logger = logging.getLogger(__name__)
 
+# พื้นความเกี่ยวข้องร่วมกับ utils/memory.py — import มาใช้ตัวเดียวกัน ไม่ประกาศซ้ำ
+# เพราะถ้าแยกกันไว้ วันหนึ่งจะแก้ที่เดียวแล้วลืมอีกที่ (ที่มาของเลขดูใน utils/memory.py)
+def _recall_min_score() -> float:
+    from utils.memory import RECALL_MIN_SCORE
+
+    return RECALL_MIN_SCORE
+
 
 def _get_chroma_client():
     try:
@@ -78,11 +85,17 @@ def search_entries(assistant: str, query: str, n_results: int = 5,
     metas = res.get("metadatas", [[]])[0]
     dists = res.get("distances", [[]])[0]
 
+    floor = _recall_min_score()
     results = []
     for doc_id, doc, meta, dist in zip(ids, docs, metas, dists):
         confidence = meta.get("confidence", 0.7) if meta else 0.7
         verified   = meta.get("verified", False) if meta else False
 
+        # พื้นความเกี่ยวข้อง — เดิมมีแต่ตัวกรอง confidence/verified แล้วเอา score ไป
+        # *จัดอันดับ* อย่างเดียว ทำให้ memory ที่มั่นใจสูงแต่ไม่เกี่ยวกับคำถามยังถูก
+        # surface ขึ้นมาเสมอ (backlog ข้อ 4)
+        if (1 - dist) < floor:
+            continue
         if confidence < min_confidence:
             continue
         if verified_only and not verified:
@@ -182,6 +195,7 @@ def search_long_term(query: str, n_results: int = 3) -> list[dict]:
         docs  = res.get("documents", [[]])[0]
         metas = res.get("metadatas", [[]])[0]
         dists = res.get("distances", [[]])[0]
+        floor = _recall_min_score()
         return [
             {
                 "content":    doc,
@@ -192,6 +206,8 @@ def search_long_term(query: str, n_results: int = 3) -> list[dict]:
                 "score":      round(1 - dist, 3),
             }
             for doc, meta, dist in zip(docs, metas, dists)
+            # เดิมไม่มีตัวกรองเลย — ธีมจาก Dream ถูกฉีดเข้า prompt ทุกครั้งที่คลังไม่ว่าง
+            if (1 - dist) >= floor
         ]
     except Exception as e:
         logger.debug(f"search_long_term: {e}")
