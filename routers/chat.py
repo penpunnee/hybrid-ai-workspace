@@ -18,7 +18,7 @@ from memory.operations import remember, recall, teach, push_working
 from utils.skills import search_skills
 from utils.obsidian_sync import search_vault
 from utils.home_tools import detect_home_tools, build_tool_context
-from reasoning.learn_gate import should_auto_learn
+from reasoning.learn_gate import should_auto_learn, clean_lesson
 from utils.tokens import count_tokens_approx
 from core.observability import log_timing, current_request_id, get_timings
 
@@ -581,9 +581,14 @@ async def chat(request: Request):
                         {"role": "system", "content": "สรุปบทเรียนเป็นภาษาไทย 1-2 ประโยค ถ้าไม่มีตอบว่า SKIP"},
                         {"role": "user", "content": f"คำถาม: {p}\nคำตอบ: {r[:500]}"},
                     ]
-                    lesson = "".join(stream_response(msgs, provider=pv)).strip()
-                    if lesson and lesson != "SKIP" and len(lesson) > 10:
+                    raw_lesson = "".join(stream_response(msgs, provider=pv)).strip()
+                    # กรองก่อนเก็บ: SKIP ที่มีคำอื่นปน / error message / คำนำของโมเดล
+                    # (เดิมเช็ค `!= "SKIP"` เป๊ะๆ → "คืนนี้ฝนจะตกไหม? SKIP" หลุดเข้า prod จริง)
+                    lesson = clean_lesson(raw_lesson)
+                    if lesson:
                         save_lesson(p[:50], lesson)
+                    else:
+                        logger.info(f"[Chat/auto-learn] ทิ้งบทเรียนที่ไม่ผ่านการกรอง: {raw_lesson[:60]!r}")
                     for kw, (k, v) in {"ตอบสั้น": ("style", "ชอบสั้น"), "อธิบาย": ("style", "ชอบละเอียด")}.items():
                         if kw in p:
                             save_preference(k, v)
