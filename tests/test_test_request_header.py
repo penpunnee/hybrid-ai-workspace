@@ -66,7 +66,10 @@ def test_without_header_calls_remember_teach_and_lesson_thread(monkeypatch):
     # ย้ายไปเธรดเบื้องหลังแล้ว เพราะมันเรียก LLM สกัดข้อเท็จจริง (~40-60 วิ) ซึ่งถ้าค้าง
     # อยู่ในสาย SSE ผู้ใช้จะเห็น stream ไม่ปิดทั้งที่คำตอบพิมพ์จบแล้ว (วัดจริง prod: 61 วิ)
     mock_teach.assert_called_once()
-    assert len(_RecordingThread.instances) == 2, "ต้อง spawn ทั้งเธรด teach และ auto-learn lesson"
+    # เช็คด้วย "ชื่อเธรด" ไม่ใช่ "จำนวน" — เดิมล็อกไว้ที่ 2 ทำให้เธรดเบื้องหลังที่เพิ่ม
+    # ทีหลังโดยชอบธรรม (shadow logging ข้อ 21) ทำเทสแดงทั้งที่เจตนาของเทสไม่ได้ถูกละเมิด
+    spawned = {t.__name__ for t in _RecordingThread.instances}
+    assert {"_teach", "_learn"} <= spawned, f"ต้อง spawn ทั้งเธรด teach และ auto-learn lesson (ได้ {spawned})"
 
 
 def test_is_test_request_helper_reads_header_case_insensitive():

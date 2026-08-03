@@ -37,52 +37,19 @@ from dataclasses import dataclass
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from memory.lexical import lexical_score
+# scorer/haystack ตัวจริงอยู่ที่ `utils/skills_shadow.py` ที่เดียว — สคริปต์นี้กับ shadow
+# logging ต้องให้คะแนนเหมือนกันเป๊ะ ไม่งั้นตัวเลขสองที่จะค่อยๆ ไม่ตรงกันแบบไม่มีใครรู้
+from utils.skills_shadow import (      # noqa: E402
+    HEAD_CHARS,
+    SCORERS,
+    score_ngram,
+    score_split,
+    semantic_scores,
+)
 
-# ส่วนของไฟล์ที่ scorer ปัจจุบันใช้เทียบ — ต้องตรงกับ load_skills_relevant()
-HEAD_CHARS = 500
 _LATIN = re.compile(r"[A-Za-z]")
 
-
-# ── scorer ที่เอามาเทียบกัน ────────────────────────────────────────────────────
-def score_split(query: str, haystack: str) -> float:
-    """วิธีปัจจุบัน: นับคำจาก .split() ที่ไปโผล่ใน haystack (คืนเป็น float เพื่อ sweep ร่วมกัน)"""
-    words = {w for w in query.lower().split() if len(w) > 1}
-    if not words:
-        return 0.0
-    return sum(1 for w in words if w in haystack) / len(words)
-
-
-def score_ngram(query: str, haystack: str) -> float:
-    """character n-gram containment — ตัวเดียวกับที่ใช้ใน memory/lexical.py (ข้อ 16)"""
-    return lexical_score(query, haystack)
-
-
-# lexical เท่านั้น — pure, เทสได้โดยไม่ต้องมี ChromaDB
-SCORERS = {"split": score_split, "ngram": score_ngram}
-
-
-def semantic_scores(prompt: str, n_results: int = 30) -> dict[str, float]:
-    """similarity จาก ChromaDB (เส้นที่ `search_skills()` ใช้อยู่จริง) — {filename: 0..1}
-
-    คืน {} ถ้า ChromaDB ใช้ไม่ได้ → สคริปต์ยังทำงานได้แค่เทียบ lexical
-    """
-    try:
-        from utils.skills_search import get_skills_search
-        search = get_skills_search()
-        if not search.available:
-            return {}
-        out = {}
-        for r in search.search(prompt, n_results=n_results):
-            key = r.get("source") or r.get("topic") or ""
-            if not key.endswith(".md"):
-                key = f"{key}.md"
-            d = r.get("distance")
-            if d is not None:
-                out[key] = round(1.0 - float(d), 4)
-        return out
-    except Exception:
-        return {}
+__all__ = ["HEAD_CHARS", "SCORERS", "score_ngram", "score_split", "semantic_scores"]
 
 
 def pick_candidates(scores: dict[str, dict[str, float]], top_k: int,

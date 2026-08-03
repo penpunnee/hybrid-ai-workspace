@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +55,38 @@ def load_skills_folder(folder_path: str) -> str:
     return "\n\n---\n\n".join(texts)
 
 
-def load_skills_relevant(folder_path: str, query: str, max_files: int = 3) -> str:
-    """โหลดเฉพาะ skill files ที่เกี่ยวข้องกับ query โดย keyword scoring — ไม่โหลดทั้งหมด"""
+SKILL_HEAD_CHARS = 500      # ส่วนหัวของไฟล์ที่ใช้เทียบคะแนน (ทั้งไฟล์ถูกฉีดเมื่อชนะ)
+
+
+@dataclass(frozen=True)
+class SkillPick:
+    """ไฟล์ที่ถูกเลือกฉีด 1 ไฟล์ — มีชื่อไฟล์ติดมาด้วยเพื่อให้ 'ของที่ฉีดจริง' สังเกตได้
+
+    เดิม `load_skills_relevant()` คืน string ก้อนเดียว → ไม่มีใครรู้ว่ามันเลือกไฟล์ไหน
+    ต้องไปคำนวณซ้ำเอาเองข้างนอก ซึ่งเป็นวิธีที่ทำให้ตัวเลขไม่ตรงกับ prod มาแล้ว
+    (2026-08-03: จำลองโดยไม่ cap top-3 ได้ P=0.170 ทั้งที่ของจริง 0.109)
+    """
+    name: str
+    score: float
+    content: str
+
+
+def select_skill_files(folder_path: str, query: str, max_files: int = 3) -> list[SkillPick]:
+    """เลือก skill file ที่จะฉีด — **ตรรกะการเลือกตัวจริงของ prod อยู่ที่นี่ที่เดียว**
+
+    scoring: นับคำจาก `query.lower().split()` ที่ไปโผล่ใน `filename + หัวไฟล์ 500 ตัว`
+    ⚠️ วิธีนี้มองภาษาไทยแทบไม่เห็น (ไทยเขียนติดกัน `.split()` ได้ token เดียว) — วัดจริง
+    บน prod: ไทยล้วนฉีด 32% vs มี Latin ปน 84%. **ยังไม่แก้** จนกว่าจะมีหลักฐานว่าของที่
+    ฉีดเพิ่มมาเกี่ยวจริง (ดู backlog ข้อ 21 + `utils/skills_shadow.py`)
+    """
     if not os.path.isdir(folder_path) or not query:
-        return ""
+        return []
 
     query_words = set(query.lower().split())
-    scored = []
+    scored: list[SkillPick] = []
 
+    # ไม่ sort ชื่อไฟล์: ลำดับ os.listdir คือลำดับที่ prod ใช้ตัดสินคะแนนเท่ากันมาตลอด
+    # (sort จะเปลี่ยนว่าไฟล์ไหนหลุด top-3 ตอนคะแนนเสมอ = เปลี่ยนพฤติกรรมเงียบๆ)
     for filename in os.listdir(folder_path):
         filepath = os.path.join(folder_path, filename)
         if not (os.path.isfile(filepath) and filename.endswith((".txt", ".md", ".json", ".py"))):
@@ -69,21 +94,29 @@ def load_skills_relevant(folder_path: str, query: str, max_files: int = 3) -> st
         try:
             with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
-            # score = จำนวน query words ที่ match ใน filename + 500 chars แรกของไฟล์
-            haystack = (filename + " " + content[:500]).lower()
+            haystack = (filename + " " + content[:SKILL_HEAD_CHARS]).lower()
             score = sum(1 for w in query_words if len(w) > 1 and w in haystack)
             if score > 0:
-                scored.append((score, filename, content))
+                scored.append(SkillPick(filename, float(score), content))
         except Exception as e:
-            logger.warning(f"load_skills_relevant: failed to read '{filepath}': {e}")
+            logger.warning(f"select_skill_files: failed to read '{filepath}': {e}")
 
-    if not scored:
-        return ""
+    scored.sort(key=lambda p: p.score, reverse=True)     # stable → คะแนนเท่ากันคงลำดับเดิม
+    return scored[:max_files]
 
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return "\n\n---\n\n".join(
-        f"[{fname}]\n{content}" for _, fname, content in scored[:max_files]
-    )
+
+def format_skill_files(picks: list[SkillPick]) -> str:
+    """แปลงไฟล์ที่เลือกแล้วเป็นก้อน context — รูปแบบต้องคงเดิมเป๊ะ (เข้า prompt จริง)"""
+    return "\n\n---\n\n".join(f"[{p.name}]\n{p.content}" for p in picks)
+
+
+def load_skills_relevant(folder_path: str, query: str, max_files: int = 3) -> str:
+    """โหลดเฉพาะ skill files ที่เกี่ยวข้องกับ query โดย keyword scoring — ไม่โหลดทั้งหมด
+
+    เหลือไว้เป็น wrapper บางๆ: ตรรกะจริงอยู่ที่ `select_skill_files()` เพื่อให้ผู้เรียก
+    ที่อยากรู้ *ชื่อไฟล์* (shadow logging) ใช้เส้นเดียวกันเป๊ะ ไม่ใช่คำนวณขนานกันไป
+    """
+    return format_skill_files(select_skill_files(folder_path, query, max_files))
 
 
 def build_rag_context(uploaded_files: list, skills_folder: str = "") -> str:
