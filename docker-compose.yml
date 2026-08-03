@@ -46,6 +46,11 @@ services:
       - ./agents:/app/agents
       - ./server.py:/app/server.py
       - ./tests:/app/tests
+      # scripts/ เป็นโค้ดดิร์เดียวที่ไม่ได้ mount → ในคอนเทนเนอร์เป็นสำเนาค้างจากตอน build
+      # ล่าสุด (เจอจริง 2026-08-03: มี 11 ไฟล์ ขาด clean_skills_db.py / recall_groundtruth.py
+      # / clean_episodic.py ทั้งที่คู่มือสั่งให้รัน `clean_skills_db.py --resync --apply`
+      # ในคอนเทนเนอร์) — mount ให้เหมือนดิร์โค้ดอื่นทั้งหมด
+      - ./scripts:/app/scripts
       - chroma_model_cache:/root/.cache/chroma
     environment:
       - DB_PATH=/app/chat_history.db
