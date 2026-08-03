@@ -17,7 +17,10 @@ logger = logging.getLogger(__name__)
 
 def _t_web_search(query: str, max_results=5) -> str:
     """ค้น DDG + fetch top URLs + embedding rerank → คืน top 3"""
-    from utils.websearch import search_web, _enrich_with_fetch, format_for_context
+    from utils.websearch import (
+        search_web, _enrich_with_fetch, format_for_context,
+        _drop_below_min_score, WEB_SEARCH_MIN_SCORE,
+    )
     try:
         max_results = int(max_results)
     except (TypeError, ValueError):
@@ -38,6 +41,21 @@ def _t_web_search(query: str, max_results=5) -> str:
     except Exception as e:
         logger.warning(f"[Tool web_search] rerank failed: {e}")
         results = results[:max_results]
+
+    # พื้นคะแนนเดียวกับ utils/websearch.py — เส้นนี้เป็น pipeline คนละชุดกัน
+    # แต่รูเดียวกัน (prod 2026-08-03: จัดอันดับอย่างเดียวไม่ตัดทิ้ง → เว็บโป๊หลุดเข้า context)
+    before = len(results)
+    results = _drop_below_min_score(results)
+    if not results:
+        logger.warning(
+            f"[Tool web_search] '{query[:60]}' → ทุกผล ({before}) ต่ำกว่าเกณฑ์ {WEB_SEARCH_MIN_SCORE}"
+        )
+        # บอกโมเดลตรงๆ ว่าหาไม่เจอ ดีกว่าคืนสตริงว่างที่มันจะเดาเอาเอง
+        return (
+            f"ไม่พบผลการค้นหาที่เกี่ยวข้องกับ '{query}' ที่น่าเชื่อถือพอ "
+            f"(ผลที่เจอทั้งหมดคะแนนความเกี่ยวข้องต่ำกว่าเกณฑ์) "
+            f"— ห้ามเดาคำตอบ ให้บอกผู้ใช้ว่าค้นไม่เจอ และเสนอให้ลองคำค้นอื่น"
+        )
     return format_for_context(results, query)
 
 

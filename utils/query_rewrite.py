@@ -97,11 +97,61 @@ def _extract_keywords_rule(query: str, max_n: int = 5) -> list[str]:
     return out
 
 
+# ── ตัดคำสั่งงานออกจากคำค้น (ไม่พึ่ง LLM) ──────────────────────────────────
+# prod 2026-08-03: prompt เต็มประโยคถูกส่งเข้า search_web ตรงๆ เพราะ _fallback()
+# เดิมคืน query ดิบ → DDG ได้ 'ช่วยค้นในเน็ตให้หน่อย ตอนนี้ Python...' → คืนเว็บสแปมไทย
+# (รวมเว็บโป๊) ที่ถูกฉีดเข้า context และขึ้นจอเป็น citation
+#
+# ต้องไม่พึ่ง LLM เพราะเส้นนี้ทำงานตอน Gemini quota หมดพอดี และ _call_llm() เองก็
+# ตายเงียบมาตั้งแต่เปลี่ยนไป Qwen3.5 (thinking กินงบจน content ว่าง — ปิดผ่าน API ไม่ได้)
+_LEAD_FILLER = re.compile(
+    r"^\s*(?:ช่วย|ขอ|ลอง|รบกวน)?\s*"
+    r"(?:ค้นหา|ค้นดู|ค้น|หาข้อมูล|หา|เช็ค|ดู|เสิร์ช|search)\s*"
+    r"(?:ข้อมูล)?\s*(?:ใน)?\s*"
+    r"(?:เน็ต|อินเทอร์เน็ต|อินเตอร์เน็ต|internet|google|กูเกิ้ล|กูเกิล|เว็บ|web)?\s*"
+    r"(?:ให้)?\s*(?:หน่อย|ที)?\s*"
+)
+_LEAD_FILLER_EN = re.compile(
+    r"^\s*(?:please\s+|can\s+you\s+|could\s+you\s+)*"
+    r"(?:search|google|find|look\s*up)\s+(?:the\s+)?(?:web\s+)?(?:for\s+)?",
+    re.IGNORECASE,
+)
+# "แล้วอ้างอิงแหล่งที่มาด้วย" / "บอกที่มาด้วย" — คำสั่งเรื่องรูปแบบคำตอบ ไม่ใช่สิ่งที่ต้องการค้น
+_TRAIL_CITE = re.compile(
+    r"\s*(?:แล้ว)?\s*(?:ช่วย)?\s*(?:อ้างอิง|บอก|ระบุ|ใส่)\s*"
+    r"(?:แหล่งที่มา|แหล่งอ้างอิง|ที่มา|reference|source)s?\s*(?:ให้)?\s*(?:ด้วย|ด้วยนะ)?\s*$",
+    re.IGNORECASE,
+)
+_TRAIL_POLITE = re.compile(r"\s*(?:ให้)?\s*(?:หน่อย|ที|ด้วย)?\s*(?:ครับ|ค่ะ|คะ|นะ|จ้า)?\s*$")
+
+
+def clean_query(query: str) -> str:
+    """แปลง "ประโยคสั่งงาน" → "คำค้น" ด้วยกฎล้วน ไม่เรียก LLM
+
+    ปลอดภัยกับคำค้นที่ดีอยู่แล้ว (`"Python latest stable version"` คืนค่าเดิม)
+    และ **ถ้าตัดจนเหลือว่าง จะคืนของเดิม** — คำค้นห่วยยังดีกว่าไม่มีคำค้น
+    """
+    if not query or not query.strip():
+        return query
+
+    out = _LEAD_FILLER_EN.sub("", query.strip())
+    out = _LEAD_FILLER.sub("", out)
+    out = _TRAIL_CITE.sub("", out)
+    out = _TRAIL_POLITE.sub("", out)
+    out = re.sub(r"\s{2,}", " ", out).strip()
+
+    return out or query.strip()
+
+
 def _fallback(query: str) -> RewriteResult:
-    """Rule-based rewrite — ใช้เมื่อ LLM ปิด/ล้ม"""
+    """Rule-based rewrite — ใช้เมื่อ LLM ปิด/ล้ม
+
+    ⚠️ เส้นนี้คือเส้นที่ทำงานจริงบน prod ตอนนี้ (LLM rewrite ตายเงียบกับ Qwen3.5)
+    จึงต้องตัดคำสั่งงานออกด้วย ไม่ใช่ส่ง prompt ดิบไปค้น
+    """
     return RewriteResult(
         original=query,
-        rewritten=_inject_time_context(query).strip(),
+        rewritten=clean_query(_inject_time_context(query)).strip(),
         sub_queries=[],
         keywords=_extract_keywords_rule(query),
         used_llm=False,
