@@ -1,0 +1,49 @@
+name: canary (upstream deps)
+
+# ตอบคนละคำถามกับ tests.yml — อย่ารวมสองอันเข้าด้วยกัน
+#   tests.yml  = "ของที่ prod รัน**อยู่วันนี้** ยังผ่านไหม"   → ลงจาก requirements.lock ในอิมเมจ
+#   ไฟล์นี้     = "ถ้า**อัป lock** วันนี้ จะพังไหม"            → resolve สดจาก requirements.txt
+#
+# ทำไมแยกไฟล์แทนที่จะเป็น job ใน tests.yml ที่ตั้ง continue-on-error: true
+#   1. `continue-on-error: true` ทำให้ job รายงานผลเป็น success ต่อ checks API แม้ข้างในแดง
+#      → canary กลายเป็น dead-man's switch ที่ไม่มีใครเห็นว่ามันตาย (กับดักเดียวกับที่ audit
+#        เจอซ้ำๆ: "ล้มเหลวแล้วหน้าตาเหมือนผ่าน")
+#   2. คำถามนี้ไม่ได้ผูกกับ diff ที่กำลังรีวิว — ไม่ควรเสียเวลาทุก PR
+#   ที่นี่ไม่มี trigger `pull_request` เลย → แดงได้เต็มที่ (เห็นใน Actions + GitHub ส่งอีเมล)
+#   แต่บล็อก merge ไม่ได้ เพราะไม่เคยรันบน PR ตั้งแต่แรก ไม่ต้องพึ่ง flag ที่กลืนสัญญาณ
+#
+# ⚠️ GitHub ปิด scheduled workflow อัตโนมัติเมื่อ repo ไม่มี activity 60 วัน — ถ้าเงียบไปนาน
+#    ให้เช็คว่ายังรันอยู่ไหม (Actions → canary) ก่อนเชื่อว่า "ไม่มี breakage"
+
+on:
+  schedule:
+    - cron: "0 3 * * 1" # จันทร์ 03:00 UTC = 10:00 น. Asia/Bangkok
+  workflow_dispatch:
+
+jobs:
+  upstream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          # ตรึงให้ตรง prod (FROM python:3.11-slim) เพื่อแยกตัวแปรให้เหลือตัวเดียว —
+          # ที่กำลังทดสอบคือ "lib ใหม่พังไหม" ไม่ใช่ "python ใหม่พังไหม"
+          python-version: "3.11"
+          cache: pip
+
+      - name: Resolve deps สดจาก requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: เทียบกับ requirements.lock ที่ prod ใช้
+        # informational — ไม่เคย exit non-zero, ด่านตัดสินคือ pytest ข้างล่าง
+        run: python scripts/deps_drift.py
+
+      - name: Run tests
+        # ไม่มีสเต็ป JS ที่นี่ — เทส node ไม่ได้ขึ้นกับ requirements.txt เลย
+        # รันซ้ำก็ไม่ตอบคำถามของ canary (tests.yml คุมให้อยู่แล้ว)
+        run: pytest tests/ -q
