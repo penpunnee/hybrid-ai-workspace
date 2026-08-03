@@ -206,7 +206,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
 
     from google import genai
     from google.genai import types
-    from assistants.config import ASSISTANTS
+    from assistants.config import ASSISTANTS, voice_system_prompt
     from utils.tts import VOICE_MAP, DEFAULT_VOICE
     from utils.voice import live_server_content_events
     from utils.history import save_message as _save_msg
@@ -220,7 +220,10 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     asst_name, asst = next(((k, v) for k, v in ASSISTANTS.items() if v.get("slug") == assistant_slug), ("", {}))
     if not asst_name:
         asst_name = assistant_slug
-    sys_prompt = asst.get("system_prompt", "คุณเป็น AI ผู้ช่วยที่เป็นมิตร ตอบภาษาไทยกระชับ")
+    # ⚠️ ห้ามใช้ asst["system_prompt"] ดิบ — persona แชทสั่งให้ "กระชับ" + "ถามไถ่เชิงรุก"
+    # ทำให้เล่าเรื่องยาวๆ แล้วถามกลับทุกท่อน ("จะให้เล่าต่อเลยไหมคะ") ซึ่งใน voice
+    # แปลว่าเสียงหยุดและคนต้องพูดตอบทุกครั้ง (user รายงาน 2026-08-04)
+    sys_prompt = voice_system_prompt(assistant_slug)
 
     import asyncio
     client = genai.Client(api_key=GEMINI_API_KEY, http_options={"api_version": "v1alpha"})
