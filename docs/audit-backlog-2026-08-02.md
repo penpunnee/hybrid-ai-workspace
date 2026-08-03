@@ -539,7 +539,7 @@ containment ไม่ใช่ Jaccard เพราะ doc ยาวกว่า
 
 ---
 
-## 22. CI ไม่ได้เทสสิ่งที่ prod รัน (เจอ 2026-08-03, pin แก้ชั่วคราวแล้ว)
+## ~~22.~~ ✅ CI ไม่ได้เทสสิ่งที่ prod รัน — **ปิดแล้ว 2026-08-03** (`e251cb6`, PR #14 — ดูท้ายหัวข้อ)
 
 `.github/workflows/tests.yml:28` → `pip install -r requirements.txt` (ส่วนใหญ่เป็น `>=`)
 แต่ **Dockerfile ติดตั้งจาก `requirements.lock`** → CI กับ prod รันคนละเวอร์ชันกันได้ตลอดเวลา
@@ -561,6 +561,45 @@ containment ไม่ใช่ Jaccard เพราะ doc ยาวกว่า
 - (ข) pin ทีละตัวใน `requirements.txt` เมื่อเจอปัญหา — ที่ทำอยู่ตอนนี้ ไม่ปิดต้นเหตุ
 - ⚠️ ถ้าจะขึ้น `mcp` 2.x ต้อง port `mcp_server.py` ไป API ใหม่ก่อน — **และตัวนี้คือสะพานที่จะใช้
   พ่วง OpenClaw** (ดู `skills/openclaw.md`) จึงไม่ใช่ไฟล์ที่ปล่อยพังได้
+
+### ✅ ปิดจริง 2026-08-03 (`e251cb6`) — และ **ข้อความข้างบนวินิจฉัยไว้แคบไป**
+
+วัดจริงก่อนแก้ พบว่า CI ต่างจาก prod **3 แกนพร้อมกัน** ไม่ใช่แกนเดียว:
+
+| แกน | CI (เดิม) | prod | หลักฐาน |
+|---|---|---|---|
+| เวอร์ชัน package | resolve สดจาก `requirements.txt` | pin จาก `requirements.lock` | ต่าง ~**34/121** ตัว · `cryptography` ข้าม major 49→50 |
+| **Python** | **3.12** | **3.11.15** | `docker exec ai-backend-1 python -V` (ไม่ได้อ่านจาก Dockerfile) |
+| system deps | ไม่มี | `poppler-utils` | latent — ยังไม่มีเทสไหนแตะ `utils/ocr.py` |
+
+🔴 **และหลักฐานที่ปิดคดี: pin `mcp>=1.27.0,<2` ที่ใส่ไว้ตอนเจอปัญหา มีผลกับ CI เท่านั้น ไม่แตะ prod เลย**
+`Dockerfile:12-13` ติดตั้งจาก `requirements.lock` อย่างเดียว (`COPY requirements.lock .` — `requirements.txt`
+ไม่เคยถูกใช้ติดตั้งใน image) → บรรทัด "pin แก้ชั่วคราวแล้ว" ข้างบนคลาด: มันแก้ให้ **CI เขียว**
+ไม่ได้แก้ให้ **prod ปลอดภัย** และไม่มีอะไรเช็คว่า lock ทำตาม spec ที่เขียนใน `requirements.txt` หรือเปล่า
+
+**ทางที่เลือก: รัน pytest ในอิมเมจที่ deploy จริง** (`docker-compose` ใช้ `build: .` ตัวเดียวกัน)
+— ปิดครบ 3 แกนด้วยแหล่งความจริงเดียวคือ Dockerfile · **ดีกว่าทางเลือก (ก)/(ข) ข้างบนทั้งคู่**
+เพราะการไป sync `python-version:` ใน yml ให้ตรง `FROM` ใน Dockerfile คือการสร้าง
+"guard ที่ต้องมี guard เฝ้าอีกที" ซึ่งเป็นกลิ่นเดียวกับปัญหาต้นเรื่อง
+
+verified จริงบน CI (run `30823216333`): build `FROM python:3.11-slim` · job `pytest` **ไม่มี `setup-python` เลย** ·
+`docker run --rm hybrid-ai:ci pytest tests/ -q` → **1116 passed** · รวม build+test **1m58s** (cache `type=gha`)
+
+`tests/test_ci_matches_prod.py` ตรึงไว้ 4 ข้อ — 2 ข้อแรกแดงก่อนแก้จริง:
+1. pytest ต้องรันในอิมเมจ (`docker (buildx )?build` + `docker run ... pytest`)
+2. job รันเทสห้าม `pip install -r requirements.txt`
+3. ทุกแพ็กเกจใน `requirements.txt` ต้องมีใน lock
+4. เวอร์ชันใน lock ต้องผ่าน specifier ของ `requirements.txt` — **ข้อ 3-4 ทำให้ pin มีผลกับ prod จริง**
+
+🔑 **บทเรียนจากการเขียนเทสนี้เอง** — เวอร์ชันแรกของ `_blocking_pytest_job()` คืนลิสต์ว่างเมื่อหา job ไม่เจอ
+ผลคือข้อ 2 (assertion **เชิงลบ**) **ผ่านฟรี** เพราะ "ไม่มี step ให้ตรวจ" ทำให้ "ต้องไม่มี pip install"
+เป็นจริงโดยปริยาย → เปลี่ยนเป็น `pytest.fail()` ดังๆ · ทดสอบตัวเทสด้วยการแกล้งแก้ **5 แบบ** จับได้ทุกกรณี
+**assertion เชิงลบทุกตัวต้องพิสูจน์ก่อนว่าชุดที่มันตรวจไม่ว่าง** ไม่งั้นคือ guard ที่ตายเงียบ
+(ตระกูลเดียวกับ `measuring-instruments-lie.md` — และรอบนี้มันโผล่ในเทสที่เขียนเพื่อกันปัญหาตระกูลนี้เอง)
+
+⚠️ **ผลข้างเคียงที่ยังไม่ปิด:** CI ลงจาก lock เสมอ → **จะไม่เห็น upstream breaking change ล่วงหน้าอีก**
+(ตัวที่จับ `mcp` 2.0 ได้คือการ resolve สดพอดี) · ทางแก้คือ job canary รายสัปดาห์ `continue-on-error: true`
+— `_blocking_pytest_job()` ข้าม job ที่ตั้ง flag นั้นไว้ให้แล้ว เพิ่มได้เลยไม่ต้องแก้เทส · **ยังไม่ตัดสินใจ**
 
 ---
 
