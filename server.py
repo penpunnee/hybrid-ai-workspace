@@ -226,107 +226,147 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     sys_prompt = voice_system_prompt(assistant_slug)
 
     import asyncio
+    from utils.voice import live_control_signals
+
     client = genai.Client(api_key=GEMINI_API_KEY, http_options={"api_version": "v1alpha"})
-    live_config = types.LiveConnectConfig(
-        response_modalities=["AUDIO"],
-        speech_config=types.SpeechConfig(
-            voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice)
-            )
-        ),
-        system_instruction=types.Content(parts=[types.Part(text=sys_prompt)]),
-        output_audio_transcription=types.AudioTranscriptionConfig(),
-        input_audio_transcription=types.AudioTranscriptionConfig(),
-        # hands-free: เปิด automatic VAD → Gemini จับเริ่ม/หยุดพูดจากเสียงเอง (พูดได้เลยไม่ต้องกด)
-        # กัน echo ที่ฝั่ง client (half-duplex: ปิดไมค์ตอน AI พูด) แทนการพึ่ง manual VAD.
-        # NO_INTERRUPTION = เผื่อ echo หลุดขอบ tail ก็ไม่ตัดคำตอบ AI กลางคัน (belt-and-suspenders)
-        realtime_input_config=types.RealtimeInputConfig(
-            automatic_activity_detection=types.AutomaticActivityDetection(),
-            activity_handling=types.ActivityHandling.NO_INTERRUPTION,
-        ),
-        # session มีลิมิตอายุ default → ใกล้หมด Gemini ส่ง go_away → ถ้าไม่จัดการจะโดน 1008
-        # ตัด response กลางคัน ("หายตอนท้าย" โดยเฉพาะ session ยาวบนมือถือ). เปิด sliding-window
-        # compression → บีบ context → session "ไม่มีลิมิตอายุ" → ไม่มี go_away จาก duration
-        context_window_compression=types.ContextWindowCompressionConfig(
-            sliding_window=types.SlidingWindow(),
-        ),
-    )
 
+    def _live_config(resume_handle: str | None) -> "types.LiveConnectConfig":
+        return types.LiveConnectConfig(
+            response_modalities=["AUDIO"],
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice)
+                )
+            ),
+            system_instruction=types.Content(parts=[types.Part(text=sys_prompt)]),
+            output_audio_transcription=types.AudioTranscriptionConfig(),
+            input_audio_transcription=types.AudioTranscriptionConfig(),
+            # hands-free: เปิด automatic VAD → Gemini จับเริ่ม/หยุดพูดจากเสียงเอง (พูดได้เลยไม่ต้องกด)
+            # กัน echo ที่ฝั่ง client (half-duplex: ปิดไมค์ตอน AI พูด) แทนการพึ่ง manual VAD.
+            # NO_INTERRUPTION = เผื่อ echo หลุดขอบ tail ก็ไม่ตัดคำตอบ AI กลางคัน (belt-and-suspenders)
+            realtime_input_config=types.RealtimeInputConfig(
+                automatic_activity_detection=types.AutomaticActivityDetection(),
+                activity_handling=types.ActivityHandling.NO_INTERRUPTION,
+            ),
+            # ⚠️ คอมเมนต์เดิมตรงนี้เขียนว่า compression ทำให้ "session ไม่มีลิมิตอายุ →
+            # ไม่มี go_away จาก duration" — **ไม่จริง** log prod เจอ go_away 2 ครั้ง
+            # (2026-08-03 18:14:14 และ 21:33:32 UTC ทั้งคู่ราวนาทีที่ 10 ของ session)
+            # compression ช่วยเรื่อง context ยาว แต่ไม่ได้ยกเลิก go_away → ต้องรับมือเอง
+            context_window_compression=types.ContextWindowCompressionConfig(
+                sliding_window=types.SlidingWindow(),
+            ),
+            # ขอ handle ไว้ต่อ session ใหม่ตอนโดน go_away — ไม่มีอันนี้ = ต่อใหม่ได้แต่
+            # ความจำหายหมด (เล่านิยายอยู่แล้วเริ่มเรื่องใหม่)
+            session_resumption=types.SessionResumptionConfig(handle=resume_handle),
+        )
+
+    # `stop` = เลิกทั้งหมด (client ตัด/สั่ง close) · `regen` = ต่อ session ใหม่แต่ยังคุยกับ client เดิม
+    stop = asyncio.Event()
+    resume_handle: str | None = None
+    announced = False
     try:
-        async with client.aio.live.connect(model=GEMINI_LIVE_MODEL, config=live_config) as session:
-            await websocket.send_json({"type": "connected", "voice": voice})
-            stop = asyncio.Event()
+        while not stop.is_set():
+            regen = asyncio.Event()
+            async with client.aio.live.connect(
+                model=GEMINI_LIVE_MODEL, config=_live_config(resume_handle)
+            ) as session:
+                if not announced:
+                    # ส่งครั้งเดียวตอนแรก — ต่อ session ใหม่ไม่ควรรีเซ็ต state ฝั่ง UI
+                    await websocket.send_json({"type": "connected", "voice": voice})
+                    announced = True
 
-            async def recv_loop():
-                try:
-                    while not stop.is_set():
-                        try:
-                            msg = await asyncio.wait_for(websocket.receive_json(), timeout=60.0)
-                        except asyncio.TimeoutError:
-                            continue
-                        t = msg.get("type", "")
-                        if t == "audio":
-                            import base64
-                            pcm = base64.b64decode(msg["data"])
-                            await session.send_realtime_input(
-                                audio=types.Blob(data=pcm, mime_type="audio/pcm;rate=16000")
-                            )
-                        elif t in ("activity_start", "activity_end", "end_turn"):
-                            # automatic VAD เปิดอยู่ → Gemini จับ turn เอง. ไม่ forward
-                            # activity_* (จะ error "supported only when auto VAD disabled").
-                            # ไว้รับ client เก่าที่ cache ไว้ → ละเลยเฉย ๆ กัน session ตาย
-                            pass
-                        elif t == "text":
-                            await session.send(input=msg.get("text", ""), end_of_turn=True)
-                        elif t == "close":
-                            stop.set()
-                except WebSocketDisconnect:
-                    stop.set()
-                except Exception as e:
-                    logger.error(f"[Voice WS] recv_loop {type(e).__name__}: {e}")
-                    stop.set()
-
-            async def send_loop():
-                import base64
-                user_transcript = ""
-                ai_transcript = ""
-                try:
-                    # ⚠️ session.receive() yield แค่ turn เดียวแล้ว generator จบ —
-                    # ต้องวน while เรียกใหม่ทุก turn ไม่งั้น turn 2 เป็นต้นไปไม่มีใครอ่านคำตอบ
-                    while not stop.is_set():
-                        async for response in session.receive():
-                            if stop.is_set():
-                                break
-                            if response.data:
-                                await websocket.send_json({
-                                    "type": "audio",
-                                    "data": base64.b64encode(response.data).decode()
-                                })
-                            sc = getattr(response, "server_content", None)
-                            if sc:
-                                events, user_delta, ai_delta = live_server_content_events(sc)
-                                user_transcript += user_delta
-                                ai_transcript += ai_delta
-                                for evt in events:
-                                    await websocket.send_json(evt)
-                                if getattr(sc, "turn_complete", False):
-                                    await websocket.send_json({"type": "done"})
-                                    if user_transcript.strip():
-                                        _save_msg(asst_name, "user", user_transcript.strip(), "gemini_live", session_id)
-                                        user_transcript = ""
-                                    if ai_transcript.strip():
-                                        _save_msg(asst_name, "assistant", ai_transcript.strip(), "gemini_live", session_id)
-                                        ai_transcript = ""
-                        # generator ของ turn นี้จบ → วนกลับไปรับ turn ถัดไป
-                except Exception as e:
-                    logger.error(f"[Voice WS] send_loop {type(e).__name__}: {e}")
-                    stop.set()
+                async def recv_loop():
                     try:
-                        await websocket.send_json({"type": "error", "message": str(e)})
-                    except Exception:
-                        pass
+                        while not stop.is_set() and not regen.is_set():
+                            try:
+                                msg = await asyncio.wait_for(websocket.receive_json(), timeout=1.0)
+                            except asyncio.TimeoutError:
+                                continue
+                            t = msg.get("type", "")
+                            if t == "audio":
+                                import base64
+                                pcm = base64.b64decode(msg["data"])
+                                await session.send_realtime_input(
+                                    audio=types.Blob(data=pcm, mime_type="audio/pcm;rate=16000")
+                                )
+                            elif t in ("activity_start", "activity_end", "end_turn"):
+                                # automatic VAD เปิดอยู่ → Gemini จับ turn เอง. ไม่ forward
+                                # activity_* (จะ error "supported only when auto VAD disabled").
+                                # ไว้รับ client เก่าที่ cache ไว้ → ละเลยเฉย ๆ กัน session ตาย
+                                pass
+                            elif t == "text":
+                                await session.send(input=msg.get("text", ""), end_of_turn=True)
+                            elif t == "close":
+                                stop.set()
+                    except WebSocketDisconnect:
+                        stop.set()
+                    except Exception as e:
+                        logger.error(f"[Voice WS] recv_loop {type(e).__name__}: {e}")
+                        stop.set()
 
-            await asyncio.gather(recv_loop(), send_loop())
+                async def send_loop():
+                    nonlocal resume_handle
+                    import base64
+                    user_transcript = ""
+                    ai_transcript = ""
+                    try:
+                        # ⚠️ session.receive() yield แค่ turn เดียวแล้ว generator จบ —
+                        # ต้องวน while เรียกใหม่ทุก turn ไม่งั้น turn 2 เป็นต้นไปไม่มีใครอ่านคำตอบ
+                        while not stop.is_set() and not regen.is_set():
+                            async for response in session.receive():
+                                if stop.is_set() or regen.is_set():
+                                    break
+
+                                # สัญญาณควบคุม session — ต้องอ่านก่อนอย่างอื่น
+                                # (เดิมไม่เคยอ่านเลย → Gemini เตือนแล้วเราเงียบ มันเลยตัดทิ้งด้วย 1008
+                                #  ราวนาทีที่ 10 ยืนยันจาก prod 2 ครั้ง)
+                                got_go_away, secs_left, new_handle = live_control_signals(response)
+                                if new_handle:
+                                    resume_handle = new_handle
+                                if got_go_away:
+                                    logger.info(
+                                        f"[Voice WS] go_away (เหลือ {secs_left if secs_left is not None else '?'}s) "
+                                        f"→ ต่อ session ใหม่ handle={'มี' if resume_handle else 'ไม่มี'}"
+                                    )
+                                    regen.set()
+                                    break
+
+                                if response.data:
+                                    await websocket.send_json({
+                                        "type": "audio",
+                                        "data": base64.b64encode(response.data).decode()
+                                    })
+                                sc = getattr(response, "server_content", None)
+                                if sc:
+                                    events, user_delta, ai_delta = live_server_content_events(sc)
+                                    user_transcript += user_delta
+                                    ai_transcript += ai_delta
+                                    for evt in events:
+                                        await websocket.send_json(evt)
+                                    if getattr(sc, "turn_complete", False):
+                                        await websocket.send_json({"type": "done"})
+                                        if user_transcript.strip():
+                                            _save_msg(asst_name, "user", user_transcript.strip(), "gemini_live", session_id)
+                                            user_transcript = ""
+                                        if ai_transcript.strip():
+                                            _save_msg(asst_name, "assistant", ai_transcript.strip(), "gemini_live", session_id)
+                                            ai_transcript = ""
+                            # generator ของ turn นี้จบ → วนกลับไปรับ turn ถัดไป
+                    except Exception as e:
+                        logger.error(f"[Voice WS] send_loop {type(e).__name__}: {e}")
+                        stop.set()
+                        try:
+                            await websocket.send_json({"type": "error", "message": str(e)})
+                        except Exception:
+                            pass
+
+                await asyncio.gather(recv_loop(), send_loop())
+
+            # ออกจาก `async with` = session เก่าปิดเรียบร้อยแล้ว (ไม่ค้างให้ Gemini ตัดเอง)
+            if regen.is_set() and not stop.is_set():
+                # ไม่ส่ง event ให้ client — เสียงจะสะดุดสั้น ๆ แต่ UI ไม่ต้องรีเซ็ต
+                continue
+            break
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -335,6 +375,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
             await websocket.send_json({"type": "error", "message": str(e)})
         except Exception:
             pass
+
 
 
 if __name__ == "__main__":

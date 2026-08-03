@@ -70,3 +70,43 @@ def live_server_content_events(sc) -> tuple[list[dict], str, str]:
                 events.append({"type": "text", "text": txt})
 
     return events, user_delta, ai_delta
+
+
+def live_control_signals(response) -> tuple[bool, float | None, str | None]:
+    """ดึงสัญญาณควบคุม session ออกจาก `LiveServerMessage` — pure → เทสได้
+
+    คืน `(ได้รับ go_away, วินาทีที่เหลือถ้าอ่านได้, resumption handle ใหม่ถ้าใช้ได้)`
+
+    **ทำไมต้องมี:** `send_loop` เดิมอ่านแค่ `response.data` กับ `response.server_content`
+    ส่วน `go_away` / `session_resumption_update` เป็น field คนละตัวระดับบน → ไม่มีใครอ่าน
+    → Gemini เตือนว่าใกล้หมดอายุ session แล้วเราเงียบ มันเลยตัดทิ้งเองด้วย 1008
+    (ยืนยันจาก prod 2 ครั้ง: 2026-08-03 18:14:14 และ 21:33:32 UTC — ทั้งคู่ราวนาทีที่ 10)
+
+    **"ไม่รู้เวลาที่เหลือ" ต้องไม่ถูกตีความเป็น "ไม่มี go_away"** — ถ้า `time_left`
+    อ่านไม่ออก ยังต้องคืน `True` เพราะสิ่งที่ต้องทำ (ต่อ session ใหม่) ไม่ได้ขึ้นกับตัวเลขนั้น
+    · handle ที่ `resumable=False` ถือว่าใช้ไม่ได้ ต้องไม่เก็บไปใช้ต่อ
+    """
+    if response is None:
+        return False, None, None
+
+    go_away = getattr(response, "go_away", None)
+    got_go_away = go_away is not None
+
+    seconds: float | None = None
+    if got_go_away:
+        left = getattr(go_away, "time_left", None)
+        total = getattr(left, "total_seconds", None)
+        if callable(total):
+            try:
+                seconds = float(total())
+            except Exception:
+                seconds = None
+
+    handle: str | None = None
+    upd = getattr(response, "session_resumption_update", None)
+    if upd is not None and getattr(upd, "resumable", False):
+        new_handle = getattr(upd, "new_handle", None)
+        if new_handle:
+            handle = new_handle
+
+    return got_go_away, seconds, handle
