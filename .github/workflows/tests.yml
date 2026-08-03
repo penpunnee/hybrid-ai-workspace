@@ -7,36 +7,57 @@ on:
   workflow_dispatch:
 
 jobs:
+  # ด่านจริง — pytest รัน "ในอิมเมจที่ deploy" (docker-compose ใช้ `build: .` ตัวเดียวกัน)
+  # ไม่ใช่ในสภาพแวดล้อมที่ประกอบขึ้นใหม่ใน runner (audit backlog ข้อ 22)
+  # เดิม CI ตั้ง python 3.12 + pip install -r requirements.txt ซึ่งต่างจาก prod ทั้ง 3 แกน:
+  #   python (prod 3.11.15) · เวอร์ชัน lib (~34/121 ตัว รวม cryptography ข้าม major) · poppler-utils
+  # ตอนนี้ Dockerfile เป็นแหล่งความจริงเดียวของทั้งสามแกน — ตรึงไว้ด้วย tests/test_ci_matches_prod.py
   pytest:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build อิมเมจเดียวกับที่ deploy
+        # cache ที่ GitHub — layer `pip install -r requirements.lock` หนัก (chromadb/onnxruntime)
+        # invalidate เฉพาะตอน requirements.lock หรือ Dockerfile เปลี่ยน
+        run: |
+          docker buildx build \
+            --tag hybrid-ai:ci \
+            --load \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            .
+
+      - name: Run tests (ในอิมเมจ)
+        # Dockerfile ไม่มี ENTRYPOINT (CMD ล้วน) → ส่ง pytest แทน CMD ได้ตรงๆ
+        # conftest.py ชี้ host → localhost (ไม่มี ChromaDB/Ollama จริง = connect refused เร็ว)
+        # UI_PASSWORD="" + DB_PATH temp file ถูกตั้งใน tests/conftest.py แล้ว
+        run: docker run --rm hybrid-ai:ci pytest tests/ -q
+
+  # ตัวช่วยที่ไม่ต้องอยู่ในอิมเมจ — ไม่ได้เทสพฤติกรรม Python ของ prod
+  lint-and-js:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
 
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.11" # ตรง FROM python:3.11-slim ให้ ruff เห็น syntax ชุดเดียวกับ prod
           cache: pip
 
       - uses: actions/setup-node@v5
         with:
           node-version: "24"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
       - name: Lint (ruff)
         # กติกาอยู่ใน ruff.toml (F-rules) — pin เวอร์ชันให้ตรงกับที่ใช้บนเครื่อง dev
         run: |
           pip install ruff==0.15.17
           ruff check .
-
-      - name: Run tests
-        # conftest.py ชี้ host → localhost (ไม่มี ChromaDB/Ollama จริงใน CI = connect refused เร็ว)
-        # UI_PASSWORD="" + DB_PATH temp file ถูกตั้งใน tests/conftest.py แล้ว
-        run: pytest tests/ -q
 
       - name: Run JS tests (static modules)
         # pure modules dual-export (dream_stats, chat_intercept) — node 24 pin ผ่าน setup-node ด้านบน
