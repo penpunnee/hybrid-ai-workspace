@@ -568,7 +568,7 @@ containment ไม่ใช่ Jaccard เพราะ doc ยาวกว่า
 
 | แกน | CI (เดิม) | prod | หลักฐาน |
 |---|---|---|---|
-| เวอร์ชัน package | resolve สดจาก `requirements.txt` | pin จาก `requirements.lock` | ต่าง ~**34/121** ตัว · `cryptography` ข้าม major 49→50 |
+| เวอร์ชัน package | resolve สดจาก `requirements.txt` | pin จาก `requirements.lock` | ต่าง **33/121** ตัว · `cryptography` ข้าม major 49→50 |
 | **Python** | **3.12** | **3.11.15** | `docker exec ai-backend-1 python -V` (ไม่ได้อ่านจาก Dockerfile) |
 | system deps | ไม่มี | `poppler-utils` | latent — ยังไม่มีเทสไหนแตะ `utils/ocr.py` |
 
@@ -597,9 +597,30 @@ verified จริงบน CI (run `30823216333`): build `FROM python:3.11-slim
 **assertion เชิงลบทุกตัวต้องพิสูจน์ก่อนว่าชุดที่มันตรวจไม่ว่าง** ไม่งั้นคือ guard ที่ตายเงียบ
 (ตระกูลเดียวกับ `measuring-instruments-lie.md` — และรอบนี้มันโผล่ในเทสที่เขียนเพื่อกันปัญหาตระกูลนี้เอง)
 
-⚠️ **ผลข้างเคียงที่ยังไม่ปิด:** CI ลงจาก lock เสมอ → **จะไม่เห็น upstream breaking change ล่วงหน้าอีก**
-(ตัวที่จับ `mcp` 2.0 ได้คือการ resolve สดพอดี) · ทางแก้คือ job canary รายสัปดาห์ `continue-on-error: true`
-— `_blocking_pytest_job()` ข้าม job ที่ตั้ง flag นั้นไว้ให้แล้ว เพิ่มได้เลยไม่ต้องแก้เทส · **ยังไม่ตัดสินใจ**
+### ✅ ผลข้างเคียงปิดแล้วเช่นกัน — canary รายสัปดาห์ (`fbd452a`, PR #15)
+
+CI ลงจาก lock เสมอ → ไม่เห็น upstream breaking change ล่วงหน้าอีก (ตัวที่จับ `mcp` 2.0 ได้
+คือการ resolve สดพอดี) · `.github/workflows/canary.yml` รับหน้าที่นั้น: จันทร์ 03:00 UTC
++ `workflow_dispatch` · python 3.11 (ตรึงให้ตรง prod เพื่อแยกตัวแปรให้เหลือ "lib ใหม่" ตัวเดียว)
+→ `pip install -r requirements.txt` → `scripts/deps_drift.py` → `pytest`
+
+🔴 **จงใจไม่ใช้ `continue-on-error: true` ตามที่วางไว้ตอนแรก** — flag นั้นทำให้ job รายงานผลเป็น
+`success` ต่อ checks API แม้ข้างในแดง = canary ที่ตายแล้วไม่มีใครเห็น (ตระกูลเดียวกับ
+"ล้มเหลวแล้วหน้าตาเหมือนผ่าน" ที่ audit รอบนี้เจอซ้ำๆ) · **แยกเป็น workflow ของตัวเองที่ไม่มี
+trigger `pull_request`** แทน → แดงได้เต็มที่ + GitHub ส่งอีเมล แต่บล็อก merge ไม่ได้เพราะไม่เคยรันบน PR
+(ยืนยันเชิงประจักษ์: PR #15 รันแค่ `pytest` + `lint-and-js` ไม่มี canary)
+
+**ยิงด้วยมือแล้ว 2026-08-03** (run `30825246134`) — ไม่ปล่อยให้ "ตั้ง cron ไว้" เท่ากับ "มันรัน":
+python **3.11.15** (ตรง prod ทุกหลัก) · drift **33/121** · ข้าม major 1 ตัว (`cryptography` 49→50) ·
+**1119 passed** → **upstream ยังไม่มี breaking change** และแปลว่า **รีเฟรช `requirements.lock`
+ตอนนี้ความเสี่ยงต่ำ** (lock ไม่ถูกแตะมาตั้งแต่ 2026-07-12)
+
+⚠️ ตัวเลข "~34/121" ที่วินิจฉัยรอบแรกมาจากการ resolve บน **python 3.14** (เครื่อง Mac ไม่มี 3.12/3.11)
+— ของจริงบน 3.11 คือ **33** · ทิศถูกแต่ตัวเลขอ้างอิงไม่ได้ · **canary คือเครื่องมือที่ทำให้ตัวเลขนี้
+วัดซ้ำได้เองทุกสัปดาห์แทนการเดา**
+
+⚠️ GitHub ปิด scheduled workflow อัตโนมัติเมื่อ repo เงียบ 60 วัน — ถ้าไม่มี run มานาน
+ให้เช็ค Actions → canary ก่อนสรุปว่า "ไม่มี breakage"
 
 ---
 
