@@ -110,7 +110,8 @@ def pick_candidates(scores: dict[str, dict[str, float]], top_k: int,
     return picked
 
 
-def merge_pairs(old: list[dict], new: list[dict]) -> list[dict]:
+def merge_pairs(old: list[dict], new: list[dict],
+                score_table: dict[str, dict[str, dict[str, float]]] | None = None) -> list[dict]:
     """รวม candidate รอบใหม่เข้ากับของเดิม **โดยไม่ทิ้ง label ที่คนมาร์คไว้**
 
     - คู่ที่เคยมาร์คแล้วและยังอยู่ → เก็บ label เดิม แต่รับคะแนนชุดใหม่
@@ -125,6 +126,17 @@ def merge_pairs(old: list[dict], new: list[dict]) -> list[dict]:
             by_key[k].setdefault("source", p.get("source", "scorer"))
         else:
             by_key[k] = dict(p)
+
+    # คู่เก่าที่ไม่ติด candidate รอบใหม่ ก็ยังต้องได้คะแนนชุดใหม่ ไม่งั้นมันจะไม่มีคะแนน
+    # ของ scorer ที่เพิ่งเพิ่ม แล้วถูกข้ามตอนประเมิน = ประเมินบนตัวอย่างน้อยกว่าตัวอื่นเงียบๆ
+    if score_table:
+        for (prompt, fname), p in by_key.items():
+            per_scorer = score_table.get(prompt)
+            if not per_scorer:
+                continue                      # prompt คนละรอบ — ไม่แตะ
+            fresh = {n: round(tbl[fname], 4) for n, tbl in per_scorer.items() if fname in tbl}
+            if fresh:
+                p["scores"] = fresh
     return list(by_key.values())
 
 
@@ -135,6 +147,7 @@ class Metrics:
     tp: int
     fp: int
     fn: int
+    skipped: int = 0        # คู่ที่ไม่มีคะแนนของ scorer นี้ — ข้าม ไม่ใช่เดาเป็น 0
 
     @property
     def precision(self) -> float:
@@ -195,6 +208,7 @@ def cmd_pairs(args) -> int:
 
     n_sem = 0
     pairs = []
+    score_table: dict[str, dict[str, dict[str, float]]] = {}
     for prompt in picked:
         scores: dict[str, dict[str, float]] = {
             name: {f: fn(prompt, h) for f, h in docs.items()} for name, fn in SCORERS.items()
@@ -204,8 +218,9 @@ def cmd_pairs(args) -> int:
             n_sem += 1
             scores["semantic"] = {f: sem.get(f, 0.0) for f in docs}
 
+        score_table[prompt] = scores
         cands = pick_candidates(scores, top_k=args.top_k,
-                                random_extra=args.random_extra, rng_seed=hash(prompt) & 0xFFFF)
+                                random_extra=args.random_extra, rng_seed=_seed(prompt))
         for f, src in sorted(cands.items()):
             pairs.append({
                 "prompt": prompt,
@@ -219,7 +234,7 @@ def cmd_pairs(args) -> int:
     if os.path.exists(args.out):
         old = json.load(open(args.out, encoding="utf-8"))
         before = sum(1 for p in old if p.get("label") is not None)
-        pairs = merge_pairs(old, pairs)
+        pairs = merge_pairs(old, pairs, score_table=score_table)
         print(f"รวมกับของเดิม — คง label ที่มาร์คไว้แล้ว {before} คู่")
     if not n_sem:
         print("⚠️ ChromaDB ใช้ไม่ได้ → ไม่มีคะแนน semantic (เทียบได้แค่ lexical)")
@@ -236,6 +251,15 @@ def cmd_pairs(args) -> int:
 # ── worksheet: กา [x] ในไฟล์ .md อ่านง่ายกว่าแก้ JSON 110 คู่ด้วยมือ ──────────────
 _LINE = re.compile(r"^- \[(?P<mark>[ xX])\]\s+`(?P<file>[^`]+)`")
 _HEAD = re.compile(r"^### \[(?P<idx>\d+)\].*<!--k:(?P<key>[0-9a-f]{10})-->")
+
+
+def _seed(prompt: str) -> int:
+    """seed ของการสุ่มที่ **ซ้ำได้ข้าม process**
+
+    เดิมใช้ `hash(prompt)` ซึ่ง Python randomize ต่อ process (PYTHONHASHSEED)
+    → รันใหม่ได้ candidate สุ่มคนละชุด = การทดลองวัดจุดบอดทำซ้ำไม่ได้
+    """
+    return int(hashlib.sha1(prompt.encode("utf-8")).hexdigest()[:8], 16)
 
 
 def _pkey(prompt: str) -> str:
@@ -349,13 +373,41 @@ def sweep(pairs: list[dict], steps: int = 41) -> list[Metrics]:
     names = sorted({k for p in pairs for k in p.get("scores", {})})
     out = []
     for name in names:
+        usable = [p for p in marked if name in p.get("scores", {})]
+        skipped = len(marked) - len(usable)
         for i in range(steps):
             t = i / (steps - 1)
-            tp = sum(1 for p in marked if p["label"] and p["scores"].get(name, 0.0) >= t)
-            fp = sum(1 for p in marked if not p["label"] and p["scores"].get(name, 0.0) >= t)
-            fn = sum(1 for p in marked if p["label"] and p["scores"].get(name, 0.0) < t)
-            out.append(Metrics(name, round(t, 3), tp, fp, fn))
+            tp = sum(1 for p in usable if p["label"] and p["scores"][name] >= t)
+            fp = sum(1 for p in usable if not p["label"] and p["scores"][name] >= t)
+            fn = sum(1 for p in usable if p["label"] and p["scores"][name] < t)
+            out.append(Metrics(name, round(t, 3), tp, fp, fn, skipped))
     return out
+
+
+def simulate_injection(pairs: list[dict], scorer: str, threshold: float,
+                       cap: int = 3) -> tuple[int, int, float, float, float]:
+    """จำลองพฤติกรรม prod: คะแนน >= threshold → เรียงลง → **เอาแค่ top-cap ต่อ prompt**
+
+    `load_skills_relevant()` ตัดที่ `max_files=3` — ถ้าไม่จำลองการตัดนี้ ตัวเลขที่รายงาน
+    จะไม่ใช่พฤติกรรมจริง (เจอจริง 2026-08-03: split ที่ไม่ cap ให้ P=0.170 R=0.818
+    แต่ของจริงบน prod คือ P=0.109 R=0.455 เพราะไฟล์ที่ถูก 4 ใน 9 หลุด top-3)
+
+    Returns: (จำนวนที่ฉีด, ถูก, precision, recall, f1)
+    """
+    marked = [p for p in pairs if p.get("label") is not None]
+    positives = sum(1 for p in marked if p["label"])
+    per: dict[str, list] = {}
+    for p in marked:
+        sc = p.get("scores", {}).get(scorer)
+        if sc is None or sc < threshold:
+            continue
+        per.setdefault(p["prompt"], []).append((sc, p["skill_file"], bool(p["label"])))
+    injected = [t for rows in per.values() for t in sorted(rows, reverse=True)[:cap]]
+    tp = sum(1 for _, _, lab in injected if lab)
+    P = tp / len(injected) if injected else 1.0
+    R = tp / positives if positives else 1.0
+    F = 2 * P * R / (P + R) if (P + R) else 0.0
+    return len(injected), tp, P, R, F
 
 
 def cmd_sweep(args) -> int:
@@ -368,8 +420,9 @@ def cmd_sweep(args) -> int:
           f"(ควรฉีด {sum(1 for p in marked if p['label'])} · "
           f"ไม่ควร {sum(1 for p in marked if not p['label'])})\n")
 
+    names = sorted({k for p in marked for k in p.get("scores", {})})
     results = sweep(marked)
-    for name in SCORERS:
+    for name in names:
         rows = [m for m in results if m.scorer == name]
         best = max(rows, key=lambda m: m.f1)
         # ความกว้างของ "ที่ราบ" บอกว่าเกณฑ์เชื่อได้แค่ไหน (บทเรียนจากข้อ 16/17)
@@ -377,12 +430,26 @@ def cmd_sweep(args) -> int:
         print(f"[{name}] ดีสุด F1={best.f1:.3f} "
               f"(P={best.precision:.3f} R={best.recall:.3f}) ที่ threshold={best.threshold}")
         print(f"         ที่ราบกว้าง {min(plateau)}–{max(plateau)} "
-              f"({len(plateau)} จุด) — ยิ่งแคบยิ่งเชื่อไม่ได้\n")
+              f"({len(plateau)} จุด) — ยิ่งแคบยิ่งเชื่อไม่ได้"
+              + (f" · ข้าม {best.skipped} คู่ที่ไม่มีคะแนน" if best.skipped else ""))
+    print()
+
+    # ── จุดทำงานจริง: prod ตัด top-3 ต่อ prompt เสมอ (ตัวเลขนี้คือของที่ใช้ตัดสินใจ) ──
+    print(f"จำลอง prod (คะแนน >= เกณฑ์ → เรียงลง → เอา top-{args.cap} ต่อ prompt):")
+    print(f"  {'scorer':10s} {'เกณฑ์':>6s} {'ฉีด':>5s} {'ถูก':>4s} {'P':>7s} {'R':>7s} {'F1':>7s}")
+    for name in names:
+        for t in (1e-9, 0.35, 0.40, 0.45):
+            n, tp, P, R, F = simulate_injection(marked, name, t, cap=args.cap)
+            if n == 0:
+                continue
+            label = ">0" if t < 1e-6 else f"{t:.2f}"
+            print(f"  {name:10s} {label:>6s} {n:5d} {tp:4d} {P:7.3f} {R:7.3f} {F:7.3f}")
+    print()
 
     thai = [p for p in marked if p.get("thai_only")]
     if thai:
         print(f"เฉพาะ prompt ไทยล้วน ({len(thai)} คู่):")
-        for name in SCORERS:
+        for name in names:
             rows = sweep(thai)
             best = max((m for m in rows if m.scorer == name), key=lambda m: m.f1)
             print(f"  [{name}] F1={best.f1:.3f} P={best.precision:.3f} "
@@ -421,6 +488,8 @@ def main() -> int:
 
     s = sub.add_parser("sweep", help="เทียบ scorer จากคู่ที่มาร์คแล้ว")
     s.add_argument("--labeled", default="data/skills_pairs.json")
+    s.add_argument("--cap", type=int, default=3,
+                   help="เท่ากับ max_files ของ load_skills_relevant() — จำลองการตัดของ prod")
     s.set_defaults(func=cmd_sweep)
 
     args = ap.parse_args()
