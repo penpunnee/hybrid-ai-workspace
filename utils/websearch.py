@@ -8,12 +8,65 @@ Flow:
   → local model อ่านข้อมูลจริงแล้วตอบ
 """
 import logging
+import os
 import re
 import html as html_lib
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
+
+
+# ── พื้นคะแนนสัมบูรณ์ ────────────────────────────────────────────────────────
+# จัดอันดับอย่างเดียวไม่พอ — "อันดับ 1 ของผลที่ห่วยทั้งหมด" ก็ยังห่วย
+# (prod 2026-08-03: ถาม Python เวอร์ชันล่าสุด แล้วได้เว็บโป๊เป็น citation [1]
+#  เพราะโค้ดตัด `results[:top_k]` ตรงๆ ไม่เคยดูว่าคะแนนต่ำแค่ไหน)
+#
+# วัดจริงในคอนเทนเนอร์ prod 4 query:
+#   ผลถูกต้อง  0.5955 – 0.8234   |   ขยะทั้งหมด  0.1024 – 0.2393
+# ช่องว่าง 0.36 = ที่ราบกว้าง → เชื่อเกณฑ์ได้ · 0.35 เหนือขยะสูงสุด 0.11
+# และต่ำกว่าผลดีที่แย่สุด 0.245 (เลขเดียวกับ SKILLS_FALLBACK_MIN_SCORE)
+#
+# ปิดด้วย WEB_SEARCH_MIN_SCORE=off (เผื่อ embed ล่มยาวจนต้องยอมรับผลที่ไม่ได้ตรวจ)
+def _parse_min_score(raw: str) -> float | None:
+    if raw.strip().lower() in {"off", "none", "", "0"}:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning(f"[WebSearch] WEB_SEARCH_MIN_SCORE={raw!r} ไม่ใช่ตัวเลข — ใช้ค่า default 0.35")
+        return 0.35
+
+
+WEB_SEARCH_MIN_SCORE = _parse_min_score(os.getenv("WEB_SEARCH_MIN_SCORE", "0.35"))
+
+_UNSET = object()
+
+
+def _drop_below_min_score(results: list[dict], min_score=_UNSET) -> list[dict]:
+    """ตัดผลที่พิสูจน์ความเกี่ยวข้องไม่ได้ออก ก่อนฉีด context / สร้าง citation
+
+    `min_score=None` = ปิดพื้น · ไม่ส่ง = ใช้ `WEB_SEARCH_MIN_SCORE`
+
+    **ผลที่ไม่มี `_rerank_score` ถูกตัดทิ้งด้วย** (fail-closed) — เกิดตอน rerank ล้ม
+    แล้วโค้ดตกไปทาง `results[:top_k]` · หน้าที่ของพื้นคือ "พิสูจน์ก่อนฉีด" ผลที่ไม่มี
+    คะแนนคือผลที่ยังไม่ถูกพิสูจน์ ถ้าปล่อยผ่าน รูเดิมจะเปิดอยู่ทั้งดุ้นทันทีที่ embed ล่ม
+    """
+    floor = WEB_SEARCH_MIN_SCORE if min_score is _UNSET else min_score
+    if floor is None:
+        return results
+
+    kept, dropped = [], []
+    for r in results:
+        score = r.get("_rerank_score")
+        (kept if isinstance(score, (int, float)) and score >= floor else dropped).append(r)
+
+    if dropped:
+        logger.info(
+            f"[WebSearch] ตัด {len(dropped)} ผลที่คะแนนต่ำกว่า {floor}: "
+            + ", ".join(f"{(r.get('title') or '?')[:40]!r}={r.get('_rerank_score')}" for r in dropped[:3])
+        )
+    return kept
 
 _UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 _FETCH_TIMEOUT = 6
@@ -486,5 +539,15 @@ def _web_search_impl(query: str, max_results: int = 5, top_k: int = 3) -> tuple[
     except Exception as e:
         logger.warning(f"[WebSearch] rerank failed, use top {top_k}: {e}")
         results = results[:top_k]
+
+    # พื้นคะแนนสัมบูรณ์ — ต้องอยู่ "หลัง" rerank และ "ก่อน" format/citations
+    # ไม่มีผลที่เชื่อได้ = คืน context ว่าง ให้โมเดลบอกว่าหาไม่เจอ ดีกว่าสรุปจากขยะ
+    before = len(results)
+    results = _drop_below_min_score(results)
+    if not results and before:
+        logger.warning(
+            f"[WebSearch] '{query[:60]}' → ทุกผล ({before}) ต่ำกว่าเกณฑ์ "
+            f"{WEB_SEARCH_MIN_SCORE} — ไม่ฉีด context"
+        )
 
     return format_for_context(results, query), results
