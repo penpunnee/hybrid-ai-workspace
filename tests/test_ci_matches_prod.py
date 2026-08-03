@@ -26,6 +26,7 @@ from packaging.version import Version
 
 REPO = Path(__file__).resolve().parent.parent
 WORKFLOW = REPO / ".github" / "workflows" / "tests.yml"
+CANARY = REPO / ".github" / "workflows" / "canary.yml"
 DOCKERFILE = REPO / "Dockerfile"
 REQ_TXT = REPO / "requirements.txt"
 REQ_LOCK = REPO / "requirements.lock"
@@ -134,6 +135,58 @@ class TestCIRunsWhatProdRuns:
             "job รันเทสยัง pip install -r requirements.txt อยู่ → CI จะได้เวอร์ชันคนละชุดกับ prod "
             "(วัด 2026-08-03: ต่างกัน ~34/121 ตัว รวม cryptography ข้าม major)"
         )
+
+
+class TestCanaryStaysNonBlockingAndLoud:
+    """canary ต้องเป็นเส้นตรงข้ามกับ tests.yml — resolve สด, แดงได้, แต่บล็อก merge ไม่ได้
+
+    tests.yml ปิดช่องว่าง CI≠prod ด้วยการลงจาก lock เสมอ ผลข้างเคียงคือ **ไม่มีวันเห็น
+    upstream breaking change ล่วงหน้าอีก** (ตัวที่จับ `mcp` 2.0 ได้คือการ resolve สดพอดี)
+    canary รับหน้าที่นั้นแทน — เทสชุดนี้กันไม่ให้มันกลายพันธุ์ไปเป็นอย่างอื่น
+    """
+
+    def _canary(self) -> dict:
+        assert CANARY.exists(), (
+            f"ไม่มี {CANARY.relative_to(REPO)} — ถ้าจงใจเลิกใช้ canary ให้ลบเทสคลาสนี้ด้วย "
+            f"ไม่งั้นจะเหลือแค่ความเชื่อว่ามีคนเฝ้า upstream อยู่"
+        )
+        return yaml.safe_load(CANARY.read_text(encoding="utf-8"))
+
+    def test_canary_never_runs_on_pull_request(self):
+        """canary ต้องไม่ผูกกับ PR — ไม่งั้นมันบล็อก merge จาก breakage ที่ไม่ใช่ความผิดของ PR นั้น"""
+        # `on:` ใน YAML ถูก parse เป็น boolean True (YAML 1.1) — รับทั้งสองคีย์
+        triggers = self._canary().get("on") or self._canary().get(True) or {}
+        assert "pull_request" not in triggers, (
+            "canary ตั้ง trigger `pull_request` → จะบล็อก merge ทั้งที่หน้าที่มันคือเตือนล่วงหน้า "
+            "ไม่ใช่เป็นด่าน (upstream พังไม่ใช่ความผิดของ PR ที่กำลังรีวิว)"
+        )
+        assert "schedule" in triggers, (
+            "canary ไม่มี `schedule` → ไม่มีอะไรรันมันเองเลย กลายเป็นสคริปต์ที่ต้องรอคนจำได้"
+        )
+
+    def test_canary_failure_is_not_swallowed(self):
+        """ห้ามใช้ continue-on-error — มันทำให้ job รายงาน success ทั้งที่ข้างในแดง"""
+        for name, spec in (self._canary().get("jobs") or {}).items():
+            assert spec.get("continue-on-error") is not True, (
+                f"canary job '{name}' ตั้ง continue-on-error: true → GitHub จะรายงานผลเป็น success "
+                f"แม้เทสข้างในแดง = เตือนแล้วไม่มีใครเห็น (ไม่ต้องใช้ flag นี้เลย เพราะ canary "
+                f"ไม่ได้ผูกกับ pull_request จึงบล็อก merge ไม่ได้อยู่แล้ว)"
+            )
+
+    def test_canary_resolves_fresh_from_requirements_txt(self):
+        """เหตุผลเดียวที่ canary มีอยู่ — ต้อง resolve สด ไม่ใช่ลงจาก lock ซ้ำกับ tests.yml"""
+        runs = "\n".join(
+            _run_lines(spec.get("steps") or [])
+            for spec in (self._canary().get("jobs") or {}).values()
+        )
+        assert re.search(r"pip install[^\n]*requirements\.txt", runs), (
+            "canary ไม่ได้ลงจาก requirements.txt → มันจะเทสเวอร์ชันชุดเดียวกับ tests.yml "
+            "แปลว่าไม่มีอะไรเฝ้า upstream อยู่จริง"
+        )
+        assert not re.search(r"pip install[^\n]*requirements\.lock", runs), (
+            "canary ลงจาก requirements.lock → ซ้ำกับ tests.yml และไม่มีวันเห็นของใหม่จาก upstream"
+        )
+        assert re.search(r"\bpytest\b", runs), "canary ไม่ได้รัน pytest → ไม่รู้ว่า deps ใหม่ทำอะไรพังหรือเปล่า"
 
 
 class TestLockHonoursSpec:
