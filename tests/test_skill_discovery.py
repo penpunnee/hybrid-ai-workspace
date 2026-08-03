@@ -147,8 +147,13 @@ def test_accept_proposal_custom_content(monkeypatch, tmp_path, clean_cache):
     fake_mod.sync_skills_to_search = lambda *a, **k: None
     monkeypatch.setitem(sys.modules, "utils.skills_search", fake_mod)
 
-    sd._proposals_cache["p2"] = sd.SkillProposal(id="p2", topic="X", summary="s")
-    res = sd.accept_proposal("p2", custom_content="# Custom\nบอดี้เอง")
+    # topic/content ต้องผ่านเกณฑ์คุณภาพ (backlog ข้อ 20) — ของเดิมใช้ค่า placeholder
+    # "X"/"s" ซึ่งตอนนี้ถูก gate ปฏิเสธถูกต้องแล้ว · เทสนี้ตรวจว่า custom_content
+    # ถูกใช้เป็นบอดี้ ไม่ได้ตรวจว่า gate ยอมรับอะไรก็ได้ (ดู tests/test_skill_entry_gate.py)
+    sd._proposals_cache["p2"] = sd.SkillProposal(
+        id="p2", topic="Custom Skill", summary="สรุปที่ผู้ใช้เขียนเองสำหรับหัวข้อนี้",
+    )
+    res = sd.accept_proposal("p2", custom_content="# Custom\nบอดี้เองที่ผู้ใช้เขียนมาเต็มๆ")
     assert res["ok"] is True
     assert "บอดี้เอง" in open(res["path"], encoding="utf-8").read()
 

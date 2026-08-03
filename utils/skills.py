@@ -28,8 +28,16 @@ def _save_skills_db(db: dict):
         pass
 
 
-def save_skill(topic: str, summary: str, source: str = "auto", sync: bool = True):
-    """บันทึก skill ใหม่ที่ AI เรียนรู้"""
+def save_skill(topic: str, summary: str, source: str = "auto", sync: bool = True) -> bool:
+    """บันทึก skill ใหม่ที่ AI เรียนรู้ — คืน True ถ้าบันทึกจริง
+
+    gate ด้วยเกณฑ์เดียวกับตอนลบ (`_is_meaningful_skill`) — ทางเข้าต้องเท่าทางออก
+    ไม่งั้นระบบวนลูป "สร้าง → ล้าง → สร้างใหม่" (ต้นเหตุของขยะที่ล้างไปในข้อ 9)
+    """
+    if not _is_meaningful_skill(topic, summary):
+        logger.info(f"[Skills] ปฏิเสธ skill ที่ไม่ผ่านเกณฑ์: {topic!r}")
+        return False
+
     db = _load_skills_db()
     db[topic] = {
         "summary": summary,
@@ -39,7 +47,7 @@ def save_skill(topic: str, summary: str, source: str = "auto", sync: bool = True
     _save_skills_db(db)
 
     if not sync:
-        return
+        return True
 
     # Sync to semantic search (sync=False เพื่อข้ามเมื่อบันทึกหลายรายการพร้อมกัน)
     try:
@@ -47,7 +55,8 @@ def save_skill(topic: str, summary: str, source: str = "auto", sync: bool = True
         sync_skills_to_search(db)
     except Exception as e:
         logger.warning(f"sync_skills_to_search failed: {e}")
-        pass
+
+    return True
 
 
 def search_skills(query: str, n_results: int = 3) -> str:

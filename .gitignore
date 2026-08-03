@@ -10,6 +10,7 @@ Icon
 data/
 dream_reports/
 server.log
+server.log.*
 
 # agent skills installed via `npx skills add` (เก็บแบบ global ที่ ~/.agents — ไม่ปนกับ repo)
 .agents/

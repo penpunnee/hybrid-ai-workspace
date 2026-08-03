@@ -70,6 +70,13 @@ async def skills_extract(request: Request):
     except Exception as e:
         return {"ok": False, "error": f"Gemini error: {e}"}
 
+    # เกณฑ์เดียวกับตอนลบ — กันผลลัพธ์ที่ LLM คืนมาเป็นข้อความ error/ตอบรับสั้นๆ
+    # กลายเป็นไฟล์ skill (ที่มาของ `ได-เลย.md` ที่ต้องมาไล่ลบทีหลังในข้อ 9)
+    from utils.skills import _is_meaningful_skill
+    if not _is_meaningful_skill(topic, md_content):
+        logger.info(f"[skills_extract] ปฏิเสธผลลัพธ์ที่ไม่ผ่านเกณฑ์: {topic!r}")
+        return {"ok": False, "error": f"ผลลัพธ์ไม่ผ่านเกณฑ์คุณภาพ skill: {topic!r}"}
+
     try:
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(md_content)

@@ -251,6 +251,15 @@ def accept_proposal(
     if not topic:
         return {"ok": False, "error": "empty topic"}
 
+    # เกณฑ์เดียวกับตอนลบ (`cleanup_junk_skills`) — ทางเข้าต้องเท่าทางออก ไม่งั้นวนลูป
+    # "สร้าง → ล้าง → สร้างใหม่" · ครอบ custom_topic/custom_content ด้วย ไม่ให้เป็นทางลัด
+    # ⚠️ ไฟล์ที่เส้นนี้เขียนลง ${NAS_DATA_PATH}/skills บน prod ไม่เคยผ่านสายตา
+    # `test_skills_freshness.py` (เทสอ่านได้แค่ไฟล์ใน git) — gate ตอนเขียนคือด่านเดียวที่มี
+    from utils.skills import _is_meaningful_skill
+    if not _is_meaningful_skill(topic, custom_content or proposal.summary):
+        logger.info(f"[SkillDiscovery] ปฏิเสธ proposal ที่ไม่ผ่านเกณฑ์: {topic!r}")
+        return {"ok": False, "error": f"ไม่ผ่านเกณฑ์คุณภาพ skill: {topic!r}"}
+
     safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in topic.lower()).strip("-")
     filename = f"{safe or 'skill'}-{int(time.time())}.md"
 
