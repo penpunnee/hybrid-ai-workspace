@@ -28,7 +28,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
 import os
+import random
 import re
 import sys
 from dataclasses import dataclass
@@ -56,7 +58,74 @@ def score_ngram(query: str, haystack: str) -> float:
     return lexical_score(query, haystack)
 
 
+# lexical เท่านั้น — pure, เทสได้โดยไม่ต้องมี ChromaDB
 SCORERS = {"split": score_split, "ngram": score_ngram}
+
+
+def semantic_scores(prompt: str, n_results: int = 30) -> dict[str, float]:
+    """similarity จาก ChromaDB (เส้นที่ `search_skills()` ใช้อยู่จริง) — {filename: 0..1}
+
+    คืน {} ถ้า ChromaDB ใช้ไม่ได้ → สคริปต์ยังทำงานได้แค่เทียบ lexical
+    """
+    try:
+        from utils.skills_search import get_skills_search
+        search = get_skills_search()
+        if not search.available:
+            return {}
+        out = {}
+        for r in search.search(prompt, n_results=n_results):
+            key = r.get("source") or r.get("topic") or ""
+            if not key.endswith(".md"):
+                key = f"{key}.md"
+            d = r.get("distance")
+            if d is not None:
+                out[key] = round(1.0 - float(d), 4)
+        return out
+    except Exception:
+        return {}
+
+
+def pick_candidates(scores: dict[str, dict[str, float]], top_k: int,
+                    random_extra: int = 0, rng_seed: int | None = None) -> dict[str, str]:
+    """เลือกไฟล์ที่จะให้คนมาร์ค → {filename: "scorer" | "random"}
+
+    ตัวสุ่มมีไว้**วัดว่า candidate pool ยังมีจุดบอดไหม** ไม่ใช่เพิ่มงานเปล่า:
+    ถ้าคนมาร์คแล้วเจอ "ควรฉีด" ในกลุ่มสุ่ม แปลว่ายังมีไฟล์ที่ควรฉีดแต่ไม่มี scorer ไหนดันขึ้นมา
+    → recall ที่วัดได้ยังสวยเกินจริง (เจอจริงรอบแรก: `pawin-context.md` ที่มี "Synology NAS DS923+"
+    ไม่เคยถูกเสนอให้มาร์คเลยสำหรับ prompt "NAS ที่บ้านรุ่นอะไร")
+    """
+    picked: dict[str, str] = {}
+    everything: set[str] = set()
+    for per_file in scores.values():
+        everything.update(per_file)
+        for f, sc in sorted(per_file.items(), key=lambda kv: -kv[1])[:top_k]:
+            if sc > 0:
+                picked.setdefault(f, "scorer")
+    if random_extra > 0:
+        rest = sorted(everything - set(picked))
+        if rest:
+            rng = random.Random(rng_seed)
+            for f in rng.sample(rest, min(random_extra, len(rest))):
+                picked[f] = "random"
+    return picked
+
+
+def merge_pairs(old: list[dict], new: list[dict]) -> list[dict]:
+    """รวม candidate รอบใหม่เข้ากับของเดิม **โดยไม่ทิ้ง label ที่คนมาร์คไว้**
+
+    - คู่ที่เคยมาร์คแล้วและยังอยู่ → เก็บ label เดิม แต่รับคะแนนชุดใหม่
+    - คู่ที่เคยมาร์คแล้วแต่รอบใหม่ไม่ติด candidate → **เก็บไว้** (ไม่งั้นเสียแรงมาร์คฟรี)
+    - คู่ใหม่ → label=None รอคนมาร์ค
+    """
+    by_key = {(p["prompt"], p["skill_file"]): dict(p) for p in old}
+    for p in new:
+        k = (p["prompt"], p["skill_file"])
+        if k in by_key:
+            by_key[k]["scores"] = p["scores"]
+            by_key[k].setdefault("source", p.get("source", "scorer"))
+        else:
+            by_key[k] = dict(p)
+    return list(by_key.values())
 
 
 @dataclass(frozen=True)
@@ -124,24 +193,36 @@ def cmd_pairs(args) -> int:
         print("ไม่มี prompt ใน DB", file=sys.stderr)
         return 1
 
+    n_sem = 0
     pairs = []
     for prompt in picked:
-        # candidate = union ของ top-k จากทุก scorer → ไฟล์ที่ "ควรฉีดแต่ทุกวิธีพลาด"
-        # ยังมีโอกาสถูกมาร์ค (ไม่งั้น recall ที่วัดได้จะสวยเกินจริงทุกวิธี)
-        cands: set[str] = set()
-        scores: dict[str, dict[str, float]] = {}
-        for name, fn in SCORERS.items():
-            ranked = sorted(((fn(prompt, h), f) for f, h in docs.items()), reverse=True)
-            scores[name] = {f: s for s, f in ranked}
-            cands.update(f for s, f in ranked[: args.top_k] if s > 0)
-        for f in sorted(cands):
+        scores: dict[str, dict[str, float]] = {
+            name: {f: fn(prompt, h) for f, h in docs.items()} for name, fn in SCORERS.items()
+        }
+        sem = semantic_scores(prompt)
+        if sem:
+            n_sem += 1
+            scores["semantic"] = {f: sem.get(f, 0.0) for f in docs}
+
+        cands = pick_candidates(scores, top_k=args.top_k,
+                                random_extra=args.random_extra, rng_seed=hash(prompt) & 0xFFFF)
+        for f, src in sorted(cands.items()):
             pairs.append({
                 "prompt": prompt,
                 "skill_file": f,
                 "thai_only": not _LATIN.search(prompt),
-                "scores": {n: round(scores[n][f], 4) for n in SCORERS},
+                "source": src,          # scorer = มี scorer ดันขึ้นมา · random = ตัววัดจุดบอด
+                "scores": {n: round(scores[n][f], 4) for n in scores},
                 "label": None,   # ← คนมาร์ค: true = ควรฉีดไฟล์นี้ให้ prompt นี้ / false = ไม่ควร
             })
+
+    if os.path.exists(args.out):
+        old = json.load(open(args.out, encoding="utf-8"))
+        before = sum(1 for p in old if p.get("label") is not None)
+        pairs = merge_pairs(old, pairs)
+        print(f"รวมกับของเดิม — คง label ที่มาร์คไว้แล้ว {before} คู่")
+    if not n_sem:
+        print("⚠️ ChromaDB ใช้ไม่ได้ → ไม่มีคะแนน semantic (เทียบได้แค่ lexical)")
 
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as f:
@@ -154,7 +235,13 @@ def cmd_pairs(args) -> int:
 
 # ── worksheet: กา [x] ในไฟล์ .md อ่านง่ายกว่าแก้ JSON 110 คู่ด้วยมือ ──────────────
 _LINE = re.compile(r"^- \[(?P<mark>[ xX])\]\s+`(?P<file>[^`]+)`")
-_HEAD = re.compile(r"^### \[(?P<idx>\d+)\]")
+_HEAD = re.compile(r"^### \[(?P<idx>\d+)\].*<!--k:(?P<key>[0-9a-f]{10})-->")
+
+
+def _pkey(prompt: str) -> str:
+    """key เสถียรของ prompt — ผูก label กับตัว prompt ไม่ใช่ลำดับในไฟล์
+    (worksheet เรียงใหม่ได้ด้วย --by-importance → แมปด้วยเลขลำดับจะลงผิดตัวแบบเงียบๆ)"""
+    return hashlib.sha1(prompt.encode("utf-8")).hexdigest()[:10]
 
 
 def _first_heading(path: str) -> str:
@@ -171,7 +258,18 @@ def _first_heading(path: str) -> str:
 
 
 def cmd_worksheet(args) -> int:
-    pairs = json.load(open(args.pairs, encoding="utf-8"))
+    all_pairs = json.load(open(args.pairs, encoding="utf-8"))
+    pairs = [p for p in all_pairs if p.get("label") is None] if args.only_unlabeled else all_pairs
+    if not pairs:
+        print("ไม่มีคู่ที่ยังไม่ได้มาร์ค")
+        return 0
+    # เรียง prompt ตาม "คู่ที่คะแนนสูงสุด" — มาร์คบางส่วนแล้วหยุดก็ยังได้ข้อมูลที่มีน้ำหนัก
+    if args.by_importance:
+        rank = {}
+        for p in pairs:
+            v = max(p["scores"].values()) if p["scores"] else 0.0
+            rank[p["prompt"]] = max(rank.get(p["prompt"], 0.0), v)
+        pairs = sorted(pairs, key=lambda p: -rank[p["prompt"]])
     order: list[str] = []
     for p in pairs:
         if p["prompt"] not in order:
@@ -182,6 +280,8 @@ def cmd_worksheet(args) -> int:
         "",
         "กา `[x]` = **ควร**ฉีดไฟล์นี้เข้า context ให้ prompt นี้ · ปล่อย `[ ]` = ไม่ควร",
         "ข้ามคู่ที่ไม่แน่ใจได้ด้วยการลบทั้งบรรทัดทิ้ง (จะถูกนับเป็น 'ยังไม่มาร์ค')",
+        "บรรทัดที่มี 🎲 = ไฟล์สุ่ม ใส่ไว้วัดว่ายังมีไฟล์ที่ควรฉีดแต่ไม่มี scorer ไหนเห็นหรือเปล่า",
+        "**มาร์คไม่ครบได้** — ที่ยังไม่มาร์คถูกข้าม ไม่ได้ถูกนับว่า 'ไม่ควร'",
         "",
         "เกณฑ์ตัดสิน: *ถ้าโมเดลจะตอบ prompt นี้ให้ดี มันต้องเห็นเนื้อไฟล์นี้ไหม*",
         "ไม่ใช่ 'ไฟล์นี้พูดถึงคำเดียวกันไหม' — ไฟล์ละ ~6,000 ตัวอักษรที่ฉีดผิดคือ noise",
@@ -194,13 +294,14 @@ def cmd_worksheet(args) -> int:
     for i, prompt in enumerate(order, 1):
         rows = [p for p in pairs if p["prompt"] == prompt]
         tag = "ไทยล้วน" if rows[0]["thai_only"] else "มี Latin ปน"
-        out.append(f"### [{i}] {tag} — {prompt.strip()[:160]}")
+        out.append(f"### [{i}] {tag} — {prompt.strip()[:160]} <!--k:{_pkey(prompt)}-->")
         out.append("")
-        for r in sorted(rows, key=lambda x: -max(x["scores"].values())):
+        for r in sorted(rows, key=lambda x: -max(x["scores"].values() or [0])):
             mark = "x" if r.get("label") else " "
             desc = _first_heading(os.path.join(args.skills_dir, r["skill_file"]))
-            sc = " · ".join(f"{n} {r['scores'][n]:.2f}" for n in SCORERS)
-            out.append(f"- [{mark}] `{r['skill_file']}`  ({sc})" + (f" — {desc}" if desc else ""))
+            sc = " · ".join(f"{n} {v:.2f}" for n, v in sorted(r["scores"].items()))
+            tag = " 🎲" if r.get("source") == "random" else ""
+            out.append(f"- [{mark}] `{r['skill_file']}`{tag}  ({sc})" + (f" — {desc}" if desc else ""))
         out.append("")
 
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
@@ -217,13 +318,13 @@ def cmd_import(args) -> int:
         if p["prompt"] not in order:
             order.append(p["prompt"])
 
+    by_key = {_pkey(q): q for q in order}
     marked: dict[tuple[str, str], bool] = {}
     cur = None
     for line in open(args.worksheet, encoding="utf-8"):
         h = _HEAD.match(line)
         if h:
-            idx = int(h.group("idx")) - 1
-            cur = order[idx] if 0 <= idx < len(order) else None
+            cur = by_key.get(h.group("key"))
             continue
         m = _LINE.match(line.strip())
         if m and cur is not None:
@@ -245,13 +346,14 @@ def cmd_import(args) -> int:
 def sweep(pairs: list[dict], steps: int = 41) -> list[Metrics]:
     """เทียบทุก scorer ทุก threshold บนคู่ที่มาร์คแล้วเท่านั้น"""
     marked = [p for p in pairs if p.get("label") is not None]
+    names = sorted({k for p in pairs for k in p.get("scores", {})})
     out = []
-    for name in SCORERS:
+    for name in names:
         for i in range(steps):
             t = i / (steps - 1)
-            tp = sum(1 for p in marked if p["label"] and p["scores"][name] >= t)
-            fp = sum(1 for p in marked if not p["label"] and p["scores"][name] >= t)
-            fn = sum(1 for p in marked if p["label"] and p["scores"][name] < t)
+            tp = sum(1 for p in marked if p["label"] and p["scores"].get(name, 0.0) >= t)
+            fp = sum(1 for p in marked if not p["label"] and p["scores"].get(name, 0.0) >= t)
+            fn = sum(1 for p in marked if p["label"] and p["scores"].get(name, 0.0) < t)
             out.append(Metrics(name, round(t, 3), tp, fp, fn))
     return out
 
@@ -297,6 +399,8 @@ def main() -> int:
     p.add_argument("--n", type=int, default=30, help="จำนวน prompt (ครึ่งไทยล้วน)")
     p.add_argument("--pool", type=int, default=600, help="ดึงจาก DB กี่แถวก่อนคัด")
     p.add_argument("--top-k", type=int, default=3, help="candidate ต่อ scorer ต่อ prompt")
+    p.add_argument("--random-extra", type=int, default=2,
+                   help="ไฟล์สุ่มเพิ่มต่อ prompt — ใช้วัดว่า candidate pool ยังมีจุดบอดไหม")
     p.add_argument("--skills-dir", default=os.getenv("SKILLS_DIR_OVERRIDE", "/app/skills"))
     p.add_argument("--out", default="data/skills_pairs.json")
     p.set_defaults(func=cmd_pairs)
@@ -305,6 +409,9 @@ def main() -> int:
     w.add_argument("--pairs", default="data/skills_pairs.json")
     w.add_argument("--skills-dir", default=os.getenv("SKILLS_DIR_OVERRIDE", "/app/skills"))
     w.add_argument("--out", default="data/skills_labeling.md")
+    w.add_argument("--only-unlabeled", action="store_true", help="เอาเฉพาะคู่ที่ยังไม่มาร์ค")
+    w.add_argument("--by-importance", action="store_true",
+                   help="เรียง prompt ตามคะแนนสูงสุด — มาร์คไม่ครบก็ยังได้ข้อมูลที่มีน้ำหนัก")
     w.set_defaults(func=cmd_worksheet)
 
     i = sub.add_parser("import", help="อ่านช่องที่กาแล้วกลับเข้า pairs.json")
