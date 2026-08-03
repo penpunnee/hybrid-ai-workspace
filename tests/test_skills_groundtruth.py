@@ -105,7 +105,8 @@ def test_worksheet_import_roundtrip(tmp_path):
     pairs_path.write_text(_json.dumps(_fixture_pairs(), ensure_ascii=False), encoding="utf-8")
 
     gt.cmd_worksheet(types.SimpleNamespace(
-        pairs=str(pairs_path), skills_dir=str(skills), out=str(ws_path)))
+        pairs=str(pairs_path), skills_dir=str(skills), out=str(ws_path),
+        only_unlabeled=False, by_importance=False))
     ws = ws_path.read_text(encoding="utf-8")
     assert "ระบบความจำ ChromaDB" in ws, "worksheet ต้องบอกว่าไฟล์นั้นเรื่องอะไร"
     assert ws.count("- [ ]") == 3
@@ -129,7 +130,8 @@ def test_import_ignores_deleted_lines(tmp_path):
     pairs_path = tmp_path / "pairs.json"
     ws_path = tmp_path / "ws.md"
     pairs_path.write_text(_json.dumps(_fixture_pairs(), ensure_ascii=False), encoding="utf-8")
-    ws_path.write_text("### [1] ไทยล้วน — ระบบความจำทำงานยังไง\n"
+    ws_path.write_text(f"### [1] ไทยล้วน — ระบบความจำทำงานยังไง "
+                       f"<!--k:{gt._pkey('ระบบความจำทำงานยังไง')}-->\n"
                        "- [x] `memory.md`  (split 0.00)\n", encoding="utf-8")
 
     gt.cmd_import(types.SimpleNamespace(pairs=str(pairs_path), worksheet=str(ws_path)))
@@ -138,3 +140,94 @@ def test_import_ignores_deleted_lines(tmp_path):
     assert out[("ระบบความจำทำงานยังไง", "memory.md")] is True
     assert out[("ระบบความจำทำงานยังไง", "deploy.md")] is None    # ไม่มีในไฟล์ → ยังไม่มาร์ค
     assert out[("deploy ขึ้น NAS ยังไง", "deploy.md")] is None
+
+
+# ── candidate pool ต้องครอบคลุมพอที่จะวัด recall ได้จริง (เจอจุดบอด 2026-08-03) ──
+#
+# รอบแรก candidate = union ของ top-3 จาก scorer แบบ lexical เท่านั้น
+# → prompt "NAS ที่บ้านรุ่นอะไร" ไม่เคยได้ `pawin-context.md` เป็นตัวเลือกให้มาร์ค
+#   ทั้งที่ไฟล์นั้นมีคำตอบอยู่จริง (`Infrastructure: Synology NAS DS923+`)
+# → ไฟล์ที่ "ควรฉีดแต่ทุก scorer ให้คะแนนต่ำ" มองไม่เห็น = FN หายไปจากการนับ
+#   = **recall ที่วัดได้สวยเกินจริงทุกวิธีพร้อมกัน**
+def test_sweep_derives_scorers_from_data_not_hardcoded():
+    """เพิ่ม scorer ใหม่ (semantic) แล้ว sweep ต้องเทียบให้ด้วย ไม่ใช่รู้จักแค่ที่ hardcode"""
+    pairs = [
+        {"prompt": "p", "skill_file": "a.md", "thai_only": True,
+         "scores": {"split": 0.0, "ngram": 0.1, "semantic": 0.9}, "label": True},
+        {"prompt": "p", "skill_file": "b.md", "thai_only": True,
+         "scores": {"split": 0.9, "ngram": 0.9, "semantic": 0.1}, "label": False},
+    ]
+    names = {m.scorer for m in gt.sweep(pairs)}
+    assert "semantic" in names, "sweep ไม่เห็น scorer ที่มีอยู่ในข้อมูล"
+    sem_best = max((m for m in gt.sweep(pairs) if m.scorer == "semantic"), key=lambda m: m.f1)
+    assert sem_best.f1 == 1.0
+
+
+def test_merge_preserves_existing_labels():
+    """สร้าง candidate เพิ่มแล้วต้องไม่ล้าง label ที่คนมาร์คไว้แล้ว"""
+    old = [{"prompt": "p", "skill_file": "a.md", "thai_only": True,
+            "scores": {"split": 0.5}, "label": True}]
+    new = [{"prompt": "p", "skill_file": "a.md", "thai_only": True,
+            "scores": {"split": 0.5, "semantic": 0.8}, "label": None},
+           {"prompt": "p", "skill_file": "b.md", "thai_only": True,
+            "scores": {"split": 0.0, "semantic": 0.7}, "label": None}]
+    merged = gt.merge_pairs(old, new)
+    got = {(p["prompt"], p["skill_file"]): p for p in merged}
+    assert got[("p", "a.md")]["label"] is True, "label เดิมหาย = คนต้องมาร์คใหม่ทั้งชุด"
+    assert got[("p", "a.md")]["scores"].get("semantic") == 0.8, "คะแนนใหม่ไม่ได้ถูกอัปเดต"
+    assert got[("p", "b.md")]["label"] is None
+    assert len(merged) == 2
+
+
+def test_merge_keeps_pairs_that_dropped_out_of_candidates():
+    """คู่ที่เคยมาร์คแล้วแต่รอบใหม่ไม่ติด candidate ต้องไม่หายไป (ไม่งั้นเสียแรงมาร์คฟรี)"""
+    old = [{"prompt": "p", "skill_file": "gone.md", "thai_only": True,
+            "scores": {"split": 0.1}, "label": False}]
+    merged = gt.merge_pairs(old, [])
+    assert len(merged) == 1 and merged[0]["label"] is False
+
+
+def test_random_extras_are_marked_as_such():
+    """ตัวสุ่มมีไว้วัดว่า candidate pool ยังมีจุดบอดไหม — ต้องแยกออกจากตัวที่ scorer เลือก"""
+    picked = gt.pick_candidates(
+        scores={"split": {"a.md": 0.9, "b.md": 0.0, "c.md": 0.0, "d.md": 0.0}},
+        top_k=1, random_extra=2, rng_seed=1,
+    )
+    assert picked["a.md"] == "scorer"
+    extras = [f for f, src in picked.items() if src == "random"]
+    assert len(extras) == 2 and "a.md" not in extras
+
+
+def test_import_maps_by_stable_key_not_by_order(tmp_path):
+    """worksheet ที่เรียงใหม่ (--by-importance) ต้อง import กลับถูก prompt
+
+    เดิม import แมปด้วย `### [n]` → order[n-1] ที่คำนวณจากลำดับใน pairs.json
+    พอ worksheet เรียงคนละแบบ label จะไปลง prompt ผิดตัวแบบเงียบๆ
+    """
+    import json as _json
+    import types
+    pairs_path = tmp_path / "pairs.json"
+    ws_path = tmp_path / "ws.md"
+    skills = tmp_path / "skills"; skills.mkdir()
+    (skills / "a.md").write_text("# A", encoding="utf-8")
+    data = [
+        {"prompt": "คำถามแรก", "skill_file": "a.md", "thai_only": True,
+         "scores": {"split": 0.1}, "label": None},
+        {"prompt": "คำถามที่สอง", "skill_file": "a.md", "thai_only": True,
+         "scores": {"split": 0.9}, "label": None},
+    ]
+    pairs_path.write_text(_json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    # by_importance → "คำถามที่สอง" (0.9) ขึ้นก่อน = สลับกับลำดับใน pairs.json
+    gt.cmd_worksheet(types.SimpleNamespace(
+        pairs=str(pairs_path), skills_dir=str(skills), out=str(ws_path),
+        only_unlabeled=True, by_importance=True))
+    ws = ws_path.read_text(encoding="utf-8")
+    assert ws.index("คำถามที่สอง") < ws.index("คำถามแรก"), "ไม่ได้เรียงตามความสำคัญ"
+
+    # กาช่องแรกสุด (= คำถามที่สอง)
+    ws_path.write_text(ws.replace("- [ ]", "- [x]", 1), encoding="utf-8")
+    gt.cmd_import(types.SimpleNamespace(pairs=str(pairs_path), worksheet=str(ws_path)))
+    got = {p["prompt"]: p["label"] for p in _json.loads(pairs_path.read_text(encoding="utf-8"))}
+    assert got["คำถามที่สอง"] is True, "label ไปลงผิด prompt"
+    assert got["คำถามแรก"] is False
