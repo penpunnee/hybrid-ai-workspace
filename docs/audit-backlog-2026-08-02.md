@@ -328,7 +328,18 @@ loop เก็บเนื้อหาไปหยุดที่คอมเม
 · ⚠️ เทส guard จับได้เฉพาะไฟล์ที่ commit เข้า git — ของที่ pipeline สร้างตรงลง
 `${NAS_DATA_PATH}/skills` บน prod **ไม่ผ่านสายตาเทสเลย** ยังเป็นรูที่เปิดอยู่
 
-### 21. Thai tokenizer ใน `load_skills_relevant()` (วัดแล้ว ยังไม่แก้)
+### ~~21.~~ ✅ Thai tokenizer ใน `load_skills_relevant()` — **ปิดแล้ว 2026-08-03** (`4629012`, PR #13)
+
+> ปิดด้วย **OR-gate** ใน `utils/skills_select.py` — lexical เดิมก่อน · semantic เป็นตัวสำรอง
+> เฉพาะตอน lexical ได้ศูนย์ ต้องผ่าน 2 ด่าน: `SKILLS_FALLBACK_MARGIN` (0.05) **และ**
+> `SKILLS_FALLBACK_MIN_SCORE` (0.35) · **ค่า default อยู่ในโค้ด — ไม่ตั้ง env = เปิดอยู่**
+> (ยืนยัน prod 2026-08-03: ไฟล์อยู่ใน `/app/utils/`, ไม่มี `SKILLS_FALLBACK_*` ใน env = ใช้ default)
+> ผลจริง 432 เทิร์น: ไทยล้วน 29.7% → **33.8%** · Latin 81.7% → 86.6% · **0 regression**
+> 🔑 **root cause ไม่ใช่ tokenizer** — ช่องว่างไทย/Latin ยังอยู่ครบใน semantic ที่ไม่ใช้ `.split()` เลย
+> = สเกลคะแนนเทียบข้ามภาษาไม่ได้ · 📄 vault `threshold-vs-ranking-calibration.md`
+> (หัวข้อเดิมด้านล่างคงไว้เป็นบริบทของการวินิจฉัย)
+
+### 21. (เดิม) Thai tokenizer ใน `load_skills_relevant()` (วัดแล้ว ยังไม่แก้)
 
 `utils/rag.py:62` ใช้ `query.lower().split()` — ภาษาไทยไม่มีช่องว่าง → prompt ไทยล้วนกลายเป็น
 token เดียว match ไม่ได้ · ระบบจึงฉีด skill **เฉพาะตอน prompt มีคำ Latin ปน**
