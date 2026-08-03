@@ -8,7 +8,9 @@ from fastapi.responses import StreamingResponse
 from assistants.config import ASSISTANTS
 from core.config import SKILLS_DIR
 from utils.llm import stream_response
-from utils.rag import inject_context_to_system, load_skills_relevant
+from utils.rag import inject_context_to_system, format_skill_files
+from utils.skills_select import select_skills
+from utils.skills_shadow import should_shadow_log as _shadow_should_log
 from utils.history import (
     save_message, load_history, delete_last_assistant_message,
     get_last_user_message,
@@ -192,7 +194,10 @@ async def chat(request: Request):
             lessons    = get_lessons(prompt)
             prefs      = get_preferences()
             skills_dir = SKILLS_DIR
-            skills_md  = load_skills_relevant(skills_dir, prompt)
+            # เก็บ "ไฟล์ที่ฉีดจริง" + "มาจากเส้นไหน" ไว้ให้ shadow logging ใช้
+            # (lexical เดิม หรือ semantic สำรองตอน lexical ได้ศูนย์ — ดู utils/skills_select.py)
+            skills_picked, skills_source = select_skills(skills_dir, prompt)
+            skills_md  = format_skill_files(skills_picked)
 
             # New: tiered memory recall (working + episodic + long-term)
             memory_ctx = recall(assistant, prompt, session_id=session_id)
@@ -540,6 +545,21 @@ async def chat(request: Request):
             full_response = notice
 
         message_id = save_message(assistant, "assistant", full_response, provider_used, session_id)
+
+        # ── Shadow logging ของ skills injection (backlog ข้อ 21) ────────────────
+        # บันทึกว่าแต่ละ scorer *จะ* เลือกไฟล์ไหน โดยไม่แตะสิ่งที่ฉีดไปแล้วข้างบน
+        # รันใน thread เพราะ semantic ต้องยิง ChromaDB — ห้ามเพิ่ม latency ให้คำตอบ
+        # (คีย์คือ message_id ตัวนี้ → join กับตาราง feedback ได้)
+        # gate **ก่อนสปอนเธรด** ไม่ใช่ข้างใน — request จากการเทสต้องไม่ทิ้งร่องรอยเลย
+        # แม้แต่เธรดที่เกิดแล้วไม่ทำอะไร (บทเรียน memory contamination 2026-06-11)
+        if _shadow_should_log(prompt, is_test_request=is_test_request):
+            def _shadow(_mid=message_id, _picked=skills_picked):
+                from utils.skills_shadow import observe as _shadow_observe
+                _shadow_observe(prompt=prompt, skills_dir=skills_dir,
+                                injected=[p.name for p in _picked], message_id=_mid,
+                                assistant=assistant, session_id=session_id,
+                                is_test_request=is_test_request)
+            threading.Thread(target=_shadow, daemon=True).start()
 
         # ── Reflection: ตรวจคำตอบหลัง stream เสร็จ → ส่ง revision เป็น SSE event ─
         if reflect and full_response:
