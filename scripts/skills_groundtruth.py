@@ -16,9 +16,11 @@
   เอา prompt จริงจาก prod → รวม candidate จากทุกวิธีให้ครบ → **คนมาร์ค** ว่าคู่ไหน
   ควรถูกฉีด → ค่อยเทียบวิธีตัดคำจากข้อมูลที่มาร์คแล้ว
 
-    python scripts/skills_groundtruth.py pairs --n 30 --out data/skills_pairs.json
-    # ← คนเปิดไฟล์ แล้วเติม "label": true/false ทีละคู่
-    python scripts/skills_groundtruth.py sweep --labeled data/skills_pairs.json
+    python scripts/skills_groundtruth.py pairs     --n 30 --out data/skills_pairs.json
+    python scripts/skills_groundtruth.py worksheet --pairs data/skills_pairs.json
+    # ← คนเปิด data/skills_labeling.md แล้วกาช่อง [x] = "ควรฉีดไฟล์นี้ให้ prompt นี้"
+    python scripts/skills_groundtruth.py import    --pairs data/skills_pairs.json
+    python scripts/skills_groundtruth.py sweep     --labeled data/skills_pairs.json
 
 ⚠️ คู่ที่ยังไม่มาร์ค (label=None) ถูกข้ามเสมอ — ห้ามเดาแทนคน (กติกาเดียวกับข้อ 12)
 """
@@ -150,6 +152,96 @@ def cmd_pairs(args) -> int:
     return 0
 
 
+# ── worksheet: กา [x] ในไฟล์ .md อ่านง่ายกว่าแก้ JSON 110 คู่ด้วยมือ ──────────────
+_LINE = re.compile(r"^- \[(?P<mark>[ xX])\]\s+`(?P<file>[^`]+)`")
+_HEAD = re.compile(r"^### \[(?P<idx>\d+)\]")
+
+
+def _first_heading(path: str) -> str:
+    """บรรทัดที่อ่านแล้วรู้ว่าไฟล์นี้เรื่องอะไร — ช่วยคนตัดสินโดยไม่ต้องเปิดไฟล์"""
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("#"):
+                    return line.lstrip("#").strip()[:70]
+    except OSError:
+        pass
+    return ""
+
+
+def cmd_worksheet(args) -> int:
+    pairs = json.load(open(args.pairs, encoding="utf-8"))
+    order: list[str] = []
+    for p in pairs:
+        if p["prompt"] not in order:
+            order.append(p["prompt"])
+
+    out = [
+        "# มาร์ค ground truth ของ skills injection (backlog ข้อ 21)",
+        "",
+        "กา `[x]` = **ควร**ฉีดไฟล์นี้เข้า context ให้ prompt นี้ · ปล่อย `[ ]` = ไม่ควร",
+        "ข้ามคู่ที่ไม่แน่ใจได้ด้วยการลบทั้งบรรทัดทิ้ง (จะถูกนับเป็น 'ยังไม่มาร์ค')",
+        "",
+        "เกณฑ์ตัดสิน: *ถ้าโมเดลจะตอบ prompt นี้ให้ดี มันต้องเห็นเนื้อไฟล์นี้ไหม*",
+        "ไม่ใช่ 'ไฟล์นี้พูดถึงคำเดียวกันไหม' — ไฟล์ละ ~6,000 ตัวอักษรที่ฉีดผิดคือ noise",
+        "",
+        f"เสร็จแล้วรัน: `python scripts/skills_groundtruth.py import --pairs {args.pairs}`",
+        "",
+        "---",
+        "",
+    ]
+    for i, prompt in enumerate(order, 1):
+        rows = [p for p in pairs if p["prompt"] == prompt]
+        tag = "ไทยล้วน" if rows[0]["thai_only"] else "มี Latin ปน"
+        out.append(f"### [{i}] {tag} — {prompt.strip()[:160]}")
+        out.append("")
+        for r in sorted(rows, key=lambda x: -max(x["scores"].values())):
+            mark = "x" if r.get("label") else " "
+            desc = _first_heading(os.path.join(args.skills_dir, r["skill_file"]))
+            sc = " · ".join(f"{n} {r['scores'][n]:.2f}" for n in SCORERS)
+            out.append(f"- [{mark}] `{r['skill_file']}`  ({sc})" + (f" — {desc}" if desc else ""))
+        out.append("")
+
+    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+    with open(args.out, "w", encoding="utf-8") as f:
+        f.write("\n".join(out))
+    print(f"เขียน worksheet {len(order)} prompt / {len(pairs)} คู่ → {args.out}")
+    return 0
+
+
+def cmd_import(args) -> int:
+    pairs = json.load(open(args.pairs, encoding="utf-8"))
+    order: list[str] = []
+    for p in pairs:
+        if p["prompt"] not in order:
+            order.append(p["prompt"])
+
+    marked: dict[tuple[str, str], bool] = {}
+    cur = None
+    for line in open(args.worksheet, encoding="utf-8"):
+        h = _HEAD.match(line)
+        if h:
+            idx = int(h.group("idx")) - 1
+            cur = order[idx] if 0 <= idx < len(order) else None
+            continue
+        m = _LINE.match(line.strip())
+        if m and cur is not None:
+            marked[(cur, m.group("file"))] = m.group("mark").lower() == "x"
+
+    n = 0
+    for p in pairs:
+        key = (p["prompt"], p["skill_file"])
+        if key in marked:
+            p["label"] = marked[key]
+            n += 1
+    with open(args.pairs, "w", encoding="utf-8") as f:
+        json.dump(pairs, f, ensure_ascii=False, indent=2)
+    yes = sum(1 for p in pairs if p.get("label") is True)
+    print(f"อัปเดต label {n}/{len(pairs)} คู่ (ควรฉีด {yes} · ไม่ควร {n - yes}) → {args.pairs}")
+    return 0
+
+
 def sweep(pairs: list[dict], steps: int = 41) -> list[Metrics]:
     """เทียบทุก scorer ทุก threshold บนคู่ที่มาร์คแล้วเท่านั้น"""
     marked = [p for p in pairs if p.get("label") is not None]
@@ -208,6 +300,17 @@ def main() -> int:
     p.add_argument("--skills-dir", default=os.getenv("SKILLS_DIR_OVERRIDE", "/app/skills"))
     p.add_argument("--out", default="data/skills_pairs.json")
     p.set_defaults(func=cmd_pairs)
+
+    w = sub.add_parser("worksheet", help="แปลง pairs เป็นไฟล์ .md ให้คนกาช่อง")
+    w.add_argument("--pairs", default="data/skills_pairs.json")
+    w.add_argument("--skills-dir", default=os.getenv("SKILLS_DIR_OVERRIDE", "/app/skills"))
+    w.add_argument("--out", default="data/skills_labeling.md")
+    w.set_defaults(func=cmd_worksheet)
+
+    i = sub.add_parser("import", help="อ่านช่องที่กาแล้วกลับเข้า pairs.json")
+    i.add_argument("--pairs", default="data/skills_pairs.json")
+    i.add_argument("--worksheet", default="data/skills_labeling.md")
+    i.set_defaults(func=cmd_import)
 
     s = sub.add_parser("sweep", help="เทียบ scorer จากคู่ที่มาร์คแล้ว")
     s.add_argument("--labeled", default="data/skills_pairs.json")

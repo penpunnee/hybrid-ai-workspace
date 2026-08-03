@@ -79,3 +79,62 @@ def test_skill_docs_skips_non_skill_files(tmp_path):
     (tmp_path / "ok.md").write_text("เนื้อหา", encoding="utf-8")
     (tmp_path / "skip.png").write_bytes(b"\x89PNG")
     assert set(gt._skill_docs(str(tmp_path))) == {"ok.md"}
+
+
+# ── worksheet round-trip: กาใน .md แล้วต้องกลับเข้า pairs.json ให้ตรงคู่ ────────
+def _fixture_pairs():
+    return [
+        {"prompt": "ระบบความจำทำงานยังไง", "skill_file": "memory.md", "thai_only": True,
+         "scores": {"split": 0.0, "ngram": 0.31}, "label": None},
+        {"prompt": "ระบบความจำทำงานยังไง", "skill_file": "deploy.md", "thai_only": True,
+         "scores": {"split": 0.0, "ngram": 0.12}, "label": None},
+        {"prompt": "deploy ขึ้น NAS ยังไง", "skill_file": "deploy.md", "thai_only": False,
+         "scores": {"split": 0.5, "ngram": 0.40}, "label": None},
+    ]
+
+
+def test_worksheet_import_roundtrip(tmp_path):
+    import json as _json
+    import types
+    pairs_path = tmp_path / "pairs.json"
+    ws_path = tmp_path / "ws.md"
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    (skills / "memory.md").write_text("# ระบบความจำ ChromaDB\nเนื้อหา", encoding="utf-8")
+    (skills / "deploy.md").write_text("# Deploy ขึ้น NAS\nเนื้อหา", encoding="utf-8")
+    pairs_path.write_text(_json.dumps(_fixture_pairs(), ensure_ascii=False), encoding="utf-8")
+
+    gt.cmd_worksheet(types.SimpleNamespace(
+        pairs=str(pairs_path), skills_dir=str(skills), out=str(ws_path)))
+    ws = ws_path.read_text(encoding="utf-8")
+    assert "ระบบความจำ ChromaDB" in ws, "worksheet ต้องบอกว่าไฟล์นั้นเรื่องอะไร"
+    assert ws.count("- [ ]") == 3
+
+    # คนกาช่องแรก (memory.md ของ prompt ที่ 1) อย่างเดียว
+    ws = ws.replace("- [ ] `memory.md`", "- [x] `memory.md`", 1)
+    ws_path.write_text(ws, encoding="utf-8")
+
+    gt.cmd_import(types.SimpleNamespace(pairs=str(pairs_path), worksheet=str(ws_path)))
+    out = {(p["prompt"], p["skill_file"]): p["label"]
+           for p in _json.loads(pairs_path.read_text(encoding="utf-8"))}
+    assert out[("ระบบความจำทำงานยังไง", "memory.md")] is True
+    assert out[("ระบบความจำทำงานยังไง", "deploy.md")] is False
+    assert out[("deploy ขึ้น NAS ยังไง", "deploy.md")] is False
+
+
+def test_import_ignores_deleted_lines(tmp_path):
+    """ลบบรรทัดทิ้ง = ไม่แน่ใจ → ต้องคง label=None ไม่ใช่กลายเป็น false"""
+    import json as _json
+    import types
+    pairs_path = tmp_path / "pairs.json"
+    ws_path = tmp_path / "ws.md"
+    pairs_path.write_text(_json.dumps(_fixture_pairs(), ensure_ascii=False), encoding="utf-8")
+    ws_path.write_text("### [1] ไทยล้วน — ระบบความจำทำงานยังไง\n"
+                       "- [x] `memory.md`  (split 0.00)\n", encoding="utf-8")
+
+    gt.cmd_import(types.SimpleNamespace(pairs=str(pairs_path), worksheet=str(ws_path)))
+    out = {(p["prompt"], p["skill_file"]): p["label"]
+           for p in _json.loads(pairs_path.read_text(encoding="utf-8"))}
+    assert out[("ระบบความจำทำงานยังไง", "memory.md")] is True
+    assert out[("ระบบความจำทำงานยังไง", "deploy.md")] is None    # ไม่มีในไฟล์ → ยังไม่มาร์ค
+    assert out[("deploy ขึ้น NAS ยังไง", "deploy.md")] is None
