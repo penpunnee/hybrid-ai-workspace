@@ -231,3 +231,86 @@ def test_import_maps_by_stable_key_not_by_order(tmp_path):
     got = {p["prompt"]: p["label"] for p in _json.loads(pairs_path.read_text(encoding="utf-8"))}
     assert got["คำถามที่สอง"] is True, "label ไปลงผิด prompt"
     assert got["คำถามแรก"] is False
+
+
+# ── scrutinize 2026-08-03: เครื่องมือไม่ตรงกับ prod / ไม่พิมพ์ scorer ที่ชนะ ──────
+def test_cmd_sweep_reports_every_scorer_in_data(tmp_path, capsys):
+    """cmd_sweep วนด้วย SCORERS ที่ hardcode → `semantic` หายจากรายงานเงียบๆ
+    ทั้งที่ sweep() คำนวณให้แล้ว = คนที่รันคำสั่งจริงไม่เห็นวิธีที่ชนะ"""
+    import json as _json
+    import types
+    p = tmp_path / "pairs.json"
+    p.write_text(_json.dumps([
+        {"prompt": "p1", "skill_file": "a.md", "thai_only": True,
+         "scores": {"split": 0.0, "ngram": 0.1, "semantic": 0.9}, "label": True},
+        {"prompt": "p1", "skill_file": "b.md", "thai_only": True,
+         "scores": {"split": 0.9, "ngram": 0.9, "semantic": 0.1}, "label": False},
+    ], ensure_ascii=False), encoding="utf-8")
+    gt.cmd_sweep(types.SimpleNamespace(labeled=str(p), cap=3))
+    out = capsys.readouterr().out
+    for name in ("split", "ngram", "semantic"):
+        assert f"[{name}]" in out, f"รายงานไม่มี {name}"
+
+
+def test_simulate_injection_applies_top_k_cap():
+    """prod เอาแค่ top-3 ต่อ prompt — ถ้าไม่ cap ตัวเลขที่รายงานจะไม่ใช่พฤติกรรมจริง
+    (เจอจริง: split ที่ไม่ cap ให้ P=0.170 R=0.818 · cap แล้วได้ P=0.109 R=0.455)"""
+    pairs = [
+        {"prompt": "p", "skill_file": f"f{i}.md", "scores": {"s": 0.9 - i * 0.1},
+         "label": i == 3}                      # ตัวที่ถูกอยู่อันดับ 4 → prod ไม่ฉีด
+        for i in range(5)
+    ]
+    n, tp, P, R, F = gt.simulate_injection(pairs, "s", threshold=0.0, cap=3)
+    assert n == 3 and tp == 0, "ไม่ได้ตัด top-3 → นับไฟล์ที่ prod ไม่เคยฉีด"
+    n2, tp2, *_ = gt.simulate_injection(pairs, "s", threshold=0.0, cap=99)
+    assert n2 == 5 and tp2 == 1
+
+
+def test_random_seed_is_stable_across_processes():
+    """เดิมใช้ hash() ซึ่ง Python randomize ต่อ process → สุ่มไม่ซ้ำ รันใหม่ได้คนละชุด
+    = 'การทดลองวัดจุดบอด' ที่ทำซ้ำไม่ได้"""
+    assert gt._seed("ราคาทองวันนี้เท่าไหร่") == gt._seed("ราคาทองวันนี้เท่าไหร่")
+    # ตรึงค่าไว้เลย — ถ้าใครเปลี่ยนไปใช้ hash() อีก เทสนี้จะแดงทันที
+    import hashlib
+    expect = int(hashlib.sha1("ราคาทองวันนี้เท่าไหร่".encode()).hexdigest()[:8], 16)
+    assert gt._seed("ราคาทองวันนี้เท่าไหร่") == expect
+
+
+def test_sweep_skips_pairs_missing_that_score_instead_of_imputing_zero():
+    """คู่ที่ไม่มีคะแนนของ scorer นั้น ต้องถูก 'ข้าม' ไม่ใช่นับเป็น 0
+
+    merge เก็บคู่เก่าที่ยังไม่มีคะแนน semantic ไว้ → เดาเป็น 0 = คู่ negative
+    กลายเป็น 'semantic ไม่ฉีด' ฟรีๆ ดัน precision ให้สูงเกินจริง
+    (แพตเทิร์น 'ล้มเหลว → ศูนย์')
+    """
+    pairs = [
+        {"prompt": "p", "skill_file": "a.md", "scores": {"split": 0.9}, "label": False},
+        {"prompt": "p", "skill_file": "b.md", "scores": {"split": 0.9, "semantic": 0.9},
+         "label": True},
+    ]
+    rows = [m for m in gt.sweep(pairs) if m.scorer == "semantic" and m.threshold == 0.0]
+    assert rows[0].fp == 0 and rows[0].tp == 1
+    assert rows[0].skipped == 1, "ไม่ได้รายงานว่ามีคู่ที่ประเมินไม่ได้"
+
+
+def test_merge_refreshes_scores_of_carried_over_pairs():
+    """คู่เก่าที่ไม่ติด candidate รอบใหม่ ต้องได้คะแนนชุดใหม่ด้วย ไม่ใช่ค้างคะแนนเก่า
+
+    ไม่งั้นมันจะไม่มีคะแนนของ scorer ที่เพิ่งเพิ่ม (semantic) → ถูกข้ามตอนประเมิน
+    = ประเมิน scorer ใหม่บนตัวอย่างน้อยกว่าตัวอื่นโดยไม่มีใครรู้
+    """
+    old = [{"prompt": "p", "skill_file": "old.md", "thai_only": True,
+            "scores": {"split": 0.1}, "label": False}]
+    table = {"p": {"split": {"old.md": 0.2}, "semantic": {"old.md": 0.8}}}
+    merged = gt.merge_pairs(old, [], score_table=table)
+    got = merged[0]
+    assert got["label"] is False
+    assert got["scores"] == {"split": 0.2, "semantic": 0.8}, "คะแนนเก่าค้าง"
+
+
+def test_merge_leaves_pairs_from_other_runs_untouched():
+    """prompt ที่ไม่ได้อยู่ในรอบนี้ (ไม่มีใน score_table) ต้องไม่ถูกแตะ"""
+    old = [{"prompt": "อื่น", "skill_file": "x.md", "thai_only": True,
+            "scores": {"split": 0.1}, "label": True}]
+    merged = gt.merge_pairs(old, [], score_table={"p": {"split": {"x.md": 0.9}}})
+    assert merged[0]["scores"] == {"split": 0.1} and merged[0]["label"] is True
