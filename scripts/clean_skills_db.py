@@ -175,14 +175,21 @@ def main() -> int:
     # ⚠️ อ่าน→วางแผน→เขียน ต้องอยู่ใน transaction **เดียว** ไม่งั้นอะไรที่แอปเขียน
     # ระหว่างที่เรากำลังไล่ .md อยู่จะถูกทับหายไปเงียบๆ · ถือ lock ยาวรับได้เพราะ
     # เป็นงาน maintenance ที่คนสั่งเอง นานๆ ครั้ง และคลังมีระดับหลักสิบรายการ
+    # ต้องดังและออกด้วยรหัสไม่ศูนย์ทุกกรณีที่ทำไม่สำเร็จ — งาน maintenance ที่จบ 0
+    # ทั้งที่ไม่ได้ล้างจะทำให้คนเชื่อว่าล้างแล้ว (และ automation ที่เรียกต่อก็เชื่อตาม)
     try:
         with skills._db_transaction(timeout=args.lock_timeout or None):
             return _report(skills._load_skills_db(), args, applied=True, skills_mod=skills)
     except skills.SkillsDbLocked as e:
-        # ต้องดังและออกด้วยรหัสไม่ศูนย์ — งาน maintenance ที่ทำไม่สำเร็จแต่จบ 0
-        # จะทำให้คนเชื่อว่าล้างแล้ว (และ automation ที่เรียกต่อก็เชื่อตาม)
         print(f"\n❌ {e}")
         print("   ลองใหม่ทีหลัง หรือใส่ --lock-timeout 0 เพื่อรอจนกว่าจะได้")
+        return 1
+    except skills.SkillsDbError as e:
+        # ⚠️ ก่อน 2026-08-04 สคริปต์เขียนด้วย `open(db,"w")` ซึ่งพังแล้วมี traceback = ดัง
+        # การย้ายมาใช้ `_save_skills_db()` (ถูกต้องเรื่อง atomic+lock) เผลอทำให้เงียบ
+        # เพราะตอนนั้นมันกลืน exception — ต้องจับให้ครบ ไม่ใช่แค่เคส lock
+        print(f"\n❌ {e}")
+        print(f"   ไฟล์เดิมไม่ถูกแตะ (เขียนแบบ atomic) · backup อยู่ที่ {args.db}.bak-*")
         return 1
 
 

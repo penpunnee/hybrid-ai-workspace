@@ -24,7 +24,7 @@ from starlette.concurrency import run_in_threadpool
 from core.config import SKILLS_DIR
 from utils.skills import (
     get_skill_count, auto_extract_skills, _load_skills_db,
-    cleanup_junk_skills, set_skill_entry, delete_skill_entries, SkillsDbLocked,
+    cleanup_junk_skills, set_skill_entry, delete_skill_entries, SkillsDbError,
 )
 from utils.llm import stream_response
 
@@ -167,7 +167,7 @@ def skills_delete(skill_id: str, delete_file: bool = False):
 
     try:
         deleted_db = delete_skill_entries([skill_id, skill_id.replace(".md", "")])
-    except SkillsDbLocked as e:
+    except SkillsDbError as e:
         logger.error(f"[skills_delete] ลบ {skill_id!r} ไม่ได้: {e}")
         return {"ok": False, "error": str(e), "deleted_file": deleted_file}
 
@@ -215,7 +215,7 @@ def cleanup_skills_endpoint():
     """ลบ junk skills ออกจาก db + re-sync ChromaDB"""
     try:
         result = cleanup_junk_skills()
-    except SkillsDbLocked as e:
+    except SkillsDbError as e:
         logger.error(f"[cleanup_skills] {e}")
         return {"ok": False, "error": str(e)}
     return {"ok": True, **result}

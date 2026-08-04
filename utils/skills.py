@@ -109,8 +109,16 @@ _db_lock = threading.RLock()
 _db_depth = 0          # ความลึกของ transaction ที่ซ้อนกัน — แก้ได้เฉพาะตอนถือ `_db_lock`
 
 
-class SkillsDbLocked(RuntimeError):
+class SkillsDbError(RuntimeError):
+    """เขียน `skills_db.json` ไม่สำเร็จ — ผู้เรียกต้องไม่เดินต่อเหมือนบันทึกแล้ว"""
+
+
+class SkillsDbLocked(SkillsDbError):
     """ยึด flock ของ `skills_db.json` ไม่ได้ภายในเพดานเวลา"""
+
+
+class SkillsDbWriteFailed(SkillsDbError):
+    """เขียนไฟล์ล้มเหลว (ดิสก์เต็ม / สิทธิ์ไม่พอ / `os.replace` ข้าม filesystem)"""
 
 
 def _parse_lock_timeout(raw: str) -> float | None:
@@ -225,6 +233,10 @@ def _save_skills_db(db: dict):
     `os.replace()` เป็น atomic บน POSIX ในระบบไฟล์เดียวกัน → ผู้อ่านเห็นได้แค่
     "ของเก่าครบ" หรือ "ของใหม่ครบ" ไม่มีสถานะกลางที่ไฟล์ถูก truncate ไปแล้ว
     (ต้องอยู่ไดเรกทอรีเดียวกันถึงจะข้ามอุปกรณ์ไม่ได้ — `os.replace` ข้าม filesystem ไม่ได้)
+
+    ⚠️ **โยน `SkillsDbWriteFailed` เมื่อเขียนไม่ลง ห้ามกลืน** — เดิม `except Exception` แล้ว
+    log warning เฉยๆ ไม่คืนอะไร ผู้เรียกทุกคนจึงเดินต่อเหมือนสำเร็จ (`save_skill()` คืน `True`,
+    `clean_skills_db.py --apply` พิมพ์ว่าล้างแล้วและ exit 0) ทั้งที่ไฟล์ไม่เปลี่ยนเลย
     """
     import tempfile
     try:
@@ -242,7 +254,8 @@ def _save_skills_db(db: dict):
             except OSError: pass
             raise
     except Exception as e:
-        logger.warning(f"Failed to save skills_db.json: {e}")
+        logger.error(f"เขียน skills_db ไม่สำเร็จ ({SKILLS_DB_PATH}): {e}")
+        raise SkillsDbWriteFailed(f"เขียน skills_db ไม่สำเร็จ: {e}") from e
 
 
 def set_skill_entry(topic: str, entry: dict) -> None:
@@ -300,7 +313,7 @@ def save_skill(topic: str, summary: str, source: str = "auto", sync: bool = True
                 "updated": __import__("datetime").datetime.now().isoformat(),
             }
             _save_skills_db(db)
-    except SkillsDbLocked as e:
+    except SkillsDbError as e:          # ยึด lock ไม่ได้ หรือเขียนไฟล์ไม่ลง
         logger.error(f"[Skills] บันทึก {topic!r} ไม่ได้: {e}")
         return False
 

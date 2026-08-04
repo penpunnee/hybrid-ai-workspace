@@ -674,6 +674,13 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
      · ทางที่ไม่กลืน error: `save_skill()` คืน `False` + log ERROR (ผู้เรียกวนหลายรายการ
        ปล่อย exception หลุดจะพังทั้งชุด) · `skills_extract` เพิ่ม `db_updated`/`warning`
        ในผลลัพธ์ · `skills_delete`/`cleanup-skills` ตอบ `ok:false`
+   - ✅ **`_save_skills_db()` โยน `SkillsDbWriteFailed` แล้ว ไม่กลืนเหมือนเดิม**
+     ลำดับชั้น: `SkillsDbError` ← `SkillsDbLocked` / `SkillsDbWriteFailed` (จับตัวแม่ได้ทั้งคู่)
+     · เดิม `except Exception` + log warning เฉยๆ → ดิสก์เต็ม/สิทธิ์ไม่พอ = เขียนไม่ลงแต่
+       `save_skill()` คืน `True` และสคริปต์ **exit 0** พร้อมพิมพ์ว่าล้างแล้ว
+     · ⚠️ **บทเรียน: การย้ายสคริปต์มาใช้ `_save_skills_db()` (ถูกเรื่อง atomic+lock)
+       เผลอแปลงความล้มเหลวที่เคย "ดัง" ให้ "เงียบ"** — ของเดิมใช้ `open(w)` ซึ่งพังแล้วมี
+       traceback · **การรวมทางเดียวกันเป็นเรื่องดี แต่ต้องเช็คว่าทางกลางนั้นรายงานผลไหม**
 
 ---
 
