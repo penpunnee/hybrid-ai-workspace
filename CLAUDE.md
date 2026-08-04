@@ -643,7 +643,12 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 3. **multipart ใหญ่ยังเขียนลงดิสก์คอนเทนเนอร์ระหว่าง parse** — starlette spool ที่ >1 MB
    `read_capped()` ปิดฝั่ง RAM ได้แล้ว ฝั่งดิสก์ต้องกันที่ proxy/middleware (คนละ lever)
    - ⚠️ เจอเพิ่มตอนปิดข้อ 2: **`POST /api/upload` ทำ `await file.read()` แบบไม่มีเพดานเลย**
-     (ไม่ได้ผ่าน `read_capped()` เหมือนฝั่ง `documents.py`) — ไฟล์ทั้งก้อนเข้า RAM ก่อนเสมอ
+     (ไม่ได้ผ่าน `read_capped()` เหมือนฝั่ง `documents.py` ที่ใช้ `_MAX_BYTES = 10 MB`) —
+     ไฟล์ทั้งก้อนเข้า RAM ก่อนเสมอ · `routers/memory.py` ก็ยังใช้ `await request.json()` ดิบ
+     **ต้องให้ user เลือกเพดานก่อน** เพราะการใส่ = ไฟล์ที่เคยอัปได้จะกลายเป็น 413
+7. **`accept_proposal` ตอบ `ok:True` ทั้งที่ `set_skill_entry()` ล้มเหลว** — .md ถูกเขียนไปแล้ว
+   แต่ไม่มีใน db = skill ครึ่งใบ · แก้ให้ถูกต้องต้องตัดสินใจก่อนว่าจะลบ .md ที่ค้างทิ้ง
+   หรือรายงาน partial success (เปลี่ยน contract ไม่ใช่ quick win)
 4. **voice retry ยังไม่เคยถูกกระตุ้นจริงบน prod** — ยืนยันได้แค่ unit test + โค้ดอยู่ในบันเดิล
 5. `SKILLS_SEARCH_MIN_SCORE` ตั้งจาก ground truth ที่มี positive แค่ 11 ตัว — **ห้ามจูนละเอียดกว่านี้**
    ถ้าจะขยับต้องมาร์คเพิ่มจาก 187 คู่ที่ยังว่างใน `data/skills_pairs.json` ก่อน
