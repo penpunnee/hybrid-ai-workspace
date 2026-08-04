@@ -66,27 +66,37 @@ def _drop_below_min_score(rows: list, min_score=_UNSET) -> list:
     return [r for r in rows if r.get("similarity") is not None and r["similarity"] >= floor]
 
 
-def _handle_unscorable_results(query: str, results: list) -> None:
-    """เรียกเมื่อ **ทุกแถว** แปลงเป็นคะแนนไม่ได้ (collection ไม่ได้อยู่บน cosine space)
-
-    สถานการณ์: prod มี `skills_collection` ที่ถูกสร้างไว้ตั้งแต่ก่อนแก้ — space ของ
-    collection เปลี่ยนตามโค้ดไม่ได้ ต้องสร้างใหม่เท่านั้น ระหว่างนั้น `similarity`
-    เป็น `None` ทุกแถว → `_drop_below_min_score()` จะตัดทิ้งหมด = **skill injection
-    หยุดสนิททั้งระบบ** จนกว่าจะมีคนเข้าไปสร้าง collection ใหม่
+def _handle_unscorable_results(query: str, results: list, space: str | None = None) -> None:
+    """เรียกเมื่อ **ทุกแถว** แปลงเป็นคะแนนไม่ได้ → ไม่ฉีด skill ในเทิร์นนั้น
 
     **ทิศที่เลือก (user ตัดสินใจ 2026-08-04): fail-closed + ส่งเสียงดัง** — ไม่ฉีดอะไรเลย
     เพราะความรู้ยังเข้าได้ทาง `load_skills_relevant()` ซึ่งอ่าน .md จากดิสก์ตรงๆ
     ไม่ผ่าน ChromaDB (คนละเส้น ไม่ได้พังไปด้วย) → การปิดเส้นนี้ไม่ได้ทำให้ระบบ
     ไม่มีความรู้ใช้ แค่เสียเส้น semantic ไปชั่วคราว · ตรงข้ามกับ fail-open ที่จะ
     ฉีดของที่พิสูจน์ไม่ได้เข้าไปเงียบๆ ทุกเทิร์น (บทเรียนข้อ 19: เทเข้า context 45 ครั้ง)
+
+    ⚠️ **`space=None` (อ่านไม่ได้) กับ `space="l2"` (อ่านได้ว่าผิด) ต้องแยกข้อความกัน**
+    เดิมรวมเป็นข้อความเดียวที่ *ยืนยัน* ว่า collection ผิด space แล้วสั่งให้ลบทิ้งสร้างใหม่
+    — วันที่ 2026-08-04 08:20:12 ข้อความนั้นขึ้นบน prod ทั้งที่ตรวจย้อนหลังแล้ว
+    collection เป็นตัวเดิม (id `56c1cde1…` เดียวกับที่ upsert ตอน 08:18) และเป็น cosine
+    → **การทำตามคำแนะนำนั้นคือลบ index 22 รายการทิ้งเพื่อแก้ปัญหาที่ไม่มีอยู่จริง**
+    คำสั่งที่ทำลายข้อมูลได้ ต้องออกจากสิ่งที่ *วัดแล้ว* เท่านั้น ไม่ใช่จากการอนุมาน
     """
-    logger.error(
-        f"[Skills] skills_collection ไม่ได้อยู่บน cosine space — แปลง distance "
-        f"เป็นคะแนนไม่ได้ทั้ง {len(results)} แถว จึงข้ามการฉีด skill "
-        f"(query: {query[:40]!r}). space ของ collection เปลี่ยนตามโค้ดไม่ได้ "
-        f"ต้องสร้างใหม่: docker exec ai-backend-1 sh -c \"cd /app && python -c "
-        f"'from utils.skills_search import recreate_collection; print(recreate_collection())'\""
-    )
+    head = (f"[Skills] แปลง distance เป็นคะแนนไม่ได้ทั้ง {len(results)} แถว "
+            f"จึงข้ามการฉีด skill (query: {query[:40]!r})")
+    if space is None:
+        logger.error(
+            f"{head} — **อ่าน space ของ collection ไม่ได้** (ต่อ ChromaDB ไม่ติด "
+            f"หรือ metadata ว่าง) ยังไม่ยืนยันว่า collection ผิดอะไร "
+            f"ให้เช็คว่า ChromaDB ขึ้นอยู่ไหมก่อน — ⛔ อย่าเพิ่งลบ/สร้าง collection ใหม่"
+        )
+    else:
+        logger.error(
+            f"{head} — collection อยู่บน space {space!r} ไม่ใช่ cosine "
+            f"(space เปลี่ยนตามโค้ดไม่ได้ ต้องสร้างใหม่): docker exec ai-backend-1 "
+            f"sh -c \"cd /app && python -c 'from utils.skills_search import "
+            f"recreate_collection; print(recreate_collection())'\""
+        )
     return None
 
 
@@ -357,12 +367,11 @@ def search_skills(query: str, n_results: int = 3) -> str:
         if SKILLS_SEARCH_MIN_SCORE is not None and all(
             r.get("similarity") is None for r in results
         ):
-            # ทุกแถวแปลงคะแนนไม่ได้ = collection ไม่ได้อยู่บน cosine space
-            # (เกิดกับ collection ที่ถูกสร้างไว้ก่อนแก้ `skills_search.py` — space
-            # ของ collection เดิมไม่เปลี่ยนตามโค้ด ต้องสร้างใหม่ถึงจะเปลี่ยน)
+            # ทุกแถวแปลงคะแนนไม่ได้ — **ส่ง space ที่อ่านได้จริงไปด้วย** เพื่อให้ข้อความ
+            # แยกได้ว่า "อ่านไม่ได้" (None) กับ "อ่านได้ว่าเป็น l2" คนละเรื่องกัน
             # เช็คเฉพาะตอนตั้งเกณฑ์ไว้ — `=off` คือการที่คนสั่งว่า "ยอมรับผลที่ไม่ได้ตรวจ"
             # จึงไม่ใช่สถานการณ์ผิดปกติที่ต้องรายงาน (กติกาเดียวกับ WEB_SEARCH_MIN_SCORE=off)
-            _handle_unscorable_results(query, results)
+            _handle_unscorable_results(query, results, space=search._space())
 
         results = _drop_below_min_score(results)
         if not results:

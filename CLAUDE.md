@@ -524,8 +524,17 @@ WEB_SEARCH_MIN_SCORE=0.35   # พื้นคะแนนสัมบูรณ�
 - ⚠️ **ห้ามยืมเลข 0.35 ของ `SKILLS_FALLBACK_MIN_SCORE`/`WEB_SEARCH_MIN_SCORE`** — คนละ scorer
   คนละสเกล เลขใกล้กันเป็นเรื่องบังเอิญ
 - `similarity` มาจาก `SkillsSearch._similarity()` ที่**อ่าน `hnsw:space` จริงจาก metadata**
-  แล้วคืน `None` ถ้าไม่ใช่ cosine → fail-closed (`_handle_unscorable_results` log ERROR
-  พร้อมคำสั่ง `recreate_collection()` ที่รันได้จริง) · prod ตอนนี้เป็น cosine อยู่แล้ว ✅
+  แล้วคืน `None` ถ้าไม่ใช่ cosine → fail-closed · prod เป็น cosine อยู่แล้ว ✅
+- ⚠️ **`_space()` คืน 3 ค่า: `"cosine"` / `"l2"` / `None` (อ่านไม่ได้)** — แก้ 2026-08-04
+  เดิมรวม "อ่านไม่ได้" เข้ากับ `"l2"` แล้ว log ERROR **ยืนยันว่า collection ผิด space
+  พร้อมสั่งให้ลบทิ้งสร้างใหม่** · เกิดจริงบน prod 08-04 08:20:12 (2 ครั้ง) ทั้งที่
+  `collection.id` วันนั้นกับวันนี้เป็น `56c1cde1…` ตัวเดียวกันและเป็น cosine มาตลอด
+  → **การทำตามข้อความนั้น = ลบ index 22 รายการทิ้งเพื่อแก้ปัญหาที่ไม่มีอยู่**
+  ตอนนี้ `space=None` → บอกให้เช็ค ChromaDB ก่อน และ **ไม่แนะนำคำสั่งที่ลบข้อมูล**
+- ⚠️ **`get_skills_search()` ต้องถือ `_search_lock`** — วัดบน prod: ยิง 12 เธรดพร้อมกัน
+  ได้ `SkillsSearch` **12 ตัว** (เส้นนี้อยู่ใน threadpool 40 slot ตั้งแต่ PR #23)
+  และ **instance ที่ `available=False` ห้าม cache** — ChromaDB สะดุดตอน init ครั้งเดียว
+  = ฉีด skill ไม่ได้ตลอดอายุโปรเซส · เทส `tests/test_skills_search_singleton.py` (10)
 - วัดใหม่: `scripts/skills_floor_probe.py` (รันในคอนเทนเนอร์)
 
 ### 🔴 `rewrite_query()` ที่พึ่ง LLM ตายเงียบกับ Qwen3.5 (พิสูจน์ 2026-08-03)

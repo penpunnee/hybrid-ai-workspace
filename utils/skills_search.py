@@ -4,6 +4,7 @@ Skills Search - Semantic Search using ChromaDB for Skills
 """
 import os
 import logging
+import threading
 from typing import List, Dict, Optional
 import chromadb
 
@@ -125,14 +126,21 @@ class SkillsSearch:
                 logger.error(f"sync_from_db: ลบ stale ids ล้มเหลว: {e}")
         self.add_skills_from_db(skills_db)
     
-    def _space(self) -> str:
+    def _space(self) -> Optional[str]:
         """space จริงของ collection ที่ต่ออยู่ — **อ่านจาก metadata ไม่ใช่จากเจตนาในโค้ด**
         collection ที่ถูกสร้างไว้ก่อนหน้านี้ยังคง space เดิมของมัน แม้โค้ดจะขอ cosine แล้ว
+
+        คืน `None` = **อ่านไม่ได้** (ไม่มี collection / metadata ว่าง / ขว้าง exception)
+        ⚠️ เดิมกรณีนี้คืน `"l2"` = เอา "ไม่รู้" ไปปนกับ "รู้แล้วว่าเป็น l2" ผลคือวันที่
+        08-04 08:20:12 ระบบประกาศว่า collection ผิด space แล้วสั่งให้ลบทิ้งสร้างใหม่
+        ทั้งที่ตรวจย้อนหลังแล้ว collection **เป็นตัวเดิม id เดียวกันและเป็น cosine อยู่**
+        (รูปแบบที่ 4 ของ measuring-instruments-lie: ไม่มีข้อมูล ถูกนับเป็นค่าที่เจาะจง)
         """
         try:
-            return str((self.collection.metadata or {}).get("hnsw:space", "l2")).lower()
+            space = (self.collection.metadata or {}).get("hnsw:space")
         except Exception:
-            return "l2"
+            return None
+        return str(space).lower() if space else None
 
     def _similarity(self, distance: Optional[float]) -> Optional[float]:
         """แปลง distance → similarity 0..1 · คืน `None` เมื่อแปลงไม่ได้
@@ -215,14 +223,29 @@ class SkillsSearch:
 
 # Global instance
 _skills_search = None
+_search_lock = threading.Lock()
 
 
 def get_skills_search() -> SkillsSearch:
-    """Get or create global SkillsSearch instance"""
+    """Get or create global SkillsSearch instance
+
+    ⚠️ **ต้องถือ lock** — ตั้งแต่ PR #23 เส้นที่เรียกตัวนี้อยู่ใน threadpool (40 slot)
+    วัดบน prod: ยิง 12 เธรดพร้อมกันได้ `SkillsSearch` **12 ตัว** แต่ละตัวเปิด
+    ChromaDB client + embedding function ของตัวเอง
+
+    ⚠️ **instance ที่ `available=False` ห้าม cache** — เดิมถ้า ChromaDB สะดุดตอน init
+    แค่ครั้งเดียว instance ที่มี `collection=None` จะค้างอยู่ตลอดอายุโปรเซส แปลว่า
+    `_space()` คืน "อ่านไม่ได้" ตลอดกาล = ฉีด skill ไม่ได้อีกเลยจนกว่าจะ restart แอป
+    (และเดิมยังไปรายงานว่าเป็นความผิดของ collection ด้วย)
+    """
     global _skills_search
-    if _skills_search is None:
-        _skills_search = SkillsSearch()
-    return _skills_search
+    if _skills_search is not None and _skills_search.available:
+        return _skills_search
+    with _search_lock:
+        # เช็คซ้ำใน lock — เธรดอื่นอาจสร้างเสร็จไปแล้วระหว่างที่เรารอ
+        if _skills_search is None or not _skills_search.available:
+            _skills_search = SkillsSearch()
+        return _skills_search
 
 
 def recreate_collection() -> str:
@@ -243,7 +266,7 @@ def recreate_collection() -> str:
     if not search.available:
         return "❌ ต่อ ChromaDB ไม่ได้ — ไม่ได้ทำอะไร"
 
-    old_space = search._space()
+    old_space = search._space() or "อ่านไม่ได้"
     old_count = search.collection.count()
     search.client.delete_collection(search.collection_name)
     _skills_search = None                       # บังคับให้สร้าง instance + collection ใหม่
