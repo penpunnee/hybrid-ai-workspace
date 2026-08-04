@@ -152,6 +152,10 @@ def main() -> int:
                     help="เขียน summary ใหม่จาก .md ปัจจุบันด้วย (ต้องรันทุกครั้งที่แก้ skills/*.md)")
     ap.add_argument("--db", default=SKILLS_DB_PATH)
     ap.add_argument("--skills-dir", default=SKILLS_DIR)
+    # เพดานยาวกว่าฝั่งแอป (5 วิ) โดยตั้งใจ — นี่เป็นงานที่คนสั่งเองแล้วรอดูผล
+    # ควร "รอให้แอปว่างแล้วทำให้จบ" ไม่ใช่ยอมแพ้เร็ว · `0` = รอไม่จำกัด
+    ap.add_argument("--lock-timeout", type=float, default=60.0,
+                    help="วินาทีที่ยอมรอ lock ของ skills_db (0 = รอไม่จำกัด, default 60)")
     args = ap.parse_args()
 
     if not os.path.isfile(args.db):
@@ -171,8 +175,15 @@ def main() -> int:
     # ⚠️ อ่าน→วางแผน→เขียน ต้องอยู่ใน transaction **เดียว** ไม่งั้นอะไรที่แอปเขียน
     # ระหว่างที่เรากำลังไล่ .md อยู่จะถูกทับหายไปเงียบๆ · ถือ lock ยาวรับได้เพราะ
     # เป็นงาน maintenance ที่คนสั่งเอง นานๆ ครั้ง และคลังมีระดับหลักสิบรายการ
-    with skills._db_transaction():
-        return _report(skills._load_skills_db(), args, applied=True, skills_mod=skills)
+    try:
+        with skills._db_transaction(timeout=args.lock_timeout or None):
+            return _report(skills._load_skills_db(), args, applied=True, skills_mod=skills)
+    except skills.SkillsDbLocked as e:
+        # ต้องดังและออกด้วยรหัสไม่ศูนย์ — งาน maintenance ที่ทำไม่สำเร็จแต่จบ 0
+        # จะทำให้คนเชื่อว่าล้างแล้ว (และ automation ที่เรียกต่อก็เชื่อตาม)
+        print(f"\n❌ {e}")
+        print("   ลองใหม่ทีหลัง หรือใส่ --lock-timeout 0 เพื่อรอจนกว่าจะได้")
+        return 1
 
 
 def _report(db: dict, args, applied: bool, skills_mod=None) -> int:
