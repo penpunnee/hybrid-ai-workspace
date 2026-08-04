@@ -14,6 +14,7 @@ from utils.documents import (
 )
 from utils.summarize import summarize_document
 from utils.ocr import ocr_pdf, ocr_image
+from utils.http_limits import read_capped, json_body_capped
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 logger = logging.getLogger(__name__)
@@ -103,19 +104,14 @@ async def upload(
         ext = "." + (file.filename or "").rsplit(".", 1)[-1].lower() if "." in (file.filename or "") else ""
         if ext and ext not in _ALLOWED_EXT:
             raise HTTPException(415, f"unsupported file extension: {ext}")
-        raw = await file.read()
-        if len(raw) > _MAX_BYTES:
-            raise HTTPException(413, f"file too large (>{_MAX_BYTES} bytes)")
+        raw = await read_capped(file, _MAX_BYTES)
         content = _decode_bytes(raw, file.filename or "upload")
         src = source or file.filename or "upload"
         meta = {"content_type": file.content_type or "", "size": len(raw)}
         return index_document(content, source=src, metadata=meta)
 
     # Path B: JSON {source, content}
-    try:
-        data = await request.json()
-    except Exception:
-        raise HTTPException(400, "expected multipart file or JSON body")
+    data = await json_body_capped(request, _MAX_BYTES)
 
     content = (data.get("content") or "").strip()
     src = (data.get("source") or "").strip()
@@ -136,7 +132,7 @@ def list_all():
 @router.post("/search")
 async def search(request: Request):
     """semantic search — body: {query, top_k?, source?}"""
-    data = await request.json()
+    data = await json_body_capped(request, _MAX_BYTES)
     query = (data.get("query") or "").strip()
     if not query:
         raise HTTPException(400, "field 'query' required")
@@ -161,9 +157,7 @@ async def ocr_endpoint(
     ext = ("." + (file.filename or "").rsplit(".", 1)[-1].lower()) if "." in (file.filename or "") else ""
     if ext not in _OCR_EXT:
         raise HTTPException(415, f"รองรับเฉพาะ: {', '.join(_OCR_EXT)}")
-    raw = await file.read()
-    if len(raw) > _MAX_BYTES:
-        raise HTTPException(413, f"file too large (>{_MAX_BYTES} bytes)")
+    raw = await read_capped(file, _MAX_BYTES)
     filename = file.filename or "upload"
 
     if ext == ".pdf":
@@ -191,16 +185,11 @@ async def summarize(request: Request):
         summary_type = str(form.get("summary_type", "general"))
         if not file or not hasattr(file, "read"):
             raise HTTPException(400, "field 'file' required")
-        raw = await file.read()
-        if len(raw) > _MAX_BYTES:
-            raise HTTPException(413, f"file too large (>{_MAX_BYTES} bytes)")
+        raw = await read_capped(file, _MAX_BYTES)
         filename = getattr(file, "filename", "document") or "document"
         text = _decode_bytes(raw, filename)
     else:
-        try:
-            data = await request.json()
-        except Exception:
-            raise HTTPException(400, "expected multipart file or JSON body")
+        data = await json_body_capped(request, _MAX_BYTES)
         text = (data.get("content") or "").strip()
         filename = (data.get("source") or "document").strip()
         summary_type = (data.get("summary_type") or "general").strip()
