@@ -652,8 +652,35 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 4. **voice retry ยังไม่เคยถูกกระตุ้นจริงบน prod** — ยืนยันได้แค่ unit test + โค้ดอยู่ในบันเดิล
 5. `SKILLS_SEARCH_MIN_SCORE` ตั้งจาก ground truth ที่มี positive แค่ 11 ตัว — **ห้ามจูนละเอียดกว่านี้**
    ถ้าจะขยับต้องมาร์คเพิ่มจาก 187 คู่ที่ยังว่างใน `data/skills_pairs.json` ก่อน
-6. RLock ของ `skills_db` กันได้แค่ process เดียว — `scripts/clean_skills_db.py` รันชนกับแอปยัง lost-update ได้
-   (ข้อ 2 ปิดช่องในโปรเซสแอปครบแล้ว — ที่เหลือคือข้ามโปรเซส ต้องใช้ file lock ไม่ใช่ RLock)
+6. ✅ **[ปิดแล้ว 2026-08-04]** RLock ของ `skills_db` กันได้แค่ process เดียว
+   → เพิ่ม `_db_transaction()` ใน `utils/skills.py` = `RLock` (ข้ามเธรด) + **`flock(LOCK_EX)`**
+   (ข้ามโปรเซส) · ทุกเส้นที่ read-modify-write ใช้ตัวนี้ · เทส `tests/test_skills_db_cross_process.py`
+   - **`scripts/clean_skills_db.py` เป็นตัวปัญหาจริง** — มันไม่เคยใช้ทางของ `utils/skills.py` เลย
+     อ่านเองด้วย `open()` เขียนเองด้วย `open(db,"w")` = **ทั้งทับของที่แอปเพิ่งเขียน และ
+     ทำให้แอปอ่านเจอไฟล์ truncate ค้าง** · ตอนนี้ `--apply` ทั้งก้อนอยู่ใน transaction เดียว
+     และเขียนผ่าน `_save_skills_db()` · **dry-run ไม่ถือ lock** (อ่านอย่างเดียว ปลอดภัยอยู่แล้ว)
+   - ⚠️ **lock อยู่บนไฟล์แยก `skills_db.json.lock`** ห้ามล็อกตัว db เอง — `_save_skills_db()`
+     ใช้ `os.replace()` = สลับ inode ผู้ที่ล็อก db ไว้จะถือ lock บน inode ที่ถูกทิ้งแล้ว
+     = **ล็อกที่ดูเหมือนล็อกแต่ไม่กันอะไรเลย**
+   - ⚠️ **การอ่านเฉยๆ ไม่ต้องถือ lock** (เขียน atomic อยู่แล้ว) — ครอบเฉพาะ อ่าน→แก้→เขียน
+   - วัดได้ก่อนแก้: **6 โปรเซส × 20 รายการ หายไป 60/120** · reader อ่านเจอ JSON พัง 6 ครั้ง
+   - ✅ **เพดานเวลารอ lock** (user เลือก 2026-08-04: **fail-fast + ส่งเสียงดัง**)
+     `SKILLS_DB_LOCK_TIMEOUT=5` (env, `off` = รอไม่จำกัด) → ยึดไม่ได้ = โยน `SkillsDbLocked`
+     · เหตุผล: ตั้งแต่ PR #23 เส้นนี้อยู่ใน threadpool (40 slot) รอไม่จำกัด =
+     โปรเซสค้างตัวเดียวลากทั้งแอป = **อาการเดียวกับที่ PR #23 เพิ่งปิด** แค่เปลี่ยนสาเหตุ
+     · เลือกทิศนี้ได้เพราะ**มีเส้นสำรอง** (ผู้ใช้กดบันทึกใหม่ได้ แต่แอปค้างไม่มีทางออก)
+     · **`scripts/clean_skills_db.py` ใช้ `--lock-timeout` default 60 วิ โดยตั้งใจ** —
+       งานที่คนสั่งเองควรรอให้แอปว่างแล้วทำให้จบ (`0` = รอไม่จำกัด) ยึดไม่ได้ → **exit 1**
+     · ทางที่ไม่กลืน error: `save_skill()` คืน `False` + log ERROR (ผู้เรียกวนหลายรายการ
+       ปล่อย exception หลุดจะพังทั้งชุด) · `skills_extract` เพิ่ม `db_updated`/`warning`
+       ในผลลัพธ์ · `skills_delete`/`cleanup-skills` ตอบ `ok:false`
+   - ✅ **`_save_skills_db()` โยน `SkillsDbWriteFailed` แล้ว ไม่กลืนเหมือนเดิม**
+     ลำดับชั้น: `SkillsDbError` ← `SkillsDbLocked` / `SkillsDbWriteFailed` (จับตัวแม่ได้ทั้งคู่)
+     · เดิม `except Exception` + log warning เฉยๆ → ดิสก์เต็ม/สิทธิ์ไม่พอ = เขียนไม่ลงแต่
+       `save_skill()` คืน `True` และสคริปต์ **exit 0** พร้อมพิมพ์ว่าล้างแล้ว
+     · ⚠️ **บทเรียน: การย้ายสคริปต์มาใช้ `_save_skills_db()` (ถูกเรื่อง atomic+lock)
+       เผลอแปลงความล้มเหลวที่เคย "ดัง" ให้ "เงียบ"** — ของเดิมใช้ `open(w)` ซึ่งพังแล้วมี
+       traceback · **การรวมทางเดียวกันเป็นเรื่องดี แต่ต้องเช็คว่าทางกลางนั้นรายงานผลไหม**
 
 ---
 

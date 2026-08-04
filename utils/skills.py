@@ -1,8 +1,11 @@
+import fcntl
 import os
 import json
 import logging
 import re
 import threading
+import time
+from contextlib import contextmanager
 
 from core.config import SKILLS_DB_PATH
 
@@ -98,7 +101,119 @@ def _handle_unscorable_results(query: str, results: list) -> None:
 # 2. **ไฟล์เปล่าระหว่างเขียน** — `open(..., "w")` truncate ทันทีก่อนเขียนเนื้อ
 #    ใครอ่านจังหวะนั้นได้ไฟล์ว่าง → `_load_skills_db()` คืน `{}` → ถ้ามีคนเขียนต่อ
 #    ก็ทับด้วยของว่าง = **คลังหายถาวร** (วัดได้ 79 ครั้งใน 150 การเขียน)
+#
+# 3. **lost update ข้ามโปรเซส** — `RLock` เป็นของในโปรเซสเดียว `scripts/clean_skills_db.py`
+#    ที่รันด้วย `docker exec` มองไม่เห็นเลย → ต้องมี `flock` บนไฟล์ที่ทุกโปรเซสเห็นร่วมกัน
+#    (วัดได้ 2026-08-04: 6 โปรเซส × 20 รายการ **หายไป 60/120**)
 _db_lock = threading.RLock()
+_db_depth = 0          # ความลึกของ transaction ที่ซ้อนกัน — แก้ได้เฉพาะตอนถือ `_db_lock`
+
+
+class SkillsDbError(RuntimeError):
+    """เขียน `skills_db.json` ไม่สำเร็จ — ผู้เรียกต้องไม่เดินต่อเหมือนบันทึกแล้ว"""
+
+
+class SkillsDbLocked(SkillsDbError):
+    """ยึด flock ของ `skills_db.json` ไม่ได้ภายในเพดานเวลา"""
+
+
+class SkillsDbWriteFailed(SkillsDbError):
+    """เขียนไฟล์ล้มเหลว (ดิสก์เต็ม / สิทธิ์ไม่พอ / `os.replace` ข้าม filesystem)"""
+
+
+def _parse_lock_timeout(raw: str) -> float | None:
+    """`off`/`none` = รอไม่จำกัด (พฤติกรรมก่อน 2026-08-04)"""
+    if raw.strip().lower() in ("off", "none", ""):
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning(f"[Skills] SKILLS_DB_LOCK_TIMEOUT={raw!r} ไม่ใช่ตัวเลข — ใช้ 5 วินาที")
+        return 5.0
+
+
+# ── เพดานเวลารอ lock (user ตัดสินใจ 2026-08-04: fail-fast + ส่งเสียงดัง) ──────
+# file lock ปกติรอไม่จำกัด แต่บริบทเราเปลี่ยนไปตั้งแต่ PR #23: เส้นที่เขียนไฟล์นี้อยู่ใน
+# `run_in_threadpool` (มี 40 slot) ถ้ามีโปรเซสค้างถือ lock ไว้ คำขอจะกองรอจนกิน slot หมด
+# = **อาการเดียวกับที่ PR #23 เพิ่งไล่ปิดไป** แค่เปลี่ยนสาเหตุ
+#
+# เลือกทิศ "ล้มเหลว → ดัง" ได้เพราะ**มีเส้นสำรอง**: ผู้ใช้กดบันทึกใหม่ได้ แต่แอปที่ค้าง
+# ทั้งตัวไม่มีทางออก (เกณฑ์เดียวกับ `_handle_unscorable_results`)
+# ⚠️ งาน maintenance ที่คนสั่งเอง (`scripts/clean_skills_db.py`) ใช้เพดาน**ยาวกว่านี้** —
+# มันควรรอให้แอปว่างแล้วทำงานให้จบ ไม่ใช่ยอมแพ้ใน 5 วิ
+SKILLS_DB_LOCK_TIMEOUT = _parse_lock_timeout(os.getenv("SKILLS_DB_LOCK_TIMEOUT", "5"))
+
+
+def _db_lock_path() -> str:
+    """ล็อกไฟล์ **แยกต่างหาก** ไม่ใช่ตัว `skills_db.json` เอง
+
+    `_save_skills_db()` เขียนด้วย `os.replace()` = **สลับ inode** ผู้ที่ flock ตัว db ไว้
+    จะเหลือ lock อยู่บน inode เก่าที่ถูกทิ้งแล้ว → คนอื่นเปิดไฟล์ใหม่ได้ lock ทันที
+    = ล็อกที่ดูเหมือนล็อกแต่ไม่กันอะไรเลย · ไฟล์ `.lock` ไม่เคยถูก replace จึงใช้ได้
+
+    คำนวณตอนเรียก ไม่ใช่ตอน import — เทสกับสคริปต์ชี้ `SKILLS_DB_PATH` ใหม่ได้
+    """
+    return SKILLS_DB_PATH + ".lock"
+
+
+def _acquire_flock(fd: int, timeout: float | None) -> None:
+    """ยึด `flock(LOCK_EX)` โดยมีเพดานเวลา — `timeout=None` = รอไม่จำกัด
+
+    ใช้ `LOCK_NB` + วนถามใหม่ เพราะ `flock()` แบบบล็อกไม่มีพารามิเตอร์ timeout
+    (`signal.alarm` ใช้ไม่ได้ — โค้ดนี้รันในเธรดของ threadpool ไม่ใช่เธรดหลัก)
+    """
+    deadline = None if timeout is None else time.monotonic() + timeout
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except OSError:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise SkillsDbLocked(
+                    f"ยึด lock ของ skills_db ไม่ได้ใน {timeout} วินาที "
+                    f"({_db_lock_path()}) — น่าจะมีโปรเซสอื่นค้างถืออยู่"
+                ) from None
+            time.sleep(0.05)
+
+
+@contextmanager
+def _db_transaction(timeout=_UNSET):
+    """ครอบ read-modify-write บน `skills_db.json` — กันทั้งข้ามเธรดและข้ามโปรเซส
+
+    - `_db_lock` (RLock) กันเธรดในโปรเซสเดียวกัน + ทำให้ nested call ไม่ deadlock
+    - `flock(LOCK_EX)` กันคนละโปรเซส (แอป vs `scripts/clean_skills_db.py`)
+
+    `timeout` ไม่ส่ง = ใช้ `SKILLS_DB_LOCK_TIMEOUT` (5 วิ) · `None` = รอไม่จำกัด
+    ยึดไม่ได้ในเวลา → โยน `SkillsDbLocked` **ไม่กลืนเงียบ** (ดูเหตุผลที่คอมเมนต์ของค่าคงที่)
+
+    ⚠️ **การอ่านเฉยๆ ไม่ต้องถือ lock** — `_save_skills_db()` atomic อยู่แล้ว ผู้อ่านจึงเห็นได้
+    แค่ "ของเก่าครบ" หรือ "ของใหม่ครบ" · ที่ต้องครอบคือ **อ่าน→แก้→เขียน** เท่านั้น
+    ⚠️ flock ใช้ได้เพราะ volume บน NAS เป็น bind mount ของ filesystem จริง (ไม่ใช่ NFS)
+    """
+    global _db_depth
+    wait = SKILLS_DB_LOCK_TIMEOUT if timeout is _UNSET else timeout
+    with _db_lock:
+        if _db_depth > 0:              # ซ้อนอยู่ใน transaction เดิม — flock ถืออยู่แล้ว
+            _db_depth += 1             # ขอซ้ำจาก fd ใหม่จะบล็อกตัวเอง
+            try:
+                yield
+            finally:
+                _db_depth -= 1
+            return
+
+        path = _db_lock_path()
+        os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
+        f = open(path, "a+")
+        try:
+            _acquire_flock(f.fileno(), wait)
+            _db_depth += 1
+            try:
+                yield
+            finally:
+                _db_depth -= 1
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        finally:
+            f.close()
 
 
 def _load_skills_db() -> dict:
@@ -118,6 +233,10 @@ def _save_skills_db(db: dict):
     `os.replace()` เป็น atomic บน POSIX ในระบบไฟล์เดียวกัน → ผู้อ่านเห็นได้แค่
     "ของเก่าครบ" หรือ "ของใหม่ครบ" ไม่มีสถานะกลางที่ไฟล์ถูก truncate ไปแล้ว
     (ต้องอยู่ไดเรกทอรีเดียวกันถึงจะข้ามอุปกรณ์ไม่ได้ — `os.replace` ข้าม filesystem ไม่ได้)
+
+    ⚠️ **โยน `SkillsDbWriteFailed` เมื่อเขียนไม่ลง ห้ามกลืน** — เดิม `except Exception` แล้ว
+    log warning เฉยๆ ไม่คืนอะไร ผู้เรียกทุกคนจึงเดินต่อเหมือนสำเร็จ (`save_skill()` คืน `True`,
+    `clean_skills_db.py --apply` พิมพ์ว่าล้างแล้วและ exit 0) ทั้งที่ไฟล์ไม่เปลี่ยนเลย
     """
     import tempfile
     try:
@@ -135,7 +254,8 @@ def _save_skills_db(db: dict):
             except OSError: pass
             raise
     except Exception as e:
-        logger.warning(f"Failed to save skills_db.json: {e}")
+        logger.error(f"เขียน skills_db ไม่สำเร็จ ({SKILLS_DB_PATH}): {e}")
+        raise SkillsDbWriteFailed(f"เขียน skills_db ไม่สำเร็จ: {e}") from e
 
 
 def set_skill_entry(topic: str, entry: dict) -> None:
@@ -148,7 +268,7 @@ def set_skill_entry(topic: str, entry: dict) -> None:
 
     ⚠️ ห้ามเพิ่มจุดที่ load/แก้/save เองอีก — ทางเขียนต้องเหลือทางเดียวที่ถือ lock
     """
-    with _db_lock:                      # read-modify-write ต้องแบ่งแยกไม่ได้
+    with _db_transaction():             # read-modify-write ต้องแบ่งแยกไม่ได้
         db = _load_skills_db()
         db[topic] = entry
         _save_skills_db(db)
@@ -160,7 +280,7 @@ def delete_skill_entries(keys: list[str]) -> bool:
     อ่าน-ลบ-เขียนอยู่ใน lock เดียว: เดิม `skills_delete` เรียก `_save_skills_db()`
     ซ้ำในลูปต่อ key ด้วย = เขียนไฟล์หลายรอบและเปิดช่องให้ writer อื่นแทรกกลางคัน
     """
-    with _db_lock:
+    with _db_transaction():
         db = _load_skills_db()
         removed = [k for k in keys if k in db]
         if not removed:
@@ -181,14 +301,21 @@ def save_skill(topic: str, summary: str, source: str = "auto", sync: bool = True
         logger.info(f"[Skills] ปฏิเสธ skill ที่ไม่ผ่านเกณฑ์: {topic!r}")
         return False
 
-    with _db_lock:                      # read-modify-write ต้องแบ่งแยกไม่ได้
-        db = _load_skills_db()
-        db[topic] = {
-            "summary": summary,
-            "source": source,
-            "updated": __import__("datetime").datetime.now().isoformat(),
-        }
-        _save_skills_db(db)
+    # สัญญาของฟังก์ชันนี้เป็น bool อยู่แล้ว และผู้เรียก (`auto_extract_skills()`, dream cycle)
+    # วนบันทึกหลายรายการ — ปล่อย exception หลุดจะทำให้ทั้งชุดพังทั้งที่รายการอื่นยังบันทึกได้
+    # → คืน False แต่ log **ERROR** ไม่ใช่ warning เพราะนี่คือ "บันทึกไม่ลง" ไม่ใช่ "ไม่ผ่านเกณฑ์"
+    try:
+        with _db_transaction():         # read-modify-write ต้องแบ่งแยกไม่ได้
+            db = _load_skills_db()
+            db[topic] = {
+                "summary": summary,
+                "source": source,
+                "updated": __import__("datetime").datetime.now().isoformat(),
+            }
+            _save_skills_db(db)
+    except SkillsDbError as e:          # ยึด lock ไม่ได้ หรือเขียนไฟล์ไม่ลง
+        logger.error(f"[Skills] บันทึก {topic!r} ไม่ได้: {e}")
+        return False
 
     if not sync:
         return True
@@ -300,7 +427,7 @@ def cleanup_junk_skills() -> dict:
     """ลบ skills ที่เป็น junk ออกจาก skills_db.json และ sync ChromaDB"""
     # อ่าน→คัด→เขียน ต้องอยู่ใน lock เดียวกับ save_skill ไม่งั้น skill ที่ถูกบันทึก
     # ระหว่างที่กำลังคัดอยู่จะถูกเขียนทับหายไป (dream cycle เรียกทั้งสองเส้น)
-    with _db_lock:
+    with _db_transaction():
         db = _load_skills_db()
         removed = []
         kept = {}

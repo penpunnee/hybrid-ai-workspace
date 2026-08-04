@@ -316,7 +316,9 @@ def accept_proposal(
         from utils.skills import set_skill_entry
         set_skill_entry(topic, entry)
     except Exception as e:
-        logger.warning(f"[SkillDiscovery] update skills_db failed: {e}")
+        # ไฟล์ .md เขียนไปแล้ว = skill ครึ่งใบ (ค้นไม่เจอเพราะไม่มีใน db)
+        # ERROR ไม่ใช่ warning — ดู CLAUDE.md งานค้างข้อ 7 เรื่องสัญญาของ partial success
+        logger.error(f"[SkillDiscovery] เขียน .md แล้วแต่บันทึกลง skills_db ไม่ได้: {e}")
 
     # sync ChromaDB (best-effort)
     # ⚠️ ต้องส่ง **db ทั้งก้อน** — `sync_from_db()` นิยามว่า "upsert + ลบของที่หายไปจาก db"

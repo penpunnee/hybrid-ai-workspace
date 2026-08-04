@@ -24,7 +24,7 @@ from starlette.concurrency import run_in_threadpool
 from core.config import SKILLS_DIR
 from utils.skills import (
     get_skill_count, auto_extract_skills, _load_skills_db,
-    cleanup_junk_skills, set_skill_entry, delete_skill_entries,
+    cleanup_junk_skills, set_skill_entry, delete_skill_entries, SkillsDbError,
 )
 from utils.llm import stream_response
 
@@ -117,6 +117,11 @@ async def skills_extract(request: Request):
     except Exception as e:
         return {"ok": False, "error": f"บันทึกไฟล์ไม่ได้: {e}"}
 
+    # ไฟล์ .md เขียนไปแล้ว ณ จุดนี้ — ถ้า db เขียนไม่ลงคือ **สำเร็จครึ่งเดียว**
+    # ไม่กลืนเงียบ: บอกผู้เรียกด้วย `db_updated` + log ERROR (เดิม log warning แล้วตอบ
+    # ok:True เฉยๆ = ผู้ใช้เห็นว่าสร้าง skill สำเร็จทั้งที่ค้นหาไม่เจอเพราะไม่มีใน db)
+    db_updated = True
+    warning = None
     try:
         await run_in_threadpool(set_skill_entry, topic, {
             "summary": md_content[:300].strip(),
@@ -124,9 +129,15 @@ async def skills_extract(request: Request):
             "updated": datetime.now().isoformat(),
         })
     except Exception as e:
-        logger.warning(f"skills_db update failed: {e}")
+        db_updated = False
+        warning = f"เขียนไฟล์ .md สำเร็จ แต่บันทึกลง skills_db ไม่ได้: {e}"
+        logger.error(f"[skills_extract] {warning}")
 
-    return {"ok": True, "filename": filename, "path": filepath, "preview": md_content[:500]}
+    resp = {"ok": True, "filename": filename, "path": filepath,
+            "preview": md_content[:500], "db_updated": db_updated}
+    if warning:
+        resp["warning"] = warning
+    return resp
 
 
 @router.delete("/skills/{skill_id}")
@@ -154,7 +165,12 @@ def skills_delete(skill_id: str, delete_file: bool = False):
                     logger.warning(f"[skills_delete] removed file {fp} (delete_file=true)")
                     break
 
-    deleted_db = delete_skill_entries([skill_id, skill_id.replace(".md", "")])
+    try:
+        deleted_db = delete_skill_entries([skill_id, skill_id.replace(".md", "")])
+    except SkillsDbError as e:
+        logger.error(f"[skills_delete] ลบ {skill_id!r} ไม่ได้: {e}")
+        return {"ok": False, "error": str(e), "deleted_file": deleted_file}
+
     if deleted_file or deleted_db:
         return {"ok": True, "deleted_file": deleted_file, "deleted_db": deleted_db}
     return {"ok": False, "error": "ไม่พบ skill นี้"}
@@ -197,7 +213,11 @@ def skills_discover_cached():
 @router.post("/admin/cleanup-skills")
 def cleanup_skills_endpoint():
     """ลบ junk skills ออกจาก db + re-sync ChromaDB"""
-    result = cleanup_junk_skills()
+    try:
+        result = cleanup_junk_skills()
+    except SkillsDbError as e:
+        logger.error(f"[cleanup_skills] {e}")
+        return {"ok": False, "error": str(e)}
     return {"ok": True, **result}
 
 

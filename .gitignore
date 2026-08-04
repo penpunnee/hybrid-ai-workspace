@@ -24,3 +24,7 @@ db_backups/
 # (ดูคอมเมนต์ใน core/config.py) — ตัวใน root เคย track ไว้แต่เป็นสำเนาค้างปี
 # ที่เนื้อหาซ้ำกับ skills/*.md ทั้งหมด ทำให้เข้าใจผิดว่าแก้แล้วมีผล
 skills_db.json
+# ของข้างเคียงที่ runtime สร้าง — `.lock` คือไฟล์ flock (ดู utils/skills.py:_db_lock_path)
+# `.bak-*` คือ backup ที่ scripts/clean_skills_db.py --apply เขียนไว้ก่อนแก้
+skills_db.json.lock
+skills_db.json.bak-*
