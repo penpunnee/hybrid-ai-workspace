@@ -667,8 +667,17 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
    - (GEMINI + GOOGLE_SEARCH ตั้งแล้ว ✅) · recreate: `cd /var/services/homes/pawin/ui && sudo docker compose up -d hybrid-ai`
 2. ✅ **off-site GitHub backup ให้ `~/appscript.ui`** (2026-07-05) — เพิ่ม remote `github` (`github.com/penpunnee/appscript-ui`, private) คู่กับ `origin` (NAS bare repo) ใช้ SSH key ที่มีอยู่แล้ว (`id_ed25519_penpunnee`, account-level ไม่ต้องผูก deploy key ใหม่) push ครบทั้ง 2 remote ทุกครั้งที่ commit นับจากนี้
 3. ✅ **เปลี่ยน local model → Qwen3.5-9B** (2026-07-05, เลิกใช้ deepseek-r1-0528-qwen3-8b) — `LMSTUDIO_CHAT_MODEL`/`LMSTUDIO_REASON_MODEL`/`LMSTUDIO_VISION_MODEL` ทั้ง 3 ตัวชี้ไป `qwen/qwen3.5-9b`, local `.env` อัปเดตแล้ว, NAS `.env` ยังค้าง `LMSTUDIO_CHAT_MODEL=deepseek/...` (ต้องแก้ + recreate ให้ตรงกัน — ดู session log ล่าสุด)
-4. 🧪 **verify + ปิดงานค้าง**: ดู File Manager drag&drop/กล้อง/index ด้วยตาบน browser · #34 web-search grounding classifier (test ยังไม่เสร็จ) · เคลียร์ WIP `components/` ใน appscript.ui (untracked ไม่ได้ import) · quality gate ฝั่ง recall (optional)
-5. 💾 **ยืนยัน infra**: DSM `db_backup.sh` รายวัน 03:30 มีจริงไหม (เช็คไม่ขึ้นเมื่อ 2026-06-18) · `poppler-utils` บน NAS (OCR PDF scan — เช็คไม่ได้ตอน backend down)
+4. 🧪 **verify + ปิดงานค้าง**: ดู File Manager drag&drop/กล้อง/index ด้วยตาบน browser · #34 web-search grounding classifier (test ยังไม่เสร็จ) · ~~เคลียร์ WIP `components/` ใน appscript.ui~~ ✅ **ตรวจแล้ว 2026-08-04: tree สะอาด ไม่มีโฟลเดอร์ `components/` ไม่มี import ค้าง** · quality gate ฝั่ง recall (optional)
+5. 💾 **ยืนยัน infra — ตรวจจริงแล้ว 2026-08-04:**
+   - ✅ `poppler-utils` บน NAS: **มี** (`pdftoppm` อยู่ในคอนเทนเนอร์)
+   - 🔴 **DSM `db_backup.sh` ไม่เคยถูกตั้งเวลาเลย** — ไล่ task ที่ยังมีชีวิตครบ **24 ตัว**
+     ใน `/usr/syno/etc/synoschedule.d/root/*.task` **ไม่มีตัวไหนเรียก `db_backup.sh`**
+     สคริปต์มีจริงและทำงานได้ (`scripts/db_backup.sh` → `/volume1/homes/pawin/db_backups`)
+     แต่ backup ล่าสุดคือ **2026-07-12** = รันมือครั้งเดียวแล้วไม่มีอีกเลย
+     · วิธีตรวจ (sudo -n ครอบแค่ docker ไม่ครอบ `synoschedtask`):
+       `docker run --rm -v /usr/syno/etc:/syno:ro python:3.11-alpine` แล้ว decode `cmd=` (base64)
+     · ⚠️ `N.backup/` คือประวัติเวอร์ชันที่ DSM เก็บไว้ **ไม่ใช่ task ที่รันจริง** — ดูเฉพาะ `N.task`
+     · บทเรียนซ้ำ: **"ตั้ง cron ไว้ไม่ได้แปลว่ามันรัน" — คราวนี้คือไม่เคยตั้งด้วยซ้ำ**
 - ⛔ พักไว้: Image Gen (free tier limit=0 ต้องเปิด billing) · fine-tune (รอ 👍 ~200-500)
 
 ## ✅ Admin unlock endpoint (2026-06-01)
