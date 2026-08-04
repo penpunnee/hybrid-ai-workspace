@@ -615,8 +615,9 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-04 (ล่าสุด — อ่านอันนี้ก่อนอันข้างล่าง)
 
-**สถานะ:** `main` = `992f9ba` · PR #14–#22 merged · CI เขียว · prod deployed+verified
-· `~/appscript.ui` = `1e65beb` (push ครบ github + NAS bare)
+**สถานะ:** PR #14–#22 merged · CI เขียว · prod deployed+verified · `~/appscript.ui` sync แล้ว
+(github + NAS bare) · ⚠️ **ไม่เขียน commit hash ของ repo ตัวเองไว้ตรงนี้** — ไฟล์นี้ถูก commit
+ทีหลังเสมอจึงตามหลังหนึ่งก้าวตลอด (เคยเขียนแล้วผิดทันทีที่ commit) ให้ดู `git log` แทน
 **audit 24 ข้อ ปิดไป 23** เหลือข้อ 13 (ใส่ `ANTHROPIC_API_KEY`/`MOONSHOT_API_KEY` ใน NAS `.env` — user ตัดสินใจแล้วว่ายังไม่ใช้ **ห้ามถามซ้ำ**)
 
 ### 🔴 ต้องใช้ user เท่านั้น
