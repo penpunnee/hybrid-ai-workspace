@@ -99,7 +99,11 @@ def get_or_create_collection(client, name: str, **kwargs):
     ef = _get_embedding_function()
     if ef is not None:
         kwargs.setdefault("embedding_function", ef)
-    kwargs.setdefault("metadata", {"hnsw:space": "cosine"})
+    # merge ทีละคีย์ ไม่ใช่ setdefault ทั้งก้อน — caller ที่ส่ง metadata ของตัวเองมา
+    # (เช่น {"description": ...}) เคยทำให้ `hnsw:space` หายเงียบๆ แล้วตกไปใช้ l2
+    metadata = dict(kwargs.get("metadata") or {})
+    metadata.setdefault("hnsw:space", "cosine")
+    kwargs["metadata"] = metadata
     return client.get_or_create_collection(name, **kwargs)
 
 
