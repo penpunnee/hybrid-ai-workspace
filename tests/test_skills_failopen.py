@@ -68,9 +68,14 @@ def test_failopen_does_not_leak_whole_db(monkeypatch, loaded_db):
 
 
 def test_normal_path_still_returns_top_results(monkeypatch, loaded_db):
+    # ⚠️ ต้องมี `similarity` เพราะ `SkillsSearch.search()` ใส่ให้ทุกแถวตั้งแต่
+    # 2026-08-04 (พื้นคะแนน `SKILLS_SEARCH_MIN_SCORE`) — fake ที่ไม่มีคีย์นี้
+    # แปลว่า "วัดความเกี่ยวข้องไม่ได้" ซึ่งของจริงจะถูกตัดทิ้ง (ดู
+    # tests/test_skills_search_floor.py) · ค่าที่ใส่คือคะแนนระดับ "เกี่ยวจริง"
+    # ที่วัดได้บน prod (0.49–0.67)
     _patch_search(monkeypatch, _FakeSearch(results=[
-        {"topic": "deploy", "summary": "วิธี deploy", "category": "ops"},
-        {"topic": "network", "summary": "ผังเน็ตบ้าน"},
+        {"topic": "deploy", "summary": "วิธี deploy", "category": "ops", "similarity": 0.62},
+        {"topic": "network", "summary": "ผังเน็ตบ้าน", "similarity": 0.51},
     ]))
     out = skills.search_skills("deploy ยังไง")
     assert "[ความรู้ที่เกี่ยวข้องกับคำถาม]" in out

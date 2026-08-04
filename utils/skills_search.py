@@ -7,7 +7,7 @@ import logging
 from typing import List, Dict, Optional
 import chromadb
 
-from utils.memory import _get_embedding_function, get_collection
+from utils.memory import get_or_create_collection
 
 logger = logging.getLogger(__name__)
 
@@ -33,20 +33,18 @@ class SkillsSearch:
                 port=self.chroma_port
             )
             self.collection_name = "skills_collection"
-            
-            # Get or create collection
-            ef = _get_embedding_function()
-            try:
-                self.collection = get_collection(self.client, self.collection_name)
-                logger.info(f"Skills search loaded existing collection: {self.collection_name}")
-            except Exception as e:
-                logger.debug(f"Skills search collection '{self.collection_name}' not found, creating new: {e}")
-                create_kwargs = {"name": self.collection_name, "metadata": {"description": "Skills Semantic Search"}}
-                if ef is not None:
-                    create_kwargs["embedding_function"] = ef
-                self.collection = self.client.create_collection(**create_kwargs)
-                logger.info(f"Skills search created new collection: {self.collection_name}")
-                
+
+            # ⚠️ ต้องผ่าน `get_or_create_collection()` เท่านั้น — เดิมเรียก
+            # `client.create_collection()` ตรงๆ จึงไม่ได้ `hnsw:space: cosine` ติดมาด้วย
+            # (chroma default = l2 ซึ่ง distance ไม่มีขอบบน) → เทียบเกณฑ์กับเส้นอื่น
+            # ในโปรเจกต์ไม่ได้ และ `1.0 - distance` ที่ skills_shadow.py ใช้ก็แปลผลผิด
+            self.collection = get_or_create_collection(
+                self.client,
+                self.collection_name,
+                metadata={"description": "Skills Semantic Search", "hnsw:space": "cosine"},
+            )
+            logger.info(f"Skills search ready: {self.collection_name}")
+
             self.available = True
         except Exception as e:
             logger.warning(f"Skills search initialization failed: {e}")
@@ -127,6 +125,27 @@ class SkillsSearch:
                 logger.error(f"sync_from_db: ลบ stale ids ล้มเหลว: {e}")
         self.add_skills_from_db(skills_db)
     
+    def _space(self) -> str:
+        """space จริงของ collection ที่ต่ออยู่ — **อ่านจาก metadata ไม่ใช่จากเจตนาในโค้ด**
+        collection ที่ถูกสร้างไว้ก่อนหน้านี้ยังคง space เดิมของมัน แม้โค้ดจะขอ cosine แล้ว
+        """
+        try:
+            return str((self.collection.metadata or {}).get("hnsw:space", "l2")).lower()
+        except Exception:
+            return "l2"
+
+    def _similarity(self, distance: Optional[float]) -> Optional[float]:
+        """แปลง distance → similarity 0..1 · คืน `None` เมื่อแปลงไม่ได้
+
+        `1.0 - distance` ใช้ได้เฉพาะ **cosine** (distance 0..2 → similarity 1..-1)
+        ถ้า space เป็น l2 ค่าที่ได้ไม่มีความหมาย (l2 เกิน 1 ได้ง่าย → similarity ติดลบ)
+        → คืน `None` = "วัดไม่ได้" ให้ปลายทางตัดสินใจ **ห้ามคืน 0.0** เพราะ
+        "ไม่รู้" กับ "ไม่เกี่ยว" ต้องแยกกันให้ออก (กติกาเดียวกับ skills_shadow.py)
+        """
+        if distance is None or self._space() != "cosine":
+            return None
+        return max(0.0, min(1.0, 1.0 - float(distance)))
+
     def search(self, query: str, n_results: int = 3, category: Optional[str] = None) -> List[Dict]:
         """
         Search for relevant skills based on query
@@ -160,12 +179,14 @@ class SkillsSearch:
             skills = []
             if results['documents'] and results['documents'][0]:
                 for i, doc in enumerate(results['documents'][0]):
+                    distance = results['distances'][0][i] if 'distances' in results else None
                     skills.append({
                         "topic": results['metadatas'][0][i]['topic'],
                         "summary": doc,
                         "category": results['metadatas'][0][i]['category'],
                         "source": results['metadatas'][0][i]['source'],
-                        "distance": results['distances'][0][i] if 'distances' in results else None
+                        "distance": distance,
+                        "similarity": self._similarity(distance),
                     })
             
             logger.info(f"Skills search for '{query}' returned {len(skills)} results")
@@ -202,6 +223,38 @@ def get_skills_search() -> SkillsSearch:
     if _skills_search is None:
         _skills_search = SkillsSearch()
     return _skills_search
+
+
+def recreate_collection() -> str:
+    """ลบ `skills_collection` แล้วสร้างใหม่ด้วย cosine space + resync จาก skills_db
+
+    จำเป็นเพราะ **space ของ collection เปลี่ยนตามโค้ดไม่ได้** — collection ที่ถูกสร้าง
+    ไว้ตอนโค้ดยังเรียก `client.create_collection()` ตรงๆ จะค้างอยู่บน l2 ตลอดไป
+    ต่อให้แก้โค้ดแล้วก็ตาม (แก้โค้ด = collection ที่สร้าง*ใหม่*เท่านั้นที่ได้ cosine)
+
+    รันในคอนเทนเนอร์:
+        docker exec ai-backend-1 sh -c "cd /app && python -c \\
+          'from utils.skills_search import recreate_collection; print(recreate_collection())'"
+    """
+    global _skills_search
+    from utils.skills import _load_skills_db
+
+    search = get_skills_search()
+    if not search.available:
+        return "❌ ต่อ ChromaDB ไม่ได้ — ไม่ได้ทำอะไร"
+
+    old_space = search._space()
+    old_count = search.collection.count()
+    search.client.delete_collection(search.collection_name)
+    _skills_search = None                       # บังคับให้สร้าง instance + collection ใหม่
+
+    fresh = get_skills_search()
+    db = _load_skills_db()
+    fresh.sync_from_db(db)
+    return (
+        f"✅ สร้าง {fresh.collection_name} ใหม่: space {old_space} → {fresh._space()} · "
+        f"resync {len(db)} skill (เดิม {old_count} รายการ)"
+    )
 
 
 def sync_skills_to_search(skills_db: Dict):

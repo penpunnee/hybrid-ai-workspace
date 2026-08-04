@@ -153,9 +153,13 @@ def semantic_scores(prompt: str, n_results: int = 30) -> dict[str, float]:
             key = r.get("source") or r.get("topic") or ""
             if not key.endswith(".md"):
                 key = f"{key}.md"
-            d = r.get("distance")
-            if d is not None:
-                out[key] = round(1.0 - float(d), 4)
+            # ใช้ `similarity` ที่ `SkillsSearch` แปลงมาให้ — **ห้ามคำนวณ `1.0 - distance`
+            # เองตรงนี้** เพราะสูตรนั้นถูกเฉพาะ cosine space · ตอน collection ยังเป็น l2
+            # (ก่อนแก้ 2026-08-04) บรรทัดเดิมให้ค่าติดลบ = ตัวเลข semantic ของข้อ 21
+            # ถูกวัดมาจากสเกลที่ผิด · None = "วัดไม่ได้" → ไม่ใส่ลง dict (ไม่ใช่ 0.0)
+            sim = r.get("similarity")
+            if sim is not None:
+                out[key] = round(float(sim), 4)
         return out
     except Exception as e:
         logger.debug(f"semantic_scores ใช้ไม่ได้: {e}")
