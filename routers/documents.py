@@ -14,6 +14,8 @@ from utils.documents import (
 )
 from utils.summarize import summarize_document
 from utils.ocr import ocr_pdf, ocr_image
+from starlette.concurrency import run_in_threadpool
+
 from utils.http_limits import read_capped, json_body_capped
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -105,10 +107,10 @@ async def upload(
         if ext and ext not in _ALLOWED_EXT:
             raise HTTPException(415, f"unsupported file extension: {ext}")
         raw = await read_capped(file, _MAX_BYTES)
-        content = _decode_bytes(raw, file.filename or "upload")
+        content = await run_in_threadpool(_decode_bytes, raw, file.filename or "upload")
         src = source or file.filename or "upload"
         meta = {"content_type": file.content_type or "", "size": len(raw)}
-        return index_document(content, source=src, metadata=meta)
+        return await run_in_threadpool(index_document, content, source=src, metadata=meta)
 
     # Path B: JSON {source, content}
     data = await json_body_capped(request, _MAX_BYTES)
@@ -120,7 +122,8 @@ async def upload(
     if len(content.encode("utf-8")) > _MAX_BYTES:
         raise HTTPException(413, f"content too large (>{_MAX_BYTES} bytes)")
     meta = data.get("metadata") or {}
-    return index_document(content, source=src, metadata=meta if isinstance(meta, dict) else {})
+    return await run_in_threadpool(index_document, content, source=src,
+                                   metadata=meta if isinstance(meta, dict) else {})
 
 
 @router.get("")
@@ -138,7 +141,7 @@ async def search(request: Request):
         raise HTTPException(400, "field 'query' required")
     top_k = int(data.get("top_k", 5))
     source = data.get("source") or None
-    results = retrieve_chunks(query, top_k=top_k, source_filter=source)
+    results = await run_in_threadpool(retrieve_chunks, query, top_k=top_k, source_filter=source)
     return {"query": query, "results": results, "count": len(results)}
 
 
@@ -161,9 +164,9 @@ async def ocr_endpoint(
     filename = file.filename or "upload"
 
     if ext == ".pdf":
-        result = ocr_pdf(raw, filename=filename)
+        result = await run_in_threadpool(ocr_pdf, raw, filename=filename)
     else:
-        result = ocr_image(raw, filename=filename)
+        result = await run_in_threadpool(ocr_image, raw, filename=filename)
 
     if not result.get("ok"):
         raise HTTPException(422, result.get("error", "OCR ล้มเหลว"))
@@ -187,7 +190,7 @@ async def summarize(request: Request):
             raise HTTPException(400, "field 'file' required")
         raw = await read_capped(file, _MAX_BYTES)
         filename = getattr(file, "filename", "document") or "document"
-        text = _decode_bytes(raw, filename)
+        text = await run_in_threadpool(_decode_bytes, raw, filename)
     else:
         data = await json_body_capped(request, _MAX_BYTES)
         text = (data.get("content") or "").strip()
@@ -199,7 +202,8 @@ async def summarize(request: Request):
     if not text.strip():
         raise HTTPException(422, "ไม่พบข้อความในเอกสาร")
 
-    result = summarize_document(text, filename=filename, summary_type=summary_type)
+    result = await run_in_threadpool(summarize_document, text,
+                                     filename=filename, summary_type=summary_type)
     return result
 
 
