@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import re
+import threading
 
 from core.config import SKILLS_DB_PATH
 
@@ -86,6 +87,20 @@ def _handle_unscorable_results(query: str, results: list) -> None:
     return None
 
 
+# ── กันเขียนชนกันบน skills_db.json ───────────────────────────────────────────
+# **race นี้เกิดได้แล้ววันนี้ ไม่ต้องรอย้ายไป threadpool** — `utils/dream.py:549`
+# เขียนจาก APScheduler (dream cycle 02:00) ส่วน `auto_extract_skills()` เขียนจาก
+# เส้นแชท = คนละ thread
+#
+# สองอาการที่วัดได้จริงในเทส (tests/test_skills_db_concurrency.py):
+# 1. **lost update** — read-modify-write ไม่มี lock: A อ่าน {} · B อ่าน {} ·
+#    A เขียน {a} · B เขียน {b} → เหลือแค่ {b} ไม่มี error ไม่มี log
+# 2. **ไฟล์เปล่าระหว่างเขียน** — `open(..., "w")` truncate ทันทีก่อนเขียนเนื้อ
+#    ใครอ่านจังหวะนั้นได้ไฟล์ว่าง → `_load_skills_db()` คืน `{}` → ถ้ามีคนเขียนต่อ
+#    ก็ทับด้วยของว่าง = **คลังหายถาวร** (วัดได้ 79 ครั้งใน 150 การเขียน)
+_db_lock = threading.RLock()
+
+
 def _load_skills_db() -> dict:
     if os.path.exists(SKILLS_DB_PATH):
         try:
@@ -98,12 +113,29 @@ def _load_skills_db() -> dict:
 
 
 def _save_skills_db(db: dict):
+    """เขียนแบบ atomic — เขียนลงไฟล์ชั่วคราวข้างๆ แล้ว `os.replace()` ทับทีเดียว
+
+    `os.replace()` เป็น atomic บน POSIX ในระบบไฟล์เดียวกัน → ผู้อ่านเห็นได้แค่
+    "ของเก่าครบ" หรือ "ของใหม่ครบ" ไม่มีสถานะกลางที่ไฟล์ถูก truncate ไปแล้ว
+    (ต้องอยู่ไดเรกทอรีเดียวกันถึงจะข้ามอุปกรณ์ไม่ได้ — `os.replace` ข้าม filesystem ไม่ได้)
+    """
+    import tempfile
     try:
-        with open(SKILLS_DB_PATH, "w", encoding="utf-8") as f:
-            json.dump(db, f, ensure_ascii=False, indent=2)
+        d = os.path.dirname(os.path.abspath(SKILLS_DB_PATH)) or "."
+        os.makedirs(d, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=d, prefix=".skills_db.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(db, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())        # กันไฟล์ว่างหลังไฟดับ (metadata ไปก่อนเนื้อ)
+            os.replace(tmp, SKILLS_DB_PATH)
+        except Exception:
+            try: os.unlink(tmp)
+            except OSError: pass
+            raise
     except Exception as e:
         logger.warning(f"Failed to save skills_db.json: {e}")
-        pass
 
 
 def save_skill(topic: str, summary: str, source: str = "auto", sync: bool = True) -> bool:
@@ -116,13 +148,14 @@ def save_skill(topic: str, summary: str, source: str = "auto", sync: bool = True
         logger.info(f"[Skills] ปฏิเสธ skill ที่ไม่ผ่านเกณฑ์: {topic!r}")
         return False
 
-    db = _load_skills_db()
-    db[topic] = {
-        "summary": summary,
-        "source": source,
-        "updated": __import__("datetime").datetime.now().isoformat(),
-    }
-    _save_skills_db(db)
+    with _db_lock:                      # read-modify-write ต้องแบ่งแยกไม่ได้
+        db = _load_skills_db()
+        db[topic] = {
+            "summary": summary,
+            "source": source,
+            "updated": __import__("datetime").datetime.now().isoformat(),
+        }
+        _save_skills_db(db)
 
     if not sync:
         return True
@@ -232,24 +265,27 @@ def _is_meaningful_skill(topic: str, summary: str) -> bool:
 
 def cleanup_junk_skills() -> dict:
     """ลบ skills ที่เป็น junk ออกจาก skills_db.json และ sync ChromaDB"""
-    db = _load_skills_db()
-    removed = []
-    kept = {}
-    for topic, data in db.items():
-        summary = data.get("summary", "")
-        if _is_meaningful_skill(topic, summary):
-            kept[topic] = data
-        else:
-            removed.append(topic)
+    # อ่าน→คัด→เขียน ต้องอยู่ใน lock เดียวกับ save_skill ไม่งั้น skill ที่ถูกบันทึก
+    # ระหว่างที่กำลังคัดอยู่จะถูกเขียนทับหายไป (dream cycle เรียกทั้งสองเส้น)
+    with _db_lock:
+        db = _load_skills_db()
+        removed = []
+        kept = {}
+        for topic, data in db.items():
+            summary = data.get("summary", "")
+            if _is_meaningful_skill(topic, summary):
+                kept[topic] = data
+            else:
+                removed.append(topic)
 
-    if removed:
-        _save_skills_db(kept)
-        try:
-            from utils.skills_search import sync_skills_to_search
-            sync_skills_to_search(kept)
-        except Exception as e:
-            logger.warning(f"cleanup sync failed: {e}")
-        logger.info(f"[Cleanup] ลบ {len(removed)} junk skills: {removed[:5]}...")
+        if removed:
+            _save_skills_db(kept)
+            try:
+                from utils.skills_search import sync_skills_to_search
+                sync_skills_to_search(kept)
+            except Exception as e:
+                logger.warning(f"cleanup sync failed: {e}")
+            logger.info(f"[Cleanup] ลบ {len(removed)} junk skills: {removed[:5]}...")
 
     return {"removed": removed, "remaining": len(kept)}
 
