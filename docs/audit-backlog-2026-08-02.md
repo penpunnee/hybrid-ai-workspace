@@ -926,22 +926,61 @@ chat history** ได้ · แอปเปิด public ผ่าน Cloudflare
 - ซ่อนอยู่อีกชั้น: `with ThreadPoolExecutor(...)` ตอนออกจะ `shutdown(wait=True)` →
   **บนเส้น timeout จะกลับไปแช่รอ dream ที่เพิ่งบอกว่าไม่รอ** → เปลี่ยนเป็น `shutdown(wait=False)`
 
-### ⚠️ ยังไม่แก้ — เป็นระบบ ไม่ใช่จุดเดียว (ตัดสินใจแยกเป็นงานของตัวเอง)
+### ~~⚠️ ยังไม่แก้ — เป็นระบบ~~ ✅ **ปิดแล้ว 2026-08-04** (PR #20 · #21 · #22)
 
-**`async def` + งาน sync ที่ช้า = คลาสเดียวกับ A และ C และมีอีกหลายที่**
-เพราะ handler ที่อ่าน body **ถูกบังคับให้เป็น `async def`** แล้วโค้ดที่เรียกต่อเป็น sync ล้วน:
-`documents.py` (upload/ocr/summarize/search — เรียก OCR + LLM + embedding) ·
-`skills.py:skills_extract` (รอ Gemini generate จบ) · `memory.py` (teach/cleanup → ChromaDB) ·
-`agent.py` · `chat.py` (ช่วง context assembly ก่อนเริ่ม stream)
+เดิมเขียนไว้ว่าไม่รวบแก้เพราะ *"`run_in_threadpool` ย้ายโค้ดที่เคยรันทีละอันไปรันพร้อมกัน —
+โค้ดพวกนี้แตะ global state (`skills_db`, memory, cache) ที่ไม่เคยถูกออกแบบมาให้ concurrent"*
 
-**ไม่รวบแก้ทีเดียวในรอบนี้เพราะ** `run_in_threadpool` ย้ายโค้ดที่เคยรันทีละอันไปรันพร้อมกัน —
-โค้ดพวกนี้แตะ global state (`skills_db`, memory, cache) ที่ไม่เคยถูกออกแบบมาให้ concurrent
-→ ต้องมีเทส concurrency ของตัวเองก่อน ไม่ใช่แก้ทีละ import (A/C แก้ได้เพราะไม่แตะ global state)
+#### 🔑 เหตุผลนั้นเองที่ต้องตรวจ — ไล่จริงแล้วจริงแค่ 1 ใน 5
 
-**`POST /api/documents/upload` อ่านไฟล์เข้า RAM ก่อนเช็คขนาด** — `await file.read()` มาก่อน
-`if len(raw) > _MAX_BYTES` (10 MB) → body 5 GB = กิน RAM 5 GB ก่อนจะถูกปฏิเสธ ·
-ต้องมี auth ก่อน และ compose ไม่ได้ตั้ง mem limit ให้ `ai-backend-1` → ควรกันด้วย
-`content-length` ก่อนอ่าน หรือตั้ง limit ที่ container
+| ที่ถูกอ้างว่าไม่ปลอดภัย | ของจริง |
+|---|---|
+| `utils/embed.py` · `utils/response_cache.py` | `check_same_thread=False` + `threading.Lock` อยู่แล้ว ✅ |
+| `utils/history.py` | `_get_conn()` เปิด connection ใหม่ทุก call = แต่ละ thread มีของตัวเอง ✅ |
+| memory / ChromaDB | `HttpClient` คุยผ่าน HTTP ไม่มี handle ผูก thread ✅ |
+| `skills_db` | **ไม่ปลอดภัยจริง** ❌ (แก้จบใน ~30 บรรทัด) |
+
+**และ race ของ `skills_db` ไม่ได้รอ threadpool — เกิดได้แล้ววันนั้น** `utils/dream.py:549`
+เขียนจาก APScheduler (02:00) ส่วน `auto_extract_skills()` เขียนจากเส้นแชท = คนละ thread
+· เทสวัดได้ **อ่านเจอไฟล์เปล่า 79 ครั้งใน 150 การเขียน** → `_load_skills_db()` คืน `{}`
+→ ถ้ามีใครเขียนต่อจากสถานะนั้น = **คลังความรู้หายถาวร**
+→ แก้: `_db_lock` (RLock) + `_save_skills_db()` atomic (mkstemp → fsync → `os.replace`)
+
+#### 🔑 และบันทึกเดิมยังชี้ผิด**ที่**สำหรับ `chat.py`
+
+เขียนไว้ว่าบล็อกที่ *"ช่วง context assembly ก่อนเริ่ม stream"* — **ไม่จริงตั้งแต่ 2026-07-13**
+starlette ห่อ **sync generator** ด้วย `iterate_in_threadpool()` (`StreamingResponse.__init__`)
+→ ตอนย้ายงานเข้า `def generate()` เพื่อยิง SSE `{"phase":...}` ให้ UI **ปิดปัญหา blocking
+ไปด้วยโดยไม่มีใครรู้และไม่มีใครกลับมาลบบันทึก**
+
+ตัวที่บล็อกจริงอยู่ **ก่อน** `return StreamingResponse(...)` คนละที่กับที่บันทึกชี้:
+`generate_image()` (Gemini Image API) · `_rc_lookup()` (embed prompt = round-trip) ·
+`teach()` (ChromaDB) · `search_memory()` ใน `/regenerate` · `save_message()`/`load_history()`
+
+ℹ️ handler ที่เป็น `def` ธรรมดา (`list_all`/`delete`/`list_available_tools`) FastAPI โยนเข้า
+threadpool ให้เองอยู่แล้ว — **บั๊กคลาสนี้มีเฉพาะ `async def`**
+
+#### สิ่งที่ทำจริง
+- **PR #20** `utils/http_limits.py` — `declared_too_large()` + `read_capped()`/`json_body_capped()`
+  ปิดรู "อ่านเข้า RAM ก่อนเช็คขนาด" ทั้ง 5 จุด/4 endpoint + `mem_limit: 2g` ใน compose
+- **PR #21** `documents.py` → `run_in_threadpool` (upload/search/ocr/summarize) + `skills_db` lock
+- **PR #22** `chat.py` (image gen · teach · response cache · regenerate) + `agent.py`
+
+#### verified บน prod จริง (ไม่ใช่ ASGI test transport)
+```
+baseline /api/config          0.005 s
+/api/documents/search         2.093 s   ← embedding จริง
+/api/config ระหว่างงานหนัก     0.004 s   (เสร็จที่ 0.155 s จาก t0)
+```
+เทส concurrency 10 ตัวเขียวกับโค้ดที่ deploy จริง (chat×3 documents×2 skills_db×2 sandbox×3)
+
+#### ⛔ ยังเหลือ
+- `memory.py` / `skills.py` routers — ยังไม่ได้ไล่
+- **multipart ใหญ่ยังเขียนลงดิสก์คอนเทนเนอร์ระหว่าง parse** — starlette spool ที่ >1 MB
+  (`SpooledTemporaryFile`) → `read_capped()` ปิดฝั่ง RAM ได้ แต่ฝั่งดิสก์ต้องกันที่
+  proxy/middleware ซึ่งเป็นคนละ lever
+- RLock กันได้แค่ process เดียว — `scripts/clean_skills_db.py` เป็นคนละ process
+  (`os.replace` กันไฟล์พังได้ แต่ยัง lost-update ได้ถ้ารันชนกับแอปพอดี)
 
 ### ที่ตรวจแล้วไม่มีปัญหา
 - `utils/fs_tools.py:_resolve_safe()` — resolve symlink ก่อนเทียบ + `Path.relative_to`

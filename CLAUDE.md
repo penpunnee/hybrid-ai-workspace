@@ -345,6 +345,16 @@ LOG_FILE=server.log
 
 ## Coding Conventions
 - All UI strings + comments **ภาษาไทย**; technical terms remain English
+- ⚠️ **`async def` handler ห้ามเรียกงาน sync ที่ช้าตรงๆ** — ต้องผ่าน `run_in_threadpool()`
+  (LLM / embedding / ChromaDB / OCR / sqlite) · handler ที่เป็น `def` ธรรมดาไม่ต้องทำ
+  FastAPI โยนเข้า threadpool ให้เองอยู่แล้ว · **sync generator ที่ส่งให้ `StreamingResponse`
+  ก็ปลอดภัยอยู่แล้ว** เพราะ starlette ห่อด้วย `iterate_in_threadpool()` — จุดที่ต้องระวังคือ
+  โค้ดที่อยู่ **ก่อน** `return StreamingResponse(...)` (ดู `tests/test_chat_router_concurrency.py`)
+- ⚠️ **รับ body ต้องมีเพดานก่อนอ่าน** — ใช้ `utils/http_limits.py`
+  (`read_capped()` / `json_body_capped()`) ห้าม `await file.read()` / `await request.json()` ดิบ
+  เพราะจะกิน RAM เต็มก้อนก่อนถูกปฏิเสธ (`ai-backend-1` มี `mem_limit: 2g` เป็นด่านสุดท้าย)
+- ⚠️ **เขียน `skills_db.json` ต้องผ่าน `save_skill()`/`cleanup_junk_skills()`** ซึ่งถือ `_db_lock`
+  และเขียนแบบ atomic — dream cycle (APScheduler) กับเส้นแชทเขียนไฟล์เดียวกันคนละ thread
 - Each feature area → own router file in `routers/`, registered in `server.py`
 - Skills `.md` files in `skills/` should be registered in `skills_db.json` for semantic search (`load_skills_relevant()` reads .md directly as fallback)
 - ChromaDB is optional — wrap calls with try/except + `is_memory_available()` check
@@ -602,6 +612,29 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 - ✅ **File Manager §18 → React** (`843eca2` / source `02ac73d`): `utils/filemanager.ts` `classifyUpload`+11 vitest (89/89), ขยาย attach รองรับ PDF/DOCX/XLSX + index ChromaDB + ปุ่ม 📷 + drag&drop ลง composer, gate overlay §18, `?v=20260617-filemgr`. **→ port overlay→React ครบทุกตัวแล้ว**
 - 🔴→✅ **prod ล่ม (`ai-backend-1` หายรอบ 2) + fix ถาวร** (`4536e57`): กู้กลับ + `restart:always` + healthcheck + `backend-watchdog` (loop 60s `compose up -d hybrid-ai`). recovery path verified จริง. ดู Known Quirks "ai-backend-1 หายซ้ำ"
 - ⚠️ ค้าง verify ด้วยตา: File Manager drag&drop/กล้อง/index toast (verify แค่ build+test+prod-asset) · watchdog boot-race (recreate เกิน 1 ครั้งตอน boot ไม่ลูป — refine ด้วย `sleep 90` ก่อน loop แรกถ้าอยากเนียน)
+
+## ⏭️ งานค้าง ณ 2026-08-04 (ล่าสุด — อ่านอันนี้ก่อนอันข้างล่าง)
+
+**สถานะ:** `main` = `992f9ba` · PR #14–#22 merged · CI เขียว · prod deployed+verified
+· `~/appscript.ui` = `1e65beb` (push ครบ github + NAS bare)
+**audit 24 ข้อ ปิดไป 23** เหลือข้อ 13 (ใส่ `ANTHROPIC_API_KEY`/`MOONSHOT_API_KEY` ใน NAS `.env` — user ตัดสินใจแล้วว่ายังไม่ใช้ **ห้ามถามซ้ำ**)
+
+### 🔴 ต้องใช้ user เท่านั้น
+1. **ข้อ 8 voice — เทสหูฟัง** · ใส่หูฟังแล้วหายเบา = ยืนยันสมมติฐาน AEC/AGC หรี่ ·
+   ยังเบา = สมมติฐานผิด ต้องรื้อใหม่ · อัดด้วย Screen Recording **ปิดไมค์** (ตัดตัวแปรระยะห่าง)
+   เล่าเกิน 11 นาที · AirPods เบาตั้งแต่ต้นเพราะ iOS สลับ HFP — **ดูว่า "แย่ลงตามเวลา" ไม่ใช่ "ดัง/เบา"**
+
+### 🔵 ทำต่อได้เลย
+2. `routers/memory.py` · `routers/skills.py` — ยังไม่ได้ไล่หา `async def` + งาน sync
+   (เล็กกว่า documents/chat ที่ปิดไปแล้ว · pattern เดียวกัน ดู `tests/test_chat_router_concurrency.py`)
+3. **multipart ใหญ่ยังเขียนลงดิสก์คอนเทนเนอร์ระหว่าง parse** — starlette spool ที่ >1 MB
+   `read_capped()` ปิดฝั่ง RAM ได้แล้ว ฝั่งดิสก์ต้องกันที่ proxy/middleware (คนละ lever)
+4. **voice retry ยังไม่เคยถูกกระตุ้นจริงบน prod** — ยืนยันได้แค่ unit test + โค้ดอยู่ในบันเดิล
+5. `SKILLS_SEARCH_MIN_SCORE` ตั้งจาก ground truth ที่มี positive แค่ 11 ตัว — **ห้ามจูนละเอียดกว่านี้**
+   ถ้าจะขยับต้องมาร์คเพิ่มจาก 187 คู่ที่ยังว่างใน `data/skills_pairs.json` ก่อน
+6. RLock ของ `skills_db` กันได้แค่ process เดียว — `scripts/clean_skills_db.py` รันชนกับแอปยัง lost-update ได้
+
+---
 
 ## ⏭️ ทำต่อ session หน้า (อัปเดต 2026-06-18) — เรียงตามคุ้มสุด
 - ✅ **[verified UI จริงบน browser 2026-06-17]** ขับ Chrome (playwright-core, ทดสอบผ่าน LAN `192.168.51.49:8080` = bypass auth) เช็คทั้ง 4 ผ่านหมด: slash menu (พิมพ์ `/` → 7 รายการ, ArrowDown+Enter เลือก "หา bug" ลง input จริง) · token pill ("45 ตัวอักษร · ~12 tokens" มุมขวาบน) · draft restore (`hw_draft_voice_default` → reload คืนค่า) · **Sleep card = Light 22 / REM 2 / Deep 2 ตรง `/api/dream/report` เป๊ะ (ไม่ใช่ 40/40/20%)**. bundle prod = `index-Cn7b8BSq.js` + overlay `?v=20260617`
