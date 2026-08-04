@@ -359,6 +359,21 @@ LOG_FILE=server.log
 - ℹ️ `utils/tts.py` (`/api/tts`) เป็นคนละเส้น และ **ไม่เคยถูกเรียกเลยบน prod** (0 ครั้งใน
   ล็อกทั้งไฟล์) — แก้ที่นั่นไม่มีผลกับเสียงที่ผู้ใช้ได้ยิน
 
+#### 🔬 `AudioLevelMeter` — ตัววัด "เสียงเบาลง" (ชั่วคราว ถอดออกได้)
+`utils/voice.py:AudioLevelMeter` วัด RMS/peak ของ PCM ที่ Gemini ส่งมา ตรงจุดที่รับ
+**ก่อน**ส่งเข้าเบราว์เซอร์ (`server.py:send_loop`) → log ทุก 10 วินาทีของเสียง
+- **จุดประสงค์เดียว: ตัด "เสียงเบาลง" ออกเป็นสองฝั่งให้ขาด**
+  · ตัวเลขแบนราบ แต่ user ได้ยินว่าเบาลง → ปัญหาอยู่**ปลายทาง** (OS/AEC/Bluetooth HFP)
+  · ตัวเลขลดลงตามเวลา → **Gemini ส่งเสียงเบาลงจริง** ไม่เกี่ยวกับหูฟัง/เครื่องเลย
+- **baseline วัดจากเสียงจริงบน prod: พูดปกติ −15 ถึง −18 dBFS · peak ~24k–28k**
+  (แกว่ง ~3 dB เป็นธรรมชาติของคำพูด — ต้องเทียบ *แนวโน้ม* ไม่ใช่ค่าเดี่ยว)
+- meter ถูกสร้าง**นอกลูป reconnect** โดยตั้งใจ → นาฬิกาไม่รีเซ็ตตอน go_away นาทีที่ 10
+  ซึ่งเป็นจุดที่สงสัยพอดี · รายงานทั้ง `audio_sec` และ `wall_sec` เพราะ user เล่าอาการ
+  เป็นเวลานาฬิกา แต่ช่องว่างระหว่าง turn ทำให้สองค่าต่างกันมาก
+- ปิดด้วย `VOICE_LEVEL_LOG=off` · ปรับหน้าต่างด้วย `VOICE_LEVEL_WINDOW_SEC`
+- ดูผล: `docker exec ai-backend-1 sh -c "grep VoiceLevel /app/logs/server.log"`
+- ⚠️ **ตัวเลขแบนราบไม่ได้แปลว่า "ไม่มีปัญหา"** แปลว่า "ปัญหาไม่ได้อยู่ก่อนจุดนี้" เท่านั้น
+
 ## Image Generation (2026-06-12)
 ⛔ **พักฟีเจอร์ไว้ (user ตัดสินใจ 2026-06-12)** — โค้ดทำงานถูกทั้งเส้น (verified prod) แต่ Google ไม่เปิดโมเดลสร้างรูป**ทุกตัว**ให้ free tier (429 `limit: 0` — gemini-2.5-flash-image, gemini-3.1-flash-image; imagen = paid-only). ใช้ได้เมื่อเปิด billing (~$0.04/รูป) — ไม่ต้องแก้โค้ด. ดู `skills/gemini-api-quota-sdk-gotchas.md`
 - `utils/image_gen.py` — `generate_image(prompt)` ผ่าน Gemini (`IMAGE_GEN_MODEL`, default `gemini-2.5-flash-image`) → เซฟ PNG ที่ `${NAS_DATA_PATH}/gen_images/` เสิร์ฟผ่าน `/gen/<file>` (open path — <img> ส่ง auth header ไม่ได้)

@@ -1,4 +1,7 @@
+import math
 import os
+import struct
+import time
 
 # ── เสียงของระบบ — **ที่นิยามที่เดียว** ────────────────────────────────────────
 # เดิมตารางนี้ถูกก๊อปไว้ 2 ที่ (ที่นี่ + `utils/tts.py`) และตัวที่ `server.py` ใช้จริง
@@ -104,6 +107,84 @@ def build_live_config(slug: str, system_instruction: str, resume_handle: str | N
         # ความจำหายหมด (เล่านิยายอยู่แล้วเริ่มเรื่องใหม่)
         session_resumption=types.SessionResumptionConfig(handle=resume_handle),
     )
+
+
+# ── ตัววัดระดับเสียงที่ "เราได้รับมา" (ชั่วคราว — ตั้งใจถอดออกได้) ───────────────
+# user รายงานว่าคุยนานๆ แล้ว "เสียงเบาลง" · วินิจฉัยผิดมาแล้ว 2 รอบเพราะแปลง
+# *ความรู้สึก* เป็น *กลไก* ทันที (vault: symptom-vs-interpretation)
+#
+# ตัวนี้ตอบคำถามเดียวที่ตัดได้ขาด — วัด PCM ตรงจุดที่รับจาก Gemini **ก่อน**ส่งเข้าเบราว์เซอร์:
+#   · ตัวเลขแบนราบ แต่ user ได้ยินว่าเบาลง → ปัญหาอยู่ปลายทาง (OS/AEC/Bluetooth HFP)
+#   · ตัวเลขลดลงตามเวลา                   → Gemini ส่งเสียงเบาลงจริง ไม่เกี่ยวกับหูฟัง
+#
+# ⚠️ พิสูจน์ได้แค่ว่า "สิ่งที่เราได้รับ" ดังเท่าไหร่ — ตัวเลขแบนราบ **ไม่ได้แปลว่าไม่มีปัญหา**
+# แปลว่า "ปัญหาไม่ได้อยู่ก่อนจุดนี้" เท่านั้น
+VOICE_LEVEL_LOG = os.getenv("VOICE_LEVEL_LOG", "on").strip().lower() not in ("off", "0", "false")
+VOICE_LEVEL_WINDOW_SEC = float(os.getenv("VOICE_LEVEL_WINDOW_SEC", "10"))
+
+
+class AudioLevelMeter:
+    """สะสม PCM 16-bit LE แล้วสรุป RMS/peak ทุกๆ `window_sec` **วินาทีของเสียง**
+
+    รายงานทั้ง `audio_sec` (เวลาเสียงสะสม) และ `wall_sec` (นาฬิกาจริง) เพราะ user
+    เล่าอาการเป็น "นาทีที่ 5" ตามนาฬิกา แต่ช่องว่างระหว่าง turn ทำให้สองค่านี้ต่างกันมาก
+    — ต้องมีทั้งคู่ถึงจะจับคู่ตัวเลขกับสิ่งที่หูได้ยินได้
+    """
+
+    def __init__(self, rate: int = 24000, window_sec: float | None = None,
+                 enabled: bool | None = None):
+        self.rate = rate
+        self.window = max(1, int(rate * (VOICE_LEVEL_WINDOW_SEC if window_sec is None
+                                         else window_sec)))
+        self.enabled = VOICE_LEVEL_LOG if enabled is None else enabled
+        self._buf = bytearray()      # ไบต์เศษที่ยังประกอบเป็น sample ไม่ครบ
+        self._sq = 0                 # ผลรวมกำลังสอง (int — ไม่มีปัญหา precision)
+        self._peak = 0
+        self._n = 0
+        self._audio_samples = 0
+        self._t0 = time.monotonic()
+
+    def add(self, pcm: bytes) -> dict | None:
+        """ป้อน PCM · คืน dict สรุปเมื่อหน้าต่างเต็ม ไม่งั้นคืน None"""
+        if not self.enabled or not pcm:
+            return None
+        self._buf += pcm
+        usable = len(self._buf) - (len(self._buf) % 2)      # ไบต์เศษต้องเก็บไว้รอบหน้า
+        if usable:
+            for (s,) in struct.iter_unpack("<h", bytes(self._buf[:usable])):
+                self._sq += s * s
+                a = -s if s < 0 else s
+                if a > self._peak:
+                    self._peak = a
+                self._n += 1
+            del self._buf[:usable]
+
+        if self._n < self.window:
+            return None
+
+        n = self._n
+        rms = math.sqrt(self._sq / n)
+        self._audio_samples += n
+        out = {
+            "rms": rms,
+            "peak": self._peak,
+            # เงียบสนิท → -inf ทำให้ format พัง/อ่านไม่รู้เรื่อง → ปักพื้นที่ -100
+            "dbfs": max(-100.0, 20 * math.log10(rms / 32767.0)) if rms > 0 else -100.0,
+            "samples": n,
+            "audio_sec": self._audio_samples / self.rate,
+            "wall_sec": time.monotonic() - self._t0,
+        }
+        self._sq = 0
+        self._peak = 0
+        self._n = 0
+        return out
+
+    @staticmethod
+    def format_line(r: dict) -> str:
+        return (
+            f"[VoiceLevel] {r['dbfs']:.1f} dBFS (rms {r['rms']:.0f} · peak {r['peak']}) "
+            f"· เสียงสะสม {r['audio_sec'] / 60:.1f} นาที · ตั้งแต่เริ่ม {r['wall_sec'] / 60:.1f} นาที"
+        )
 
 
 def speakable_part_text(part) -> str | None:

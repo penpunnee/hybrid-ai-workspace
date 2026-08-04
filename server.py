@@ -207,7 +207,9 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     from google import genai
     from google.genai import types
     from assistants.config import ASSISTANTS, voice_system_prompt
-    from utils.voice import build_live_config, live_server_content_events, resolve_voice
+    from utils.voice import (
+        AudioLevelMeter, build_live_config, live_server_content_events, resolve_voice,
+    )
     from utils.history import save_message as _save_msg
 
     await websocket.accept()
@@ -238,6 +240,9 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     stop = asyncio.Event()
     resume_handle: str | None = None
     announced = False
+    # ⚠️ สร้าง **นอก**ลูป reconnect โดยตั้งใจ — ถ้าอยู่ในลูป นาฬิกาจะรีเซ็ตทุกนาทีที่ 10
+    # ซึ่งพอดีกับจุดที่เราสงสัยว่าเสียงเบาลง = มองไม่เห็นสิ่งที่ตั้งใจจะดู
+    meter = AudioLevelMeter()
     try:
         while not stop.is_set():
             regen = asyncio.Event()
@@ -306,6 +311,12 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                     break
 
                                 if response.data:
+                                    # วัด **ก่อน**ส่งออก — ทุกอย่างหลังจุดนี้ (worklet,
+                                    # OS mixer, Bluetooth HFP) ไม่มีผลกับตัวเลขนี้
+                                    # นั่นคือสิ่งที่ทำให้มันแยก "ต้นทางเบา" กับ "ปลายทางหรี่" ได้
+                                    level = meter.add(response.data)
+                                    if level:
+                                        logger.info(AudioLevelMeter.format_line(level))
                                     await websocket.send_json({
                                         "type": "audio",
                                         "data": base64.b64encode(response.data).decode()
