@@ -21,7 +21,10 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from typing import Optional
 
-from core.config import SKILLS_DIR as _SKILLS_DIR, SKILLS_DB_PATH as _SKILLS_DB
+# ⚠️ ไม่ถือ alias ของ SKILLS_DB_PATH ไว้เอง — ทั้งอ่านและเขียน `skills_db.json`
+# ต้องผ่าน `utils/skills.py` ที่เดียว (ถือ `_db_lock` + เขียน atomic) การมีค่าคงที่
+# ชี้ไฟล์เดียวกันสองที่ทำให้เทสที่ patch ได้แค่ตัวเดียว "เขียวโดยวัดผิดไฟล์"
+from core.config import SKILLS_DIR as _SKILLS_DIR
 from utils.embed import embed_texts, cosine_similarity, embed_query
 from utils.history import _get_conn
 
@@ -94,11 +97,11 @@ def _greedy_cluster(
 
 def _load_existing_skill_topics() -> list[tuple[str, list[float]]]:
     """โหลด topics เดิม + embed เพื่อกัน duplicate"""
-    if not os.path.isfile(_SKILLS_DB):
-        return []
     try:
-        with open(_SKILLS_DB, "r", encoding="utf-8") as f:
-            db = json.load(f)
+        from utils.skills import _load_skills_db
+        db = _load_skills_db()
+        if not db:
+            return []
         topics = list(db.keys())[:200]
         vectors = embed_texts(topics) if topics else []
         return list(zip(topics, vectors))
@@ -282,22 +285,20 @@ def accept_proposal(
     except Exception as e:
         return {"ok": False, "error": f"write file failed: {e}"}
 
-    # update skills_db.json
+    # update skills_db.json — ต้องผ่าน `set_skill_entry()` ซึ่งถือ `_db_lock` เดียวกับ
+    # `save_skill()` และเขียนแบบ atomic (`os.replace`) · เดิมที่นี่ read-modify-write เอง
+    # ด้วย `open(w)` ตรงๆ = ทั้ง lost update และมีช่วงที่ไฟล์ถูก truncate ให้คนอื่นอ่านเจอ
+    entry = {
+        "topic": topic,
+        "summary": proposal.summary,
+        "source": filename,
+        "auto_discovered": True,
+        "cluster_size": proposal.cluster_size,
+        "created_at": proposal.detected_at,
+    }
     try:
-        db = {}
-        if os.path.isfile(_SKILLS_DB):
-            with open(_SKILLS_DB, "r", encoding="utf-8") as f:
-                db = json.load(f)
-        db[topic] = {
-            "topic": topic,
-            "summary": proposal.summary,
-            "source": filename,
-            "auto_discovered": True,
-            "cluster_size": proposal.cluster_size,
-            "created_at": proposal.detected_at,
-        }
-        with open(_SKILLS_DB, "w", encoding="utf-8") as f:
-            json.dump(db, f, ensure_ascii=False, indent=2)
+        from utils.skills import set_skill_entry
+        set_skill_entry(topic, entry)
     except Exception as e:
         logger.warning(f"[SkillDiscovery] update skills_db failed: {e}")
 
@@ -307,7 +308,7 @@ def accept_proposal(
     # sync ChromaDB (best-effort)
     try:
         from utils.skills_search import sync_skills_to_search
-        sync_skills_to_search({topic: db[topic]})
+        sync_skills_to_search({topic: entry})
     except Exception as e:
         logger.debug(f"[SkillDiscovery] sync ChromaDB skipped: {e}")
 

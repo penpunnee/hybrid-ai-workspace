@@ -1,4 +1,13 @@
+"""endpoint ของ memory tier
+
+⚠️ handler ที่เป็น `async def` (เพราะต้องอ่าน body) **ห้าม**เรียกของ sync ตรงๆ —
+`teach()` / `save_memory()` / `save_lesson()` / `cleanup_old_memories()` คุยกับ ChromaDB
+ข้ามคอนเทนเนอร์ทั้งหมด ถ้าเรียกบน event loop = ทุกคำขอของทุกคนหยุดรอ (SSE ของแชทด้วย)
+→ ต้องผ่าน `run_in_threadpool` · handler ที่เป็น `def` ธรรมดา FastAPI โยนเข้า threadpool
+ให้เองอยู่แล้ว ไม่ต้องแตะ (ดู tests/test_memory_skills_router_concurrency.py)
+"""
 from fastapi import APIRouter, Request
+from starlette.concurrency import run_in_threadpool
 
 from utils.memory import (
     get_memory_stats, cleanup_old_memories, save_lesson, save_memory,
@@ -34,7 +43,7 @@ async def memory_teach(assistant: str, request: Request):
     text = data.get("text", "").strip()
     if not text:
         return {"ok": False, "error": "ไม่มีข้อความ"}
-    saved = teach(assistant, text)
+    saved = await run_in_threadpool(teach, assistant, text)
     return {"ok": saved, "message": "บันทึกความรู้แล้ว" if saved else "ไม่พบ teaching pattern"}
 
 
@@ -65,13 +74,14 @@ async def memory_cleanup(request: Request):
     except Exception:
         data = {}
     days = data.get("days", 30) if isinstance(data, dict) else 30
-    return cleanup_old_memories(days=days)
+    # ไล่ `col.get()` ทุก collection แล้ว delete — หนักตามขนาดคลัง ไม่ใช่ตามพารามิเตอร์
+    return await run_in_threadpool(cleanup_old_memories, days=days)
 
 
 @router.post("/{assistant}")
 async def save_mem(assistant: str, request: Request):
     data = await request.json()
     text = data.get("text", "")
-    save_memory(assistant, "remember", f"ข้อมูลที่บันทึก: {text}")
-    save_lesson("ข้อมูลจากพี่ปอย", text)
+    await run_in_threadpool(save_memory, assistant, "remember", f"ข้อมูลที่บันทึก: {text}")
+    await run_in_threadpool(save_lesson, "ข้อมูลจากพี่ปอย", text)
     return {"ok": True, "saved": text}

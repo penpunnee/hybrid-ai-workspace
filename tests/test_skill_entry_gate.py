@@ -39,8 +39,8 @@ def isolated_db(tmp_path, monkeypatch):
     db_path = tmp_path / "skills_db.json"
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
+    # `skills_db.json` มีคันโยกเดียว — `sd` ไม่ถือ alias ของ path แล้ว
     monkeypatch.setattr(skills, "SKILLS_DB_PATH", str(db_path))
-    monkeypatch.setattr(sd, "_SKILLS_DB", str(db_path))
     monkeypatch.setattr(sd, "_SKILLS_DIR", str(skills_dir))
     return db_path, skills_dir
 

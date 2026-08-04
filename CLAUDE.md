@@ -626,14 +626,29 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
    เล่าเกิน 11 นาที · AirPods เบาตั้งแต่ต้นเพราะ iOS สลับ HFP — **ดูว่า "แย่ลงตามเวลา" ไม่ใช่ "ดัง/เบา"**
 
 ### 🔵 ทำต่อได้เลย
-2. `routers/memory.py` · `routers/skills.py` — ยังไม่ได้ไล่หา `async def` + งาน sync
-   (เล็กกว่า documents/chat ที่ปิดไปแล้ว · pattern เดียวกัน ดู `tests/test_chat_router_concurrency.py`)
+2. ✅ **[ปิดแล้ว 2026-08-04]** `routers/memory.py` · `routers/skills.py` — `async def` + งาน sync
+   ปิดครบ 6 endpoint (`memory/teach` · `memory/cleanup` · `memory/{a}` · `skills/extract` ·
+   `skills/discover/accept` · `upload`) · เทส `tests/test_memory_skills_router_concurrency.py`
+   - ตัวที่หลอกตาที่สุดคือ **`skills/extract`**: เรียก `stream_response()` ตัวเดียวกับ `chat.py`
+     แต่ `chat.py` ปลอดภัยเพราะ**ส่ง generator ต่อ**ให้ `StreamingResponse` (starlette ห่อ
+     `iterate_in_threadpool()` ให้) ส่วนที่นี่ `"".join()` เอง → Gemini call เต็มรอบบน event loop
+     **"sync generator ปลอดภัย" เป็นจริงเฉพาะตอนที่ starlette เป็นคนหมุน**
+   - ต้องปิด race บน `skills_db.json` **ก่อน** ย้าย (ตามที่ `test_skills_db_concurrency.py`
+     เตือนไว้): เจอ 3 จุดที่ load→แก้→save เองโดยไม่ถือ `_db_lock` — `skills_extract` ·
+     `skills_delete` (racy อยู่แล้ววันนั้น เพราะเป็น `def` = อยู่ใน threadpool) ·
+     `accept_proposal` (ไม่มี lock **และ** เขียนด้วย `open(w)` = ไม่ atomic)
+     → รวมทางเขียนเหลือทางเดียวที่ `utils/skills.py`: `set_skill_entry()` / `delete_skill_entries()`
+   - ตัด alias `skill_discovery._SKILLS_DB` ทิ้ง — ค่าคงที่ชี้ไฟล์เดียวกัน 2 ที่ทำให้เทสที่
+     patch ได้ตัวเดียว "เขียวโดยวัดผิดไฟล์" (`test_skill_entry_gate.py` เคยต้อง patch ทั้งคู่)
 3. **multipart ใหญ่ยังเขียนลงดิสก์คอนเทนเนอร์ระหว่าง parse** — starlette spool ที่ >1 MB
    `read_capped()` ปิดฝั่ง RAM ได้แล้ว ฝั่งดิสก์ต้องกันที่ proxy/middleware (คนละ lever)
+   - ⚠️ เจอเพิ่มตอนปิดข้อ 2: **`POST /api/upload` ทำ `await file.read()` แบบไม่มีเพดานเลย**
+     (ไม่ได้ผ่าน `read_capped()` เหมือนฝั่ง `documents.py`) — ไฟล์ทั้งก้อนเข้า RAM ก่อนเสมอ
 4. **voice retry ยังไม่เคยถูกกระตุ้นจริงบน prod** — ยืนยันได้แค่ unit test + โค้ดอยู่ในบันเดิล
 5. `SKILLS_SEARCH_MIN_SCORE` ตั้งจาก ground truth ที่มี positive แค่ 11 ตัว — **ห้ามจูนละเอียดกว่านี้**
    ถ้าจะขยับต้องมาร์คเพิ่มจาก 187 คู่ที่ยังว่างใน `data/skills_pairs.json` ก่อน
 6. RLock ของ `skills_db` กันได้แค่ process เดียว — `scripts/clean_skills_db.py` รันชนกับแอปยัง lost-update ได้
+   (ข้อ 2 ปิดช่องในโปรเซสแอปครบแล้ว — ที่เหลือคือข้ามโปรเซส ต้องใช้ file lock ไม่ใช่ RLock)
 
 ---
 

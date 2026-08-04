@@ -1,15 +1,54 @@
+"""endpoint ของคลัง skills
+
+⚠️ กติกา 2 ข้อของไฟล์นี้:
+
+1. **`async def` ห้ามเรียกของ sync ตรงๆ** — handler ที่ต้องอ่าน body ถูกบังคับให้เป็น
+   `async` งาน sync ที่ตามมา (LLM / เขียนไฟล์บน volume NAS / parse เอกสาร) จึงรันบน
+   event loop = ทุกคำขอของทุกคนหยุดรอ → ต้องผ่าน `run_in_threadpool`
+   handler ที่เป็น `def` ธรรมดา FastAPI โยนเข้า threadpool ให้เองอยู่แล้ว
+
+2. **ห้าม `_load_skills_db()` → แก้ → `_save_skills_db()` เองในไฟล์นี้** — ข้อ 1 ย้ายโค้ด
+   ที่เคยรันทีละอันไปรันพร้อมกัน read-modify-write ที่ไม่มี lock จึงกลายเป็น lost update
+   ทันที ให้ผ่าน `set_skill_entry()` / `delete_skill_entries()` ซึ่งถือ `_db_lock`
+   (ดู tests/test_skills_db_concurrency.py + tests/test_memory_skills_router_concurrency.py)
+"""
+import base64
+import io
+import json
+import logging
 import os
 from datetime import datetime
 from fastapi import APIRouter, Request, UploadFile, File
+from starlette.concurrency import run_in_threadpool
 
 from core.config import SKILLS_DIR
 from utils.skills import (
-    get_skill_count, auto_extract_skills, _load_skills_db, _save_skills_db,
-    cleanup_junk_skills,
+    get_skill_count, auto_extract_skills, _load_skills_db,
+    cleanup_junk_skills, set_skill_entry, delete_skill_entries,
 )
 from utils.llm import stream_response
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api", tags=["skills"])
+
+
+def _collect_stream(msgs) -> str:
+    """หมุน sync generator ของ LLM ให้จบ — ต้องรันในเธรด ไม่ใช่บน event loop
+
+    `chat.py` เรียก `stream_response()` ตัวเดียวกันแล้วปลอดภัย เพราะ**ส่งต่อ** generator
+    ให้ `StreamingResponse` ซึ่ง starlette ห่อด้วย `iterate_in_threadpool()` ให้เอง
+    ที่นี่เรา `"".join()` เอง → ถ้าไม่ย้ายเข้า threadpool = Gemini call เต็มรอบบน event loop
+    "sync generator ปลอดภัย" เป็นจริงเฉพาะตอนที่ starlette เป็นคนหมุนเท่านั้น
+    """
+    return "".join(stream_response(msgs, provider="gemini"))
+
+
+def _write_skill_file(path: str, text: str) -> None:
+    """เขียน .md ลง SKILLS_DIR — บน prod เป็น volume ที่ mount จาก NAS จึงไม่ใช่ดิสก์ local"""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
 
 
 @router.get("/skills")
@@ -36,8 +75,6 @@ def skills_list():
 
 @router.post("/skills/extract")
 async def skills_extract(request: Request):
-    import logging
-    logger = logging.getLogger(__name__)
     data = await request.json()
     content = data.get("content", "").strip()
     topic = data.get("topic", "").strip()
@@ -47,9 +84,7 @@ async def skills_extract(request: Request):
         topic = f"skill-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     safe_topic = "".join(c if c.isalnum() or c in "-_" else "-" for c in topic.lower()).strip("-")
     filename = f"{safe_topic}.md"
-    skills_dir = SKILLS_DIR
-    os.makedirs(skills_dir, exist_ok=True)
-    filepath = os.path.join(skills_dir, filename)
+    filepath = os.path.join(SKILLS_DIR, filename)
 
     msgs = [
         {"role": "system", "content": (
@@ -66,7 +101,7 @@ async def skills_extract(request: Request):
         {"role": "user", "content": content[:6000]},
     ]
     try:
-        md_content = "".join(stream_response(msgs, provider="gemini"))
+        md_content = await run_in_threadpool(_collect_stream, msgs)
     except Exception as e:
         return {"ok": False, "error": f"Gemini error: {e}"}
 
@@ -78,19 +113,16 @@ async def skills_extract(request: Request):
         return {"ok": False, "error": f"ผลลัพธ์ไม่ผ่านเกณฑ์คุณภาพ skill: {topic!r}"}
 
     try:
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(md_content)
+        await run_in_threadpool(_write_skill_file, filepath, md_content)
     except Exception as e:
         return {"ok": False, "error": f"บันทึกไฟล์ไม่ได้: {e}"}
 
     try:
-        db = _load_skills_db()
-        db[topic] = {
+        await run_in_threadpool(set_skill_entry, topic, {
             "summary": md_content[:300].strip(),
             "source": filename,
             "updated": datetime.now().isoformat(),
-        }
-        _save_skills_db(db)
+        })
     except Exception as e:
         logger.warning(f"skills_db update failed: {e}")
 
@@ -107,12 +139,9 @@ def skills_delete(skill_id: str, delete_file: bool = False):
                      SAFETY: ก่อนหน้านี้ default ลบ .md เสมอ — เปลี่ยนเป็น opt-in
                      กัน data loss จาก cleanup
     """
-    import logging
-    logger = logging.getLogger(__name__)
     from urllib.parse import unquote
     skill_id = unquote(skill_id)
     deleted_file = False
-    deleted_db = False
     skills_dir = SKILLS_DIR
 
     if delete_file:
@@ -125,12 +154,7 @@ def skills_delete(skill_id: str, delete_file: bool = False):
                     logger.warning(f"[skills_delete] removed file {fp} (delete_file=true)")
                     break
 
-    db = _load_skills_db()
-    for key in [skill_id, skill_id.replace(".md", "")]:
-        if key in db:
-            del db[key]
-            _save_skills_db(db)
-            deleted_db = True
+    deleted_db = delete_skill_entries([skill_id, skill_id.replace(".md", "")])
     if deleted_file or deleted_db:
         return {"ok": True, "deleted_file": deleted_file, "deleted_db": deleted_db}
     return {"ok": False, "error": "ไม่พบ skill นี้"}
@@ -154,7 +178,9 @@ async def skills_discover_accept(request: Request):
     pid = (data.get("proposal_id") or "").strip()
     if not pid:
         return {"ok": False, "error": "proposal_id required"}
-    return accept_proposal(
+    # เขียนไฟล์ .md + skills_db + sync ChromaDB — sync ทั้งเส้น
+    return await run_in_threadpool(
+        accept_proposal,
         pid,
         custom_topic=data.get("topic"),
         custom_content=data.get("content"),
@@ -188,16 +214,17 @@ def sync_skills_endpoint():
         return {"ok": False, "error": str(e)}
 
 
-@router.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
-    import base64 as _b64, io
-    content = await file.read()
-    name = file.filename or "file"
-    mime = file.content_type or ""
+def _parse_upload(content: bytes, name: str, mime: str) -> dict:
+    """แกะไฟล์ที่อัปโหลด → dict ที่ handler คืนตรงๆ
+
+    ทั้งก้อนเป็น sync และหนักจริง: pypdf/python-docx/openpyxl parse ทั้งไฟล์ (CPU)
+    แล้วต่อด้วย `auto_extract_skills()` ซึ่งเขียน ChromaDB ต่อ topic ที่สกัดได้
+    → เรียกจาก handler ผ่าน `run_in_threadpool` เท่านั้น
+    """
     ext = name.lower().rsplit(".", 1)[-1] if "." in name else ""
 
     if mime.startswith("image/") or ext in ('jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'):
-        b64 = _b64.b64encode(content).decode()
+        b64 = base64.b64encode(content).decode()
         return {"ok": True, "filename": name, "is_image": True, "b64": b64, "mime": mime or "image/jpeg"}
 
     if ext == "pdf" or mime == "application/pdf":
@@ -211,10 +238,7 @@ async def upload_file(file: UploadFile = File(...)):
             return {"ok": False, "error": "ไม่พบ library pypdf"}
         except Exception as e:
             return {"ok": False, "error": f"อ่าน PDF ไม่ได้: {e}"}
-        extracted = auto_extract_skills(raw_text, name)
-        return {"ok": True, "filename": name, "is_image": False, "text": text[:8000], "skills_extracted": extracted}
-
-    if ext == "docx" or "wordprocessingml" in mime:
+    elif ext == "docx" or "wordprocessingml" in mime:
         try:
             import docx
             doc = docx.Document(io.BytesIO(content))
@@ -224,10 +248,7 @@ async def upload_file(file: UploadFile = File(...)):
             return {"ok": False, "error": "ไม่พบ library python-docx"}
         except Exception as e:
             return {"ok": False, "error": f"อ่าน DOCX ไม่ได้: {e}"}
-        extracted = auto_extract_skills(raw_text, name)
-        return {"ok": True, "filename": name, "is_image": False, "text": text[:8000], "skills_extracted": extracted}
-
-    if ext in ("xlsx", "xls") or "spreadsheetml" in mime:
+    elif ext in ("xlsx", "xls") or "spreadsheetml" in mime:
         try:
             import openpyxl
             wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
@@ -244,19 +265,25 @@ async def upload_file(file: UploadFile = File(...)):
             return {"ok": False, "error": "ไม่พบ library openpyxl"}
         except Exception as e:
             return {"ok": False, "error": f"อ่าน Excel ไม่ได้: {e}"}
-        extracted = auto_extract_skills(raw_text, name)
-        return {"ok": True, "filename": name, "is_image": False, "text": text[:8000], "skills_extracted": extracted}
+    else:
+        try:
+            if ext == "json":
+                parsed = json.loads(content)
+                raw_text = json.dumps(parsed, ensure_ascii=False, indent=2)
+                text = f"[ไฟล์ JSON: {name}]\n{raw_text}"
+            else:
+                raw_text = content.decode('utf-8', errors='ignore')
+                text = f"[ไฟล์: {name}]\n{raw_text}"
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
-    try:
-        if ext == "json":
-            import json as _json
-            parsed = _json.loads(content)
-            raw_text = _json.dumps(parsed, ensure_ascii=False, indent=2)
-            text = f"[ไฟล์ JSON: {name}]\n{raw_text}"
-        else:
-            raw_text = content.decode('utf-8', errors='ignore')
-            text = f"[ไฟล์: {name}]\n{raw_text}"
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
     extracted = auto_extract_skills(raw_text, name)
-    return {"ok": True, "filename": name, "is_image": False, "text": text[:8000], "skills_extracted": extracted}
+    return {"ok": True, "filename": name, "is_image": False, "text": text[:8000],
+            "skills_extracted": extracted}
+
+
+@router.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    content = await file.read()
+    return await run_in_threadpool(
+        _parse_upload, content, file.filename or "file", file.content_type or "")
