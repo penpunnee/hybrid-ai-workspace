@@ -17,11 +17,14 @@ OLLAMA_REPEAT_PENALTY = float(os.getenv("OLLAMA_REPEAT_PENALTY", "1.1"))
 # ── Gemini (Cloud LLM) ───────────────────────────────────────────────────────
 GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL     = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-# Live API (bidiGenerateContent) — gemini-2.0-flash-exp ถูกถอดออกจาก v1alpha แล้ว
-# default = gemini-3.1-flash-live-preview (verified ผ่าน ListModels + Live session จริง 2026-06-19;
-# "gemini-3-flash-live" ไม่มีบน API). ของเดิม gemini-2.5-flash-native-audio-latest ก็ยังใช้ได้
-# ⚠️ ชื่อต้องเป๊ะ ไม่งั้น bidiGenerateContent → 1008 not found
-GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
+# Live API (bidiGenerateContent) — ⚠️ ชื่อต้องเป๊ะ ไม่งั้น bidiGenerateContent → 1008 not found
+# **default ย้ายไปอยู่ที่ `utils/voice.py` แล้ว** (2026-08-04) เพราะเคยมี default 2 ที่ที่
+# ไม่ตรงกันเงียบๆ ตั้งแต่ `369f18e` (2026-06-19): ที่นี่เป็น 3.1-flash-live ส่วน
+# `utils/voice.py` ค้างที่ 2.5-native-audio-latest พร้อมคอมเมนต์ที่เขียนว่า "ตรงกับ
+# core/config.py" — คอมเมนต์บอกเจตนา ไม่ได้บอกพฤติกรรม
+from utils.voice import GEMINI_LIVE_MODEL_DEFAULT
+
+GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", GEMINI_LIVE_MODEL_DEFAULT)
 
 # ── Database ─────────────────────────────────────────────────────────────────
 DB_PATH      = os.getenv("DB_PATH", "./chat_history.db")

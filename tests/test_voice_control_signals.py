@@ -117,9 +117,20 @@ class TestHandlerWiring:
             "แล้ว Gemini ตัด session ทิ้งราวนาทีที่ 10"
         )
 
-    def test_handler_asks_for_resumption_handle(self):
-        assert "SessionResumptionConfig" in self._ws_block(), (
-            "ไม่ได้ขอ session resumption → ต่อ session ใหม่ได้แต่ความจำหาย "
+    def test_handler_feeds_resumption_handle_into_config(self):
+        """handler ต้องส่ง handle ที่เก็บได้เข้า config ตอนต่อ session ใหม่
+
+        เดิมเทสนี้ grep หา `SessionResumptionConfig` ในซอร์ส `server.py` ตรงๆ — พอ config
+        ย้ายไป `utils/voice.py:build_live_config()` (2026-08-04) เทสก็แดงทั้งที่พฤติกรรม
+        ไม่ได้เสีย **การ grep ซอร์สเป็นแค่ตัวแทนของพฤติกรรม ไม่ใช่ตัวพฤติกรรม**
+        ตอนนี้ค่าที่ส่งออกไปจริงถูกตรวจที่
+        `tests/test_voice_consistency.py::test_resume_handle_is_carried_through`
+        ที่นี่เหลือหน้าที่เดียว: กันไม่ให้ handler ลืมส่ง handle ต่อ (= ความจำหายตอนต่อใหม่)
+        """
+        block = self._ws_block()
+        assert "build_live_config(" in block, "handler ไม่ได้ใช้ตัวประกอบ config ตัวกลาง"
+        assert "resume_handle" in block, (
+            "handler ไม่ได้ส่ง resume_handle เข้า config → ต่อ session ใหม่ได้แต่ความจำหาย "
             "(กำลังเล่านิยายอยู่แล้วเริ่มเรื่องใหม่)"
         )
 

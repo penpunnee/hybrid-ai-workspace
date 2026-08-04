@@ -1,14 +1,109 @@
 import os
 
-# ให้ default ตรงกับ core/config.py — รุ่นเก่า (gemini-live-2.0-flash-001) ถูกถอดจาก Live API แล้ว
-GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.5-flash-native-audio-latest")
-
+# ── เสียงของระบบ — **ที่นิยามที่เดียว** ────────────────────────────────────────
+# เดิมตารางนี้ถูกก๊อปไว้ 2 ที่ (ที่นี่ + `utils/tts.py`) และตัวที่ `server.py` ใช้จริง
+# คือของ `tts.py` → ใครแก้ไฟล์ชื่อ `voice.py` เพื่อเปลี่ยนเสียงจะแก้แล้วไม่มีอะไรเกิดขึ้น
+# (รูปแบบเดียวกับ alias `_SKILLS_DB` ที่ถอดไปตอนปิดข้อ 2)
+#
+# ⚠️ `fa`/`khim` ถูกถอดออกแล้ว — เหลือผู้ช่วยตัวเดียวคือ `kwan` ตั้งแต่ 2026-06-16
+# fallback ต้องเป็น **เสียงเดียวกับ slug ที่รู้จัก** ไม่ใช่เสียงตัวอื่น: วันที่ frontend
+# ส่ง slug เพี้ยน (ส่งชื่อแทน slug) ผู้ใช้จะได้ยิน "คนละคน" ทันทีโดยไม่มี error โผล่เลย
+DEFAULT_VOICE = "Aoede"          # เสียงผู้หญิงตัวเดียวของระบบ
 VOICE_MAP: dict[str, str] = {
-    "fa":   "Kore",
-    "kwan": "Aoede",
-    "khim": "Zephyr",
+    "kwan": DEFAULT_VOICE,
 }
-DEFAULT_VOICE = "Aoede"
+
+
+def resolve_voice(slug: str) -> str:
+    """slug → ชื่อเสียง Gemini · ไม่รู้จัก/ว่าง ก็ได้เสียงเดิม (ห้ามสลับคน)"""
+    return VOICE_MAP.get((slug or "").lower(), DEFAULT_VOICE)
+
+
+# ── ตรึง "วิธีเรนเดอร์เสียง" ให้ session ใหม่ฟังเหมือน session เดิม ──────────────
+# user รายงาน 2026-08-04: "เหมือนสลับเป็นคนละคน" ทั้งที่ voice_name ไม่เคยเปลี่ยน
+#
+# โมเดล native-audio/live **สังเคราะห์น้ำเสียงใหม่ทุกครั้งที่เปิด session** — ชื่อเสียง
+# เป็นแค่จุดตั้งต้น ไม่ใช่ไฟล์เสียงสำเร็จรูป ถ้าไม่ตรึง `seed`/`temperature` ทุกครั้งที่
+# ต่อ session ใหม่ (go_away regen ฝั่ง server **หรือ** retry ฝั่ง client) = สุ่มโทนใหม่
+#
+# ⚠️ ตรึงได้ "เท่าที่ API ให้ตรึง" — Gemini ไม่รับประกัน determinism ของเสียง
+# ตัวชี้ขาดคือหูของ user หลังคุยข้ามนาทีที่ 10 ไม่ใช่เทสในไฟล์นี้
+VOICE_SEED = 20260804            # ค่าคงที่ตายตัว — เปลี่ยนเมื่อไหร่ = ยอมให้เสียงเปลี่ยน
+VOICE_TEMPERATURE = 0.6          # ต่ำกว่า default (~1.0) = ความแปรปรวนของน้ำเสียงน้อยลง
+
+# ── ⚠️ ค่าพวกนี้ "ขึ้นกับโมเดล" — วัดจริงบน prod 2026-08-04 ก่อนตั้ง ────────────
+# ยิง Live session จริง เคสละ 2 รอบ นับ **ไบต์เสียงที่ได้กลับมา** (ไม่ใช่ "ไม่ throw"
+# — เกณฑ์นั้นทำให้เคสที่คืน 0 ไบต์ขึ้นว่าผ่าน แล้วเกือบสรุปผิด):
+#
+#   โมเดล                        | temperature | seed         | affective=True
+#   -----------------------------|-------------|--------------|----------------
+#   2.5-native-audio-preview-12  | 🔴 0 ไบต์   | ไม่ตรึง (ต่าง) | ok
+#   3.1-flash-live-preview       | ok          | ✅ ตรึงได้     | 🔴 APIError 1011
+#
+# 🔴 **`temperature` บน 2.5-native-audio ทำให้เสียงหายแบบเงียบสนิท** — ไม่ error,
+#    transcript มาครบ, จอขึ้นว่าตอบแล้ว ขาดแค่เสียง = failure mode ที่แย่ที่สุด
+#    (ตอนแรกตั้งใจจะ pin ไป 2.5 เพราะมันปักวันที่ได้ ถ้าทำไปเสียงจะดับทั้งระบบโดยเทสเขียวหมด)
+#
+# ✅ **เลือก 3.1 เพราะ `seed` ตรึงได้จริงบนตัวนี้ตัวเดียว** — ใส่ seed แล้วได้ไบต์เท่ากันเป๊ะ
+#    ทั้ง 2 รอบ (67230, 67230) ส่วน baseline ที่ไม่ใส่ ได้ 67202 กับ 62882
+#    และเป็นตัวที่ prod ใช้อยู่แล้วตั้งแต่ `369f18e` → user ไม่ต้องเจอเสียงเปลี่ยนอีกรอบ
+#
+# ⚠️ **ความเสี่ยงที่ยังเหลืออยู่ ไม่ได้ปิด:** `-preview` ถูก Google อัปเดตทับในที่ได้
+#    และสาย 3.1-live **ยังไม่มี snapshot ปักวันที่ให้เลือกเลย** (เช็คจาก ListModels แล้ว)
+#    ถ้าวันหนึ่งเสียงเปลี่ยนอีกโดยเราไม่ได้แตะอะไร ให้สงสัยตัวนี้ก่อนเป็นอันดับแรก
+#    ⛔ อย่าเผลอ "แก้" ด้วยการถอยไป 2.5 โดยไม่รันตารางข้างบนใหม่ — ดูช่อง temperature
+#
+# ⚠️ ไบต์เท่ากัน = หลักฐานว่า *การสุ่มถูกตรึง* เท่านั้น **ไม่ใช่หลักฐานว่าหูคนได้ยินเหมือนกัน**
+#    ตัวชี้ขาดคือ user คุยข้ามนาทีที่ 10 (จุดที่ go_away ตัด session) แล้วบอกว่ายังสลับคนไหม
+GEMINI_LIVE_MODEL_DEFAULT = "gemini-3.1-flash-live-preview"
+GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", GEMINI_LIVE_MODEL_DEFAULT)
+
+
+def build_live_config(slug: str, system_instruction: str, resume_handle: str | None):
+    """ประกอบ `LiveConnectConfig` ทั้งก้อน — ที่เดียวที่รู้ว่าเสียงถูกตั้งยังไง
+
+    แยกออกจาก `server.py` เพื่อให้ **เทสค่าที่ตรึงไว้ได้จริง** (เดิมเป็น closure ในตัว
+    handler → ตรวจได้แค่ด้วยการ grep ซอร์ส ซึ่งพิสูจน์ไม่ได้ว่าค่าที่ส่งออกไปคืออะไร)
+
+    `types` import ข้างในโดยตั้งใจ — โมดูลนี้ถูก `core/config.py` import จึงต้องไม่ลาก
+    google-genai เข้ามาตอน import time
+    """
+    from google.genai import types
+
+    return types.LiveConnectConfig(
+        response_modalities=["AUDIO"],
+        speech_config=types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=resolve_voice(slug))
+            )
+        ),
+        # ตรึงการสุ่ม — หัวใจของ "session ใหม่ต้องฟังเหมือนเดิม"
+        seed=VOICE_SEED,
+        temperature=VOICE_TEMPERATURE,
+        # ปล่อย None = ยอมให้ค่า default ของโมเดลเปลี่ยนทีหลังโดยเราไม่รู้ตัว
+        # affective dialog ปรับน้ำเสียงตามอารมณ์บทสนทนา = ตรงข้ามกับ "สม่ำเสมอ"
+        enable_affective_dialog=False,
+        system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
+        output_audio_transcription=types.AudioTranscriptionConfig(),
+        input_audio_transcription=types.AudioTranscriptionConfig(),
+        # hands-free: เปิด automatic VAD → Gemini จับเริ่ม/หยุดพูดจากเสียงเอง (พูดได้เลยไม่ต้องกด)
+        # กัน echo ที่ฝั่ง client (half-duplex: ปิดไมค์ตอน AI พูด) แทนการพึ่ง manual VAD.
+        # NO_INTERRUPTION = เผื่อ echo หลุดขอบ tail ก็ไม่ตัดคำตอบ AI กลางคัน (belt-and-suspenders)
+        realtime_input_config=types.RealtimeInputConfig(
+            automatic_activity_detection=types.AutomaticActivityDetection(),
+            activity_handling=types.ActivityHandling.NO_INTERRUPTION,
+        ),
+        # ⚠️ คอมเมนต์เดิมเขียนว่า compression ทำให้ "session ไม่มีลิมิตอายุ → ไม่มี go_away
+        # จาก duration" — **ไม่จริง** log prod เจอ go_away 2 ครั้ง (2026-08-03 18:14:14
+        # และ 21:33:32 UTC ทั้งคู่ราวนาทีที่ 10) compression ช่วยเรื่อง context ยาว
+        # แต่ไม่ได้ยกเลิก go_away → ต้องรับมือเอง
+        context_window_compression=types.ContextWindowCompressionConfig(
+            sliding_window=types.SlidingWindow(),
+        ),
+        # ขอ handle ไว้ต่อ session ใหม่ตอนโดน go_away — ไม่มีอันนี้ = ต่อใหม่ได้แต่
+        # ความจำหายหมด (เล่านิยายอยู่แล้วเริ่มเรื่องใหม่)
+        session_resumption=types.SessionResumptionConfig(handle=resume_handle),
+    )
 
 
 def speakable_part_text(part) -> str | None:
