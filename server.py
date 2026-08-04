@@ -207,8 +207,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     from google import genai
     from google.genai import types
     from assistants.config import ASSISTANTS, voice_system_prompt
-    from utils.tts import VOICE_MAP, DEFAULT_VOICE
-    from utils.voice import live_server_content_events
+    from utils.voice import build_live_config, live_server_content_events, resolve_voice
     from utils.history import save_message as _save_msg
 
     await websocket.accept()
@@ -216,7 +215,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
         await websocket.send_json({"type": "error", "message": "GEMINI_API_KEY not set"})
         return
 
-    voice = VOICE_MAP.get(assistant_slug.lower(), DEFAULT_VOICE)
+    voice = resolve_voice(assistant_slug)
     asst_name, asst = next(((k, v) for k, v in ASSISTANTS.items() if v.get("slug") == assistant_slug), ("", {}))
     if not asst_name:
         asst_name = assistant_slug
@@ -230,35 +229,10 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
 
     client = genai.Client(api_key=GEMINI_API_KEY, http_options={"api_version": "v1alpha"})
 
-    def _live_config(resume_handle: str | None) -> "types.LiveConnectConfig":
-        return types.LiveConnectConfig(
-            response_modalities=["AUDIO"],
-            speech_config=types.SpeechConfig(
-                voice_config=types.VoiceConfig(
-                    prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice)
-                )
-            ),
-            system_instruction=types.Content(parts=[types.Part(text=sys_prompt)]),
-            output_audio_transcription=types.AudioTranscriptionConfig(),
-            input_audio_transcription=types.AudioTranscriptionConfig(),
-            # hands-free: เปิด automatic VAD → Gemini จับเริ่ม/หยุดพูดจากเสียงเอง (พูดได้เลยไม่ต้องกด)
-            # กัน echo ที่ฝั่ง client (half-duplex: ปิดไมค์ตอน AI พูด) แทนการพึ่ง manual VAD.
-            # NO_INTERRUPTION = เผื่อ echo หลุดขอบ tail ก็ไม่ตัดคำตอบ AI กลางคัน (belt-and-suspenders)
-            realtime_input_config=types.RealtimeInputConfig(
-                automatic_activity_detection=types.AutomaticActivityDetection(),
-                activity_handling=types.ActivityHandling.NO_INTERRUPTION,
-            ),
-            # ⚠️ คอมเมนต์เดิมตรงนี้เขียนว่า compression ทำให้ "session ไม่มีลิมิตอายุ →
-            # ไม่มี go_away จาก duration" — **ไม่จริง** log prod เจอ go_away 2 ครั้ง
-            # (2026-08-03 18:14:14 และ 21:33:32 UTC ทั้งคู่ราวนาทีที่ 10 ของ session)
-            # compression ช่วยเรื่อง context ยาว แต่ไม่ได้ยกเลิก go_away → ต้องรับมือเอง
-            context_window_compression=types.ContextWindowCompressionConfig(
-                sliding_window=types.SlidingWindow(),
-            ),
-            # ขอ handle ไว้ต่อ session ใหม่ตอนโดน go_away — ไม่มีอันนี้ = ต่อใหม่ได้แต่
-            # ความจำหายหมด (เล่านิยายอยู่แล้วเริ่มเรื่องใหม่)
-            session_resumption=types.SessionResumptionConfig(handle=resume_handle),
-        )
+    # config ทั้งก้อนอยู่ที่ `utils/voice.py:build_live_config()` — รวมทั้งค่าที่ตรึงเสียง
+    # (`seed`/`temperature`/`enable_affective_dialog`) เพื่อให้ session ใหม่ฟังเหมือนเดิม
+    def _live_config(resume_handle: str | None):
+        return build_live_config(assistant_slug, sys_prompt, resume_handle)
 
     # `stop` = เลิกทั้งหมด (client ตัด/สั่ง close) · `regen` = ต่อ session ใหม่แต่ยังคุยกับ client เดิม
     stop = asyncio.Event()

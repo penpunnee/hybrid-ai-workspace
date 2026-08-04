@@ -252,7 +252,7 @@ Stats: `GET /api/cache/stats`
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash   # ⚠️ ห้ามใช้ gemini-2.5-pro บน free tier (quota limit=0 → 429 ทุก request, เจอจริง 2026-06-11)
 GEMINI_SEARCH_MODEL=            # โมเดลเฉพาะ gemini_web_search() (grounding ให้ local/Claude/Kimi) — ว่าง = ใช้ GEMINI_MODEL; precedence: arg > env นี้ > GEMINI_MODEL (มีตั้งแต่ 7087f88, test ใน test_gemini_web_search.py)
-GEMINI_LIVE_MODEL=gemini-2.5-flash-native-audio-latest   # ⚠️ gemini-2.0-flash-exp/gemini-live-2.0-flash-001 ถูกถอดจาก Live API (bidiGenerateContent → 1008 not found, เจอจริง 2026-06-16). เช็ค model ที่ใช้ได้: ListModels filter supportedGenerationMethods มี bidiGenerateContent
+GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview   # default อยู่ที่ `utils/voice.py:GEMINI_LIVE_MODEL_DEFAULT` ที่เดียว (ดูหัวข้อ "เสียงต้องเป็นคนเดิม") ⚠️ ห้ามสลับไปสาย native-audio โดยไม่ถอด `VOICE_TEMPERATURE` — วัดแล้วเสียงหายเงียบๆ 0 ไบต์ · gemini-2.0-flash-exp/gemini-live-2.0-flash-001 ถูกถอดจาก Live API แล้ว (1008 not found). เช็ค model ที่ใช้ได้: ListModels filter supportedGenerationMethods มี bidiGenerateContent
 # Claude (Anthropic) — provider "claude"; ปล่อยว่าง=ปิด
 ANTHROPIC_API_KEY=
 CLAUDE_MODEL=claude-sonnet-4-6   # default คุ้ม; claude-opus-4-8 = ฉลาดสุด/แพงสุด, claude-haiku-4-5 = ถูกสุด
@@ -334,6 +334,30 @@ LOG_FILE=server.log
 
 ### WebSocket: Voice Chat
 `/ws/voice/{assistant_slug}` — bidirectional WS connecting to Gemini Live API. Client sends PCM `{type: "audio"}`, receives audio. Transcripts saved on turn completion.
+
+#### เสียงต้องเป็น "คนเดิม" ทุกครั้ง (2026-08-04 — user: "เหมือนสลับเป็นคนละคน")
+**ทุกอย่างที่เกี่ยวกับเสียงอยู่ที่ `utils/voice.py` ที่เดียว** (`resolve_voice()` +
+`build_live_config()` + `GEMINI_LIVE_MODEL_DEFAULT`) — `server.py`/`utils/tts.py`/`core/config.py`
+ดึงจากที่นั่นทั้งหมด · เทส `tests/test_voice_consistency.py` (20)
+- **ก่อนหน้านี้มี default 2 ที่ที่ไม่ตรงกันเงียบๆ ตั้งแต่ `369f18e` (2026-06-19)**:
+  `core/config.py` = 3.1-flash-live (ตัวที่ prod ใช้จริง) ส่วน `utils/voice.py` ค้างที่
+  2.5-native-audio-latest **พร้อมคอมเมนต์ที่เขียนว่า "ให้ default ตรงกับ core/config.py"**
+  → ไฟล์ที่ชื่อตรงกับงานที่สุดคือไฟล์ที่ตายแล้ว (`VOICE_MAP` ก็ซ้ำ 2 ที่แบบเดียวกัน)
+- ตรึงการสุ่มด้วย `seed=VOICE_SEED` + `temperature` + `enable_affective_dialog=False`
+  → session ใหม่ (go_away regen / client retry) ฟังเหมือนเดิม
+- ⚠️ **ค่าพวกนี้ขึ้นกับโมเดล — วัดจริงบน prod เคสละ 2 รอบ นับไบต์เสียง ไม่ใช่ "ไม่ throw"**
+
+  | โมเดล | `temperature` | `seed` | `affective=True` |
+  |---|---|---|---|
+  | `2.5-native-audio-preview-12-2025` | 🔴 **0 ไบต์ เงียบสนิท ไม่ error** | ไม่ตรึง | ok |
+  | `3.1-flash-live-preview` ← ใช้ตัวนี้ | ok | ✅ ตรึงได้ (67230,67230) | 🔴 APIError 1011 |
+
+  ยืนยันด้วย `build_live_config()` ตัวจริงในคอนเทนเนอร์: 3 รอบได้ `[67202, 67202, 67202]`
+- ⚠️ **ความเสี่ยงที่ยังไม่ปิด:** สาย 3.1-live **ไม่มี snapshot ปักวันที่ให้เลือก** (เช็ค
+  ListModels แล้ว) → Google อัปเดต preview ทับได้ ถ้าเสียงเปลี่ยนอีกโดยเราไม่ได้แตะอะไร
+  ให้สงสัยตัวนี้ก่อน · **ห้าม "แก้" ด้วยการถอยไป 2.5 โดยไม่รันตารางข้างบนใหม่**
+- ℹ️ `utils/tts.py` (`/api/tts`) เป็นคนละเส้น และ **ไม่เคยถูกเรียกเลยบน prod** (0 ครั้งใน
+  ล็อกทั้งไฟล์) — แก้ที่นั่นไม่มีผลกับเสียงที่ผู้ใช้ได้ยิน
 
 ## Image Generation (2026-06-12)
 ⛔ **พักฟีเจอร์ไว้ (user ตัดสินใจ 2026-06-12)** — โค้ดทำงานถูกทั้งเส้น (verified prod) แต่ Google ไม่เปิดโมเดลสร้างรูป**ทุกตัว**ให้ free tier (429 `limit: 0` — gemini-2.5-flash-image, gemini-3.1-flash-image; imagen = paid-only). ใช้ได้เมื่อเปิด billing (~$0.04/รูป) — ไม่ต้องแก้โค้ด. ดู `skills/gemini-api-quota-sdk-gotchas.md`

@@ -6,13 +6,10 @@ from google.genai import types
 GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
 GEMINI_TTS_MODEL = os.getenv("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-native-audio-dialog")
 
-# Voice ต่าง assistant slug
-VOICE_MAP: dict[str, str] = {
-    "fa":   "Kore",
-    "kwan": "Aoede",
-    "khim": "Zephyr",
-}
-DEFAULT_VOICE = "Aoede"
+# ⚠️ ตารางเสียงอยู่ที่ `utils/voice.py` ที่เดียว — ห้ามนิยามซ้ำที่นี่อีก
+# (เคยมี 2 ก๊อป และตัวที่ `server.py` ใช้จริงคือของไฟล์นี้ ทำให้คนที่ไปแก้ `voice.py`
+#  แก้แล้วไม่มีอะไรเกิดขึ้น — `tests/test_voice_consistency.py` กันไว้แล้ว)
+from utils.voice import DEFAULT_VOICE, VOICE_MAP, resolve_voice  # noqa: F401
 
 
 def _pcm_to_wav(pcm: bytes, rate: int = 24000, channels: int = 1, width: int = 2) -> bytes:
@@ -76,7 +73,7 @@ def generate_tts(text: str, assistant_slug: str = "") -> bytes:
     if not text:
         raise ValueError("text ว่างเปล่า")
 
-    voice = VOICE_MAP.get(assistant_slug.lower(), DEFAULT_VOICE)
+    voice = resolve_voice(assistant_slug)
     sentences = _split_sentences(text)
 
     # ข้อความสั้นหรือมีแค่ 1 sentence: generate ตรงๆ
