@@ -138,6 +138,39 @@ def _save_skills_db(db: dict):
         logger.warning(f"Failed to save skills_db.json: {e}")
 
 
+def set_skill_entry(topic: str, entry: dict) -> None:
+    """upsert หนึ่งรายการลง skills_db.json ภายใต้ `_db_lock` ตัวเดียวกับ `save_skill()`
+
+    มีไว้ให้ผู้เรียกที่ต้องเก็บ field เพิ่มเอง (`routers/skills.py:skills_extract`,
+    `utils/skill_discovery.py:accept_proposal`) ซึ่ง `save_skill()` รับไม่ได้เพราะ
+    บังคับ shape — เดิมทั้งสองที่ทำ `_load_skills_db()` → แก้ → `_save_skills_db()`
+    **เอง โดยไม่มี lock** = lost update เงียบๆ (ดู tests/test_skills_db_concurrency.py)
+
+    ⚠️ ห้ามเพิ่มจุดที่ load/แก้/save เองอีก — ทางเขียนต้องเหลือทางเดียวที่ถือ lock
+    """
+    with _db_lock:                      # read-modify-write ต้องแบ่งแยกไม่ได้
+        db = _load_skills_db()
+        db[topic] = entry
+        _save_skills_db(db)
+
+
+def delete_skill_entries(keys: list[str]) -> bool:
+    """ลบ key ที่ระบุออกจาก skills_db.json — คืน True ถ้าลบจริงอย่างน้อยหนึ่ง key
+
+    อ่าน-ลบ-เขียนอยู่ใน lock เดียว: เดิม `skills_delete` เรียก `_save_skills_db()`
+    ซ้ำในลูปต่อ key ด้วย = เขียนไฟล์หลายรอบและเปิดช่องให้ writer อื่นแทรกกลางคัน
+    """
+    with _db_lock:
+        db = _load_skills_db()
+        removed = [k for k in keys if k in db]
+        if not removed:
+            return False
+        for k in removed:
+            del db[k]
+        _save_skills_db(db)
+        return True
+
+
 def save_skill(topic: str, summary: str, source: str = "auto", sync: bool = True) -> bool:
     """บันทึก skill ใหม่ที่ AI เรียนรู้ — คืน True ถ้าบันทึกจริง
 

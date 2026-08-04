@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 
 import utils.skill_discovery as sd
+import utils.skills as skills
 from utils.history import _get_conn
 
 
@@ -115,7 +116,8 @@ def test_accept_proposal_not_found(clean_cache):
 
 def test_accept_proposal_writes_md_and_db(monkeypatch, tmp_path, clean_cache):
     monkeypatch.setattr(sd, "_SKILLS_DIR", str(tmp_path / "skills"))
-    monkeypatch.setattr(sd, "_SKILLS_DB", str(tmp_path / "skills_db.json"))
+    # `accept_proposal` เขียน db ผ่าน `utils.skills.set_skill_entry()` — คันโยกเดียว
+    monkeypatch.setattr(skills, "SKILLS_DB_PATH", str(tmp_path / "skills_db.json"))
     # กัน ChromaDB sync
     fake_mod = types.ModuleType("utils.skills_search")
     fake_mod.sync_skills_to_search = lambda *a, **k: None
@@ -142,7 +144,7 @@ def test_accept_proposal_writes_md_and_db(monkeypatch, tmp_path, clean_cache):
 
 def test_accept_proposal_custom_content(monkeypatch, tmp_path, clean_cache):
     monkeypatch.setattr(sd, "_SKILLS_DIR", str(tmp_path / "skills"))
-    monkeypatch.setattr(sd, "_SKILLS_DB", str(tmp_path / "skills_db.json"))
+    monkeypatch.setattr(skills, "SKILLS_DB_PATH", str(tmp_path / "skills_db.json"))
     fake_mod = types.ModuleType("utils.skills_search")
     fake_mod.sync_skills_to_search = lambda *a, **k: None
     monkeypatch.setitem(sys.modules, "utils.skills_search", fake_mod)

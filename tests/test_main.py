@@ -182,8 +182,12 @@ class TestMemoryEndpoints:
         """Test POST /api/memory/{assistant} — endpoint ที่มีอยู่จริง"""
         with patch('routers.memory.save_memory') as mock_mem, \
              patch('routers.memory.save_lesson') as mock_lesson:
-            mock_mem.return_value = None
-            mock_lesson.return_value = None
+            # ของจริงคืน bool — เดิม mock คืน None แล้วเทสยังเขียว เพราะ handler
+            # ไม่เคยอ่านค่าที่คืนมา (ตอบ ok:True เสมอ) พอ handler รายงานผลจริงแล้ว
+            # mock ที่ไม่ตรงของจริงก็โผล่ออกมา — เส้นทางล้มเหลวดูที่
+            # tests/test_memory_save_reports_failure.py
+            mock_mem.return_value = True
+            mock_lesson.return_value = True
             response = client.post(
                 "/api/memory/ฟ้า",
                 json={"text": "Test memory content"}
