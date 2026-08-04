@@ -4,6 +4,7 @@ import os
 import threading
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from assistants.config import ASSISTANTS
 from core.config import SKILLS_DIR
@@ -131,14 +132,16 @@ async def chat(request: Request):
     # อยู่ก่อน teach/cache — คำสั่งวาดรูปไม่ใช่ knowledge ห้ามเข้า cache/memory
     from utils.image_gen import detect_image_request, generate_image
     if prompt and detect_image_request(prompt) and not (tool_agent or agent_mode):
-        save_message(assistant, "user", prompt, "image_gen", session_id)
-        result = generate_image(prompt, image_b64=image_b64, image_mime=image_mime)
+        await run_in_threadpool(save_message, assistant, "user", prompt, "image_gen", session_id)
+        result = await run_in_threadpool(generate_image, prompt,
+                                         image_b64=image_b64, image_mime=image_mime)
         if result.get("ok"):
             caption = result.get("text") or "วาดเสร็จแล้วค่ะ 🎨"
             reply = f"{caption}\n\n![generated image]({result['url']})"
         else:
             reply = f"⚠️ {result.get('error', 'สร้างรูปไม่สำเร็จ')}"
-        img_aid = save_message(assistant, "assistant", reply, "image_gen", session_id)
+        img_aid = await run_in_threadpool(save_message, assistant, "assistant", reply,
+                                          "image_gen", session_id)
 
         def gen_image_resp():
             yield f"data: {json.dumps({'chunk': reply}, ensure_ascii=False)}\n\n"
@@ -151,17 +154,18 @@ async def chat(request: Request):
 
     # ── ตรวจจับ Teaching signal จาก user ────────────────────────────────────
     if not is_test_request:
-        teach(assistant, prompt)
+        await run_in_threadpool(teach, assistant, prompt)
 
     # ── Semantic response cache (short-circuit ถ้า Q ใกล้ของที่ thumbs-up) ─
     if use_response_cache and prompt:
         try:
             from utils.response_cache import lookup as _rc_lookup
-            hit = _rc_lookup(assistant, prompt)
+            hit = await run_in_threadpool(_rc_lookup, assistant, prompt)
             if hit:
                 cached_resp = hit["response"]
-                save_message(assistant, "user", prompt, "cache", session_id)
-                cached_aid = save_message(assistant, "assistant", cached_resp, "cache", session_id)
+                await run_in_threadpool(save_message, assistant, "user", prompt, "cache", session_id)
+                cached_aid = await run_in_threadpool(save_message, assistant, "assistant",
+                                                     cached_resp, "cache", session_id)
 
                 def gen_cached():
                     yield f"data: {json.dumps({'cache_hit': {'similarity': hit['similarity'], 'source_prompt': hit['source_prompt']}}, ensure_ascii=False)}\n\n"
@@ -686,19 +690,20 @@ async def regenerate_response(request: Request):
     provider   = data.get("provider", "auto")
     agent_mode = bool(data.get("agent_mode", False))
 
-    delete_last_assistant_message(assistant, session_id)
-    last_prompt = get_last_user_message(assistant, session_id)
+    await run_in_threadpool(delete_last_assistant_message, assistant, session_id)
+    last_prompt = await run_in_threadpool(get_last_user_message, assistant, session_id)
     if not last_prompt:
         async def _err():
             yield "data: " + json.dumps({'error': 'ไม่พบข้อความ'}) + "\n\n"
         return StreamingResponse(_err(), media_type="text/event-stream")
 
     cfg = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])
+    mem_ctx = await run_in_threadpool(search_memory, assistant, last_prompt)
     system_prompt = inject_context_to_system(
         cfg["system_prompt"],
-        "\n\n".join(filter(None, [search_memory(assistant, last_prompt)])),
+        "\n\n".join(filter(None, [mem_ctx])),
     )
-    history = load_history(assistant, session_id)
+    history = await run_in_threadpool(load_history, assistant, session_id)
     messages = [{"role": "system", "content": system_prompt}]
     messages += [{"role": m["role"], "content": m["content"]} for m in history]
     messages.append({"role": "user", "content": last_prompt})
