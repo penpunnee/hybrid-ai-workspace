@@ -86,13 +86,21 @@ class TestUnscorableCollection:
     อ่าน .md จากดิสก์ตรงๆ ไม่ผ่าน ChromaDB — เป็นคนละเส้นและไม่ได้พังไปด้วย
     """
 
-    def _fake(self, monkeypatch, rows):
+    def _fake(self, monkeypatch, rows, space="l2"):
+        """`space` = สิ่งที่ `_space()` อ่านได้จริง — `"l2"` (รู้ว่าผิด) vs `None` (อ่านไม่ได้)
+
+        ⚠️ ต้องมี `_space()` ใน double ด้วย ไม่งั้นมันจะไม่สะท้อนของจริง: ตั้งแต่
+        2026-08-04 `search_skills()` ส่ง space ที่อ่านได้เข้า `_handle_unscorable_results()`
+        เพื่อไม่ให้ข้อความสั่งลบ collection ตอนที่ยังไม่รู้ว่าเกิดอะไรขึ้น
+        """
         import utils.skills_search as ss
 
         class _Fake:
             available = True
             def search(self, query, n_results=3):
                 return rows
+            def _space(self):
+                return space
 
         monkeypatch.setattr(ss, "get_skills_search", lambda: _Fake())
 
