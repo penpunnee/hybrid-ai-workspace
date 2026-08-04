@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field, asdict
@@ -32,6 +33,9 @@ logger = logging.getLogger(__name__)
 
 # in-memory cache สำหรับ accept (proposal_id → proposal)
 _proposals_cache: dict[str, "SkillProposal"] = {}
+# กัน "ยึด proposal เดียวกันได้สองคน" — ครอบแค่จังหวะ pop ไม่ครอบงาน I/O ที่ตามมา
+# (ถือ lock ข้ามการเขียนไฟล์/ChromaDB จะกลายเป็นคอขวดของทั้งเส้น)
+_accept_lock = threading.Lock()
 
 
 @dataclass
@@ -245,14 +249,26 @@ def accept_proposal(
     custom_topic: Optional[str] = None,
     custom_content: Optional[str] = None,
 ) -> dict:
-    """รับ proposal → สร้างไฟล์ .md ใน skills/ + เพิ่มเข้า skills_db.json"""
-    proposal = _proposals_cache.get(proposal_id)
+    """รับ proposal → สร้างไฟล์ .md ใน skills/ + เพิ่มเข้า skills_db.json
+
+    **ยึด (pop) proposal ตั้งแต่ต้นภายใต้ lock** แล้วคืนถ้าล้มเหลว — เดิม `.get()` อยู่หัว
+    ฟังก์ชันแต่ `.pop()` อยู่ท้าย ระหว่างนั้นมีเขียนไฟล์+db+ChromaDB คั่น = check-then-act
+    ที่แยกกันได้ ตอนที่ handler ยังรันบน event loop มันปลอดภัยโดยบังเอิญ (ทั้งฟังก์ชัน
+    เป็นบล็อก sync เดียว) พอย้ายเข้า threadpool สองคำขอที่ใช้ id เดียวกันก็อ่านเจอทั้งคู่
+    """
+    with _accept_lock:
+        proposal = _proposals_cache.pop(proposal_id, None)
     if not proposal:
         return {"ok": False, "error": "proposal not found (อาจหมดอายุ — เรียก /discover ใหม่)"}
 
+    def _release(err: dict) -> dict:
+        """คืน proposal เข้า cache เมื่อยังไม่ได้ใช้จริง — ไม่งั้น retry ไม่ได้อีกเลย"""
+        _proposals_cache[proposal_id] = proposal
+        return err
+
     topic = (custom_topic or proposal.topic).strip()
     if not topic:
-        return {"ok": False, "error": "empty topic"}
+        return _release({"ok": False, "error": "empty topic"})
 
     # เกณฑ์เดียวกับตอนลบ (`cleanup_junk_skills`) — ทางเข้าต้องเท่าทางออก ไม่งั้นวนลูป
     # "สร้าง → ล้าง → สร้างใหม่" · ครอบ custom_topic/custom_content ด้วย ไม่ให้เป็นทางลัด
@@ -261,7 +277,7 @@ def accept_proposal(
     from utils.skills import _is_meaningful_skill
     if not _is_meaningful_skill(topic, custom_content or proposal.summary):
         logger.info(f"[SkillDiscovery] ปฏิเสธ proposal ที่ไม่ผ่านเกณฑ์: {topic!r}")
-        return {"ok": False, "error": f"ไม่ผ่านเกณฑ์คุณภาพ skill: {topic!r}"}
+        return _release({"ok": False, "error": f"ไม่ผ่านเกณฑ์คุณภาพ skill: {topic!r}"})
 
     safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in topic.lower()).strip("-")
     filename = f"{safe or 'skill'}-{int(time.time())}.md"
@@ -283,7 +299,7 @@ def accept_proposal(
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(md_body)
     except Exception as e:
-        return {"ok": False, "error": f"write file failed: {e}"}
+        return _release({"ok": False, "error": f"write file failed: {e}"})
 
     # update skills_db.json — ต้องผ่าน `set_skill_entry()` ซึ่งถือ `_db_lock` เดียวกับ
     # `save_skill()` และเขียนแบบ atomic (`os.replace`) · เดิมที่นี่ read-modify-write เอง
@@ -302,13 +318,15 @@ def accept_proposal(
     except Exception as e:
         logger.warning(f"[SkillDiscovery] update skills_db failed: {e}")
 
-    # ลบ proposal ออกจาก cache
-    _proposals_cache.pop(proposal_id, None)
-
     # sync ChromaDB (best-effort)
+    # ⚠️ ต้องส่ง **db ทั้งก้อน** — `sync_from_db()` นิยามว่า "upsert + ลบของที่หายไปจาก db"
+    # (เพิ่ม 2026-08-02 เพื่อแก้ index ค้างหลังลบ skill) ส่ง mapping รายการเดียวเมื่อไหร่
+    # ChromaDB จะเหลือ skill เดียวทันที · ตอนที่เพิ่มการลบเข้าไปไม่ได้ไล่ดูว่าใครเรียก
+    # ด้วย mapping บางส่วนบ้าง — จุดนี้คือตัวที่หลุด
     try:
         from utils.skills_search import sync_skills_to_search
-        sync_skills_to_search({topic: entry})
+        from utils.skills import _load_skills_db
+        sync_skills_to_search(_load_skills_db())
     except Exception as e:
         logger.debug(f"[SkillDiscovery] sync ChromaDB skipped: {e}")
 

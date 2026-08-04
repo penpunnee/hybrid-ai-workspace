@@ -82,6 +82,11 @@ async def memory_cleanup(request: Request):
 async def save_mem(assistant: str, request: Request):
     data = await request.json()
     text = data.get("text", "")
-    await run_in_threadpool(save_memory, assistant, "remember", f"ข้อมูลที่บันทึก: {text}")
-    await run_in_threadpool(save_lesson, "ข้อมูลจากพี่ปอย", text)
+    # ทั้งคู่คืน False (ไม่ raise) เมื่อ ChromaDB ไม่พร้อม — เดิมทิ้งค่าแล้วตอบ ok:True เสมอ
+    # = ผู้ใช้เห็นว่า "บันทึกแล้ว" ทั้งที่ไม่มีอะไรถูกเก็บ และไม่มีใครรู้ว่าต้องทำซ้ำ
+    mem_ok = await run_in_threadpool(save_memory, assistant, "remember", f"ข้อมูลที่บันทึก: {text}")
+    lesson_ok = await run_in_threadpool(save_lesson, "ข้อมูลจากพี่ปอย", text)
+    if not (mem_ok and lesson_ok):
+        return {"ok": False, "saved": text,
+                "error": "บันทึกไม่สำเร็จ (memory ok=%s, lesson ok=%s)" % (mem_ok, lesson_ok)}
     return {"ok": True, "saved": text}
