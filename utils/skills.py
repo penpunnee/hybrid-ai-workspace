@@ -1,8 +1,10 @@
+import fcntl
 import os
 import json
 import logging
 import re
 import threading
+from contextlib import contextmanager
 
 from core.config import SKILLS_DB_PATH
 
@@ -98,7 +100,60 @@ def _handle_unscorable_results(query: str, results: list) -> None:
 # 2. **ไฟล์เปล่าระหว่างเขียน** — `open(..., "w")` truncate ทันทีก่อนเขียนเนื้อ
 #    ใครอ่านจังหวะนั้นได้ไฟล์ว่าง → `_load_skills_db()` คืน `{}` → ถ้ามีคนเขียนต่อ
 #    ก็ทับด้วยของว่าง = **คลังหายถาวร** (วัดได้ 79 ครั้งใน 150 การเขียน)
+#
+# 3. **lost update ข้ามโปรเซส** — `RLock` เป็นของในโปรเซสเดียว `scripts/clean_skills_db.py`
+#    ที่รันด้วย `docker exec` มองไม่เห็นเลย → ต้องมี `flock` บนไฟล์ที่ทุกโปรเซสเห็นร่วมกัน
+#    (วัดได้ 2026-08-04: 6 โปรเซส × 20 รายการ **หายไป 60/120**)
 _db_lock = threading.RLock()
+_db_depth = 0          # ความลึกของ transaction ที่ซ้อนกัน — แก้ได้เฉพาะตอนถือ `_db_lock`
+
+
+def _db_lock_path() -> str:
+    """ล็อกไฟล์ **แยกต่างหาก** ไม่ใช่ตัว `skills_db.json` เอง
+
+    `_save_skills_db()` เขียนด้วย `os.replace()` = **สลับ inode** ผู้ที่ flock ตัว db ไว้
+    จะเหลือ lock อยู่บน inode เก่าที่ถูกทิ้งแล้ว → คนอื่นเปิดไฟล์ใหม่ได้ lock ทันที
+    = ล็อกที่ดูเหมือนล็อกแต่ไม่กันอะไรเลย · ไฟล์ `.lock` ไม่เคยถูก replace จึงใช้ได้
+
+    คำนวณตอนเรียก ไม่ใช่ตอน import — เทสกับสคริปต์ชี้ `SKILLS_DB_PATH` ใหม่ได้
+    """
+    return SKILLS_DB_PATH + ".lock"
+
+
+@contextmanager
+def _db_transaction():
+    """ครอบ read-modify-write บน `skills_db.json` — กันทั้งข้ามเธรดและข้ามโปรเซส
+
+    - `_db_lock` (RLock) กันเธรดในโปรเซสเดียวกัน + ทำให้ nested call ไม่ deadlock
+    - `flock(LOCK_EX)` กันคนละโปรเซส (แอป vs `scripts/clean_skills_db.py`)
+
+    ⚠️ **การอ่านเฉยๆ ไม่ต้องถือ lock** — `_save_skills_db()` atomic อยู่แล้ว ผู้อ่านจึงเห็นได้
+    แค่ "ของเก่าครบ" หรือ "ของใหม่ครบ" · ที่ต้องครอบคือ **อ่าน→แก้→เขียน** เท่านั้น
+    ⚠️ flock ใช้ได้เพราะ volume บน NAS เป็น bind mount ของ filesystem จริง (ไม่ใช่ NFS)
+    """
+    global _db_depth
+    with _db_lock:
+        if _db_depth > 0:              # ซ้อนอยู่ใน transaction เดิม — flock ถืออยู่แล้ว
+            _db_depth += 1             # ขอซ้ำจาก fd ใหม่จะบล็อกตัวเอง
+            try:
+                yield
+            finally:
+                _db_depth -= 1
+            return
+
+        path = _db_lock_path()
+        os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
+        f = open(path, "a+")
+        try:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            _db_depth += 1
+            try:
+                yield
+            finally:
+                _db_depth -= 1
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        finally:
+            f.close()
 
 
 def _load_skills_db() -> dict:
@@ -148,7 +203,7 @@ def set_skill_entry(topic: str, entry: dict) -> None:
 
     ⚠️ ห้ามเพิ่มจุดที่ load/แก้/save เองอีก — ทางเขียนต้องเหลือทางเดียวที่ถือ lock
     """
-    with _db_lock:                      # read-modify-write ต้องแบ่งแยกไม่ได้
+    with _db_transaction():             # read-modify-write ต้องแบ่งแยกไม่ได้
         db = _load_skills_db()
         db[topic] = entry
         _save_skills_db(db)
@@ -160,7 +215,7 @@ def delete_skill_entries(keys: list[str]) -> bool:
     อ่าน-ลบ-เขียนอยู่ใน lock เดียว: เดิม `skills_delete` เรียก `_save_skills_db()`
     ซ้ำในลูปต่อ key ด้วย = เขียนไฟล์หลายรอบและเปิดช่องให้ writer อื่นแทรกกลางคัน
     """
-    with _db_lock:
+    with _db_transaction():
         db = _load_skills_db()
         removed = [k for k in keys if k in db]
         if not removed:
@@ -181,7 +236,7 @@ def save_skill(topic: str, summary: str, source: str = "auto", sync: bool = True
         logger.info(f"[Skills] ปฏิเสธ skill ที่ไม่ผ่านเกณฑ์: {topic!r}")
         return False
 
-    with _db_lock:                      # read-modify-write ต้องแบ่งแยกไม่ได้
+    with _db_transaction():             # read-modify-write ต้องแบ่งแยกไม่ได้
         db = _load_skills_db()
         db[topic] = {
             "summary": summary,
@@ -300,7 +355,7 @@ def cleanup_junk_skills() -> dict:
     """ลบ skills ที่เป็น junk ออกจาก skills_db.json และ sync ChromaDB"""
     # อ่าน→คัด→เขียน ต้องอยู่ใน lock เดียวกับ save_skill ไม่งั้น skill ที่ถูกบันทึก
     # ระหว่างที่กำลังคัดอยู่จะถูกเขียนทับหายไป (dream cycle เรียกทั้งสองเส้น)
-    with _db_lock:
+    with _db_transaction():
         db = _load_skills_db()
         removed = []
         kept = {}

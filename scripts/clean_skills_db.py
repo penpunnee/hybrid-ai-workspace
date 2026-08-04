@@ -19,6 +19,13 @@ volatile block ทุกเทิร์น ต่างจาก `skills/*.md` �
 ⚠️ ลบ entry แล้วต้อง sync ChromaDB ด้วย — `sync_skills_to_search()` ลบของที่หายจาก db ให้เอง
 (restart container ก็ทริกเกอร์ sync ตอน boot)
 
+⚠️ **สคริปต์นี้เขียนไฟล์เดียวกับที่แอปเขียนอยู่ตลอดเวลา** (เส้นแชท + dream cycle) และรัน
+ด้วย `docker exec` ใน container เดียวกัน = คนละโปรเซส `threading.RLock` ของแอปกันไม่ได้
+→ ตั้งแต่ 2026-08-04 ทั้งการอ่านและการเขียนของ `--apply` อยู่ใน `_db_transaction()`
+ซึ่งถือ `flock` ร่วมกับแอป และเขียนผ่าน `_save_skills_db()` (atomic `os.replace`)
+เดิมสคริปต์อ่านเองด้วย `open()` แล้วเขียนเองด้วย `open(db,"w")` = **ทั้งทับของที่แอปเพิ่งเขียน
+และเปิดช่องให้แอปอ่านเจอไฟล์ที่ truncate ค้างอยู่** (วัดได้: หาย 60/120 · JSON พัง 6 ครั้ง)
+
 ใช้:
     python scripts/clean_skills_db.py                 # dry-run (default)
     python scripts/clean_skills_db.py --apply         # ลบจริง (backup อัตโนมัติ)
@@ -151,9 +158,24 @@ def main() -> int:
         print(f"ไม่พบ {args.db}")
         return 1
 
-    with open(args.db, encoding="utf-8") as f:
-        db = json.load(f)
+    # ทางอ่าน/เขียนต้องเป็นตัวเดียวกับแอป — ชี้ path ของโมดูลไปที่ --db ที่ผู้ใช้เลือก
+    # (`SKILLS_DB_PATH` ไม่มี env override · `_db_lock_path()` อ่านค่านี้ตอนเรียก)
+    import utils.skills as skills
+    skills.SKILLS_DB_PATH = args.db
 
+    if not args.apply:
+        # dry-run อ่านอย่างเดียว ไม่ต้องถือ lock — `_save_skills_db()` atomic อยู่แล้ว
+        # ผู้อ่านจึงเห็นได้แค่ "ของเก่าครบ" หรือ "ของใหม่ครบ"
+        return _report(skills._load_skills_db(), args, applied=False)
+
+    # ⚠️ อ่าน→วางแผน→เขียน ต้องอยู่ใน transaction **เดียว** ไม่งั้นอะไรที่แอปเขียน
+    # ระหว่างที่เรากำลังไล่ .md อยู่จะถูกทับหายไปเงียบๆ · ถือ lock ยาวรับได้เพราะ
+    # เป็นงาน maintenance ที่คนสั่งเอง นานๆ ครั้ง และคลังมีระดับหลักสิบรายการ
+    with skills._db_transaction():
+        return _report(skills._load_skills_db(), args, applied=True, skills_mod=skills)
+
+
+def _report(db: dict, args, applied: bool, skills_mod=None) -> int:
     keep, drop = plan_cleanup(db, args.skills_dir)
 
     by_source = collections.Counter(
@@ -183,7 +205,7 @@ def main() -> int:
         for k in missing:
             print(f"  + {k}")
 
-    if not args.apply:
+    if not applied:
         print("\n(dry-run — ใส่ --apply เพื่อเขียนจริง)")
         return 0
 
@@ -196,8 +218,8 @@ def main() -> int:
     if args.resync:
         resync_summaries(db, args.skills_dir)
         add_missing_entries(db, args.skills_dir)
-    with open(args.db, "w", encoding="utf-8") as f:
-        json.dump(db, f, ensure_ascii=False, indent=2)
+    # เขียนผ่านทางเดียวกับแอป — atomic (`os.replace`) ไม่มีช่วงที่ไฟล์ถูก truncate
+    skills_mod._save_skills_db(db)
 
     print(f"\nลบ {len(drop)} · resync {len(stale)} · เพิ่ม {len(missing)} · "
           f"เหลือ {len(db)} · backup: {backup}")

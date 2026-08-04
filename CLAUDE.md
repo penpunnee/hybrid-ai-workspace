@@ -652,8 +652,20 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 4. **voice retry ยังไม่เคยถูกกระตุ้นจริงบน prod** — ยืนยันได้แค่ unit test + โค้ดอยู่ในบันเดิล
 5. `SKILLS_SEARCH_MIN_SCORE` ตั้งจาก ground truth ที่มี positive แค่ 11 ตัว — **ห้ามจูนละเอียดกว่านี้**
    ถ้าจะขยับต้องมาร์คเพิ่มจาก 187 คู่ที่ยังว่างใน `data/skills_pairs.json` ก่อน
-6. RLock ของ `skills_db` กันได้แค่ process เดียว — `scripts/clean_skills_db.py` รันชนกับแอปยัง lost-update ได้
-   (ข้อ 2 ปิดช่องในโปรเซสแอปครบแล้ว — ที่เหลือคือข้ามโปรเซส ต้องใช้ file lock ไม่ใช่ RLock)
+6. ✅ **[ปิดแล้ว 2026-08-04]** RLock ของ `skills_db` กันได้แค่ process เดียว
+   → เพิ่ม `_db_transaction()` ใน `utils/skills.py` = `RLock` (ข้ามเธรด) + **`flock(LOCK_EX)`**
+   (ข้ามโปรเซส) · ทุกเส้นที่ read-modify-write ใช้ตัวนี้ · เทส `tests/test_skills_db_cross_process.py`
+   - **`scripts/clean_skills_db.py` เป็นตัวปัญหาจริง** — มันไม่เคยใช้ทางของ `utils/skills.py` เลย
+     อ่านเองด้วย `open()` เขียนเองด้วย `open(db,"w")` = **ทั้งทับของที่แอปเพิ่งเขียน และ
+     ทำให้แอปอ่านเจอไฟล์ truncate ค้าง** · ตอนนี้ `--apply` ทั้งก้อนอยู่ใน transaction เดียว
+     และเขียนผ่าน `_save_skills_db()` · **dry-run ไม่ถือ lock** (อ่านอย่างเดียว ปลอดภัยอยู่แล้ว)
+   - ⚠️ **lock อยู่บนไฟล์แยก `skills_db.json.lock`** ห้ามล็อกตัว db เอง — `_save_skills_db()`
+     ใช้ `os.replace()` = สลับ inode ผู้ที่ล็อก db ไว้จะถือ lock บน inode ที่ถูกทิ้งแล้ว
+     = **ล็อกที่ดูเหมือนล็อกแต่ไม่กันอะไรเลย**
+   - ⚠️ **การอ่านเฉยๆ ไม่ต้องถือ lock** (เขียน atomic อยู่แล้ว) — ครอบเฉพาะ อ่าน→แก้→เขียน
+   - วัดได้ก่อนแก้: **6 โปรเซส × 20 รายการ หายไป 60/120** · reader อ่านเจอ JSON พัง 6 ครั้ง
+   - 🔸 **ยังไม่ได้ทำ: เพดานเวลารอ lock** — ตอนนี้รอไม่จำกัด ถ้ามีโปรเซสค้างถือ lock ไว้
+     คำขอที่เขียน skills จะค้างและกิน threadpool slot (มี 40) รอ user ตัดสินใจ
 
 ---
 
