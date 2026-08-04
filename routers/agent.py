@@ -15,6 +15,7 @@ import logging
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from agents.orchestrator import run_agent
 from agents.tools import list_tools
@@ -54,8 +55,10 @@ async def agent_chat(request: Request):
     config = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])
     base_prompt = config["system_prompt"]
 
-    history = load_history(assistant, session_id)
-    save_message(assistant, "user", prompt, "agent", session_id)
+    # sqlite เร็วกว่าตัวอื่นมาก แต่ยังเป็น IO บน event loop — ย้ายให้เหมือนกันทั้งเส้น
+    # (ตัว generator `sse()` เป็น sync generator อยู่แล้ว starlette ห่อ iterate_in_threadpool ให้)
+    history = await run_in_threadpool(load_history, assistant, session_id)
+    await run_in_threadpool(save_message, assistant, "user", prompt, "agent", session_id)
 
     messages = [{"role": "system", "content": base_prompt}]
     messages += [{"role": m["role"], "content": m["content"]} for m in history]
