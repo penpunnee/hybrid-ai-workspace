@@ -5,6 +5,12 @@ services:
     # always (เดิม unless-stopped) — เคย "หาย" 2 ครั้ง (2026-06-14/15, 2026-06-17) ตอน Container Manager restart
     # เหมือน chromadb: always = กลับมาเองแม้ exit/หลัง daemon restart. คู่กับ backend-watchdog ด้านล่าง (กันเคส container ถูก "ลบ" ที่ restart policy ช่วยไม่ได้)
     restart: always
+    # เพดาน RAM — วัดจริง 2026-08-04: steady state 157 MiB จาก 19.5 GiB ของ NAS
+    # 2 GB = เผื่อ ~13 เท่าสำหรับ OCR (pdf2image เรนเดอร์ทีละหน้า) และ summarize
+    # ทำไมต้องมี: ถ้า request เดียวกิน RAM ไม่จำกัด NAS ทั้งเครื่องล่ม (Pi-hole สำรอง,
+    # JARVIS, cloudflared อยู่เครื่องเดียวกัน) — จำกัดไว้แล้วโดน OOM-kill เฉพาะตัวนี้
+    # แล้ว `restart: always` + backend-watchdog พากลับมาเอง = ความเสียหายอยู่ในกรอบ
+    mem_limit: 2g
     ports:
       - "8080:8000"
     healthcheck:
