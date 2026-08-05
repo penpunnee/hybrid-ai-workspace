@@ -312,13 +312,18 @@ def accept_proposal(
         "cluster_size": proposal.cluster_size,
         "created_at": proposal.detected_at,
     }
+    db_updated = True
+    warning = None
     try:
         from utils.skills import set_skill_entry
         set_skill_entry(topic, entry)
     except Exception as e:
         # ไฟล์ .md เขียนไปแล้ว = skill ครึ่งใบ (ค้นไม่เจอเพราะไม่มีใน db)
-        # ERROR ไม่ใช่ warning — ดู CLAUDE.md งานค้างข้อ 7 เรื่องสัญญาของ partial success
-        logger.error(f"[SkillDiscovery] เขียน .md แล้วแต่บันทึกลง skills_db ไม่ได้: {e}")
+        # ไม่พลิก ok เป็น False เพราะไฟล์เขียนสำเร็จจริง — บอกความจริงเป็นสองชั้นแทน
+        # ใช้รูปแบบเดียวกับ `routers/skills.py:skills_extract` ที่มีอยู่แล้วในโค้ดฐานนี้
+        db_updated = False
+        warning = f"เขียนไฟล์ .md สำเร็จ แต่บันทึกลง skills_db ไม่ได้: {e}"
+        logger.error(f"[SkillDiscovery] {warning}")
 
     # sync ChromaDB (best-effort)
     # ⚠️ ต้องส่ง **db ทั้งก้อน** — `sync_from_db()` นิยามว่า "upsert + ลบของที่หายไปจาก db"
@@ -332,7 +337,11 @@ def accept_proposal(
     except Exception as e:
         logger.debug(f"[SkillDiscovery] sync ChromaDB skipped: {e}")
 
-    return {"ok": True, "filename": filename, "topic": topic, "path": filepath}
+    resp = {"ok": True, "filename": filename, "topic": topic, "path": filepath,
+            "db_updated": db_updated}
+    if warning:
+        resp["warning"] = warning
+    return resp
 
 
 def list_cached_proposals() -> list[dict]:

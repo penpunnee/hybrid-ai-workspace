@@ -27,10 +27,17 @@ from utils.skills import (
     cleanup_junk_skills, set_skill_entry, delete_skill_entries, SkillsDbError,
 )
 from utils.llm import stream_response
+from utils.http_limits import read_capped, json_body_capped
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["skills"])
+
+# เพดาน body — **ไม่ใช่ตัวเลขใหม่**: CLAUDE.md ประกาศ "ขนาดสูงสุด 10 MB" ไว้แล้ว
+# และ `routers/documents.py` บังคับใช้อยู่แล้วด้วยค่าเดียวกัน · ที่นี่คือการบังคับใช้
+# ให้ครบ ไม่ใช่การตั้งนโยบายใหม่ — `ai-backend-1` มี `mem_limit: 2g` เป็นด่านสุดท้าย
+# ซึ่งแปลว่า "ถูก OOM kill" ไม่ใช่ "ตอบ 413"
+_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
 def _collect_stream(msgs) -> str:
@@ -190,7 +197,7 @@ def skills_discover(days: int = 30, min_cluster: int = 3, threshold: float = 0.7
 async def skills_discover_accept(request: Request):
     """รับ proposal_id → สร้าง .md ใน skills/"""
     from utils.skill_discovery import accept_proposal
-    data = await request.json()
+    data = await json_body_capped(request, _MAX_UPLOAD_BYTES)
     pid = (data.get("proposal_id") or "").strip()
     if not pid:
         return {"ok": False, "error": "proposal_id required"}
@@ -304,6 +311,6 @@ def _parse_upload(content: bytes, name: str, mime: str) -> dict:
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-    content = await file.read()
+    content = await read_capped(file, _MAX_UPLOAD_BYTES)
     return await run_in_threadpool(
         _parse_upload, content, file.filename or "file", file.content_type or "")
