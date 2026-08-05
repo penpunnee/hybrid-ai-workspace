@@ -335,6 +335,15 @@ LOG_FILE=server.log
 ### WebSocket: Voice Chat
 `/ws/voice/{assistant_slug}` — bidirectional WS connecting to Gemini Live API. Client sends PCM `{type: "audio"}`, receives audio. Transcripts saved on turn completion.
 
+**พิมพ์แทรกได้ระหว่างคุยด้วยเสียง** (2026-08-05) — client ส่ง `{type:"text", text}` →
+`send_client_content(turn_complete=True)` · UI = กล่องพิมพ์ในหน้าจอ voice (`app.tsx`,
+`VoiceController.sendText()`) · วัดกับ Gemini Live จริง: **ส่งตอนโมเดลกำลังพูดอยู่ →
+`interrupted` แล้วตอบใหม่จริง 8.1 วิ · ส่งตอนเงียบ → 5.3 วิ** = ใช้ได้ทั้งสองจังหวะ
+- ⚠️ กันข้อความว่าง — turn เปล่าจะไปตัดเสียงที่กำลังพูดทิ้งโดยไม่ได้อะไรกลับมา
+- ⚠️ **เขียน probe ทดสอบ Live API ต้องวน `while` รอบ `session.receive()`** — มัน yield
+  แค่ turn เดียวแล้วจบ generator · ใช้ `async for` ชั้นเดียวจะ "ไม่ได้ยิน" turn ถัดไป
+  แล้วสรุปผิดว่าโมเดลเงียบ (พลาดมาแล้ว 2026-08-05 ทั้งที่ `send_loop` เตือนไว้ตรงๆ)
+
 #### เสียงต้องเป็น "คนเดิม" ทุกครั้ง (2026-08-04 — user: "เหมือนสลับเป็นคนละคน")
 **ทุกอย่างที่เกี่ยวกับเสียงอยู่ที่ `utils/voice.py` ที่เดียว** (`resolve_voice()` +
 `build_live_config()` + `GEMINI_LIVE_MODEL_DEFAULT`) — `server.py`/`utils/tts.py`/`core/config.py`
