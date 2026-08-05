@@ -75,10 +75,15 @@ def api_delete_preference(doc_id: str):
 async def memory_cleanup(request: Request):
     try:
         data = await json_body_capped(request, _MAX_BODY_BYTES)
-    except HTTPException:
-        # 413 ต้องทะลุออกไป — `except Exception` กว้างๆ จะกลืนเพดานที่เพิ่งใส่
-        # แล้วตอบ 200 เหมือนสำเร็จ (RAM รอดก็จริง แต่ผู้เรียกไม่มีทางรู้ว่าถูกตัด)
-        raise
+    except HTTPException as e:
+        # **เฉพาะ 413** ที่ต้องทะลุออกไป — `except Exception` กว้างๆ จะกลืนเพดาน
+        # ที่เพิ่งใส่ แล้วตอบ 200 เหมือนสำเร็จ (RAM รอดก็จริง แต่ผู้เรียกไม่รู้ว่าถูกตัด)
+        # ⚠️ ห้าม re-raise HTTPException ทั้งก้อน — `json_body_capped()` โยน **400**
+        # เมื่อ parse JSON ไม่ได้ ซึ่งเป็นเคสที่เส้นนี้ตั้งใจให้ทนได้ (body ไม่บังคับ)
+        # เกือบพลาดตรงนี้: กัน 413 แล้วเผลอทำ 400 ที่เคยผ่านให้ตกไปด้วย
+        if e.status_code == 413:
+            raise
+        data = {}
     except Exception:
         # เจตนาเดิม: body ของเส้นนี้ไม่บังคับ — ไม่มี/ไม่ใช่ JSON ให้ใช้ค่า default
         data = {}

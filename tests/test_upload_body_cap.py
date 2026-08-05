@@ -67,3 +67,21 @@ def test_json_endpoints_still_read_small_bodies(path):
     """
     r = client.post(path, json={"proposal_id": "", "text": "สั้นๆ"})
     assert r.status_code != 413, r.text
+
+
+def test_cleanup_still_tolerates_invalid_json():
+    """เจตนาเดิมของ `/api/memory/cleanup`: body ไม่บังคับ → JSON เสียก็ใช้ค่า default
+
+    `json_body_capped()` โยน **400** เมื่อ parse ไม่ได้ ส่วน **413** คือเกินเพดาน
+    การ re-raise `HTTPException` ทั้งก้อนจึงเผลอส่งต่อ 400 ไปด้วย = ทำลายพฤติกรรม
+    ที่ตั้งใจให้ทนทาน เพื่อจะกันสิ่งที่ไม่เกี่ยวกัน
+    """
+    r = client.post("/api/memory/cleanup", content=b"{not json at all",
+                    headers={"content-type": "application/json"})
+    assert r.status_code != 400, r.text
+    assert r.status_code != 413, r.text
+
+
+def test_cleanup_with_no_body_at_all_still_works():
+    r = client.post("/api/memory/cleanup")
+    assert r.status_code not in (400, 413), r.text
