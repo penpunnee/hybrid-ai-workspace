@@ -27,6 +27,15 @@ def _clear_env(monkeypatch):
     monkeypatch.delenv("HEARTBEAT_URL", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _no_real_sleep(monkeypatch):
+    """กัน retry ไปหลับจริงในเทส — เจอจริง: suite พุ่งจาก 0.5 วิ เป็น 80 วิ
+
+    เทสที่ต้องยืนยันว่า "มีการรอ" จะ patch ทับเองอีกชั้น (patch ชั้นในชนะ)
+    """
+    monkeypatch.setattr("utils.heartbeat.time.sleep", lambda *_: None)
+
+
 def test_ping_success_when_body_says_ok():
     with patch("utils.heartbeat.requests.post", return_value=_Resp()) as post:
         assert heartbeat.ping("https://hc-ping.com/abc") is True
@@ -42,9 +51,16 @@ def test_ping_false_when_status_200_but_body_is_not_ok(caplog):
     assert "not found" in caplog.text, "ต้อง log body ที่ปลายทางตอบกลับมาจริง"
 
 
-def test_ping_false_on_http_error():
-    with patch("utils.heartbeat.requests.post", return_value=_Resp(500, "boom")):
+def test_ping_false_when_server_error_persists_through_every_retry():
+    """5xx ตลอด = ยอมแพ้แล้วคืน False (ไม่ใช่ False ตั้งแต่ครั้งแรก)
+
+    ชื่อเทสต้องบอกว่าวัดอะไร — ตอนใส่ retry เทสตัวนี้เปลี่ยนความหมายเงียบๆ
+    จาก "ล้มทันที" เป็น "ล้มหลังลองครบ" ถ้าไม่แก้ชื่อจะอ่านผิดในอนาคต
+    """
+    with patch("utils.heartbeat.requests.post",
+               return_value=_Resp(500, "boom")) as post:
         assert heartbeat.ping("https://hc-ping.com/abc") is False
+    assert post.call_count == 3, "5xx ต้องถูกลองซ้ำจนครบ"
 
 
 def test_ping_never_raises_when_network_down():
@@ -124,3 +140,50 @@ def test_ping_url_never_appears_in_logs(caplog):
 
     assert "8f3c1d2e-secret-uuid" not in caplog.text, "uuid ต้องไม่โผล่ใน log"
     assert "hc-ping.com" in caplog.text, "แต่ต้องยังบอกได้ว่ายิงไปที่ไหน"
+
+
+# ─── retry: แยก "พังชั่วคราว" ออกจาก "ตั้งค่าผิด" ────────────────────────
+# เน็ตกระตุกตอน 03:30 ไม่ควรทำให้ได้อีเมลเตือนตอนตี 5 ทั้งที่ backup สำเร็จ
+# แต่ uuid ผิดคือความผิดถาวร ยิงซ้ำอีกกี่ครั้งก็ได้คำตอบเดิม — ต้องไม่หน่วงเปล่า
+
+def test_retries_then_succeeds_on_network_error():
+    with patch("utils.heartbeat.time.sleep") as slp:
+        with patch("utils.heartbeat.requests.post",
+                   side_effect=[OSError("connection reset"), _Resp()]) as post:
+            assert heartbeat.ping("https://hc-ping.com/abc") is True
+    assert post.call_count == 2
+    assert slp.called, "ต้องรอก่อนยิงซ้ำ ไม่ใช่รัวติดกัน"
+
+
+def test_retries_on_server_error_then_succeeds():
+    with patch("utils.heartbeat.time.sleep"):
+        with patch("utils.heartbeat.requests.post",
+                   side_effect=[_Resp(503, "unavailable"), _Resp()]) as post:
+            assert heartbeat.ping("https://hc-ping.com/abc") is True
+    assert post.call_count == 2
+
+
+def test_does_not_retry_when_body_is_wrong():
+    """uuid ผิด/check ถูกลบ = ความผิดถาวร ยิงซ้ำไม่ช่วย มีแต่หน่วงเวลา"""
+    with patch("utils.heartbeat.time.sleep") as slp:
+        with patch("utils.heartbeat.requests.post",
+                   return_value=_Resp(200, "OK (not found)")) as post:
+            assert heartbeat.ping("https://hc-ping.com/abc") is False
+    assert post.call_count == 1, "ต้องยิงครั้งเดียวแล้วเลิก"
+    assert not slp.called
+
+
+def test_does_not_retry_on_client_error():
+    with patch("utils.heartbeat.time.sleep"):
+        with patch("utils.heartbeat.requests.post",
+                   return_value=_Resp(400, "invalid url format")) as post:
+            assert heartbeat.ping("https://hc-ping.com/abc") is False
+    assert post.call_count == 1
+
+
+def test_gives_up_after_configured_attempts():
+    with patch("utils.heartbeat.time.sleep"):
+        with patch("utils.heartbeat.requests.post",
+                   side_effect=OSError("down")) as post:
+            assert heartbeat.ping("https://hc-ping.com/abc", attempts=3) is False
+    assert post.call_count == 3
