@@ -274,7 +274,18 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                 # ไว้รับ client เก่าที่ cache ไว้ → ละเลยเฉย ๆ กัน session ตาย
                                 pass
                             elif t == "text":
-                                await session.send(input=msg.get("text", ""), end_of_turn=True)
+                                # ผู้ใช้พิมพ์แทรกระหว่างคุยด้วยเสียง (กล่องพิมพ์ในหน้าจอ voice)
+                                # วัดกับ Gemini Live จริงแล้ว: ส่งตอนโมเดลกำลังพูดอยู่ →
+                                # ตัด turn เดิม (`interrupted`) แล้วตอบใหม่จริง · ส่งตอนเงียบก็ได้
+                                # `session.send()` deprecated แล้ว → ใช้ send_client_content
+                                text = (msg.get("text") or "").strip()
+                                if text:
+                                    await session.send_client_content(
+                                        turns=types.Content(
+                                            role="user", parts=[types.Part(text=text)]
+                                        ),
+                                        turn_complete=True,
+                                    )
                             elif t == "close":
                                 stop.set()
                     except WebSocketDisconnect:
