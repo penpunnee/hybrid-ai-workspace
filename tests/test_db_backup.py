@@ -96,3 +96,61 @@ def test_backup_still_runs_with_only_chat_history(tmp_path):
     with tarfile.open(archive) as tf:
         names = {os.path.basename(n) for n in tf.getnames()}
     assert "chat_history.db" in names
+
+
+def _seed_empty(path):
+    """ไฟล์ 0 ไบต์ — sqlite3 .backup จะสร้าง DB ว่างที่ valid ออกมา"""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    open(path, "wb").close()
+
+
+def test_empty_critical_db_must_not_report_success(tmp_path):
+    """เส้นนี้แหละที่เคยผลิต archive 989 ไบต์บน prod เมื่อ 2026-07-12
+
+    ตอนนั้นแก้ให้ "เลือกไฟล์ถูกใบ" (test_backup_prefers_data_layout_over_stale_root_db)
+    แต่ไม่ได้แก้ให้ "รู้ตัวว่าใบที่เลือกมาว่างเปล่า" — สคริปต์ยังขึ้น ✅ เหมือนเดิม
+    ตัว in-app job ปิดช่องนี้ไปแล้ว (PR #29) เส้น host ยังเปิดอยู่
+    """
+    ui = tmp_path / "ui"
+    _seed_empty(str(ui / "data" / "chat_history.db"))
+    dest = tmp_path / "backups"
+
+    r = _run(ui, dest)
+
+    assert r.returncode != 0, "DB หลักว่างเปล่าต้องไม่ exit 0"
+    assert "ว่างเปล่า" in (r.stdout + r.stderr)
+
+
+def test_unhealthy_archive_is_named_unhealthy(tmp_path):
+    ui = tmp_path / "ui"
+    _seed_empty(str(ui / "data" / "chat_history.db"))
+    dest = tmp_path / "backups"
+
+    _run(ui, dest)
+
+    names = [p.name for p in dest.glob("db_backup_*.tar.gz")]
+    assert names and all("_UNHEALTHY" in n for n in names), names
+
+
+def test_unhealthy_run_keeps_old_archives(tmp_path):
+    """รอบที่พังต้องไม่ลบของเก่า — เหมือนฝั่ง in-app"""
+    ui = tmp_path / "ui"
+    _seed_empty(str(ui / "data" / "chat_history.db"))
+    dest = tmp_path / "backups"
+    dest.mkdir()
+    old = dest / "db_backup_20200101_000000.tar.gz"
+    old.write_bytes(b"old-good")
+    stale = os.path.getmtime(old) - 60 * 86400
+    os.utime(old, (stale, stale))
+
+    _run(ui, dest, retain="7")
+
+    assert old.exists(), "archive เก่าต้องรอดเมื่อรอบนี้ล้มเหลว"
+
+
+def test_healthy_backup_still_exits_zero(tmp_path, ui_dir):
+    """กลุ่มควบคุม — ตัวตรวจต้องไม่ทำให้เส้นปกติพัง"""
+    dest = tmp_path / "backups"
+    r = _run(ui_dir, dest)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not list(dest.glob("*_UNHEALTHY*"))

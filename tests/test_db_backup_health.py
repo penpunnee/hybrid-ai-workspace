@@ -163,3 +163,43 @@ def test_table_name_containing_quote_still_counts(tmp_path):
     archive = run_db_backup(dest=str(tmp_path / "backups"), db_paths=[db])
 
     assert archive and os.path.isfile(archive)
+
+
+def test_unhealthy_archive_is_named_so_a_human_cannot_pick_it_by_mistake(tmp_path):
+    """archive ที่ไม่ผ่านต้องมีชื่อที่ตะโกน ไม่ใช่หน้าตาเหมือนตัวที่ใช้ได้
+
+    ตอนกู้ระบบจริงคนจะหยิบไฟล์ล่าสุดจากชื่อ ไม่มีใครไล่ log ย้อนหลัง
+    → ชื่อคือสิ่งเดียวที่อยู่กับไฟล์ ต้องบอกความจริงด้วยตัวมันเอง
+    """
+    db = str(tmp_path / "chat_history.db")
+    open(db, "wb").close()
+    dest = tmp_path / "backups"
+
+    with pytest.raises(BackupUnhealthy) as exc:
+        run_db_backup(dest=str(dest), db_paths=[db])
+
+    archive = os.path.basename(exc.value.archive)
+    assert archive.endswith("_UNHEALTHY.tar.gz"), archive
+    assert os.path.isfile(exc.value.archive)
+
+
+def test_unhealthy_archives_are_still_reachable_by_retention(tmp_path):
+    """ชื่อใหม่ต้องยังเข้าเงื่อนไข glob ของ retention
+
+    ถ้าไม่เข้า มันจะกองสะสมตลอดไปโดยไม่มีใครลบ — แก้ปัญหาหนึ่งสร้างอีกปัญหา
+    (retention ไม่รันในรอบที่พังอยู่แล้ว ของพวกนี้จะถูกเก็บกวาดตอนระบบกลับมาดี)
+    """
+    import glob as _glob
+    dest = tmp_path / "backups"
+    dest.mkdir()
+    bad = dest / "db_backup_20200101_000000_UNHEALTHY.tar.gz"
+    bad.write_bytes(b"x")
+    stale = time.time() - 30 * 86400
+    os.utime(bad, (stale, stale))
+    assert _glob.glob(str(dest / "db_backup_*.tar.gz")), "glob ต้องเห็นไฟล์ _UNHEALTHY"
+
+    good = str(tmp_path / "chat_history.db")
+    _seed_db(good, rows=2)
+    run_db_backup(dest=str(dest), db_paths=[good], retain_days=7)
+
+    assert not bad.exists(), "รอบที่สำเร็จต้องเก็บกวาดของเสียที่เกินอายุด้วย"

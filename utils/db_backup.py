@@ -137,12 +137,19 @@ def run_db_backup(dest: str | None = None,
 
     os.makedirs(dest, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    archive = os.path.join(dest, f"db_backup_{ts}.tar.gz")
 
     with tempfile.TemporaryDirectory() as work:
         for p in existing:
             _snapshot(p, os.path.join(work, os.path.basename(p)))
         problem = _verify_snapshot(work, os.path.basename(paths[0]))
+
+        # ชื่อไฟล์คือสิ่งเดียวที่เดินทางไปกับ archive — ตอนกู้ระบบจริงคนหยิบไฟล์
+        # ล่าสุดจากชื่อ ไม่มีใครไล่ log ย้อนหลัง ชื่อจึงต้องบอกความจริงด้วยตัวมันเอง
+        # ⚠️ ยังขึ้นต้น db_backup_ เหมือนเดิม เพื่อให้ glob ของ retention เห็น
+        #    (ถ้าหลุด glob = กองสะสมตลอดไป แก้ปัญหาหนึ่งสร้างอีกปัญหา)
+        suffix = "_UNHEALTHY" if problem else ""
+        archive = os.path.join(dest, f"db_backup_{ts}{suffix}.tar.gz")
+
         with tarfile.open(archive, "w:gz") as tf:
             for name in sorted(os.listdir(work)):
                 tf.add(os.path.join(work, name), arcname=name)
