@@ -125,3 +125,41 @@ def test_missing_critical_db_entirely_is_unhealthy(tmp_path):
         run_db_backup(dest=str(dest), db_paths=[chat, cache])
 
     assert "chat_history.db" in str(exc.value)
+
+
+def test_duplicate_basenames_are_refused(tmp_path):
+    """สอง path คนละที่แต่ชื่อไฟล์เดียวกัน → ตัวหลังทับตัวแรกใน archive เงียบๆ
+
+    ของเดิม `_snapshot()` ตั้งชื่อในซองด้วย basename ล้วน → ขอสำรอง 2 ใบได้กลับ 1 ใบ
+    และตัวตรวจอาจไปตรวจ "ใบที่ทับ" แล้วผ่าน ทั้งที่ DB หลักที่ขอมาไม่ได้ถูกเก็บ
+    (ยังไม่เคยเกิดบน prod เพราะ 3 ใบชื่อไม่ซ้ำ — แต่เป็นหลุมที่รอคนตกในอนาคต)
+    """
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    _seed_db(str(a / "chat_history.db"), rows=5)
+    _seed_db(str(b / "chat_history.db"), marker="อีกใบ", rows=1)
+
+    with pytest.raises(ValueError, match="ชื่อไฟล์ซ้ำ"):
+        run_db_backup(dest=str(tmp_path / "backups"),
+                      db_paths=[str(a / "chat_history.db"),
+                                str(b / "chat_history.db")])
+
+
+def test_table_name_containing_quote_still_counts(tmp_path):
+    """ชื่อตารางมี `"` ได้ตามสเปก sqlite → ต้องนับได้ ไม่ใช่ตกเป็น unhealthy
+
+    ถ้าไม่ escape จะได้ SQL พัง → sqlite3.Error → _count_rows คืน None
+    → **ตัวตรวจเตือนว่า backup เสียทั้งที่ backup ดี** = เสียงเตือนผิดที่แพงที่สุด
+    """
+    db = str(tmp_path / "chat_history.db")
+    conn = sqlite3.connect(db)
+    conn.execute('CREATE TABLE "we""ird" (x INTEGER)')
+    conn.execute('INSERT INTO "we""ird" VALUES (1)')
+    conn.commit()
+    conn.close()
+
+    archive = run_db_backup(dest=str(tmp_path / "backups"), db_paths=[db])
+
+    assert archive and os.path.isfile(archive)

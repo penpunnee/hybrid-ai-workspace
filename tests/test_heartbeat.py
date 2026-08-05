@@ -105,3 +105,22 @@ def test_heartbeat_not_pinged_when_nothing_to_back_up():
         with patch("utils.heartbeat.ping") as ping:
             _run_scheduled_backup()
     ping.assert_not_called()
+
+
+def test_ping_url_never_appears_in_logs(caplog):
+    """ping URL คือความลับ (uuid = สิทธิ์ยิง check นั้น) ห้ามหลุดลง server.log
+
+    log ของ prod อยู่ที่ /app/logs/server.log ซึ่งอ่านผ่าน docker exec ได้
+    และถูกก๊อปไปแปะเวลาดีบั๊ก — URL เต็มไม่ควรอยู่ในนั้น
+    """
+    secret = "https://hc-ping.com/8f3c1d2e-secret-uuid"
+    with caplog.at_level(logging.DEBUG):
+        with patch("utils.heartbeat.requests.post", return_value=_Resp()):
+            heartbeat.ping(secret)
+        with patch("utils.heartbeat.requests.post", side_effect=OSError("no route")):
+            heartbeat.ping(secret)
+        with patch("utils.heartbeat.requests.post", return_value=_Resp(500, "boom")):
+            heartbeat.ping(secret)
+
+    assert "8f3c1d2e-secret-uuid" not in caplog.text, "uuid ต้องไม่โผล่ใน log"
+    assert "hc-ping.com" in caplog.text, "แต่ต้องยังบอกได้ว่ายิงไปที่ไหน"

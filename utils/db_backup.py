@@ -79,8 +79,11 @@ def _count_rows(path: str) -> int | None:
         tables = [r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name NOT LIKE 'sqlite_%'")]
-        return sum(conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
-                   for t in tables)
+        # ชื่อตารางใส่ " ได้ตามสเปก sqlite — ต้อง escape เป็น "" ไม่งั้น SQL พัง
+        # แล้วถูกกลืนเป็น "อ่านไม่ได้" = เตือนว่า backup เสียทั้งที่ backup ดี
+        return sum(conn.execute(
+            'SELECT COUNT(*) FROM "{}"'.format(t.replace('"', '""'))
+        ).fetchone()[0] for t in tables)
     except sqlite3.Error:
         return None
     finally:
@@ -115,6 +118,17 @@ def run_db_backup(dest: str | None = None,
     retain = DB_BACKUP_RETAIN_DAYS if retain_days is None else retain_days
     paths = db_paths if db_paths is not None else [
         DB_PATH, EMBED_CACHE_DB, RESPONSE_CACHE_DB]
+
+    # ชื่อในซองคือ basename → ถ้าซ้ำกัน ตัวหลังทับตัวแรกเงียบๆ = ขอ 2 ใบได้กลับ 1 ใบ
+    # และตัวตรวจอาจไปตรวจ "ใบที่ทับ" แล้วผ่าน ทั้งที่ใบที่ขอไม่ได้ถูกเก็บ
+    # ปฏิเสธไปเลยดีกว่าเงียบ — ยังไม่เคยเกิดบน prod (3 ใบชื่อไม่ซ้ำ) แต่เป็นหลุมที่รออยู่
+    # ⚠️ จงใจ *ไม่* เปลี่ยนวิธีตั้งชื่อในซอง — archive 7 วันที่มีอยู่ใช้ basename ล้วน
+    #    การเปลี่ยนโครงชื่อจะทำให้ขั้นตอนกู้ที่คนจำไว้ใช้ไม่ได้กับของเก่า
+    dupes = {n for n in (os.path.basename(p) for p in paths)
+             if [os.path.basename(q) for q in paths].count(n) > 1}
+    if dupes:
+        raise ValueError(
+            f"db_paths มีชื่อไฟล์ซ้ำกัน {sorted(dupes)} — ตัวหลังจะทับตัวแรกใน archive")
 
     existing = [p for p in paths if os.path.isfile(p)]
     if not existing:

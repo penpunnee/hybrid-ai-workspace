@@ -760,10 +760,16 @@ PR #24 เพิ่ม `logger.error` ให้แล้ว (บรรทัด 
   · ⚠️ **ต้องอ่าน body ไม่ใช่ status code** — healthchecks.io ตอบ **200 แม้ check ไม่มีอยู่จริง**
     ความจริงอยู่ใน body ที่ต้องเป็น `"OK"` (กับดักเดียวกับที่โดนในโปรเจกต์ phrae)
   · `ping()` ไม่เคย raise — heartbeat ยิงไม่ออกต้องไม่ทำให้ backup ที่สำเร็จกลายเป็นล้มเหลว
-- เทส `tests/test_db_backup_health.py` (6) + `tests/test_heartbeat.py` (10)
-  **ผ่าน mutation test แล้ว**: ทำให้ `_verify_snapshot` คืน `None` เสมอ → แดง 4 ·
-  ย้าย `ping()` ไป `finally` (= ยิงทุกครั้งที่ job รันจบ) → แดง 4 · ตัดการอ่าน body ทิ้ง → แดง 1
+- เทส `tests/test_db_backup_health.py` (8) + `tests/test_heartbeat.py` (11) = **19**
+  **ผ่าน mutation test ทุกตัว**: `_verify_snapshot` คืน `None` เสมอ → แดง 4 ·
+  `ping()` ใน `finally` (= ยิงทุกครั้งที่ job รันจบ) → แดง 4 · ตัดการอ่าน body → แดง 1 ·
+  ถอด escape `"` → แดง 1 · ถอด guard ชื่อซ้ำ → แดง 1 · ถอด redact → แดง 1
   · เทสเดิมใน `test_db_backup_job.py` ทุกเคส seed แถวจริงเสมอ → **เส้น "DB ว่าง" ไม่เคยถูกเดินผ่าน**
+- ⚠️ **ทำ mutation test ต้องล้าง `__pycache__` ทุกรอบ** — เจอจริง 08-05: mutate
+  `if dupes:` → `if False:` **ยาวเท่ากันเป๊ะ** และ restore ในวินาทีเดียวกัน →
+  Python เช็ค cache ด้วย (mtime วินาที + ขนาด) เห็นว่าไม่เปลี่ยน เลยรัน `.pyc` ตัวที่ mutate ต่อ
+  · หลอกได้แนบเนียนมากเพราะ `diff` ตรง · `__file__` ถูก · **`inspect.getsource()` พิมพ์โค้ดที่ถูก
+  ออกมาด้วย** (มันอ่านจาก `.py` แต่ interpreter รันจาก `.pyc`) — เกือบสรุปว่าโค้ดที่ถูกใช้ไม่ได้
 - 🔴 **ยังไม่ทำงานจนกว่าจะตั้ง `HEARTBEAT_URL` ใน NAS `.env`** (สร้าง check ที่ healthchecks.io
   period 1 วัน + grace 2 ชม.) — โค้ดพร้อมแล้วแต่ค่าว่าง = ปิดเงียบ ไม่มีใครเฝ้าให้
 

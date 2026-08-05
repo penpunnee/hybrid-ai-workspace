@@ -15,6 +15,7 @@ log error ใดๆ เลย มันคือ "ความเงียบ" �
 """
 import logging
 import os
+from urllib.parse import urlsplit
 
 import requests
 
@@ -24,6 +25,19 @@ HEARTBEAT_TIMEOUT = float(os.getenv("HEARTBEAT_TIMEOUT", "10"))
 
 # body ที่ถือว่าปลายทางรับรู้จริง — healthchecks.io ตอบ "OK" ตัวเดียว
 _OK_BODIES = {"ok"}
+
+
+def _redact(url: str) -> str:
+    """ตัด path/query ทิ้ง เหลือแค่ host — ping URL คือความลับ
+
+    uuid ท้าย URL = สิทธิ์ยิง check นั้น ใครได้ไปก็ยืนยันแทนเราได้ (= ปิดปาก
+    ตัวเฝ้าได้) และ log ของ prod ถูกอ่าน/ก๊อปไปแปะเวลาดีบั๊กเป็นปกติ
+    """
+    try:
+        parts = urlsplit(url)
+        return f"{parts.scheme}://{parts.netloc}/…" if parts.netloc else "<ไม่ใช่ URL>"
+    except ValueError:
+        return "<ไม่ใช่ URL>"
 
 
 def ping(url: str | None = None, timeout: float | None = None) -> bool:
@@ -40,7 +54,7 @@ def ping(url: str | None = None, timeout: float | None = None) -> bool:
     try:
         resp = requests.post(target, timeout=timeout or HEARTBEAT_TIMEOUT)
     except Exception as e:
-        logger.error("[heartbeat] ยิงไม่ออก (%s): %s", target, e)
+        logger.error("[heartbeat] ยิงไม่ออก (%s): %s", _redact(target), e)
         return False
 
     body = (resp.text or "").strip()
@@ -55,5 +69,5 @@ def ping(url: str | None = None, timeout: float | None = None) -> bool:
             "→ ถือว่ายิงไม่สำเร็จ", resp.status_code, body)
         return False
 
-    logger.info("[heartbeat] ok → %s", target)
+    logger.info("[heartbeat] ok → %s", _redact(target))
     return True
