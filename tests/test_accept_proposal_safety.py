@@ -112,3 +112,36 @@ def test_accept_ที่ถูกปฏิเสธต้องคืน_propos
 
     assert "p2" in sd._proposals_cache, "proposal หายไปทั้งที่ยังไม่ได้ถูกใช้จริง"
     assert sd.accept_proposal("p2")["ok"] is True, "retry ด้วย topic ปกติต้องผ่าน"
+
+
+def test_accept_ต้องบอกผู้เรียกเมื่อเขียน_db_ไม่สำเร็จ(isolated, monkeypatch):
+    """.md เขียนแล้วแต่ skills_db ล้ม = skill ครึ่งใบ (ค้นไม่เจอเพราะไม่มีใน db)
+
+    เดิมคืน `ok:True` เปล่าๆ ผู้เรียกแยกไม่ออกจากความสำเร็จเต็มใบ
+    ใช้รูปแบบเดียวกับ `routers/skills.py:skills_extract` ที่มีอยู่แล้ว
+    (`db_updated` + `warning`) — ไม่ใช่คิดสัญญาใหม่ขึ้นมาเอง
+    """
+    def _boom(*a, **k):
+        raise RuntimeError("disk full")
+
+    _fake_search(monkeypatch, [])
+    monkeypatch.setattr("utils.skills.set_skill_entry", _boom)
+    sd._proposals_cache["p1"] = _proposal()
+
+    r = sd.accept_proposal("p1")
+
+    assert r["ok"] is True, "ไฟล์ .md เขียนสำเร็จ จึงไม่ใช่ความล้มเหลวทั้งใบ"
+    assert r["db_updated"] is False
+    assert "disk full" in r["warning"]
+
+
+def test_accept_ปกติต้องบอกว่า_db_updated_เป็นจริง(isolated, monkeypatch):
+    """กลุ่มควบคุม — ถ้าไม่มีเคสนี้ การตั้ง db_updated=False ตายตัวก็ผ่านเทสข้างบน"""
+
+    _fake_search(monkeypatch, [])
+    sd._proposals_cache["p1"] = _proposal()
+    r = sd.accept_proposal("p1")
+
+    assert r["ok"] is True
+    assert r["db_updated"] is True
+    assert "warning" not in r

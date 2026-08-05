@@ -6,7 +6,8 @@
 → ต้องผ่าน `run_in_threadpool` · handler ที่เป็น `def` ธรรมดา FastAPI โยนเข้า threadpool
 ให้เองอยู่แล้ว ไม่ต้องแตะ (ดู tests/test_memory_skills_router_concurrency.py)
 """
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
+from utils.http_limits import json_body_capped
 from starlette.concurrency import run_in_threadpool
 
 from utils.memory import (
@@ -14,6 +15,9 @@ from utils.memory import (
     list_lessons, list_preferences, delete_lesson, delete_preference,
 )
 from memory.operations import get_memory_summary, recall, teach
+
+# เพดานเดียวกับ documents.py / skills.py — ดูเหตุผลที่ routers/skills.py
+_MAX_BODY_BYTES = 10 * 1024 * 1024  # 10 MB
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
 
@@ -39,7 +43,7 @@ def memory_recall(assistant: str, q: str, session_id: str = ""):
 @router.post("/teach/{assistant}")
 async def memory_teach(assistant: str, request: Request):
     """สอน AI โดยตรง — บันทึกเป็น verified memory"""
-    data = await request.json()
+    data = await json_body_capped(request, _MAX_BODY_BYTES)
     text = data.get("text", "").strip()
     if not text:
         return {"ok": False, "error": "ไม่มีข้อความ"}
@@ -70,8 +74,13 @@ def api_delete_preference(doc_id: str):
 @router.post("/cleanup")
 async def memory_cleanup(request: Request):
     try:
-        data = await request.json()
+        data = await json_body_capped(request, _MAX_BODY_BYTES)
+    except HTTPException:
+        # 413 ต้องทะลุออกไป — `except Exception` กว้างๆ จะกลืนเพดานที่เพิ่งใส่
+        # แล้วตอบ 200 เหมือนสำเร็จ (RAM รอดก็จริง แต่ผู้เรียกไม่มีทางรู้ว่าถูกตัด)
+        raise
     except Exception:
+        # เจตนาเดิม: body ของเส้นนี้ไม่บังคับ — ไม่มี/ไม่ใช่ JSON ให้ใช้ค่า default
         data = {}
     days = data.get("days", 30) if isinstance(data, dict) else 30
     # ไล่ `col.get()` ทุก collection แล้ว delete — หนักตามขนาดคลัง ไม่ใช่ตามพารามิเตอร์
@@ -80,7 +89,7 @@ async def memory_cleanup(request: Request):
 
 @router.post("/{assistant}")
 async def save_mem(assistant: str, request: Request):
-    data = await request.json()
+    data = await json_body_capped(request, _MAX_BODY_BYTES)
     text = data.get("text", "")
     # ทั้งคู่คืน False (ไม่ raise) เมื่อ ChromaDB ไม่พร้อม — เดิมทิ้งค่าแล้วตอบ ok:True เสมอ
     # = ผู้ใช้เห็นว่า "บันทึกแล้ว" ทั้งที่ไม่มีอะไรถูกเก็บ และไม่มีใครรู้ว่าต้องทำซ้ำ
