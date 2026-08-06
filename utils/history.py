@@ -127,10 +127,22 @@ def rename_session(assistant: str, session_id: str, name: str):
 
 
 def clear_session(assistant: str, session_id: str):
-    """ลบประวัติแชทของ session นั้น รวมถึง custom name"""
+    """ลบประวัติแชทของ session นั้น รวมถึง custom name และตารางพ่วง
+
+    ⚠️ เพิ่ม table ที่มี `session_id` เมื่อไหร่ ต้องมาต่อท้ายลิสต์นี้ด้วย —
+    ไม่งั้นจะเหลือ orphan ที่ไม่มีใครลบให้ (เจอจริง 2026-08-06: `skill_shadow`
+    ค้างทุกครั้งที่ลบ session ต้องไล่เก็บมือ · `tests/test_clear_session_cascade.py` คุมไว้แล้ว)
+    """
     conn = _get_conn()
-    conn.execute("DELETE FROM messages WHERE assistant = ? AND session_id = ?", (assistant, session_id))
-    conn.execute("DELETE FROM session_names WHERE assistant = ? AND session_id = ?", (assistant, session_id))
+    for table in ("messages", "session_names", "skill_shadow"):
+        try:
+            conn.execute(
+                f"DELETE FROM {table} WHERE assistant = ? AND session_id = ?",
+                (assistant, session_id),
+            )
+        except sqlite3.OperationalError:
+            # DB เก่าที่ยังไม่เคยเขียน shadow เลย = ไม่มีตารางนี้ — ห้ามทำให้การลบ session พัง
+            logger.debug("clear_session: ข้ามตาราง %s (ยังไม่มีในฐานข้อมูล)", table)
     conn.commit()
     conn.close()
 
