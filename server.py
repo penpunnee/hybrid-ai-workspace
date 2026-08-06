@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.config import CORS_ORIGINS_LIST, RELOAD, GEMINI_API_KEY, GEMINI_LIVE_MODEL
 from core.auth import auth_middleware, websocket_authorized
 from core.ratelimit import rate_limit_middleware
+from core.body_limit import BodySizeLimitMiddleware
+from utils.http_limits import MAX_BODY_BYTES
 from core.observability import install_logging, start_request, timing_summary
 from core.scheduler import start_scheduler
 from utils.skills import _load_skills_db
@@ -73,7 +75,11 @@ async def _request_id_middleware(request: Request, call_next):
 # Starlette: middleware ที่ register ทีหลัง = outermost → register ย้อนลำดับ (inner ก่อน)
 # rate_limit ต้องอยู่ "นอก" auth เพื่อเห็น 401 ของ auth (auth คืน 401 ตรงๆ ไม่เรียก inner)
 # → feed brute-force lockout ได้จริง. request_id นอกสุด → tag ทุก response รวม 401
-app.middleware("http")(auth_middleware)         # innermost
+# body_limit อยู่ในสุด (register ก่อน) — ให้ auth/rate-limit ปฏิเสธก่อนได้ ถูกกว่า
+# แต่ยังอยู่ **นอก route** จึงคุม `receive` ได้ก่อน multipart parser จะเขียนลงดิสก์
+# (`read_capped()` ใน handler สายเกินไป — form ถูก parse ไปแล้วตอน resolve dependency)
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=MAX_BODY_BYTES)
+app.middleware("http")(auth_middleware)         # innermost ของ BaseHTTPMiddleware
 app.middleware("http")(rate_limit_middleware)   # middle (wrap auth)
 app.middleware("http")(_request_id_middleware)  # outermost
 
