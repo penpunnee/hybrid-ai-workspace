@@ -36,7 +36,8 @@ ROUTES = [
     ("POST",  "/api/sandbox/python",   {"code": "1"}),
     ("POST",  "/api/fs/list",          {"path": ""}),
     ("POST",  "/api/fs/read",          {"path": "x"}),
-    ("POST",  "/api/fs/write",         {"path": "x", "content": "y"}),
+    # path ว่าง → 400 ก่อนถึงขั้นเขียนไฟล์ · พิสูจน์ "ไม่ใช่ 413" ได้โดยไม่ทิ้งไฟล์ไว้ใน sandbox/
+    ("POST",  "/api/fs/write",         {"path": "", "content": "y"}),
     ("POST",  "/api/fs/search",        {"pattern": "x"}),
     ("PATCH", "/api/sessions/a/s",     {"name": "n"}),
     ("POST",  "/api/pin/1",            {"pinned": True}),

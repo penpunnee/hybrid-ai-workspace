@@ -28,3 +28,6 @@ skills_db.json
 # `.bak-*` คือ backup ที่ scripts/clean_skills_db.py --apply เขียนไว้ก่อนแก้
 skills_db.json.lock
 skills_db.json.bak-*
+
+# FS tools sandbox — ไดเรกทอรีรันไทม์ (FS_TOOLS_ROOTS default)
+sandbox/
