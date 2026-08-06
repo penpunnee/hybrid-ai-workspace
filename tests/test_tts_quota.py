@@ -73,6 +73,9 @@ def test_ข้อความยาวยังถูกแบ่งหลา�
     sentences = tts._split_sentences(long_text)
     chunks = tts._group_sentences(sentences)
     assert len(chunks) > 1, "ข้อความยาวเกินเพดานต้องถูกแบ่งมากกว่า 1 chunk"
+    # input นี้ไม่มีเว้นวรรค ⇒ เป็น "1 ประโยค" ที่ต้องหั่นแข็ง และยังไม่ชนเพดาน chunk
+    # ⇒ ต่อกลับต้องได้เท่าเดิมเป๊ะ · ไม่งั้น assert ข้างบนเขียวได้ทั้งที่ทำข้อความหาย
+    assert "".join(chunks) == long_text, "หั่นแข็งแล้วข้อความหาย"
 
 
 def test_จำนวน_chunk_ไม่เกินเพดานโควตา(tts):
@@ -177,3 +180,78 @@ def test_tts_stream_ก็ต้องจัดกลุ่มเหมือน
 
     assert len(calls) == 1, f"ควรยิง 1 request แต่ยิง {len(calls)} ครั้ง"
     assert "หวังว่าจะเป็นประโยชน์" in calls[0], "ยิงครั้งเดียวแต่ข้อความไม่ครบ"
+
+
+# ------------------------------------------------- config เพี้ยน + event loop
+# (CodeRabbit จับได้ทั้งสองข้อใน PR #46 — เทสผมรอบแรกปล่อยผ่านทั้งคู่)
+
+
+def test_เพดานศูนย์ต้องดังไม่ใช่ค้าง(tts):
+    """``_pack_sentences`` เดิมวนไม่รู้จบเมื่อ ``max_chars <= 0``
+
+    ``while len(s) > 0`` → ``chunks.append(s[:0])`` ได้สตริงว่าง แล้ว ``s = s[0:]``
+    เท่าเดิม ⇒ วนตลอดกาล · วัดจริงแล้วค้างเกิน 3 วินาทีจน SIGALRM ต้องเข้ามาตัด
+    **hang แย่กว่า crash** เพราะ worker ตายเงียบทีละตัวโดยไม่มี traceback
+    """
+    for bad in (0, -1):
+        with pytest.raises(ValueError):
+            tts._pack_sentences(["สวัสดี."], bad)
+
+
+def test_env_เพี้ยนถอยไปใช้ค่า_default_พร้อมเตือน(monkeypatch, caplog):
+    """ไม่ยอมให้ค่า env พังทำให้แอปทั้งตัวบูตไม่ขึ้น — TTS เป็นฟีเจอร์รอบนอก
+
+    NAS มี `backend-watchdog` คอย `compose up -d` ทุก 60 วิ ⇒ ถ้าเลือก raise
+    ตอน import จะกลายเป็น **crashloop** ทั้งระบบเพราะปุ่มลำโพงตัวเดียว
+    จึงถอยไปใช้ default แต่ต้อง warning ให้เห็นใน log
+    """
+    import importlib
+
+    import utils.tts
+
+    monkeypatch.setenv("TTS_MAX_CHARS", "0")
+    monkeypatch.setenv("TTS_MAX_CHUNKS", "-3")
+    with caplog.at_level("WARNING"):
+        m = importlib.reload(utils.tts)
+    try:
+        assert m.TTS_MAX_CHARS > 0 and m.TTS_MAX_CHUNKS > 0, "ค่าเพี้ยนหลุดเข้าไปได้"
+        assert caplog.records, "ถอยไปใช้ default เงียบๆ — ไม่มีใครรู้ว่า env ไม่มีผล"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(utils.tts)
+
+
+@pytest.mark.parametrize("path", ["/api/tts", "/api/tts/stream"])
+def test_generate_tts_ต้องไม่รันบน_event_loop(monkeypatch, path):
+    """`generate_tts` เป็นงาน blocking ~3.5 วิ/chunk — รันบน event loop = ทุกคำขอหยุดรอ
+
+    วิธีวัดที่ไม่ผูกกับชื่อ thread ของ anyio: ใน worker thread จะ **ไม่มี**
+    running loop ⇒ `asyncio.get_running_loop()` ต้องโยน RuntimeError
+    (convention เดียวกับ `routers/skills.py` ที่อธิบายเหตุผลไว้แล้ว)
+    """
+    import asyncio
+
+    from fastapi.testclient import TestClient
+    import server
+    import routers.system as sysmod
+
+    on_loop: list[bool] = []
+
+    def fake_generate_tts(text: str, slug: str = "") -> bytes:
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        return b"RIFF"
+
+    monkeypatch.setattr(sysmod, "generate_tts", fake_generate_tts)
+
+    client = TestClient(server.app)
+    with client.stream("POST", path, json={"text": "สวัสดีค่ะ. วันนี้อากาศดี."}) as r:
+        assert r.status_code == 200
+        for _ in r.iter_lines():
+            pass
+
+    assert on_loop, f"{path} ไม่ได้เรียก generate_tts เลย — เทสนี้เขียวฟรี"
+    assert not any(on_loop), f"{path} เรียก generate_tts บน event loop → บล็อกทุกคำขอ"

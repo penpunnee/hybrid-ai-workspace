@@ -4,6 +4,7 @@ import shutil
 from datetime import datetime, date, timedelta
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from core.config import GEMINI_API_KEY, DB_PATH, NAS_DATA_PATH, LMSTUDIO_BASE_URL
 from core.scheduler import scheduler
@@ -292,7 +293,9 @@ async def text_to_speech(request: Request):
     if not text:
         return {"error": "no text"}
     try:
-        wav = generate_tts(text, slug)
+        # blocking ~3.5 วิ/chunk — เรียกตรงๆ ใน handler async = ทุกคำขอของทุกคนหยุดรอ
+        # (convention เดียวกับ routers/skills.py · ตรึงด้วย test_generate_tts_ต้องไม่รันบน_event_loop)
+        wav = await run_in_threadpool(generate_tts, text, slug)
         return Response(content=wav, media_type="audio/wav", headers={"Cache-Control": "no-cache"})
     except Exception as e:
         return {"error": str(e)}
@@ -318,7 +321,7 @@ async def text_to_speech_stream(request: Request):
             if not sentence:
                 continue
             try:
-                wav = generate_tts(sentence, slug)
+                wav = await run_in_threadpool(generate_tts, sentence, slug)
                 b64 = base64.b64encode(wav).decode()
                 yield f"data: {json.dumps({'chunk': b64, 'done': False})}\n\n"
             except Exception as e:

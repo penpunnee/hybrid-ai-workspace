@@ -20,8 +20,28 @@ GEMINI_TTS_MODEL = os.getenv("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts")
 # เดิมยิง 1 request ต่อ 1 ประโยค (คำตอบ 5 ประโยค = 5 req) ⇒ ใช้ได้จริง ~2 คำตอบ/วัน
 # ตอนนี้จัดกลุ่มประโยคให้เต็ม TTS_MAX_CHARS ก่อน แล้วจำกัดที่ TTS_MAX_CHUNKS
 # TTS_MAX_CHARS ต้องไม่เกินขนาดที่ `_generate_one` ส่งได้จริง (มันตัด `text[:TTS_MAX_CHARS]`)
-TTS_MAX_CHARS = int(os.getenv("TTS_MAX_CHARS", "2000"))
-TTS_MAX_CHUNKS = int(os.getenv("TTS_MAX_CHUNKS", "3"))
+def _positive_env(name: str, default: int) -> int:
+    """อ่าน env ที่ต้องเป็นจำนวนเต็มบวก — ค่าเพี้ยนให้ถอยไปใช้ default **พร้อมเตือน**
+
+    เลือกถอยแทน raise เพราะ NAS มี `backend-watchdog` คอย `compose up -d` ทุก 60 วิ
+    ⇒ โยน error ตอน import = **crashloop ทั้งระบบเพราะปุ่มลำโพงตัวเดียว**
+    แต่ห้ามถอยเงียบ ไม่งั้นคนตั้ง env ไว้จะไม่มีทางรู้ว่ามันไม่มีผล
+    """
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        val = int(raw)
+        if val <= 0:
+            raise ValueError("ต้องเป็นจำนวนเต็มบวก")
+        return val
+    except ValueError as e:
+        logger.warning("%s=%r ใช้ไม่ได้ (%s) — ถอยไปใช้ค่า default %d", name, raw, e, default)
+        return default
+
+
+TTS_MAX_CHARS = _positive_env("TTS_MAX_CHARS", 2000)
+TTS_MAX_CHUNKS = _positive_env("TTS_MAX_CHUNKS", 3)
 
 # ⚠️ ตารางเสียงอยู่ที่ `utils/voice.py` ที่เดียว — ห้ามนิยามซ้ำที่นี่อีก
 # (เคยมี 2 ก๊อป และตัวที่ `server.py` ใช้จริงคือของไฟล์นี้ ทำให้คนที่ไปแก้ `voice.py`
@@ -53,6 +73,12 @@ def _pack_sentences(sentences: list[str], max_chars: int) -> list[str]:
     หรือข้อความที่ `_split_sentences` จับไม่ได้) จะถูก **หั่นแข็ง** เป็นท่อนละ
     ``max_chars`` — ไม่ปล่อยให้ `_generate_one` ตัดทิ้งเงียบๆ
     """
+    # ⚠️ กันที่ตัวฟังก์ชันเองด้วย ไม่ใช่แค่ตอนอ่าน env — max_chars <= 0 ทำให้ลูป
+    # หั่นแข็งข้างล่างวนไม่รู้จบ (`s[:0]` ว่าง แล้ว `s[0:]` เท่าเดิม) · **hang แย่กว่า crash**
+    # เพราะ worker ตายเงียบทีละตัวโดยไม่มี traceback ให้ตาม
+    if max_chars <= 0:
+        raise ValueError(f"max_chars ต้องเป็นจำนวนเต็มบวก (ได้ {max_chars})")
+
     chunks: list[str] = []
     buf = ""
     for s in sentences:

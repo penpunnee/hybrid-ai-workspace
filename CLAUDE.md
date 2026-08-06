@@ -418,6 +418,17 @@ LOG_FILE=server.log
   (regex ต้องการ `(?<=[.!?…])\s+`) → ข้อความ 4,900 ตัวอักษรกลายเป็น "1 ประโยค" แล้วโดน
   `text[:2000]` **ตัดทิ้ง 2,900 ตัวอักษรเงียบๆ** · แก้โดย `_pack_sentences` หั่นแข็งเองเมื่อ
   ประโยคเดี่ยวยาวเกินเพดาน — เพดานทั้งหมดรวมมาที่ `TTS_MAX_CHARS` ที่เดียว
+- 🔴 **สองข้อที่ CodeRabbit จับได้ใน PR #46 (เทสรอบแรกปล่อยผ่านทั้งคู่)**
+  · `TTS_MAX_CHARS=0` ทำให้ `_pack_sentences` **วนไม่รู้จบ** (`s[:0]` ว่าง แล้ว `s[0:]` เท่าเดิม)
+  — วัดจริงแล้วค้างจน SIGALRM ต้องตัด · **hang แย่กว่า crash** เพราะ worker ตายเงียบไม่มี traceback
+  → กันสองชั้น: `_positive_env()` ถอยไปใช้ default พร้อม warning (ไม่ raise เพราะ
+  `backend-watchdog` จะทำให้กลายเป็น **crashloop ทั้งระบบเพราะปุ่มลำโพงตัวเดียว`)
+  \+ `_pack_sentences` เองโยน `ValueError` ไม่ว่าใครเรียก
+  · `generate_tts` เป็นงาน **blocking ~3.5 วิ/chunk** ถูกเรียกตรงๆ ใน handler `async`
+  ⇒ ทุกคำขอของทุกคนหยุดรอ → ห่อด้วย `run_in_threadpool` ทั้ง `/api/tts` และ `/api/tts/stream`
+  (convention มีอยู่แล้วที่ `routers/skills.py:7`)
+  · 🔧 **วิธีเทสว่า "ไม่ได้รันบน event loop" โดยไม่ผูกกับชื่อ thread ของ anyio:**
+  ใน worker thread จะ **ไม่มี** running loop ⇒ `asyncio.get_running_loop()` ต้องโยน `RuntimeError`
 - อาการเวลาโควตาหมด: toast `❌ TTS: 429 RESOURCE_EXHAUSTED`
 - ⚠️ `_generate_one()` เดิมอ่าน `candidates[0].content.parts[0]` ตรงๆ → เจอ `content=None`
   (เกิดจริงตอน probe) พังเป็น `AttributeError` ที่อ่านไม่ออกว่าเกิดอะไร · ตอนนี้โยน
