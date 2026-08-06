@@ -840,8 +840,24 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 - ⚠️ `/api/admin/unlock` ปฏิเสธ **403 ก่อนแตะ body** (LAN-only) ซึ่งถูกกว่า 413 อยู่แล้ว
 - **ratchet กันถอยหลัง:** เพิ่ม endpoint ที่อ่าน body ดิบเข้ามาใหม่ → เทสแดงทันที ·
   ปิดเพดานเพิ่มได้แล้วไม่อัปลิสต์ → แดงเหมือนกัน (บังคับให้เอกสารกับโค้ดเดินพร้อมกัน)
-- 🔴 **ฝั่งดิสก์ยังเปิดอยู่** — multipart ใหญ่ยังถูก starlette spool ลงดิสก์ตอน parse
-  (>1 MB) คนละ lever กับ RAM ต้องกันที่ proxy/middleware **ยังไม่ได้ออกแบบ**
+- ✅ **ฝั่งดิสก์ปิดแล้ว** (2026-08-06 · PR #44) — `core/body_limit.py`
+  เป็น **pure-ASGI middleware** ที่นับไบต์ที่ `receive` ก่อนถึง parser
+  - ⚠️ ต้องเป็น pure ASGI **ห้ามใช้ `BaseHTTPMiddleware`** — ตัวนั้นให้ `Request`
+    ซึ่งอ่าน body ไปแล้ว = สายเกินไป
+  - ⚠️ `_BodyTooLarge` **จงใจไม่สืบทอด `HTTPException`** — ไม่งั้น handler ที่ดัก
+    `except HTTPException` (`/api/dream`, `/api/admin/unlock`) จะกลืนมันทิ้งแล้วทำงาน
+    ต่อด้วย body ที่ไม่ครบ
+  - วางไว้ **ในสุด** (register ก่อน) → auth/rate-limit ปฏิเสธก่อนได้ ถูกกว่า
+    แต่ยังอยู่นอก route จึงคุม `receive` ได้ทัน
+
+
+#### ⚠️ วัด "ไฟล์ลงดิสก์" ให้ถูก — `scandir` มองไม่เห็น
+`SpooledTemporaryFile` **`unlink` ไฟล์ทันทีที่สร้าง** → `os.scandir("/tmp")` ได้ 0 ไฟล์เสมอ
+ทั้งที่เนื้อที่ถูกใช้จริง · วัดรอบแรกด้วย scandir แล้วเกือบสรุปว่า "ไม่ลงดิสก์ ไม่ต้องแก้"
+- วิธีที่ใช้ได้: ไล่ `/proc/<pid>/fd` หา symlink ที่ลงท้าย `(deleted)` แล้ว `os.stat()` เอาขนาด
+- วัดจริงบน prod ก่อนแก้: ยิง multipart **315 MB** → ตอบ 413 ถูกต้อง
+  **แต่ 313.3 MB ลงดิสก์ไปแล้ว** (1 fd ที่ถูก unlink)
+- `df` ไม่ช่วย — volume 11 TB ทำให้ 313 MB จมหายในความคลาดเคลื่อน
 
 เทส: `test_body_cap_all_routes.py` (38) + `test_upload_body_cap.py` (7) +
 `test_body_cap_ratchet.py` (6) — ทุกเส้นมีกลุ่มควบคุม "body เล็กต้องไม่โดน 413"
