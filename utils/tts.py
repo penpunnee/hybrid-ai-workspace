@@ -4,7 +4,15 @@ from google import genai
 from google.genai import types
 
 GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
-GEMINI_TTS_MODEL = os.getenv("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-native-audio-dialog")
+
+# ⚠️ ต้องเป็นโมเดลสาย `*-tts` เท่านั้น — ไฟล์นี้เรียกผ่าน `generate_content()`
+# สาย `native-audio` รองรับแค่ `bidiGenerateContent` (Live API, ดู utils/voice.py)
+# ยัดเข้ามาที่นี่เมื่อไหร่ = 404 ทุก request เมื่อนั้น (เป็นแบบนั้นอยู่จนถึง 2026-08-06)
+# วัดจริงบน prod (ไบต์ PCM 2 รอบ): 2.5-flash-preview-tts → 159886/150286
+#                                  3.1-flash-tts-preview → 180480/176640
+# เลือก 2.5-flash-preview-tts ให้อยู่ตระกูลเดียวกับ GEMINI_MODEL=gemini-2.5-flash ที่ deploy อยู่
+# `tests/test_tts_model.py` ตรึงกติกานี้ไว้แล้ว
+GEMINI_TTS_MODEL = os.getenv("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts")
 
 # ⚠️ ตารางเสียงอยู่ที่ `utils/voice.py` ที่เดียว — ห้ามนิยามซ้ำที่นี่อีก
 # (เคยมี 2 ก๊อป และตัวที่ `server.py` ใช้จริงคือของไฟล์นี้ ทำให้คนที่ไปแก้ `voice.py`
