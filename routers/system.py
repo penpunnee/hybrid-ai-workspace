@@ -4,6 +4,7 @@ import shutil
 from datetime import datetime, date, timedelta
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from core.config import GEMINI_API_KEY, DB_PATH, NAS_DATA_PATH, LMSTUDIO_BASE_URL
 from core.scheduler import scheduler
@@ -292,7 +293,9 @@ async def text_to_speech(request: Request):
     if not text:
         return {"error": "no text"}
     try:
-        wav = generate_tts(text, slug)
+        # blocking ~3.5 วิ/chunk — เรียกตรงๆ ใน handler async = ทุกคำขอของทุกคนหยุดรอ
+        # (convention เดียวกับ routers/skills.py · ตรึงด้วย test_generate_tts_ต้องไม่รันบน_event_loop)
+        wav = await run_in_threadpool(generate_tts, text, slug)
         return Response(content=wav, media_type="audio/wav", headers={"Cache-Control": "no-cache"})
     except Exception as e:
         return {"error": str(e)}
@@ -300,20 +303,25 @@ async def text_to_speech(request: Request):
 
 @router.post("/tts/stream")
 async def text_to_speech_stream(request: Request):
-    import re, base64
+    import base64
+    from utils.tts import _group_sentences, _split_sentences
     data = await json_body_capped(request, MAX_BODY_BYTES)
     text = data.get("text", "").strip()
     slug = data.get("assistant_slug", "")
     if not text:
         return {"error": "no text"}
-    sentences = [s.strip() for s in re.split(r"(?<=[.!?…\n])\s+", text) if s.strip()] or [text]
+    # ⚠️ เคยแบ่งเป็น "ประโยค" ที่นี่เอง แล้วยิง 1 request ต่อ 1 ประโยค — เผาโควตา
+    # free tier (10 req/วัน/โมเดล) แบบเดียวกับที่ `generate_tts` เคยทำ
+    # ต้องใช้ตัวจัดกลุ่มตัวเดียวกัน ไม่งั้นแก้ที่ utils/tts.py แล้วเส้นนี้ยังรั่วอยู่
+    # ตรึงด้วย tests/test_tts_quota.py::test_tts_stream_ก็ต้องจัดกลุ่มเหมือนกัน
+    chunks = _group_sentences(_split_sentences(text)) or [text]
 
     async def event_gen():
-        for sentence in sentences:
+        for sentence in chunks:
             if not sentence:
                 continue
             try:
-                wav = generate_tts(sentence, slug)
+                wav = await run_in_threadpool(generate_tts, sentence, slug)
                 b64 = base64.b64encode(wav).decode()
                 yield f"data: {json.dumps({'chunk': b64, 'done': False})}\n\n"
             except Exception as e:

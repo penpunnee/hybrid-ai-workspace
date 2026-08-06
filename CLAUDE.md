@@ -400,10 +400,35 @@ LOG_FILE=server.log
 | `gemini-2.5-pro-preview-tts` | **429** (free tier ไม่เปิด) |
 
 🔴 **เพดาน free tier = 10 requests/วัน/โมเดล** (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`,
-`quotaValue: 10`) และ `generate_tts()` แบ่งข้อความเป็น sentence แล้วยิง **1 request ต่อ 1 ประโยค**
+`quotaValue: 10`) เดิม `generate_tts()` แบ่งข้อความเป็น sentence แล้วยิง **1 request ต่อ 1 ประโยค**
 (parallel 4 workers) → คำตอบเดียว 5 ประโยค = กินครึ่งโควตาวัน ⇒ **ใช้ได้จริง ~2 คำตอบ/วัน**
-- ถ้าจะให้ใช้ได้จริงโดยไม่เปิด billing: เลิกแบ่งประโยค = 1 request/คำตอบ → 10 คำตอบ/วัน
-  แต่เสีย parallel latency ที่ตั้งใจใส่ไว้ (**ยังไม่ตัดสินใจ — รอ user เคาะ**)
+
+✅ **แก้แล้ว 2026-08-06 — จัดกลุ่มประโยคเป็น chunk** (`_pack_sentences` + `_apply_chunk_cap`)
+รวมประโยคจนใกล้ `TTS_MAX_CHARS` (2000) แล้วจำกัดที่ `TTS_MAX_CHUNKS` (3) · **1 chunk = 1 request**
+- วัดจาก **คำตอบจริงบน prod 469 ข้อความ**: median 323 ตัวอักษร · p90 907 · p99 6,856 · max 9,610
+  ⇒ **95.3% ของคำตอบกิน 1 request** (10 คำตอบ/วัน ตามเป้า) · 4.7% เกิน 2,000 → 2-3 request
+  · 1.3% เกิน 6,000 → ชนเพดานแล้วถูกตัด
+- นโยบายที่ user เคาะ: **ตัดทิ้ง** `chunks[:max_chunks]` แต่ **ต้อง `logger.warning` เสมอ**
+  (ตรึงด้วย `test_ตัดทิ้งแล้วต้องมีร่องรอยใน_log` + กลุ่มควบคุม `test_ไม่ตัดก็ต้องไม่เตือน`)
+- 🔴 **มีสองเส้นที่กินโควตา ไม่ใช่เส้นเดียว** — `/api/tts` (frontend เรียก) และ
+  **`/api/tts/stream`** (`routers/system.py`) ที่ **แบ่งประโยคเองอีกชั้น** · audit รอบแรกมองข้าม
+  เพราะนับ caller ใน bundle prod ได้ `api/tts` 1 ครั้ง / `api/tts/stream` **0 ครั้ง** แต่
+  endpoint ยังเปิดอยู่ ⇒ ตอนนี้ทั้งคู่เรียก `_group_sentences` ตัวเดียวกันแล้ว
+- ⚠️ **บั๊กที่เจอระหว่างทาง: `_split_sentences` จับไม่ได้เมื่อไม่มีเว้นวรรคหลัง `.`**
+  (regex ต้องการ `(?<=[.!?…])\s+`) → ข้อความ 4,900 ตัวอักษรกลายเป็น "1 ประโยค" แล้วโดน
+  `text[:2000]` **ตัดทิ้ง 2,900 ตัวอักษรเงียบๆ** · แก้โดย `_pack_sentences` หั่นแข็งเองเมื่อ
+  ประโยคเดี่ยวยาวเกินเพดาน — เพดานทั้งหมดรวมมาที่ `TTS_MAX_CHARS` ที่เดียว
+- 🔴 **สองข้อที่ CodeRabbit จับได้ใน PR #46 (เทสรอบแรกปล่อยผ่านทั้งคู่)**
+  · `TTS_MAX_CHARS=0` ทำให้ `_pack_sentences` **วนไม่รู้จบ** (`s[:0]` ว่าง แล้ว `s[0:]` เท่าเดิม)
+  — วัดจริงแล้วค้างจน SIGALRM ต้องตัด · **hang แย่กว่า crash** เพราะ worker ตายเงียบไม่มี traceback
+  → กันสองชั้น: `_positive_env()` ถอยไปใช้ default พร้อม warning (ไม่ raise เพราะ
+  `backend-watchdog` จะทำให้กลายเป็น **crashloop ทั้งระบบเพราะปุ่มลำโพงตัวเดียว`)
+  \+ `_pack_sentences` เองโยน `ValueError` ไม่ว่าใครเรียก
+  · `generate_tts` เป็นงาน **blocking ~3.5 วิ/chunk** ถูกเรียกตรงๆ ใน handler `async`
+  ⇒ ทุกคำขอของทุกคนหยุดรอ → ห่อด้วย `run_in_threadpool` ทั้ง `/api/tts` และ `/api/tts/stream`
+  (convention มีอยู่แล้วที่ `routers/skills.py:7`)
+  · 🔧 **วิธีเทสว่า "ไม่ได้รันบน event loop" โดยไม่ผูกกับชื่อ thread ของ anyio:**
+  ใน worker thread จะ **ไม่มี** running loop ⇒ `asyncio.get_running_loop()` ต้องโยน `RuntimeError`
 - อาการเวลาโควตาหมด: toast `❌ TTS: 429 RESOURCE_EXHAUSTED`
 - ⚠️ `_generate_one()` เดิมอ่าน `candidates[0].content.parts[0]` ตรงๆ → เจอ `content=None`
   (เกิดจริงตอน probe) พังเป็น `AttributeError` ที่อ่านไม่ออกว่าเกิดอะไร · ตอนนี้โยน
@@ -720,13 +745,14 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดตท้ายเซสชัน 2026-08-06 รอบเย็น)
 
-**เหลืองานที่ผมทำเองได้ = 0** เหลือ 4 อย่างที่ต้องรอ user หรือรอเวลา:
+**เหลืองานที่ผมทำเองได้ = 0** เหลือ 3 อย่างที่ต้องรอ user หรือรอเวลา:
 
-1. 🔬 **TTS: โควตา free tier = 10 req/วัน/โมเดล — รอ user เคาะ**
-   `generate_tts()` แบ่งข้อความเป็น sentence แล้วยิง **1 request ต่อ 1 ประโยค**
-   (parallel 4 workers) ⇒ คำตอบ 5 ประโยค = กินครึ่งโควตาวัน ⇒ **ใช้ได้จริง ~2 คำตอบ/วัน**
-   · ทางเลือก: เลิกแบ่ง sentence = 1 request/คำตอบ → 10 คำตอบ/วัน แต่เสีย parallel latency
-   · หรือเปิด billing · **ยังไม่แตะโค้ด** รายละเอียดที่หัวข้อ "🔊 `/api/tts`"
+1. ✅ **TTS โควตา — ปิดแล้ว 2026-08-06 (user เคาะ "จัดกลุ่ม + ตัดทิ้ง")**
+   `_pack_sentences` รวมประโยคจนใกล้ 2,000 ตัวอักษร → `_apply_chunk_cap` จำกัด 3 chunk
+   ⇒ วัดจากคำตอบจริง 469 ข้อความบน prod: **95.3% กิน 1 request** (เดิม 1 req/ประโยค)
+   · แก้ทั้ง `/api/tts` และ `/api/tts/stream` (เส้นหลังแบ่งประโยคเองอีกชั้น — เกือบตกสำรวจ)
+   · เจอบั๊กแถม: `_split_sentences` จับไม่ได้เมื่อไม่มีเว้นวรรค → ตัดทิ้งเงียบ 2,900 ตัวอักษร
+   · รายละเอียดที่หัวข้อ "🔊 `/api/tts`" · เทส `tests/test_tts_quota.py` (10 ตัว)
 2. 🧪 **เทส TTS live ยังไม่เคยผ่านปลายทาง** — โควตา 08-06 ถูกใช้หมดตอน probe
    รันได้เมื่อโควตารีเซ็ต:
    `docker exec -e TTS_LIVE_TEST=1 ai-backend-1 python -m pytest tests/test_tts_model.py`
