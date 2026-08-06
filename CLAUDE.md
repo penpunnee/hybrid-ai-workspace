@@ -253,6 +253,7 @@ GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash   # ⚠️ ห้ามใช้ gemini-2.5-pro บน free tier (quota limit=0 → 429 ทุก request, เจอจริง 2026-06-11)
 GEMINI_SEARCH_MODEL=            # โมเดลเฉพาะ gemini_web_search() (grounding ให้ local/Claude/Kimi) — ว่าง = ใช้ GEMINI_MODEL; precedence: arg > env นี้ > GEMINI_MODEL (มีตั้งแต่ 7087f88, test ใน test_gemini_web_search.py)
 GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview   # default อยู่ที่ `utils/voice.py:GEMINI_LIVE_MODEL_DEFAULT` ที่เดียว (ดูหัวข้อ "เสียงต้องเป็นคนเดิม") ⚠️ ห้ามสลับไปสาย native-audio โดยไม่ถอด `VOICE_TEMPERATURE` — วัดแล้วเสียงหายเงียบๆ 0 ไบต์ · gemini-2.0-flash-exp/gemini-live-2.0-flash-001 ถูกถอดจาก Live API แล้ว (1008 not found). เช็ค model ที่ใช้ได้: ListModels filter supportedGenerationMethods มี bidiGenerateContent
+GEMINI_TTS_MODEL=gemini-2.5-flash-preview-tts   # ⚠️ ต้องเป็นสาย `*-tts` เท่านั้น (`utils/tts.py` เรียก generateContent ไม่ใช่ bidi) · ห้ามใส่สาย native-audio เด็ดขาด = 404 ทุก request · free tier 10 req/วัน/โมเดล · ทางเลือกที่วัดแล้วใช้ได้: gemini-3.1-flash-tts-preview · ดูหัวข้อ "🔊 /api/tts"
 # Claude (Anthropic) — provider "claude"; ปล่อยว่าง=ปิด
 ANTHROPIC_API_KEY=
 CLAUDE_MODEL=claude-sonnet-4-6   # default คุ้ม; claude-opus-4-8 = ฉลาดสุด/แพงสุด, claude-haiku-4-5 = ถูกสุด
@@ -365,8 +366,50 @@ LOG_FILE=server.log
 - ⚠️ **ความเสี่ยงที่ยังไม่ปิด:** สาย 3.1-live **ไม่มี snapshot ปักวันที่ให้เลือก** (เช็ค
   ListModels แล้ว) → Google อัปเดต preview ทับได้ ถ้าเสียงเปลี่ยนอีกโดยเราไม่ได้แตะอะไร
   ให้สงสัยตัวนี้ก่อน · **ห้าม "แก้" ด้วยการถอยไป 2.5 โดยไม่รันตารางข้างบนใหม่**
-- ℹ️ `utils/tts.py` (`/api/tts`) เป็นคนละเส้น และ **ไม่เคยถูกเรียกเลยบน prod** (0 ครั้งใน
-  ล็อกทั้งไฟล์) — แก้ที่นั่นไม่มีผลกับเสียงที่ผู้ใช้ได้ยิน
+- ℹ️ `utils/tts.py` (`/api/tts`) เป็นคนละเส้นกับเสียงคุยสด — แก้ที่นั่นไม่มีผลกับ Live API
+  (เดิมเขียนว่า "ไม่เคยถูกเรียกเลยบน prod" ซึ่งจริง **แต่เหตุผลคือมันพัง** ดูหัวข้อถัดไป)
+
+#### 🔊 `/api/tts` — ปุ่มอ่านออกเสียง (แก้ 2026-08-06 · เคยพังเงียบมาตลอด)
+ปุ่ม 🔊 ทั้งใน composer (toggle อ่านคำตอบอัตโนมัติ) และบนข้อความ **ไม่เคยอ่านออกเสียงได้เลย** —
+`/api/tts` ตอบ **HTTP 200** แต่ body เป็น error → frontend ขึ้น toast `❌ TTS: …` แล้วเงียบ
+(ไม่มีใครสังเกตเพราะ endpoint นี้แทบไม่ถูกเรียก — และไม่ถูกเรียกเพราะมันพัง เป็นวงกลม)
+
+**สองเส้นเสียงใช้โมเดลคนละสาย ห้ามสลับกัน:**
+
+| ไฟล์ | เรียกด้วย | โมเดลที่ใช้ได้ |
+|---|---|---|
+| `utils/tts.py` | `generate_content()` | สาย **`*-tts`** |
+| `utils/voice.py` | Live API (`bidiGenerateContent`) | สาย **`*-live`** / `native-audio` |
+
+`GEMINI_TTS_MODEL` เคย default เป็น `gemini-2.5-flash-preview-native-audio-dialog` ซึ่งเป็น
+**bidi-only** → ยัดเข้า `generate_content()` = 404 ทุก request · `tests/test_tts_model.py`
+ตรึงกติกานี้ไว้แล้ว (ตรวจ *ต้นเหตุ* คือ "ห้ามเป็นสาย native-audio" ไม่ใช่ตรึงชื่อโมเดล)
+
+⚠️ **ต้องมี prefix `Say:` เสมอ** — ส่งข้อความดิบสั้นๆ โมเดลจะตีความว่าเป็นคำถามแล้วตอบ
+`400 Model tried to generate text, but it should only be used for TTS`
+วัดจริงในคอนเทนเนอร์ (ไบต์ PCM @48kB/วิ) — **นับไบต์ ไม่ใช่แค่ "ไม่ throw"**:
+
+| input | ผล |
+|---|---|
+| `2.5-flash-preview-native-audio-dialog` (ของเดิม) | **404, 404** |
+| `สวัสดีค่ะ` ดิบ | **400** |
+| `Say: สวัสดีค่ะ` | 48,526 (~1.01 วิ) = พอดีตัวข้อความ **prefix ไม่ถูกอ่าน** |
+| ประโยคยาว ดิบ ×4 | 150,286 / 156,046 / 159,886 / 177,166 (3.13–3.69 วิ) |
+| ประโยคยาว + `Say:` | 169,486 (3.53 วิ) = อยู่ในช่วงเดียวกัน |
+| `gemini-3.1-flash-tts-preview` | 180,480 / 176,640 (ใช้ได้ เป็นทางเลือก) |
+| `gemini-2.5-pro-preview-tts` | **429** (free tier ไม่เปิด) |
+
+🔴 **เพดาน free tier = 10 requests/วัน/โมเดล** (`GenerateRequestsPerDayPerProjectPerModel-FreeTier`,
+`quotaValue: 10`) และ `generate_tts()` แบ่งข้อความเป็น sentence แล้วยิง **1 request ต่อ 1 ประโยค**
+(parallel 4 workers) → คำตอบเดียว 5 ประโยค = กินครึ่งโควตาวัน ⇒ **ใช้ได้จริง ~2 คำตอบ/วัน**
+- ถ้าจะให้ใช้ได้จริงโดยไม่เปิด billing: เลิกแบ่งประโยค = 1 request/คำตอบ → 10 คำตอบ/วัน
+  แต่เสีย parallel latency ที่ตั้งใจใส่ไว้ (**ยังไม่ตัดสินใจ — รอ user เคาะ**)
+- อาการเวลาโควตาหมด: toast `❌ TTS: 429 RESOURCE_EXHAUSTED`
+- ⚠️ `_generate_one()` เดิมอ่าน `candidates[0].content.parts[0]` ตรงๆ → เจอ `content=None`
+  (เกิดจริงตอน probe) พังเป็น `AttributeError` ที่อ่านไม่ออกว่าเกิดอะไร · ตอนนี้โยน
+  `RuntimeError` พร้อม `finish_reason` และ **ไม่ปล่อยเสียง 0 ไบต์ผ่านเป็น WAV เปล่า**
+- ⚠️ เทส live ต้อง opt-in ด้วย `TTS_LIVE_TEST=1` **ห้าม gate ด้วยแค่ `if GEMINI_API_KEY`** —
+  เทสตัวอื่นในชุดเดียวกัน set คีย์ปลอมไว้ใน env ทำให้มันตื่นมายิงจริงด้วยคีย์ปลอมแล้วแดงมั่ว
 
 #### 🔬 `AudioLevelMeter` — ตัววัด "เสียงเบาลง" (ชั่วคราว ถอดออกได้)
 `utils/voice.py:AudioLevelMeter` วัด RMS/peak ของ PCM ที่ Gemini ส่งมา ตรงจุดที่รับ
