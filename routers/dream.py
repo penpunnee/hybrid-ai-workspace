@@ -1,10 +1,11 @@
 import logging
 import os
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
 from starlette.concurrency import run_in_threadpool
 
 from core.state import dream_lock
 from utils.dream import run_dream_cycle, get_latest_report, list_reports
+from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 
 router = APIRouter(prefix="/api/dream", tags=["dream"])
 logger = logging.getLogger(__name__)
@@ -24,7 +25,14 @@ async def trigger_dream(request: Request):
         return {"ok": False, "error": "Dream Cycle กำลังรันอยู่แล้ว กรุณารอให้เสร็จก่อน"}
 
     try:
-        data = await request.json()
+        data = await json_body_capped(request, MAX_BODY_BYTES)
+    except HTTPException as e:
+        # **เฉพาะ 413** ที่ต้องทะลุออกไป — `except Exception` กว้างๆ จะกลืนเพดานที่เพิ่งใส่
+        # ⚠️ ห้าม re-raise ทั้งก้อน: `json_body_capped()` โยน **400** เมื่อ parse ไม่ได้
+        # ซึ่งเป็นเคสที่เส้นนี้ตั้งใจให้ทนได้ (body ไม่บังคับ) — รูปแบบเดียวกับ memory/cleanup
+        if e.status_code == 413:
+            raise
+        data = {}
     except Exception:
         data = {}
     provider = data.get("provider", _default_dream_provider()) if isinstance(data, dict) else _default_dream_provider()

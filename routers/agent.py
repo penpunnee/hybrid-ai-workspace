@@ -21,6 +21,7 @@ from agents.orchestrator import run_agent
 from agents.tools import list_tools
 from assistants.config import ASSISTANTS
 from utils.history import save_message, load_history
+from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 
 router = APIRouter(prefix="/api", tags=["agent"])
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ def list_available_tools():
 
 @router.post("/agent")
 async def agent_chat(request: Request):
-    data = await request.json()
+    data = await json_body_capped(request, MAX_BODY_BYTES)
     assistant = data.get("assistant", list(ASSISTANTS.keys())[0])
     session_id = data.get("session_id", "default")
     prompt = data.get("prompt", "")

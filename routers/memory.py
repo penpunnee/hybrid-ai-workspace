@@ -7,7 +7,7 @@
 ให้เองอยู่แล้ว ไม่ต้องแตะ (ดู tests/test_memory_skills_router_concurrency.py)
 """
 from fastapi import APIRouter, Request, HTTPException
-from utils.http_limits import json_body_capped
+from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 from starlette.concurrency import run_in_threadpool
 
 from utils.memory import (
@@ -17,7 +17,7 @@ from utils.memory import (
 from memory.operations import get_memory_summary, recall, teach
 
 # เพดานเดียวกับ documents.py / skills.py — ดูเหตุผลที่ routers/skills.py
-_MAX_BODY_BYTES = 10 * 1024 * 1024  # 10 MB
+_MAX_BODY_BYTES = MAX_BODY_BYTES  # 10 MB — ค่าเดียวกับทั้งระบบ (utils/http_limits.py)
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
 

@@ -3,6 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, Request
 
 from core.state import share_store_set, share_store_get
+from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 from utils.history import (
     load_history, get_sessions, clear_session, export_history_md,
     pin_message, get_pinned_messages, truncate_from_db_id, rename_session,
@@ -29,7 +30,7 @@ def new_session(assistant: str):
 
 @router.patch("/sessions/{assistant}/{session_id}")
 async def patch_session(assistant: str, session_id: str, request: Request):
-    data = await request.json()
+    data = await json_body_capped(request, MAX_BODY_BYTES)
     name = data.get("name", "").strip()
     if not name:
         return {"ok": False, "error": "ชื่อว่างไม่ได้"}
@@ -50,7 +51,7 @@ def get_history(assistant: str, session_id: str):
 
 @router.post("/pin/{db_id}")
 async def toggle_pin(db_id: int, request: Request):
-    data = await request.json()
+    data = await json_body_capped(request, MAX_BODY_BYTES)
     pinned = data.get("pinned", True)
     pin_message(db_id, pinned)
     return {"ok": True, "db_id": db_id, "pinned": pinned}
@@ -82,7 +83,7 @@ def delete_message_endpoint(db_id: int):
 
 @router.post("/share")
 async def create_share(request: Request):
-    data = await request.json()
+    data = await json_body_capped(request, MAX_BODY_BYTES)
     assistant = data.get("assistant", "")
     session_id = data.get("session_id", "")
     if not assistant or not session_id:

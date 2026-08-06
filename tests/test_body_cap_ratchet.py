@@ -23,7 +23,7 @@ _RAW = re.compile(r"await request\.json\(\)|await \w+\.read\(\)")
 _CAPPED = re.compile(r"json_body_capped|read_capped")
 
 
-def scan() -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
+def scan(root: pathlib.Path | None = None) -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
     """คืน (เส้นที่อ่านดิบ, เส้นที่มีเพดาน) เป็นเซตของ (METHOD, path)
 
     วิธีดู: หลังเจอ decorator ของ route แล้วไล่บรรทัดถัดไปจนเจอการอ่าน body ครั้งแรก
@@ -31,7 +31,7 @@ def scan() -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
     """
     raw: set[tuple[str, str]] = set()
     capped: set[tuple[str, str]] = set()
-    for path in sorted(ROUTERS.glob("*.py")):
+    for path in sorted((root or ROUTERS).glob("*.py")):
         src = path.read_text(encoding="utf-8")
         m = _PREFIX.search(src)
         prefix = m.group(1) if m else ""
@@ -52,28 +52,11 @@ def scan() -> tuple[set[tuple[str, str]], set[tuple[str, str]]]:
     return raw, capped
 
 
-# ── baseline: เส้นที่ยังอ่าน body ดิบ ณ 2026-08-06 (ลดได้ เพิ่มไม่ได้) ────────────
-# ปิดเส้นไหนได้แล้วให้ลบออกจากลิสต์นี้ + อัปเดตตัวเลขใน CLAUDE.md หัวข้อ "🟡 B. เพดาน body"
-KNOWN_RAW: set[tuple[str, str]] = {
-    ("POST", "/api/agent"),
-    ("POST", "/api/auth/login"),
-    ("POST", "/api/chat"),            # ← เส้นที่โดนหนักสุด รับ image_b64 ด้วย
-    ("POST", "/api/regenerate"),
-    ("POST", "/api/dream"),
-    ("POST", "/api/feedback"),
-    ("POST", "/api/sandbox/python"),
-    ("POST", "/api/fs/list"),
-    ("POST", "/api/fs/read"),
-    ("POST", "/api/fs/write"),
-    ("POST", "/api/fs/search"),
-    ("PATCH", "/api/sessions/{assistant}/{session_id}"),
-    ("POST", "/api/pin/{db_id}"),
-    ("POST", "/api/share"),
-    ("POST", "/api/skills/extract"),
-    ("POST", "/api/tts"),
-    ("POST", "/api/tts/stream"),
-    ("POST", "/api/admin/unlock"),
-}
+# ── baseline: เส้นที่ยังอ่าน body ดิบ (ลดได้ เพิ่มไม่ได้) ─────────────────────────
+# 🎉 **ว่างแล้วตั้งแต่ 2026-08-06** — ปิดครบทั้ง 27 เส้น
+# เพิ่มเข้ามาใหม่ได้เฉพาะเมื่อจงใจปล่อยดิบจริงๆ และต้องเขียนเหตุผลกำกับ
+# (อย่าลืมอัปเดตตัวเลขใน CLAUDE.md หัวข้อ "B. เพดาน body" ให้ตรงด้วย)
+KNOWN_RAW: set[tuple[str, str]] = set()
 
 
 def test_ห้ามเพิ่ม_endpoint_ที่อ่าน_body_ดิบ():
@@ -112,11 +95,30 @@ def test_สแกนแยกเส้นที่มีเพดานออ�
     assert ("POST", "/api/documents/upload") not in raw
 
 
-def test_สแกนแยกเส้นที่ยังดิบออกได้จริง():
-    """/api/chat ยังใช้ await request.json() — ต้องถูกจัดเป็น raw"""
-    raw, capped = scan()
-    assert ("POST", "/api/chat") in raw
-    assert ("POST", "/api/chat") not in capped
+def test_สแกนแยก_raw_กับ_capped_ออกจากกันได้จริง(tmp_path):
+    """ยิงตัวสแกนใส่ router สังเคราะห์ที่รู้คำตอบอยู่แล้ว
+
+    ⚠️ **ห้ามผูกเทสนี้กับ endpoint จริงที่ 'ยังดิบ'** — พอปิดเพดานครบแล้วจะไม่เหลือ
+    ตัวอย่างฝั่ง raw ให้ทดสอบเลย (เจอจริง 2026-08-06: เทสเดิมอิง /api/chat แล้วพังทันที
+    ที่ปิดเพดานสำเร็จ = เทสที่ผ่านได้เฉพาะตอนโค้ดยังไม่ถูกแก้)
+    """
+    (tmp_path / "fake.py").write_text(
+        'router = APIRouter(prefix="/x")\n'
+        '@router.post("/raw")\n'
+        "async def a(request: Request):\n"
+        "    data = await request.json()\n"
+        '@router.post("/capped")\n'
+        "async def b(request: Request):\n"
+        "    data = await json_body_capped(request, 1)\n"
+        '@router.get("/nobody")\n'
+        "def c():\n"
+        "    return {}\n",
+        encoding="utf-8",
+    )
+    raw, capped = scan(tmp_path)
+    assert ("POST", "/x/raw") in raw and ("POST", "/x/raw") not in capped
+    assert ("POST", "/x/capped") in capped and ("POST", "/x/capped") not in raw
+    assert ("GET", "/x/nobody") not in raw | capped   # route ที่ไม่อ่าน body ต้องไม่ถูกนับ
 
 
 def test_เส้นที่มีเพดานกับเส้นที่ดิบต้องไม่ทับกัน():
