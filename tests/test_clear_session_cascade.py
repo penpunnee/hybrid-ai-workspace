@@ -131,3 +131,76 @@ def test_ไม่มีตาราง_skill_shadow_ก็ต้องไม่
 def test_ใช้ฐานข้อมูลชั่วคราวจริง():
     """กันพลาด: ถ้าเทสไปวิ่งบน DB จริง แปลว่า conftest ไม่ทำงานแล้ว"""
     assert "chat_history.db" not in DB_PATH or "/tmp" in DB_PATH or "pytest" in DB_PATH
+
+
+# ── share_links ───────────────────────────────────────────────────────────────
+# ลิงก์แชร์ที่ชี้ไป session ที่ถูกลบแล้วยังตอบ ok:true + ชื่อผู้ช่วย + เวลาที่สร้าง
+# (วัดจริงบน prod 2026-08-06 — ต่างจาก token มั่วที่ได้ ok:false) = บอกคนนอกได้ว่า
+# "ลิงก์นี้เคยมีจริง" ทั้งที่เจ้าของกดลบแชทไปแล้ว · เนื้อหาไม่รั่ว แต่ metadata รั่ว
+#
+# ⚠️ ต้องลบ **สองที่**: ตาราง `share_links` และ `_share_store` ใน core/state.py
+#    เพราะ get_shared_data() อ่าน in-memory ก่อน แล้วเติม cache กลับจาก DB
+#    ลบแต่ DB = token ที่ถูก cache ไว้แล้วยังตอบ ok:true จนกว่าโปรเซสจะรีสตาร์ท
+
+def _seed_share(conn, token, assistant, session_id):
+    from core.state import share_store_set
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS share_links (token TEXT PRIMARY KEY, assistant TEXT, session_id TEXT, created TEXT)"
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO share_links (token, assistant, session_id, created) VALUES (?,?,?,?)",
+        (token, assistant, session_id, "2026-08-06T00:00:00"),
+    )
+    share_store_set(token, {"assistant": assistant, "session_id": session_id, "created": "2026-08-06T00:00:00"})
+
+
+def test_ลบ_session_แล้ว_share_link_ต้องหายจาก_DB(db):
+    from core.state import share_store_get
+
+    _seed(db, ASST, "s_ลบ", 501)
+    _seed_share(db, "tok_ลบ", ASST, "s_ลบ")
+    db.commit()
+    assert share_store_get("tok_ลบ") is not None, "seed ไม่ติด — เทสวัดผิด"
+
+    clear_session(ASST, "s_ลบ")
+
+    conn = _get_conn()
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM share_links WHERE token=?", ("tok_ลบ",)).fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_ลบ_session_แล้ว_share_link_ต้องหายจาก_in_memory_store_ด้วย(db):
+    """ตัวนี้คือตัวที่กัน 'ลบที่ดูเหมือนลบแต่ไม่ได้ลบ' — ลบแต่ DB แล้วเทสข้างบนก็เขียว"""
+    from core.state import share_store_get
+
+    _seed(db, ASST, "s_ลบ", 601)
+    _seed_share(db, "tok_ลบ2", ASST, "s_ลบ")
+    db.commit()
+
+    clear_session(ASST, "s_ลบ")
+
+    assert share_store_get("tok_ลบ2") is None
+
+
+def test_ไม่แตะ_share_link_ของ_session_อื่น(db):
+    """กลุ่มควบคุม: ถ้าเผลอล้าง _share_store ทั้งก้อน เทสบนก็ยังเขียว"""
+    from core.state import share_store_get
+
+    _seed(db, ASST, "s_ลบ", 701)
+    _seed(db, ASST, "s_เก็บ", 702)
+    _seed_share(db, "tok_ลบ3", ASST, "s_ลบ")
+    _seed_share(db, "tok_เก็บ", ASST, "s_เก็บ")
+    db.commit()
+
+    clear_session(ASST, "s_ลบ")
+
+    assert share_store_get("tok_ลบ3") is None
+    assert share_store_get("tok_เก็บ") is not None
+    conn = _get_conn()
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM share_links WHERE token=?", ("tok_เก็บ",)).fetchone()[0] == 1
+    finally:
+        conn.close()

@@ -21,5 +21,21 @@ def share_store_get(token: str) -> dict | None:
     return _share_store.get(token)
 
 
+def share_store_delete_by_session(assistant: str, session_id: str) -> list[str]:
+    """ถอด share token ของ session นั้นออกจาก in-memory store — คืนรายการ token ที่ถอด
+
+    ⚠️ ต้องเรียกคู่กับการลบแถวใน `share_links` เสมอ — `get_shared_data()` อ่าน store นี้
+    **ก่อน** DB แล้วยังเติม cache กลับจาก DB ด้วย ⇒ ลบแต่ DB = token ที่ถูก cache ไว้แล้ว
+    ยังตอบ `ok:true` ต่อไปจนกว่าโปรเซสจะรีสตาร์ท (ลบที่ดูเหมือนลบแต่ไม่ได้ลบ)
+    """
+    hits = [
+        t for t, d in _share_store.items()
+        if isinstance(d, dict) and d.get("assistant") == assistant and d.get("session_id") == session_id
+    ]
+    for t in hits:
+        del _share_store[t]
+    return hits
+
+
 # ── Dream Cycle lock — ป้องกัน concurrent run ────────────────────────────────
 dream_lock = asyncio.Lock()
