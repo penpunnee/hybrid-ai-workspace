@@ -733,6 +733,11 @@
 
   // Start observing after React mounts
   window.addEventListener("load", () => {
+    // ported เข้า React แล้ว — React มี 📌 Pin ที่ยิง /api/pin/{dbId} ตรงๆ
+    // ⚠️ ตัวนี้ต้องปิดไม่ใช่แค่เพราะซ้ำ แต่เพราะ "ตายสนิท": pinMessage() จับคู่ข้อความ
+    //    แบบเป๊ะทุกตัวอักษร แต่ bubble.innerText มีป้ายปุ่มปนอยู่ ("คัดลอก" ของ React)
+    //    → match ไม่เจอทุกครั้ง วัดจริงบน prod 2026-08-06: 0/66
+    if (window.__hwReactChatBox) return;
     pinObserver.observe(document.getElementById("root"), {
       childList: true,
       subtree: true,
@@ -2526,6 +2531,7 @@
   // 19. COPY MESSAGE — ปุ่มคัดลอกข้อความทั้งก้อน (AI bubble)
   // ─────────────────────────────────────────────────────────────────────────────
   (function () {
+    if (window.__hwReactChatBox) return;   // ported เข้า React แล้ว — ปุ่ม 📋 บนทุกบับเบิล
     const css = `
       .enh-copy-msg {
         position:absolute; top:6px; right:6px;
@@ -2652,6 +2658,7 @@
 
       acts.appendChild(cancelBtn);
       acts.appendChild(sendBtn);
+      // (showEditMode ถูกเรียกจาก editBtn เท่านั้น — ซึ่งแนบเฉพาะ bundle เก่า ดู wireUserBubble)
       bubble.appendChild(ta);
       bubble.appendChild(acts);
       ta.focus();
@@ -2689,7 +2696,10 @@
       delBtn.className = "enh-ua-btn danger";
       delBtn.textContent = "🗑️ ลบ";
 
-      actRow.appendChild(editBtn);
+      // ✏️ ported เข้า React แล้ว (inline textarea + submitEdit ที่ใช้ msg.dbId ตรงๆ)
+      // แนบของ overlay เฉพาะ bundle เก่าที่ยังไม่ตั้ง __hwReactChatBox — ไม่งั้นผู้ใช้เห็นปุ่มแก้ไข 2 อัน
+      if (!window.__hwReactChatBox) actRow.appendChild(editBtn);
+      // 🗑️ ลบ ไม่มีคู่ใน React → ต้องแนบเสมอ ห้าม gate ตามไปด้วย
       actRow.appendChild(delBtn);
       container.appendChild(actRow);
 
