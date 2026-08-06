@@ -300,16 +300,21 @@ async def text_to_speech(request: Request):
 
 @router.post("/tts/stream")
 async def text_to_speech_stream(request: Request):
-    import re, base64
+    import base64
+    from utils.tts import _group_sentences, _split_sentences
     data = await json_body_capped(request, MAX_BODY_BYTES)
     text = data.get("text", "").strip()
     slug = data.get("assistant_slug", "")
     if not text:
         return {"error": "no text"}
-    sentences = [s.strip() for s in re.split(r"(?<=[.!?…\n])\s+", text) if s.strip()] or [text]
+    # ⚠️ เคยแบ่งเป็น "ประโยค" ที่นี่เอง แล้วยิง 1 request ต่อ 1 ประโยค — เผาโควตา
+    # free tier (10 req/วัน/โมเดล) แบบเดียวกับที่ `generate_tts` เคยทำ
+    # ต้องใช้ตัวจัดกลุ่มตัวเดียวกัน ไม่งั้นแก้ที่ utils/tts.py แล้วเส้นนี้ยังรั่วอยู่
+    # ตรึงด้วย tests/test_tts_quota.py::test_tts_stream_ก็ต้องจัดกลุ่มเหมือนกัน
+    chunks = _group_sentences(_split_sentences(text)) or [text]
 
     async def event_gen():
-        for sentence in sentences:
+        for sentence in chunks:
             if not sentence:
                 continue
             try:
