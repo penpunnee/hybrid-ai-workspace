@@ -2,7 +2,7 @@ import os
 import json
 import shutil
 from datetime import datetime, date, timedelta
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from core.config import GEMINI_API_KEY, DB_PATH, NAS_DATA_PATH, LMSTUDIO_BASE_URL
@@ -14,6 +14,7 @@ from utils.skills import get_skill_count
 from utils.dream import get_latest_report
 from utils.tts import generate_tts
 from utils.history import search_messages
+from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 
 router = APIRouter(prefix="/api", tags=["system"])
 
@@ -285,7 +286,7 @@ def daily_digest():
 
 @router.post("/tts")
 async def text_to_speech(request: Request):
-    data = await request.json()
+    data = await json_body_capped(request, MAX_BODY_BYTES)
     text = data.get("text", "").strip()
     slug = data.get("assistant_slug", "")
     if not text:
@@ -300,7 +301,7 @@ async def text_to_speech(request: Request):
 @router.post("/tts/stream")
 async def text_to_speech_stream(request: Request):
     import re, base64
-    data = await request.json()
+    data = await json_body_capped(request, MAX_BODY_BYTES)
     text = data.get("text", "").strip()
     slug = data.get("assistant_slug", "")
     if not text:
@@ -332,7 +333,12 @@ async def admin_unlock(request: Request):
         return JSONResponse({"error": "forbidden — LAN only"}, status_code=403)
     body = {}
     try:
-        body = await request.json()
+        body = await json_body_capped(request, MAX_BODY_BYTES)
+    except HTTPException as e:
+        # เฉพาะ 413 เท่านั้นที่ต้องทะลุ — body ของเส้นนี้ไม่บังคับ (ไม่ส่งมาก็ใช้ IP ผู้เรียก)
+        # จึงต้องปล่อย 400 (JSON เสีย) ให้ผ่านเหมือนเดิม · เหมือน memory/cleanup กับ dream
+        if e.status_code == 413:
+            raise
     except Exception:
         pass
     ip = body.get("ip") or client_key(request)

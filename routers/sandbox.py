@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 
 from utils.code_sandbox import run_python, info as sandbox_info
 from utils.fs_tools import list_dir, read_file, write_file, search_files, info as fs_info
+from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 
 router = APIRouter(prefix="/api", tags=["sandbox-fs"])
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 @router.post("/sandbox/python")
 async def sandbox_python(request: Request):
     """รัน Python code — body: {code, timeout?}"""
-    data = await request.json()
+    data = await json_body_capped(request, MAX_BODY_BYTES)
     code = data.get("code") or ""
     if not isinstance(code, str) or not code.strip():
         raise HTTPException(400, "field 'code' required")
@@ -48,13 +49,13 @@ def sandbox_status():
 
 @router.post("/fs/list")
 async def fs_list(request: Request):
-    data = await request.json()
+    data = await json_body_capped(request, MAX_BODY_BYTES)
     return await run_in_threadpool(list_dir, path=str(data.get("path", "")))
 
 
 @router.post("/fs/read")
 async def fs_read(request: Request):
-    data = await request.json()
+    data = await json_body_capped(request, MAX_BODY_BYTES)
     path = str(data.get("path", ""))
     if not path:
         raise HTTPException(400, "path required")
@@ -67,7 +68,7 @@ async def fs_read(request: Request):
 
 @router.post("/fs/write")
 async def fs_write(request: Request):
-    data = await request.json()
+    data = await json_body_capped(request, MAX_BODY_BYTES)
     path = str(data.get("path", ""))
     content = data.get("content")
     if not path:
@@ -80,7 +81,7 @@ async def fs_write(request: Request):
 
 @router.post("/fs/search")
 async def fs_search(request: Request):
-    data = await request.json()
+    data = await json_body_capped(request, MAX_BODY_BYTES)
     pattern = str(data.get("pattern", ""))
     if not pattern:
         raise HTTPException(400, "pattern required")

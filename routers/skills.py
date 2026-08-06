@@ -27,7 +27,7 @@ from utils.skills import (
     cleanup_junk_skills, set_skill_entry, delete_skill_entries, SkillsDbError,
 )
 from utils.llm import stream_response
-from utils.http_limits import read_capped, json_body_capped
+from utils.http_limits import read_capped, json_body_capped, MAX_BODY_BYTES
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ router = APIRouter(prefix="/api", tags=["skills"])
 # และ `routers/documents.py` บังคับใช้อยู่แล้วด้วยค่าเดียวกัน · ที่นี่คือการบังคับใช้
 # ให้ครบ ไม่ใช่การตั้งนโยบายใหม่ — `ai-backend-1` มี `mem_limit: 2g` เป็นด่านสุดท้าย
 # ซึ่งแปลว่า "ถูก OOM kill" ไม่ใช่ "ตอบ 413"
-_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+_MAX_UPLOAD_BYTES = MAX_BODY_BYTES  # 10 MB — ค่าเดียวกับทั้งระบบ (utils/http_limits.py)
 
 
 def _collect_stream(msgs) -> str:
@@ -82,7 +82,7 @@ def skills_list():
 
 @router.post("/skills/extract")
 async def skills_extract(request: Request):
-    data = await request.json()
+    data = await json_body_capped(request, MAX_BODY_BYTES)
     content = data.get("content", "").strip()
     topic = data.get("topic", "").strip()
     if not content:

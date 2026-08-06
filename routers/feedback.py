@@ -7,6 +7,7 @@ Endpoints:
 """
 import logging
 from fastapi import APIRouter, Request, HTTPException
+from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 
 from utils.feedback import (
     save_feedback, get_feedback, get_stats, list_low_rated_messages,
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 @router.post("")
 async def submit(request: Request):
     """รับ {assistant, session_id, message_id, rating, comment?}"""
-    data = await request.json()
+    data = await json_body_capped(request, MAX_BODY_BYTES)
     try:
         message_id = int(data.get("message_id"))
     except (TypeError, ValueError):

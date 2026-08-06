@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from core.auth import is_local_request, token_matches
 from core.config import UI_PASSWORD
+from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -18,7 +19,7 @@ def auth_check(request: Request):
 
 @router.post("/login")
 async def auth_login(request: Request):
-    data = await request.json()
+    data = await json_body_capped(request, MAX_BODY_BYTES)
     pwd = data.get("password", "")
     if not UI_PASSWORD or token_matches(pwd):
         return {"ok": True, "token": UI_PASSWORD}

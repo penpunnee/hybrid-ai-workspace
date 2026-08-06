@@ -16,13 +16,13 @@ from utils.summarize import summarize_document
 from utils.ocr import ocr_pdf, ocr_image
 from starlette.concurrency import run_in_threadpool
 
-from utils.http_limits import read_capped, json_body_capped
+from utils.http_limits import read_capped, json_body_capped, MAX_BODY_BYTES
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 logger = logging.getLogger(__name__)
 
 
-_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+_MAX_BYTES = MAX_BODY_BYTES  # 10 MB — ค่าเดียวกับทั้งระบบ (utils/http_limits.py)
 _ALLOWED_EXT = {
     ".txt", ".md", ".json", ".py", ".html", ".csv", ".log",
     ".pdf", ".docx", ".xlsx", ".xls",

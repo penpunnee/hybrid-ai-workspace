@@ -444,9 +444,9 @@ LOG_FILE=server.log
 - ⚠️ **รับ body ต้องมีเพดานก่อนอ่าน** — ใช้ `utils/http_limits.py`
   (`read_capped()` / `json_body_capped()`) ห้าม `await file.read()` / `await request.json()` ดิบ
   เพราะจะกิน RAM เต็มก้อนก่อนถูกปฏิเสธ (`ai-backend-1` มี `mem_limit: 2g` เป็นด่านสุดท้าย)
-  - 🟡 **กฎนี้ยังบังคับใช้ไม่ครบ** — วัด 2026-08-06: 27 เส้นที่อ่าน body มีเพดานแค่ 9
-    (รายชื่อ 18 เส้นที่ยังดิบ รวม `/api/chat` อยู่ที่หัวข้อ "🟡 B. เพดาน body")
-    **เขียน endpoint ใหม่ให้ทำตามกฎนี้เสมอ อย่าลอกจากเส้นเก่าที่ยังไม่ได้แก้**
+  - ✅ **บังคับใช้ครบ 27/27 เส้นแล้ว** (2026-08-06) · ค่าเพดานอยู่ที่
+    `utils/http_limits.MAX_BODY_BYTES` ที่เดียว — **อย่าประกาศ 10 MB ซ้ำในไฟล์ตัวเอง**
+    · `tests/test_body_cap_ratchet.py` จะแดงทันทีถ้ามี endpoint ใหม่อ่าน body ดิบ
 - ⚠️ **เขียน `skills_db.json` ต้องผ่าน `save_skill()`/`cleanup_junk_skills()`** ซึ่งถือ `_db_lock`
   และเขียนแบบ atomic — dream cycle (APScheduler) กับเส้นแชทเขียนไฟล์เดียวกันคนละ thread
 - Each feature area → own router file in `routers/`, registered in `server.py`
@@ -823,31 +823,29 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 - เทส `tests/test_accept_proposal_safety.py` +2 (เคสล้ม + **กลุ่มควบคุมเคสปกติ** —
   ถ้าไม่มีตัวหลัง การตั้ง `db_updated=False` ตายตัวก็ผ่านเทสแรกได้)
 
-**🟡 B. เพดาน body — ปิดไป 9 เส้น ยังเหลือ 18** (ข้อ 3 เดิม · แก้คำอ้างเกินจริง 2026-08-06)
+**✅ B. เพดาน body ครบ 27/27 เส้นแล้ว** (ปิดครบ 2026-08-06 · PR #43)
 
-> 🔴 **บรรทัดนี้เคยเขียนว่า "ครบทุกเส้นแล้ว" ซึ่งเท็จ** — PR #31 ปิดแค่ `skills.py` +
-> `memory.py` แล้วสรุปเหมาเอาเองว่าครบ · วัดใหม่ด้วยการไล่ทุก `@router.post/put/patch`
-> ที่อ่าน body: **27 เส้น มีเพดาน 9 ยังดิบ 18** (2026-08-06)
-> **บทเรียน: "ปิดงานแล้ว" ต้องมาจากการนับ ไม่ใช่จากความรู้สึกว่าแก้ครบ**
+> 🔴 **หัวข้อนี้เคยเขียนว่า "ครบทุกเส้นแล้ว" ตั้งแต่ PR #31 ทั้งที่ปิดไปแค่ 9 จาก 27**
+> — เขียนจากความรู้สึกว่าแก้ครบ ไม่ได้นับ · แก้คำอ้างที่ PR #41 แล้วปิดของจริงที่ PR #43
+> **บทเรียน: "ปิดงานแล้ว" ต้องมาจากการนับ** และคราวนี้มี `tests/test_body_cap_ratchet.py`
+> เป็นตัวนับให้ถาวร ไม่ต้องพึ่งความจำอีก
 
-**มีเพดานแล้ว (9):** `documents.py` ทั้ง 4 เส้น (`upload`/`search`/`ocr`/`summarize`) ·
-`memory.py` 3 เส้น (`teach/{a}`/`cleanup`/`{assistant}`) · `skills.py` 2 เส้น
-(`discover/accept`/`upload`)
+ทุก route ที่อ่าน body ใช้ `json_body_capped()` / `read_capped()` ที่ **10 MB** ครบแล้ว
+- ค่าอยู่ที่ **`utils/http_limits.py:MAX_BODY_BYTES` ที่เดียว** — เดิมก๊อปไว้ 3 ไฟล์
+  (`documents`/`skills`/`memory`) ซึ่งจะกลายเป็น 12 ที่ถ้าปล่อยไว้แล้วปิดครบ
+- ⚠️ **3 เส้นที่ body ไม่บังคับ** (`/api/memory/cleanup` · `/api/dream` · `/api/admin/unlock`)
+  ต้องใช้รูปแบบ `except HTTPException as e: if e.status_code == 413: raise` —
+  **ห้าม re-raise ทั้งก้อน** เพราะ `json_body_capped()` โยน **400** เมื่อ parse JSON ไม่ได้
+  ซึ่งเป็นเคสที่เส้นพวกนี้ตั้งใจให้ทนได้ (เคยพลาดมาแล้วตอน PR #31)
+- ⚠️ `/api/admin/unlock` ปฏิเสธ **403 ก่อนแตะ body** (LAN-only) ซึ่งถูกกว่า 413 อยู่แล้ว
+- **ratchet กันถอยหลัง:** เพิ่ม endpoint ที่อ่าน body ดิบเข้ามาใหม่ → เทสแดงทันที ·
+  ปิดเพดานเพิ่มได้แล้วไม่อัปลิสต์ → แดงเหมือนกัน (บังคับให้เอกสารกับโค้ดเดินพร้อมกัน)
+- 🔴 **ฝั่งดิสก์ยังเปิดอยู่** — multipart ใหญ่ยังถูก starlette spool ลงดิสก์ตอน parse
+  (>1 MB) คนละ lever กับ RAM ต้องกันที่ proxy/middleware **ยังไม่ได้ออกแบบ**
 
-**ยังอ่านดิบ ไม่มีเพดาน (18)** — เรียงตามความเสี่ยง:
+เทส: `test_body_cap_all_routes.py` (38) + `test_upload_body_cap.py` (7) +
+`test_body_cap_ratchet.py` (6) — ทุกเส้นมีกลุ่มควบคุม "body เล็กต้องไม่โดน 413"
 
-| เส้น | ทำไมต้องสนใจ |
-|---|---|
-| `POST /api/chat` (`chat.py:104`) | **เส้นที่โดนหนักที่สุดในระบบ** รับ `image_b64` ได้ด้วย |
-| `POST /api/regenerate` (`chat.py:687`) | เส้นเดียวกับ chat |
-| `POST /api/agent` (`agent.py:48`) | รัน tool จริง |
-| `POST /api/tts` · `/api/tts/stream` (`system.py:288,303`) | รับข้อความยาวได้ไม่จำกัด |
-| `POST /api/fs/write` (`sandbox.py:70`) | เขียนไฟล์ |
-| `/api/sandbox/python` · `/api/fs/{list,read,search}` | sandbox อีก 4 เส้นที่เหลือ |
-| `/api/auth/login` · `/api/feedback` · `/api/dream` · `/api/share` · `/api/pin/{id}` · `PATCH /api/sessions/{a}/{s}` · `/api/skills/extract` · `/api/admin/unlock` | body เล็กแต่ยังไม่มีด่าน |
-
-วัดซ้ำได้ด้วยการไล่ `@router.(post|put|patch)` แล้วดูว่าตัวถัดไปเป็น `await request.json()`
-/`await x.read()` (ดิบ) หรือ `json_body_capped()`/`read_capped()` (มีเพดาน)
 - ⚠️ **10 MB ไม่ใช่ตัวเลขใหม่ จึงไม่ต้องรอ user เคาะ** — `CLAUDE.md` ประกาศ
   "ขนาดสูงสุด 10 MB" ไว้แล้ว และ `routers/documents.py` บังคับใช้ค่าเดียวกันอยู่แล้ว
   งานนี้คือ**บังคับใช้ให้ครบ** ไม่ใช่ตั้งนโยบายใหม่ → ไม่มีไฟล์ที่ "เคยอัปได้" กลายเป็น 413
@@ -910,8 +908,8 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
      3 จุด + `/skills/discover/accept` ใช้ `json_body_capped()` ที่ 10 MB
      **ที่เคยเขียนว่า "ต้องให้ user เลือกเพดานก่อน" นั้นคลาด** — 10 MB ประกาศไว้ใน
      doc นี้เองแล้ว (บรรทัด ~460) และ `documents.py` บังคับใช้อยู่ก่อนแล้ว
-     ⚠️ **แต่ยังเหลืออีก 18 เส้นที่อ่าน body ดิบ** รวม `/api/chat` — ดูตารางที่หัวข้อ
-     "🟡 B. เพดาน body" ด้านบน · **ฝั่งดิสก์ (multipart spool) ยังไม่ได้แตะเลย**
+     ✅ **ที่เหลืออีก 18 เส้นปิดครบแล้วที่ PR #43** — ดูหัวข้อ "✅ B. เพดาน body" ด้านบน
+     · 🔴 **ฝั่งดิสก์ (multipart spool) ยังไม่ได้แตะเลย** — คนละ lever ยังเปิดอยู่
 7. ✅ **ปิดแล้ว 2026-08-06 (ข้อ A)** — คืน `db_updated` + `warning` เพิ่มจาก `ok`
    ตามรูปแบบที่ `skills_extract` ใช้อยู่แล้วในไฟล์เดียวกัน (ไม่ใช่ contract ใหม่
    จึงไม่ต้องรอ user เคาะอย่างที่เคยเขียนไว้) · ดูหัวข้อ "✅ A." ด้านบน

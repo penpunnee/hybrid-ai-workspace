@@ -24,6 +24,7 @@ from utils.home_tools import detect_home_tools, build_tool_context
 from reasoning.learn_gate import should_auto_learn, clean_lesson, should_remember, detect_preferences
 from utils.tokens import count_tokens_approx
 from core.observability import log_timing, current_request_id, get_timings
+from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 
 router = APIRouter(prefix="/api", tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -101,7 +102,7 @@ def persist_agent_turn(assistant: str, prompt: str, full_response: str, session_
 
 @router.post("/chat")
 async def chat(request: Request):
-    data = await request.json()
+    data = await json_body_capped(request, MAX_BODY_BYTES)
     is_test_request = _is_test_request(request)
     assistant   = data.get("assistant", list(ASSISTANTS.keys())[0])
     session_id  = data.get("session_id", "default")
@@ -684,7 +685,7 @@ async def chat(request: Request):
 
 @router.post("/regenerate")
 async def regenerate_response(request: Request):
-    data = await request.json()
+    data = await json_body_capped(request, MAX_BODY_BYTES)
     assistant  = data.get("assistant", list(ASSISTANTS.keys())[0])
     session_id = data.get("session_id", "default")
     provider   = data.get("provider", "auto")

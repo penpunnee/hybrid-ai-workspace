@@ -21,6 +21,12 @@ from fastapi import HTTPException
 # อ่านทีละ 64 KB — ใหญ่พอไม่ให้ loop ถี่จนช้า เล็กพอที่ "เกินเพดาน" จะรู้ตัวเร็ว
 CHUNK = 64 * 1024
 
+# เพดาน body มาตรฐานของทั้งระบบ — **ประกาศที่นี่ที่เดียว**
+# 10 MB ไม่ใช่ตัวเลขใหม่: CLAUDE.md ประกาศไว้ ("ขนาดสูงสุด 10 MB") และ `documents.py`
+# บังคับใช้อยู่ก่อนแล้ว · เดิมค่านี้ถูกก๊อปไว้ 3 ไฟล์ (documents/skills/memory) ซึ่งจะกลายเป็น
+# 12 ที่เมื่อปิดเพดานครบทุกเส้น — รวมมาที่เดียวกันแบบเดียวกับที่เคยเก็บ `_SKILLS_DB` alias
+MAX_BODY_BYTES = 10 * 1024 * 1024  # 10 MB
+
 
 def declared_too_large(headers, max_bytes: int) -> bool:
     """`content-length` บอกว่าเกินเพดานไหม — ไม่มี/อ่านไม่ออก = `False`
