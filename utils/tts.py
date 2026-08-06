@@ -51,11 +51,18 @@ def _concat_wavs(wavs: list[bytes]) -> bytes:
 
 
 def _generate_one(text: str, voice: str) -> bytes:
-    """Generate audio สำหรับ 1 chunk — ใช้ใน ThreadPoolExecutor"""
+    """Generate audio สำหรับ 1 chunk — ใช้ใน ThreadPoolExecutor
+
+    ⚠️ ต้องมี prefix ``Say:`` เสมอ — ส่งข้อความดิบสั้นๆ โมเดลจะเข้าใจว่าเป็น *คำถาม*
+    แล้วตอบกลับด้วย 400 ``Model tried to generate text, but it should only be used for TTS``
+    (วัดจริง: "สวัสดีค่ะ" ดิบ → 400 · ``Say: สวัสดีค่ะ`` → 48,526 ไบต์ ≈ 1.01 วิ)
+    prefix ไม่ถูกอ่านออกเสียง — ประโยคยาวใส่ prefix ได้ 3.53 วิ อยู่ในช่วงเดียวกับแบบดิบ
+    (3.13–3.69 วิ จาก 4 ครั้ง) ดูตารางวัดใน ``tests/test_tts_model.py``
+    """
     client = genai.Client(api_key=GEMINI_API_KEY)
     response = client.models.generate_content(
         model=GEMINI_TTS_MODEL,
-        contents=text[:2000],
+        contents=f"Say: {text[:2000]}",
         config=types.GenerateContentConfig(
             response_modalities=["AUDIO"],
             speech_config=types.SpeechConfig(
@@ -65,7 +72,16 @@ def _generate_one(text: str, voice: str) -> bytes:
             ),
         ),
     )
-    pcm: bytes = response.candidates[0].content.parts[0].inline_data.data
+    # โมเดลอาจคืน candidate ที่ content เป็น None (เจอตอน probe) หรือคืนเสียง 0 ไบต์
+    # โดยไม่ error เลย (สาย native-audio เคยเป็น) — ทั้งสองเคสต้องดัง ไม่ใช่ส่ง WAV เปล่าออกไป
+    cand = response.candidates[0]
+    parts = getattr(cand.content, "parts", None) if cand.content else None
+    pcm: bytes = parts[0].inline_data.data if parts else b""
+    if not pcm:
+        raise RuntimeError(
+            f"TTS ไม่มีเสียงกลับมา (finish_reason={getattr(cand, 'finish_reason', '?')}, "
+            f"model={GEMINI_TTS_MODEL})"
+        )
     return _pcm_to_wav(pcm)
 
 

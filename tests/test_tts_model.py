@@ -99,3 +99,101 @@ def test_ยิงจริงแล้วได้เสียงมาจร�
     wav = tts.generate_tts("สวัสดีค่ะ", assistant_slug="kwan")
     assert len(wav) > 10_000, f"ได้ WAV แค่ {len(wav)} ไบต์ — น่าจะเงียบ"
     assert wav[:4] == b"RIFF"
+
+
+# ── prefix "Say:" ─────────────────────────────────────────────────────────────
+# วัดจริงในคอนเทนเนอร์ prod 2026-08-06 (ไบต์ PCM @48kB/วิ):
+#   "สวัสดีค่ะ" ดิบ            → 400 INVALID_ARGUMENT
+#                                "Model tried to generate text, but it should only be used for TTS"
+#   "Say: สวัสดีค่ะ"           → 48,526 ไบต์ (~1.01 วิ)  ← พอดีกับตัวข้อความ ไม่ได้อ่านคำว่า Say
+#   ประโยคยาว ดิบ (4 ครั้ง)    → 150,286 / 156,046 / 159,886 / 177,166 (3.13–3.69 วิ)
+#   ประโยคยาว + "Say:"        → 169,486 ไบต์ (3.53 วิ)   ← อยู่ในช่วงเดียวกัน = prefix ไม่ถูกอ่าน
+# → ใส่ prefix เสมอ ปลอดภัยทั้งสั้นและยาว
+
+
+class _FakeInline:
+    def __init__(self, data):
+        self.data = data
+
+
+class _FakePart:
+    def __init__(self, data):
+        self.inline_data = _FakeInline(data)
+
+
+class _FakeContent:
+    def __init__(self, data):
+        self.parts = [_FakePart(data)]
+
+
+class _FakeCandidate:
+    def __init__(self, data, content_none=False):
+        self.content = None if content_none else _FakeContent(data)
+        self.finish_reason = "STOP"
+
+
+class _FakeResponse:
+    def __init__(self, data, content_none=False):
+        self.candidates = [_FakeCandidate(data, content_none)]
+
+
+def _patch_client(monkeypatch, tts, response):
+    """ดัก genai.Client แล้วเก็บ contents ที่ถูกส่งไปจริง"""
+    sent = {}
+
+    class _Models:
+        def generate_content(self, **kw):
+            sent.update(kw)
+            if isinstance(response, Exception):
+                raise response
+            return response
+
+    class _Client:
+        def __init__(self, **_):
+            self.models = _Models()
+
+    monkeypatch.setattr(tts.genai, "Client", _Client)
+    return sent
+
+
+def test_ส่ง_prefix_Say_ไปด้วยเสมอ(monkeypatch):
+    """ข้อความสั้นๆ ที่ส่งดิบ โมเดลจะตอบ 400 ว่า 'tried to generate text'"""
+    tts = _tts_module(monkeypatch)
+    sent = _patch_client(monkeypatch, tts, _FakeResponse(b"x" * 20_000))
+
+    tts._generate_one("สวัสดีค่ะ", "Aoede")
+
+    assert sent["contents"].startswith("Say: "), sent["contents"]
+    assert "สวัสดีค่ะ" in sent["contents"]
+
+
+def test_prefix_ไม่กินโควตาความยาว_2000_ตัวอักษรของเนื้อความ(monkeypatch):
+    """กลุ่มควบคุม: ตัด 2000 ตัวต้องตัดที่ 'เนื้อความ' ไม่ใช่ตัดรวม prefix
+    (ไม่งั้นข้อความยาวจะโดนกินท้ายหายไป 5 ตัวอักษรเงียบๆ)"""
+    tts = _tts_module(monkeypatch)
+    sent = _patch_client(monkeypatch, tts, _FakeResponse(b"x" * 20_000))
+
+    body = "ก" * 2500
+    tts._generate_one(body, "Aoede")
+
+    assert sent["contents"] == "Say: " + "ก" * 2000
+    assert len(sent["contents"]) == 2005
+
+
+def test_content_เป็น_None_ต้องโยน_error_ที่อ่านรู้เรื่อง(monkeypatch):
+    """เจอจริงตอน probe: candidates[0].content เป็น None → เดิมจะพังเป็น
+    AttributeError: 'NoneType' object has no attribute 'parts' ซึ่งอ่านไม่ออกว่าเกิดอะไร"""
+    tts = _tts_module(monkeypatch)
+    _patch_client(monkeypatch, tts, _FakeResponse(None, content_none=True))
+
+    with pytest.raises(RuntimeError, match="ไม่มีเสียง"):
+        tts._generate_one("สวัสดีค่ะ", "Aoede")
+
+
+def test_เสียงว่างเปล่า_0_ไบต์_ต้องโยน_error_ด้วย(monkeypatch):
+    """โมเดลสาย native-audio เคยคืน 0 ไบต์โดยไม่ error มาแล้ว — ห้ามปล่อยผ่านเป็น WAV เปล่า"""
+    tts = _tts_module(monkeypatch)
+    _patch_client(monkeypatch, tts, _FakeResponse(b""))
+
+    with pytest.raises(RuntimeError, match="ไม่มีเสียง"):
+        tts._generate_one("สวัสดีค่ะ", "Aoede")
