@@ -1010,6 +1010,12 @@
       height:100%; border-radius:2px; background:#6366f1; transition:width .5s;
     }
     #enh-token-text { white-space:nowrap; min-width:100px; text-align:right; }
+    /* desktop: sidebar เป็น md:relative w-64 (16rem) = กินที่ในโฟลว์จริง
+       → บาร์ต้องเริ่มหลังมัน ไม่งั้น z-index 8998 จะพาดทับการ์ดผู้ใช้ล่างซ้าย
+       มือถือ (<768px) sidebar เป็น fixed + translate ออกนอกจอ = ไม่กินที่ จึงคง left:0 */
+    @media (min-width: 768px) {
+      #enh-token-bar { left: 16rem; }
+    }
   `;
   document.head.appendChild(Object.assign(document.createElement("style"), { textContent: tokenCSS }));
 
