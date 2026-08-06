@@ -444,6 +444,9 @@ LOG_FILE=server.log
 - ⚠️ **รับ body ต้องมีเพดานก่อนอ่าน** — ใช้ `utils/http_limits.py`
   (`read_capped()` / `json_body_capped()`) ห้าม `await file.read()` / `await request.json()` ดิบ
   เพราะจะกิน RAM เต็มก้อนก่อนถูกปฏิเสธ (`ai-backend-1` มี `mem_limit: 2g` เป็นด่านสุดท้าย)
+  - 🟡 **กฎนี้ยังบังคับใช้ไม่ครบ** — วัด 2026-08-06: 27 เส้นที่อ่าน body มีเพดานแค่ 9
+    (รายชื่อ 18 เส้นที่ยังดิบ รวม `/api/chat` อยู่ที่หัวข้อ "🟡 B. เพดาน body")
+    **เขียน endpoint ใหม่ให้ทำตามกฎนี้เสมอ อย่าลอกจากเส้นเก่าที่ยังไม่ได้แก้**
 - ⚠️ **เขียน `skills_db.json` ต้องผ่าน `save_skill()`/`cleanup_junk_skills()`** ซึ่งถือ `_db_lock`
   และเขียนแบบ atomic — dream cycle (APScheduler) กับเส้นแชทเขียนไฟล์เดียวกันคนละ thread
 - Each feature area → own router file in `routers/`, registered in `server.py`
@@ -820,9 +823,31 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 - เทส `tests/test_accept_proposal_safety.py` +2 (เคสล้ม + **กลุ่มควบคุมเคสปกติ** —
   ถ้าไม่มีตัวหลัง การตั้ง `db_updated=False` ตายตัวก็ผ่านเทสแรกได้)
 
-**✅ B. เพดาน body ครบทุกเส้นแล้ว** (ปิด 2026-08-06 · ข้อ 3 เดิม)
-`routers/skills.py` → `read_capped()` ที่ `/api/upload` + `json_body_capped()` ที่
-`/skills/discover/accept` · `routers/memory.py` → 3 จุดที่เคยเป็น `request.json()` ดิบ
+**🟡 B. เพดาน body — ปิดไป 9 เส้น ยังเหลือ 18** (ข้อ 3 เดิม · แก้คำอ้างเกินจริง 2026-08-06)
+
+> 🔴 **บรรทัดนี้เคยเขียนว่า "ครบทุกเส้นแล้ว" ซึ่งเท็จ** — PR #31 ปิดแค่ `skills.py` +
+> `memory.py` แล้วสรุปเหมาเอาเองว่าครบ · วัดใหม่ด้วยการไล่ทุก `@router.post/put/patch`
+> ที่อ่าน body: **27 เส้น มีเพดาน 9 ยังดิบ 18** (2026-08-06)
+> **บทเรียน: "ปิดงานแล้ว" ต้องมาจากการนับ ไม่ใช่จากความรู้สึกว่าแก้ครบ**
+
+**มีเพดานแล้ว (9):** `documents.py` ทั้ง 4 เส้น (`upload`/`search`/`ocr`/`summarize`) ·
+`memory.py` 3 เส้น (`teach/{a}`/`cleanup`/`{assistant}`) · `skills.py` 2 เส้น
+(`discover/accept`/`upload`)
+
+**ยังอ่านดิบ ไม่มีเพดาน (18)** — เรียงตามความเสี่ยง:
+
+| เส้น | ทำไมต้องสนใจ |
+|---|---|
+| `POST /api/chat` (`chat.py:104`) | **เส้นที่โดนหนักที่สุดในระบบ** รับ `image_b64` ได้ด้วย |
+| `POST /api/regenerate` (`chat.py:687`) | เส้นเดียวกับ chat |
+| `POST /api/agent` (`agent.py:48`) | รัน tool จริง |
+| `POST /api/tts` · `/api/tts/stream` (`system.py:288,303`) | รับข้อความยาวได้ไม่จำกัด |
+| `POST /api/fs/write` (`sandbox.py:70`) | เขียนไฟล์ |
+| `/api/sandbox/python` · `/api/fs/{list,read,search}` | sandbox อีก 4 เส้นที่เหลือ |
+| `/api/auth/login` · `/api/feedback` · `/api/dream` · `/api/share` · `/api/pin/{id}` · `PATCH /api/sessions/{a}/{s}` · `/api/skills/extract` · `/api/admin/unlock` | body เล็กแต่ยังไม่มีด่าน |
+
+วัดซ้ำได้ด้วยการไล่ `@router.(post|put|patch)` แล้วดูว่าตัวถัดไปเป็น `await request.json()`
+/`await x.read()` (ดิบ) หรือ `json_body_capped()`/`read_capped()` (มีเพดาน)
 - ⚠️ **10 MB ไม่ใช่ตัวเลขใหม่ จึงไม่ต้องรอ user เคาะ** — `CLAUDE.md` ประกาศ
   "ขนาดสูงสุด 10 MB" ไว้แล้ว และ `routers/documents.py` บังคับใช้ค่าเดียวกันอยู่แล้ว
   งานนี้คือ**บังคับใช้ให้ครบ** ไม่ใช่ตั้งนโยบายใหม่ → ไม่มีไฟล์ที่ "เคยอัปได้" กลายเป็น 413
@@ -881,11 +906,12 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
      patch ได้ตัวเดียว "เขียวโดยวัดผิดไฟล์" (`test_skill_entry_gate.py` เคยต้อง patch ทั้งคู่)
 3. **multipart ใหญ่ยังเขียนลงดิสก์คอนเทนเนอร์ระหว่าง parse** — starlette spool ที่ >1 MB
    `read_capped()` ปิดฝั่ง RAM ได้แล้ว ฝั่งดิสก์ต้องกันที่ proxy/middleware (คนละ lever)
-   - ✅ **ปิดแล้ว 2026-08-06 (ข้อ B)** — `/api/upload` ใช้ `read_capped()` · `memory.py`
+   - 🟡 **ปิดไปบางส่วน 2026-08-06 (ข้อ B)** — `/api/upload` ใช้ `read_capped()` · `memory.py`
      3 จุด + `/skills/discover/accept` ใช้ `json_body_capped()` ที่ 10 MB
      **ที่เคยเขียนว่า "ต้องให้ user เลือกเพดานก่อน" นั้นคลาด** — 10 MB ประกาศไว้ใน
      doc นี้เองแล้ว (บรรทัด ~460) และ `documents.py` บังคับใช้อยู่ก่อนแล้ว
-     ดูรายละเอียดที่หัวข้อ "✅ B. เพดาน body ครบทุกเส้นแล้ว" ด้านบน
+     ⚠️ **แต่ยังเหลืออีก 18 เส้นที่อ่าน body ดิบ** รวม `/api/chat` — ดูตารางที่หัวข้อ
+     "🟡 B. เพดาน body" ด้านบน · **ฝั่งดิสก์ (multipart spool) ยังไม่ได้แตะเลย**
 7. ✅ **ปิดแล้ว 2026-08-06 (ข้อ A)** — คืน `db_updated` + `warning` เพิ่มจาก `ok`
    ตามรูปแบบที่ `skills_extract` ใช้อยู่แล้วในไฟล์เดียวกัน (ไม่ใช่ contract ใหม่
    จึงไม่ต้องรอ user เคาะอย่างที่เคยเขียนไว้) · ดูหัวข้อ "✅ A." ด้านบน
