@@ -134,17 +134,25 @@ def clear_session(assistant: str, session_id: str):
     ค้างทุกครั้งที่ลบ session ต้องไล่เก็บมือ · `tests/test_clear_session_cascade.py` คุมไว้แล้ว)
     """
     conn = _get_conn()
-    for table in ("messages", "session_names", "skill_shadow"):
+    for table in ("messages", "session_names", "skill_shadow", "share_links"):
         try:
             conn.execute(
                 f"DELETE FROM {table} WHERE assistant = ? AND session_id = ?",
                 (assistant, session_id),
             )
         except sqlite3.OperationalError:
-            # DB เก่าที่ยังไม่เคยเขียน shadow เลย = ไม่มีตารางนี้ — ห้ามทำให้การลบ session พัง
+            # DB เก่าที่ยังไม่เคยเขียน shadow/share เลย = ไม่มีตารางนี้ — ห้ามทำให้การลบ session พัง
             logger.debug("clear_session: ข้ามตาราง %s (ยังไม่มีในฐานข้อมูล)", table)
     conn.commit()
     conn.close()
+
+    # share link มี "สองที่เก็บ" — ลบแต่ DB ไม่พอ เพราะ get_shared_data() อ่าน in-memory
+    # ก่อนแล้วเติม cache กลับจาก DB ⇒ token ที่ถูก cache ไว้จะยังตอบ ok:true ต่อไป
+    from core.state import share_store_delete_by_session
+
+    dropped = share_store_delete_by_session(assistant, session_id)
+    if dropped:
+        logger.info("clear_session: ถอด share token ออกจาก store %d รายการ", len(dropped))
 
 
 def pin_message(db_id: int, pinned: bool = True):
