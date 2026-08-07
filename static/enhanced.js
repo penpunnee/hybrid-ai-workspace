@@ -137,7 +137,7 @@
     /* Login Modal */
     #login-overlay {
       position: fixed; inset: 0; z-index: 99999;
-      background: rgba(85,184,248,0.97); backdrop-filter: blur(20px);
+      background: rgba(2,6,23,0.97); backdrop-filter: blur(20px);
       display: none; align-items: center; justify-content: center;
       pointer-events: none;
     }
@@ -149,7 +149,7 @@
       box-shadow: 0 32px 80px rgba(0,0,0,0.6);
     }
     #login-box h2 { color: #e2e8f0; font-size: 20px; margin: 0 0 6px; font-weight: 600; }
-    #login-box p { color: #55b8f8; font-size: 13px; margin: 0 0 24px; }
+    #login-box p { color: #64748b; font-size: 13px; margin: 0 0 24px; }
     #login-input {
       width: 100%; padding: 12px 16px; background: rgba(30,41,59,0.8);
       border: 1px solid rgba(225,141,205,0.3); border-radius: 12px;
@@ -159,8 +159,8 @@
     }
     #login-input:focus { border-color: rgba(225,141,205,0.7); }
     #login-btn {
-      width: 100%; padding: 12px; background: linear-gradient(135deg,#e18dcd,#e18dcd);
-      border: none; border-radius: 12px; color: #fff; font-size: 14px;
+      width: 100%; padding: 12px; background: linear-gradient(135deg,#c371b0,#e18dcd);
+      border: none; border-radius: 12px; color: #060810; font-size: 14px;
       font-weight: 600; cursor: pointer; font-family: inherit; transition: opacity .2s;
     }
     #login-btn:hover { opacity: 0.9; }
@@ -205,13 +205,13 @@
     }
     .enh-result:hover { background: rgba(170,160,251,0.15);
       border-color: rgba(170,160,251,0.4); }
-    .enh-result-meta { font-size: 11px; color: #55b8f8; margin-bottom: 3px; }
+    .enh-result-meta { font-size: 11px; color: #64748b; margin-bottom: 3px; }
     .enh-result-text { font-size: 12px; color: #cbd5e1; line-height: 1.5; }
     .enh-result-text mark { background: rgba(170,160,251,0.4);
       color: #aaa0fb; border-radius: 3px; padding: 0 2px; }
     .enh-empty { font-size: 12px; color: #475569; text-align: center; padding: 24px; }
     .enh-close { margin-left: auto; background: none; border: none;
-      color: #55b8f8; cursor: pointer; font-size: 18px; line-height: 1; }
+      color: #64748b; cursor: pointer; font-size: 18px; line-height: 1; }
     .enh-close:hover { color: #e2e8f0; }
     .enh-hint { font-size: 11px; color: #475569; }
 
@@ -1289,24 +1289,24 @@
         <span style="font-size:14px">🏠</span>
         <span style="font-weight:700;font-size:13px;flex:1">Home</span>
         <span id="hw-ts" style="font-size:10px;color:#475569">—</span>
-        <button id="hw-x" style="background:none;border:none;color:#55b8f8;cursor:pointer;font-size:13px;padding:0 0 0 8px">✕</button>
+        <button id="hw-x" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:13px;padding:0 0 0 8px">✕</button>
       </div>
       <hr class="hw-sep">
 
       <div class="hw-h">📊 System</div>
-      <div id="hw-sys" style="color:#55b8f8;font-size:11px">กำลังโหลด…</div>
+      <div id="hw-sys" style="color:#64748b;font-size:11px">กำลังโหลด…</div>
       <hr class="hw-sep">
 
       <div class="hw-h">💾 NAS Storage</div>
-      <div id="hw-disk" style="color:#55b8f8;font-size:11px">กำลังโหลด…</div>
+      <div id="hw-disk" style="color:#64748b;font-size:11px">กำลังโหลด…</div>
       <hr class="hw-sep">
 
       <div class="hw-h">🐳 Docker</div>
-      <div id="hw-docker" style="color:#55b8f8;font-size:11px">กำลังโหลด…</div>
+      <div id="hw-docker" style="color:#64748b;font-size:11px">กำลังโหลด…</div>
       <hr class="hw-sep">
 
       <div class="hw-h">🖥️ PC</div>
-      <div id="hw-pc" style="color:#55b8f8;font-size:11px">กำลัง ping…</div>
+      <div id="hw-pc" style="color:#64748b;font-size:11px">กำลัง ping…</div>
       <hr class="hw-sep">
 
       <div style="display:flex;gap:6px">
@@ -1533,7 +1533,7 @@
     .enh-fab-active {
       background: linear-gradient(135deg, rgba(170,160,251,0.4), rgba(248,113,113,0.3)) !important;
       border-color: rgba(170,160,251,0.6) !important;
-      color: #aaa0fb !important;
+      color: #f5d0fe !important;
       box-shadow: 0 0 12px rgba(170,160,251,0.4);
     }
     .enh-agent-timeline {
@@ -1739,7 +1739,7 @@
     .enh-badge.refl-ok{ background: rgba(170,160,251,0.10); border-color: rgba(170,160,251,0.30); color: #aaa0fb; }
     .enh-badge.refl-warn{ background: rgba(224,159,69,0.10); border-color: rgba(224,159,69,0.35); color: #e09f45; }
     .enh-badge.al     { background: rgba(170,160,251,0.10); border-color: rgba(170,160,251,0.30); color: #aaa0fb; }
-    .enh-badge.timing { background: rgba(85,184,248,0.10); border-color: rgba(85,184,248,0.30); color: #94a3b8; font-family: ui-monospace, monospace; }
+    .enh-badge.timing { background: rgba(100,116,139,0.10); border-color: rgba(100,116,139,0.30); color: #94a3b8; font-family: ui-monospace, monospace; }
 
     .enh-citations {
       margin-top: 12px; padding: 10px 12px;
@@ -1753,7 +1753,7 @@
     .enh-cite-source a { color: #55b8f8; text-decoration: none; }
     .enh-cite-source a:hover { text-decoration: underline; }
     .enh-cite-snippet { color: #94a3b8; margin-top: 2px; font-size: 11px; line-height: 1.4; }
-    .enh-cite-score { color: #55b8f8; font-family: ui-monospace, monospace; font-size: 10px; }
+    .enh-cite-score { color: #64748b; font-family: ui-monospace, monospace; font-size: 10px; }
 
     .enh-reflection {
       margin-top: 10px; padding: 10px 12px; border-radius: 12px;
@@ -2174,9 +2174,9 @@
         padding: 8px 10px; border-radius: 8px; cursor: pointer; color: #cbd5e1;
         display: flex; gap: 8px; align-items: center; white-space: nowrap;
       }
-      .enh-slash-item .cmd { color: #55b8f8; font-size: 11px; margin-left: auto; }
+      .enh-slash-item .cmd { color: #64748b; font-size: 11px; margin-left: auto; }
       .enh-slash-item.sel, .enh-slash-item:hover {
-        background: rgba(170,160,251,0.22); color: #fff;
+        background: rgba(170,160,251,0.22); color: #e2e8f0;
       }
     `;
     document.head.appendChild(Object.assign(document.createElement("style"), { textContent: css }));
@@ -2275,7 +2275,7 @@
       .enh-file-chip {
         display:flex; align-items:center; gap:4px;
         background:rgba(170,160,251,0.2); border:1px solid rgba(170,160,251,0.4);
-        border-radius:8px; padding:3px 8px; font-size:12px; color:#aaa0fb;
+        border-radius:8px; padding:3px 8px; font-size:12px; color:#c7d2fe;
       }
       .enh-file-chip button {
         background:none; border:none; color:#94a3b8; cursor:pointer;
@@ -2300,21 +2300,21 @@
       }
       .enh-doc-item .enh-doc-info { flex:1; min-width:0; }
       .enh-doc-item .enh-doc-name {
-        font-size:13px; color:#aaa0fb; white-space:nowrap;
+        font-size:13px; color:#c7d2fe; white-space:nowrap;
         overflow:hidden; text-overflow:ellipsis;
       }
-      .enh-doc-item .enh-doc-meta { font-size:11px; color:#55b8f8; margin-top:2px; }
+      .enh-doc-item .enh-doc-meta { font-size:11px; color:#64748b; margin-top:2px; }
       .enh-doc-item button {
-        background:none; border:none; color:#55b8f8; cursor:pointer; font-size:14px;
+        background:none; border:none; color:#64748b; cursor:pointer; font-size:14px;
         flex-shrink:0; padding:2px;
       }
       .enh-doc-item button:hover { color:#f87171; }
       #enh-doc-upload-zone {
         border:2px dashed rgba(170,160,251,0.4); border-radius:10px;
-        padding:20px; text-align:center; color:#55b8f8; font-size:13px;
+        padding:20px; text-align:center; color:#64748b; font-size:13px;
         cursor:pointer; margin-bottom:12px; transition:border-color .2s;
       }
-      #enh-doc-upload-zone:hover { border-color:rgba(170,160,251,0.8); color:#aaa0fb; }
+      #enh-doc-upload-zone:hover { border-color:rgba(170,160,251,0.8); color:#c7d2fe; }
       #enh-doc-list { flex:1; overflow-y:auto; }
       #enh-doc-empty { color:#475569; font-size:13px; text-align:center; padding:20px 0; }
 
@@ -2329,7 +2329,7 @@
       #enh-fab-file:hover { background:rgba(170,160,251,0.25); color:#e2e8f0; }
       #enh-fab-file .enh-file-count {
         position:absolute; top:-4px; right:-4px;
-        background:#aaa0fb; color:#fff; border-radius:50%;
+        background:#aaa0fb; color:#060810; border-radius:50%;
         width:16px; height:16px; font-size:10px;
         display:none; align-items:center; justify-content:center;
       }
@@ -2359,7 +2359,7 @@
         fileBar.appendChild(chip);
       });
       const hint = document.createElement("span");
-      hint.style.cssText = "font-size:11px;color:#55b8f8";
+      hint.style.cssText = "font-size:11px;color:#64748b";
       hint.textContent = "จะใช้เป็น context ในข้อความถัดไป";
       fileBar.appendChild(hint);
     }
@@ -2522,7 +2522,7 @@
     // เพิ่มปุ่ม 📷 ใน panel header
     const camBtn = document.createElement("button");
     camBtn.textContent = "📷 ถ่ายรูป";
-    camBtn.style.cssText = "margin-bottom:8px;background:rgba(170,160,251,0.2);border:1px solid rgba(170,160,251,0.3);color:#aaa0fb;border-radius:8px;padding:4px 12px;font-size:12px;cursor:pointer;";
+    camBtn.style.cssText = "margin-bottom:8px;background:rgba(170,160,251,0.2);border:1px solid rgba(170,160,251,0.3);color:#c7d2fe;border-radius:8px;padding:4px 12px;font-size:12px;cursor:pointer;";
     camBtn.onclick = () => { camInput.value = ""; camInput.click(); };
     panel.insertBefore(camBtn, document.getElementById("enh-doc-upload-zone"));
   })();
@@ -2601,7 +2601,7 @@
       }
       .enh-edit-actions { display:flex; gap:6px; margin-top:6px; justify-content:flex-end; }
       .enh-edit-send {
-        background:#aaa0fb; color:#fff; border:none; border-radius:8px;
+        background:#aaa0fb; color:#060810; border:none; border-radius:8px;
         padding:4px 16px; font-size:13px; cursor:pointer;
       }
       .enh-edit-cancel {
@@ -2884,14 +2884,14 @@
         .enh-cb-dd-item:hover { background:#1C1C28; }
         .enh-cb-dd-item+.enh-cb-dd-item { border-top:1px solid #1A1A24; }
         .enh-cb-dd-lbl { font-size:13px; font-weight:500; color:#D0D0E0; }
-        .enh-cb-dd-sub { font-size:11px; color:#aaa0fb; margin-top:2px; font-family:'Noto Sans Thai',sans-serif; }
+        .enh-cb-dd-sub { font-size:11px; color:#5A5A78; margin-top:2px; font-family:'Noto Sans Thai',sans-serif; }
         .enh-cb-dd-chk { position:absolute; right:14px; top:50%; transform:translateY(-50%); font-size:12px; }
         .enh-cb-dd-skills { padding:10px; display:flex; flex-direction:column; gap:5px; width:240px; }
         .enh-cb-sk {
           display:flex; align-items:center; gap:8px; padding:7px 11px; border-radius:9px; cursor:pointer;
-          border:1px solid #1A1A26; background:#111118; color:#aaa0fb; font-size:12px; transition:all .13s;
+          border:1px solid #1A1A26; background:#111118; color:#7A7A98; font-size:12px; transition:all .13s;
         }
-        .enh-cb-sk:hover { background:#161622; color:#aaa0fb; border-color:#222232; }
+        .enh-cb-sk:hover { background:#161622; color:#A0A0C0; border-color:#222232; }
         .enh-cb-sk.on { background:color-mix(in srgb,var(--c) 9%,#111118); border-color:color-mix(in srgb,var(--c) 30%,transparent); color:var(--c); }
         .enh-cb-sk .enh-cb-sk-dot { width:5px; height:5px; border-radius:50%; background:#8fbf65; flex-shrink:0; opacity:.85; }
         .enh-cb-sk-check { margin-left:auto; font-size:11px; }
@@ -2906,15 +2906,15 @@
           line-height:1.7; resize:none; font-family:'Noto Sans Thai','DM Sans',sans-serif;
           min-height:52px; max-height:160px; padding:12px 18px 6px; caret-color:var(--c);
         }
-        .enh-cb-box textarea::placeholder { color:#aaa0fb; }
+        .enh-cb-box textarea::placeholder { color:#3A3A52; }
         .enh-cb-box textarea:disabled { opacity:.5; }
         .enh-cb-hr { height:1px; background:linear-gradient(90deg,transparent,#1C1C28 20%,#1C1C28 80%,transparent); margin:0 14px; }
         .enh-cb-bot { display:flex; align-items:center; gap:4px; padding:9px 11px 12px; }
         .enh-cb-ib {
           width:32px; height:32px; border-radius:9px; border:none; background:transparent; cursor:pointer;
-          transition:all .14s; display:flex; align-items:center; justify-content:center; color:#aaa0fb; font-size:14px;
+          transition:all .14s; display:flex; align-items:center; justify-content:center; color:#4A4A68; font-size:14px;
         }
-        .enh-cb-ib:hover { background:#17172A; color:#aaa0fb; }
+        .enh-cb-ib:hover { background:#17172A; color:#9090B0; }
         .enh-cb-ib.active { color:var(--c); background:color-mix(in srgb,var(--c) 12%,transparent); }
         .enh-cb-sep { width:1px; height:18px; background:#1A1A26; margin:0 4px; }
         .enh-cb-sp { flex:1; }
@@ -2954,7 +2954,7 @@
             <div class="enh-cb-sp"></div>
             <div class="enh-cb-status">
               <span class="enh-cb-sdot" style="background:#8fbf65;box-shadow:0 0 6px #5ECFA888"></span>
-              <span style="color:#8fbf65">${activeModel ? _esc(activeModel) : "Local"}</span>
+              <span style="color:#5A7A6A">${activeModel ? _esc(activeModel) : "Local"}</span>
               <span style="color:#1E1E2E">·</span>
               <span class="enh-cb-mode2"></span>
             </div>
@@ -3015,7 +3015,7 @@
       }
 
       function syncSkillsUI() {
-        skillsPill.style.color = _cbSkills.length ? curMode().color : "#aaa0fb";
+        skillsPill.style.color = _cbSkills.length ? curMode().color : "#3E3E5A";
         skillsLbl.textContent = _cbSkills.length ? `Skills · ${_cbSkills.length}` : "Skills";
         chipsEl.innerHTML = "";
         SKILLS.filter((s) => _cbSkills.includes(s.id)).forEach((s) => {
@@ -3167,7 +3167,7 @@
         });
         dd.appendChild(inner);
         const foot = document.createElement("div");
-        foot.style.cssText = "padding:8px 15px;border-top:1px solid #181824;font-size:10px;color:#aaa0fb;";
+        foot.style.cssText = "padding:8px 15px;border-top:1px solid #181824;font-size:10px;color:#46466A;";
         foot.textContent = "● = มีผลต่อคำตอบจริง · อื่น ๆ เป็นตัวเลือกแสดงผล";
         dd.appendChild(foot);
       }
