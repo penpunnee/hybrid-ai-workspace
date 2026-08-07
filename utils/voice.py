@@ -90,11 +90,21 @@ def build_live_config(slug: str, system_instruction: str, resume_handle: str | N
         output_audio_transcription=types.AudioTranscriptionConfig(),
         input_audio_transcription=types.AudioTranscriptionConfig(),
         # hands-free: เปิด automatic VAD → Gemini จับเริ่ม/หยุดพูดจากเสียงเอง (พูดได้เลยไม่ต้องกด)
-        # กัน echo ที่ฝั่ง client (half-duplex: ปิดไมค์ตอน AI พูด) แทนการพึ่ง manual VAD.
-        # NO_INTERRUPTION = เผื่อ echo หลุดขอบ tail ก็ไม่ตัดคำตอบ AI กลางคัน (belt-and-suspenders)
+        #
+        # 🔄 เปลี่ยน NO_INTERRUPTION → START_OF_ACTIVITY_INTERRUPTS (user เคาะ 2026-08-07)
+        # เดิม NO_INTERRUPTION เป็น "เข็มขัดเส้นที่สอง" คู่กับ half-duplex gate ฝั่ง client
+        # ผลข้างเคียงที่ไม่ได้ตั้งใจ: **ถอด gate ฝั่ง client แล้วก็ยังพูดแทรกไม่ได้**
+        # เพราะโมเดลถูกสั่งไว้ว่าห้ามตัดคำตอบตัวเอง — ไมค์ส่งเสียงไปถึงจริงแต่ไม่มีผล
+        # (พิมพ์แทรกได้เพราะไปคนละเส้น: `send_client_content(turn_complete=True)`
+        #  = เริ่ม turn ใหม่ ไม่ผ่าน VAD)
+        #
+        # ⚠️ ยังปลอดภัยโดยโครงสร้าง: **ค่าเริ่มต้นฝั่ง client ยังปิดไมค์ตอน AI พูด**
+        # (`micShouldSend()` → `gate.micOpen()`) ⇒ ไม่มีเสียงไปถึงโมเดลให้ใช้ตัด turn เลย
+        # ความเสี่ยง echo ตัดคำตอบตัวเองจะเกิดเฉพาะกับคนที่เปิดสวิตช์ "พูดแทรกได้"
+        # ซึ่งเป็นเจตนาของสวิตช์นั้นพอดี · ถ้าเจอปัญหาให้ปิดสวิตช์ ไม่ต้องแก้ไฟล์นี้
         realtime_input_config=types.RealtimeInputConfig(
             automatic_activity_detection=types.AutomaticActivityDetection(),
-            activity_handling=types.ActivityHandling.NO_INTERRUPTION,
+            activity_handling=types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
         ),
         # ⚠️ คอมเมนต์เดิมเขียนว่า compression ทำให้ "session ไม่มีลิมิตอายุ → ไม่มี go_away
         # จาก duration" — **ไม่จริง** log prod เจอ go_away 2 ครั้ง (2026-08-03 18:14:14
