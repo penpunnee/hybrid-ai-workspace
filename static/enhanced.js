@@ -149,7 +149,7 @@
       box-shadow: 0 32px 80px rgba(0,0,0,0.6);
     }
     #login-box h2 { color: #e2e8f0; font-size: 20px; margin: 0 0 6px; font-weight: 600; }
-    #login-box p { color: #64748b; font-size: 13px; margin: 0 0 24px; }
+    #login-box p { color: #808999; font-size: 13px; margin: 0 0 24px; }
     #login-input {
       width: 100%; padding: 12px 16px; background: rgba(30,41,59,0.8);
       border: 1px solid rgba(225,141,205,0.3); border-radius: 12px;
@@ -205,15 +205,15 @@
     }
     .enh-result:hover { background: rgba(170,160,251,0.15);
       border-color: #aaa0fb; }
-    .enh-result-meta { font-size: 11px; color: #64748b; margin-bottom: 3px; }
+    .enh-result-meta { font-size: 11px; color: #808999; margin-bottom: 3px; }
     .enh-result-text { font-size: 12px; color: #cbd5e1; line-height: 1.5; }
     .enh-result-text mark { background: rgba(170,160,251,0.4);
       color: #aaa0fb; border-radius: 3px; padding: 0 2px; }
-    .enh-empty { font-size: 12px; color: #475569; text-align: center; padding: 24px; }
+    .enh-empty { font-size: 12px; color: #808999; text-align: center; padding: 24px; }
     .enh-close { margin-left: auto; background: none; border: none;
-      color: #64748b; cursor: pointer; font-size: 18px; line-height: 1; }
+      color: #808999; cursor: pointer; font-size: 18px; line-height: 1; }
     .enh-close:hover { color: #e2e8f0; }
-    .enh-hint { font-size: 11px; color: #475569; }
+    .enh-hint { font-size: 11px; color: #808999; }
 
     /* Floating toolbar */
     #enh-toolbar {
@@ -1006,7 +1006,7 @@
       background:rgba(10,16,30,0.85); backdrop-filter:blur(8px);
       border-top:1px solid rgba(71,85,105,0.2);
       padding:3px 16px; display:flex; align-items:center; gap:12px;
-      font-size:11px; color:#475569;
+      font-size:11px; color:#808999;
     }
     #enh-token-track {
       flex:1; height:3px; background:rgba(71,85,105,0.2); border-radius:2px; overflow:hidden;
@@ -1288,25 +1288,25 @@
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
         <span style="font-size:14px">🏠</span>
         <span style="font-weight:700;font-size:13px;flex:1">Home</span>
-        <span id="hw-ts" style="font-size:10px;color:#475569">—</span>
-        <button id="hw-x" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:13px;padding:0 0 0 8px">✕</button>
+        <span id="hw-ts" style="font-size:10px;color:#808999">—</span>
+        <button id="hw-x" style="background:none;border:none;color:#808999;cursor:pointer;font-size:13px;padding:0 0 0 8px">✕</button>
       </div>
       <hr class="hw-sep">
 
       <div class="hw-h">📊 System</div>
-      <div id="hw-sys" style="color:#64748b;font-size:11px">กำลังโหลด…</div>
+      <div id="hw-sys" style="color:#808999;font-size:11px">กำลังโหลด…</div>
       <hr class="hw-sep">
 
       <div class="hw-h">💾 NAS Storage</div>
-      <div id="hw-disk" style="color:#64748b;font-size:11px">กำลังโหลด…</div>
+      <div id="hw-disk" style="color:#808999;font-size:11px">กำลังโหลด…</div>
       <hr class="hw-sep">
 
       <div class="hw-h">🐳 Docker</div>
-      <div id="hw-docker" style="color:#64748b;font-size:11px">กำลังโหลด…</div>
+      <div id="hw-docker" style="color:#808999;font-size:11px">กำลังโหลด…</div>
       <hr class="hw-sep">
 
       <div class="hw-h">🖥️ PC</div>
-      <div id="hw-pc" style="color:#64748b;font-size:11px">กำลัง ping…</div>
+      <div id="hw-pc" style="color:#808999;font-size:11px">กำลัง ping…</div>
       <hr class="hw-sep">
 
       <div style="display:flex;gap:6px">
@@ -1403,8 +1403,8 @@
         el.innerHTML = cs.length ? cs.map(c =>
           `<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
             <span>${c.running?"🟢":"🔴"}</span>
-            <span style="flex:1;color:${c.running?"#e2e8f0":"#475569"}">${c.name}</span>
-            <span style="color:#334155;font-size:10px">${c.status}</span>
+            <span style="flex:1;color:${c.running?"#e2e8f0":"#808999"}">${c.name}</span>
+            <span style="color:#808999;font-size:10px">${c.status}</span>
           </div>`).join("") : "ไม่พบ container";
       }
     } catch(e) { const el=document.getElementById("hw-docker"); if(el) el.textContent="❌ " + e.message; }
@@ -1753,7 +1753,7 @@
     .enh-cite-source a { color: #55b8f8; text-decoration: none; }
     .enh-cite-source a:hover { text-decoration: underline; }
     .enh-cite-snippet { color: #94a3b8; margin-top: 2px; font-size: 11px; line-height: 1.4; }
-    .enh-cite-score { color: #64748b; font-family: ui-monospace, monospace; font-size: 10px; }
+    .enh-cite-score { color: #808999; font-family: ui-monospace, monospace; font-size: 10px; }
 
     .enh-reflection {
       margin-top: 10px; padding: 10px 12px; border-radius: 12px;
@@ -2174,7 +2174,7 @@
         padding: 8px 10px; border-radius: 8px; cursor: pointer; color: #cbd5e1;
         display: flex; gap: 8px; align-items: center; white-space: nowrap;
       }
-      .enh-slash-item .cmd { color: #64748b; font-size: 11px; margin-left: auto; }
+      .enh-slash-item .cmd { color: #808999; font-size: 11px; margin-left: auto; }
       .enh-slash-item.sel, .enh-slash-item:hover {
         background: rgba(170,160,251,0.22); color: #e2e8f0;
       }
@@ -2303,20 +2303,20 @@
         font-size:13px; color:#c7d2fe; white-space:nowrap;
         overflow:hidden; text-overflow:ellipsis;
       }
-      .enh-doc-item .enh-doc-meta { font-size:11px; color:#64748b; margin-top:2px; }
+      .enh-doc-item .enh-doc-meta { font-size:11px; color:#808999; margin-top:2px; }
       .enh-doc-item button {
-        background:none; border:none; color:#64748b; cursor:pointer; font-size:14px;
+        background:none; border:none; color:#808999; cursor:pointer; font-size:14px;
         flex-shrink:0; padding:2px;
       }
       .enh-doc-item button:hover { color:#f87171; }
       #enh-doc-upload-zone {
         border:2px dashed rgba(170,160,251,0.4); border-radius:10px;
-        padding:20px; text-align:center; color:#64748b; font-size:13px;
+        padding:20px; text-align:center; color:#808999; font-size:13px;
         cursor:pointer; margin-bottom:12px; transition:border-color .2s;
       }
       #enh-doc-upload-zone:hover { border-color:#aaa0fb; color:#c7d2fe; }
       #enh-doc-list { flex:1; overflow-y:auto; }
-      #enh-doc-empty { color:#475569; font-size:13px; text-align:center; padding:20px 0; }
+      #enh-doc-empty { color:#808999; font-size:13px; text-align:center; padding:20px 0; }
 
       #enh-fab-file {
         position:fixed; bottom:14px; left:14px;
@@ -2359,7 +2359,7 @@
         fileBar.appendChild(chip);
       });
       const hint = document.createElement("span");
-      hint.style.cssText = "font-size:11px;color:#64748b";
+      hint.style.cssText = "font-size:11px;color:#808999";
       hint.textContent = "จะใช้เป็น context ในข้อความถัดไป";
       fileBar.appendChild(hint);
     }
@@ -2884,12 +2884,12 @@
         .enh-cb-dd-item:hover { background:#1C1C28; }
         .enh-cb-dd-item+.enh-cb-dd-item { border-top:1px solid #1A1A24; }
         .enh-cb-dd-lbl { font-size:13px; font-weight:500; color:#D0D0E0; }
-        .enh-cb-dd-sub { font-size:11px; color:#5A5A78; margin-top:2px; font-family:'Noto Sans Thai',sans-serif; }
+        .enh-cb-dd-sub { font-size:11px; color:#808999; margin-top:2px; font-family:'Noto Sans Thai',sans-serif; }
         .enh-cb-dd-chk { position:absolute; right:14px; top:50%; transform:translateY(-50%); font-size:12px; }
         .enh-cb-dd-skills { padding:10px; display:flex; flex-direction:column; gap:5px; width:240px; }
         .enh-cb-sk {
           display:flex; align-items:center; gap:8px; padding:7px 11px; border-radius:9px; cursor:pointer;
-          border:1px solid #1A1A26; background:#111118; color:#7A7A98; font-size:12px; transition:all .13s;
+          border:1px solid #1A1A26; background:#111118; color:#808999; font-size:12px; transition:all .13s;
         }
         .enh-cb-sk:hover { background:#161622; color:#A0A0C0; border-color:#222232; }
         .enh-cb-sk.on { background:color-mix(in srgb,var(--c) 9%,#111118); border-color:color-mix(in srgb,var(--c) 30%,transparent); color:var(--c); }
@@ -2906,13 +2906,13 @@
           line-height:1.7; resize:none; font-family:'Noto Sans Thai','DM Sans',sans-serif;
           min-height:52px; max-height:160px; padding:12px 18px 6px; caret-color:var(--c);
         }
-        .enh-cb-box textarea::placeholder { color:#3A3A52; }
+        .enh-cb-box textarea::placeholder { color:#808999; }
         .enh-cb-box textarea:disabled { opacity:.5; }
         .enh-cb-hr { height:1px; background:linear-gradient(90deg,transparent,#1C1C28 20%,#1C1C28 80%,transparent); margin:0 14px; }
         .enh-cb-bot { display:flex; align-items:center; gap:4px; padding:9px 11px 12px; }
         .enh-cb-ib {
           width:32px; height:32px; border-radius:9px; border:none; background:transparent; cursor:pointer;
-          transition:all .14s; display:flex; align-items:center; justify-content:center; color:#4A4A68; font-size:14px;
+          transition:all .14s; display:flex; align-items:center; justify-content:center; color:#808999; font-size:14px;
         }
         .enh-cb-ib:hover { background:#17172A; color:#9090B0; }
         .enh-cb-ib.active { color:var(--c); background:color-mix(in srgb,var(--c) 12%,transparent); }
@@ -2928,8 +2928,8 @@
         .enh-cb-send.on:hover { filter:brightness(1.18); transform:scale(1.06); }
         .enh-cb-send.on:active { transform:scale(.95); }
         .enh-cb-send:disabled { cursor:not-allowed; }
-        .enh-cb-hint { text-align:center; padding:8px 0 2px; font-size:10px; color:#2A2A40; line-height:1.7; font-family:'JetBrains Mono',monospace; letter-spacing:.03em; }
-        .enh-cb-hint em { color:color-mix(in srgb,var(--c) 45%,#2A2A40); font-style:normal; }
+        .enh-cb-hint { text-align:center; padding:8px 0 2px; font-size:10px; color:#808999; line-height:1.7; font-family:'JetBrains Mono',monospace; letter-spacing:.03em; }
+        .enh-cb-hint em { color:color-mix(in srgb,var(--c) 45%,#808999); font-style:normal; }
       `;
       document.head.appendChild(Object.assign(document.createElement("style"), { textContent: css }));
 
@@ -2954,8 +2954,8 @@
             <div class="enh-cb-sp"></div>
             <div class="enh-cb-status">
               <span class="enh-cb-sdot" style="background:#8fbf65;box-shadow:0 0 6px #5ECFA888"></span>
-              <span style="color:#5A7A6A">${activeModel ? _esc(activeModel) : "Local"}</span>
-              <span style="color:#1E1E2E">·</span>
+              <span style="color:#808999">${activeModel ? _esc(activeModel) : "Local"}</span>
+              <span style="color:#808999">·</span>
               <span class="enh-cb-mode2"></span>
             </div>
           </div>
@@ -3015,7 +3015,7 @@
       }
 
       function syncSkillsUI() {
-        skillsPill.style.color = _cbSkills.length ? curMode().color : "#3E3E5A";
+        skillsPill.style.color = _cbSkills.length ? curMode().color : "#808999";
         skillsLbl.textContent = _cbSkills.length ? `Skills · ${_cbSkills.length}` : "Skills";
         chipsEl.innerHTML = "";
         SKILLS.filter((s) => _cbSkills.includes(s.id)).forEach((s) => {
@@ -3167,7 +3167,7 @@
         });
         dd.appendChild(inner);
         const foot = document.createElement("div");
-        foot.style.cssText = "padding:8px 15px;border-top:1px solid #181824;font-size:10px;color:#46466A;";
+        foot.style.cssText = "padding:8px 15px;border-top:1px solid #181824;font-size:10px;color:#808999;";
         foot.textContent = "● = มีผลต่อคำตอบจริง · อื่น ๆ เป็นตัวเลือกแสดงผล";
         dd.appendChild(foot);
       }
