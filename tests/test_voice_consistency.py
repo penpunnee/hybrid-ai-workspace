@@ -154,6 +154,29 @@ class TestLiveConfigPinsRendering:
         assert cfg.temperature is not None, "ไม่ตั้ง temperature → ความแปรปรวนของน้ำเสียงสูงสุด"
         assert 0.0 <= cfg.temperature <= 1.0
 
+    def test_speaking_can_be_interrupted(self, cfg):
+        """พูดแทรกตอนโมเดลกำลังพูดต้องตัด turn ได้จริง (user เคาะ 2026-08-07)
+
+        เดิมตั้ง `NO_INTERRUPTION` ไว้เป็น "เข็มขัดเส้นที่สอง" คู่กับ half-duplex gate
+        ฝั่ง client — ผลคือถอด gate ฝั่ง client แล้วก็ยังแทรกไม่ได้ เพราะ server
+        สั่งโมเดลไว้ว่าห้ามตัดคำตอบตัวเอง (พิมพ์แทรกได้เพราะไปคนละเส้น:
+        `send_client_content(turn_complete=True)` = เริ่ม turn ใหม่ ไม่ผ่าน VAD)
+
+        ⚠️ ยังปลอดภัยเพราะ **ค่าเริ่มต้นฝั่ง client ยังปิดไมค์ตอน AI พูด**
+        (`micShouldSend` → `gate.micOpen`) ⇒ ไม่มีเสียงไปถึงโมเดลให้ใช้ตัด turn เลย
+        ความเสี่ยง echo จะเกิดเฉพาะกับคนที่เปิดสวิตช์ "พูดแทรกได้" ซึ่งคือเจตนา
+        """
+        from google.genai import types
+
+        handling = cfg.realtime_input_config.activity_handling
+        assert handling == types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS, (
+            f"activity_handling = {handling} → พูดแทรกไม่ได้"
+        )
+
+    def test_automatic_vad_still_on(self, cfg):
+        """กลุ่มควบคุม: ถ้า VAD ถูกปิดไปด้วย hands-free จะพังทั้งโหมด ไม่ใช่แค่แทรกไม่ได้"""
+        assert cfg.realtime_input_config.automatic_activity_detection is not None
+
     def test_affective_dialog_is_explicitly_off(self, cfg):
         """ปล่อย None = ยอมให้ค่า default ของโมเดลเปลี่ยนทีหลังโดยเราไม่รู้"""
         assert cfg.enable_affective_dialog is False
