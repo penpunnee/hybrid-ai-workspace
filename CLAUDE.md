@@ -832,10 +832,49 @@ attribute เดิม**: `![" onerror=alert(1) x="](/a)` → `<img … alt="" o
 ไต่บรรพบุรุษหาพื้นทึบ + ผสม alpha ทุกชั้น (ถ้าไม่เจอให้ผสมกับพื้นแอป) →
 ถ้าพื้นเป็น gradient ให้เทียบกับ **stop ที่แย่ที่สุด** ไม่ใช่ค่าเฉลี่ย
 
+### 🎙️ เซสชัน 2026-08-07/08 (ต่อ) — งานเสียง PR #58–#62
+
+**เริ่มจาก user ถามเรื่องสี แล้วลามมาถึงระบบเสียง** — ทุกข้อ merged + deployed + verified
+
+| PR | เรื่อง | ต้นเหตุ |
+|---|---|---|
+| #58 | WebSocket ไม่ retry ตอนปิดแบบไม่มี error | `onclose` ไม่เรียก `scheduleRetry()` (CodeRabbit จับ) |
+| #60 | ล้างเสียงทันทีเมื่อถูกแทรก + สวิตช์พูดแทรก | **client ทิ้ง event `interrupted` ที่ backend ส่งมา** |
+| #61 | เปิดให้พูดแทรกได้จริง | `activity_handling=NO_INTERRUPTION` = เข็มขัดเส้นที่สอง |
+| #62 | กู้เสียงเมื่อสายโทรเข้า | iOS state `'interrupted'` · เช็คแค่ `suspended` |
+
+#### ✅ ปิดคำถามที่ค้างมาตั้งแต่ 06-19 — **Safari หัก echo ของ AudioWorklet ได้จริง**
+user ทดสอบ **iPhone 16 Pro Max ลำโพงเครื่อง (ไม่ใช้หูฟัง)** → **พูดแทรกได้ โมเดลไม่สับ turn ตัวเอง**
+⇒ คอมเมนต์เดิม *"AEC ไม่ครอบ Web Audio โดยเฉพาะบนมือถือ"* **ผิดสำหรับ Safari** (ถูกสำหรับ Chrome
+ซึ่งหักเฉพาะเสียงจาก WebRTC peer) ⇒ **ตัด WebRTC loopback ออกจากแผนได้** — ทางที่แพงที่สุด
+· ยังคง half-duplex gate เป็นค่าเริ่มต้นเพราะ Chrome ยังหักให้ไม่ได้
+· รายละเอียด + แหล่งอ้างอิง: vault `wiki/concepts/browser-echo-cancellation-ios.md`
+
+#### 🔑 รูปแบบที่ซ้ำอีก: **"มีเข็มขัดสองเส้น ถอดเส้นเดียวไม่พอ"**
+ถอด gate ฝั่ง client (#60) แล้วยังพูดแทรกไม่ได้ เพราะ server ยังสั่ง `NO_INTERRUPTION`
+· **อาการชี้ตัวเอง: "พูดไม่ได้ พิมพ์ได้"** — พิมพ์ไปคนละเส้น (`send_client_content` = เริ่ม turn ใหม่
+ไม่ผ่าน VAD) ถ้าเป็นปัญหา echo หรือไมค์ อาการจะพังทั้งสองทาง
+
+#### 🔧 บทเรียนเครื่องมือรอบนี้
+- **`git checkout <file>` ลบงานที่ยังไม่ commit** — พลาด 2 ครั้งตอน restore หลัง mutation
+  ⇒ mutation test ให้ backup ด้วย `cp` แล้ว restore ด้วย `cp` **ห้ามใช้ git**
+- **`gh pr checks` ตอบสถานะของ "การตรวจ" ไม่ใช่ของ "PR"** — ใช้เช็คว่า PR ปิดหรือยังไม่ได้
+  ⇒ ต้อง `gh pr view --json state` · เคยรอ CodeRabbit ไปเปล่าๆ ~55 นาทีเพราะ PR merged ไปแล้ว
+- **CodeRabbit ไม่รีวิว PR ที่ปิดแล้ว** ("Pull request is closed") · และ **ไม่ auto-review
+  PR ที่ base ไม่ใช่ default branch** (ต้องสั่ง `@coderabbitai review` เป็นคอมเมนต์)
+- **vault: push GitHub ไม่ทำให้ไฟล์ไปถึง NAS** — `/var/services/homes/pawin/vault/homepawin`
+  **ไม่ใช่ git repo** · `/api/vault/sync` ตอบ `ok:true synced:0` = เขียวหลอก
+  ⇒ ส่งไฟล์ด้วย `ssh nas-cf "cat > <path>" < <ไฟล์>` ก่อน (scp/rsync ใช้ไม่ได้ผ่าน tunnel)
+  แล้วยืนยันด้วย `synced` > 0
+
 #### ⏭️ ค้าง
+0. 🎙️ **รอผลทดสอบ #62** — สายโทรเข้าแล้วเสียงกลับมาเองไหม (ของเดิมพังตั้งแต่ครั้งที่สอง)
+   · ถ้ายังพัง **ต้องแยกให้ออกว่าขาเล่นหรือขาไมค์ที่ตาย** — ถ้าไมค์ตายอย่างเดียวอาจเป็น
+   mic track ถูก iOS ปิดถาวร ซึ่ง `resume()` ช่วยไม่ได้ ต้อง `getUserMedia` ใหม่
+   = ต้องมีปุ่มให้แตะจริงๆ (user gesture)
 1. 🧪 **เทส TTS live** — รอโควตารีเซ็ต
    `docker exec -e TTS_LIVE_TEST=1 ai-backend-1 python -m pytest tests/test_tts_model.py`
-2. 🔬 **เสียงข้ามนาทีที่ 10** — ต้อง user คุยยาวเอง
+2. 🔬 **เสียงข้ามนาทีที่ 10** — ต้อง user คุยยาวเอง · **อาจปิดไปแล้วด้วย #58** (WS retry)
 3. ⚪ ตาราง `feedback` 0 แถว (payload ตรง schema — น่าจะยังไม่มีใครกด)
 4. 🎨 **`enhanced.js` map ตามตระกูลเฉด ยังไม่ได้ไล่ความหมายรายจุด**
    (ยกเว้น login modal ที่ทำเจาะจงเป็นชมพู) — ส่วนใหญ่เป็น fallback ที่ถูก gate แล้ว
