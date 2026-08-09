@@ -214,8 +214,8 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     from google.genai import types
     from assistants.config import ASSISTANTS, voice_system_prompt
     from utils.voice import (
-        AudioLevelMeter, build_live_config, live_server_content_events,
-        live_tool_call_queries, resolve_voice,
+        AUTO_CONTINUE_TEXT, AudioLevelMeter, build_live_config, live_server_content_events,
+        live_tool_call_queries, resolve_voice, should_auto_continue,
     )
     from utils.history import save_message as _save_msg
 
@@ -247,6 +247,10 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     stop = asyncio.Event()
     resume_handle: str | None = None
     announced = False
+    # เล่าต่ออัตโนมัติ — ปิดเป็นค่าเริ่มต้น เปิดจาก client เท่านั้น (ดู utils/voice.py)
+    # อยู่ **นอก**ลูป reconnect เพื่อให้สวิตช์ไม่ถูกรีเซ็ตทุกครั้งที่โดน go_away
+    auto_continue = False
+    auto_count = 0
     # ⚠️ สร้าง **นอก**ลูป reconnect โดยตั้งใจ — ถ้าอยู่ในลูป นาฬิกาจะรีเซ็ตทุกนาทีที่ 10
     # ซึ่งพอดีกับจุดที่เราสงสัยว่าเสียงเบาลง = มองไม่เห็นสิ่งที่ตั้งใจจะดู
     meter = AudioLevelMeter()
@@ -293,6 +297,12 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                         ),
                                         turn_complete=True,
                                     )
+                            elif t == "autocontinue":
+                                # สวิตช์ "เล่าต่ออัตโนมัติ" จากหน้าเสียง
+                                nonlocal auto_continue, auto_count
+                                auto_continue = bool(msg.get("on"))
+                                auto_count = 0          # เปิด/ปิดใหม่ = เริ่มนับใหม่เสมอ
+                                logger.info(f"[Voice WS] เล่าต่ออัตโนมัติ = {auto_continue}")
                             elif t == "close":
                                 stop.set()
                     except WebSocketDisconnect:
@@ -352,7 +362,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                         await session.send_tool_response(function_responses=replies)
 
                 async def send_loop():
-                    nonlocal resume_handle
+                    nonlocal resume_handle, auto_count
                     import base64
                     user_transcript = ""
                     ai_transcript = ""
@@ -403,12 +413,28 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                         await websocket.send_json(evt)
                                     if getattr(sc, "turn_complete", False):
                                         await websocket.send_json({"type": "done"})
-                                        if user_transcript.strip():
+                                        # พี่ปอยพูดใน turn นี้ไหม — ตัดสินก่อนล้าง buffer
+                                        spoke = bool(user_transcript.strip())
+                                        if spoke:
                                             _save_msg(asst_name, "user", user_transcript.strip(), "gemini_live", session_id)
                                             user_transcript = ""
+                                            auto_count = 0      # user สั่งเอง = เริ่มนับใหม่
                                         if ai_transcript.strip():
                                             _save_msg(asst_name, "assistant", ai_transcript.strip(), "gemini_live", session_id)
                                             ai_transcript = ""
+                                        # เล่าต่อให้เองแทนที่จะให้ user ต้องพูดว่า "ต่อ" ทุก ~40 วินาที
+                                        # (โมเดลจบ turn ถี่มากและชอบถามกลับ — วัดได้ 62% ของ turn
+                                        #  ทั้งที่ prompt สั่งห้ามไว้ตรงๆ ดู utils/voice.py)
+                                        if should_auto_continue(auto_continue, spoke, auto_count):
+                                            auto_count += 1
+                                            logger.info(f"[Voice WS] เล่าต่ออัตโนมัติ ครั้งที่ {auto_count}")
+                                            await session.send_client_content(
+                                                turns=types.Content(
+                                                    role="user",
+                                                    parts=[types.Part(text=AUTO_CONTINUE_TEXT)],
+                                                ),
+                                                turn_complete=True,
+                                            )
                             # generator ของ turn นี้จบ → วนกลับไปรับ turn ถัดไป
                     except Exception as e:
                         logger.error(f"[Voice WS] send_loop {type(e).__name__}: {e}")
