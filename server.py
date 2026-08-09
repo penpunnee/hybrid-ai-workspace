@@ -214,7 +214,8 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     from google.genai import types
     from assistants.config import ASSISTANTS, voice_system_prompt
     from utils.voice import (
-        AudioLevelMeter, build_live_config, live_server_content_events, resolve_voice,
+        AudioLevelMeter, build_live_config, live_server_content_events,
+        live_tool_call_queries, resolve_voice,
     )
     from utils.history import save_message as _save_msg
 
@@ -300,6 +301,56 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                         logger.error(f"[Voice WS] recv_loop {type(e).__name__}: {e}")
                         stop.set()
 
+                async def answer_tool_calls(session, response):
+                    """โมเดลขอค้นเว็บ → ค้นจริงแล้วส่งผลกลับ
+
+                    ⚠️ **ต้องตอบให้ครบทุก function_call ที่มันส่งมา** ไม่ใช่เฉพาะตัวที่
+                    เราค้นให้ — ตัวที่ไม่ตอบจะทำให้โมเดลรอไปเรื่อยๆ = เงียบค้างกลางบทสนทนา
+                    ซึ่งผู้ใช้แยกไม่ออกจาก "เสียงหาย" (`live_tool_call_queries` คัดทิ้ง
+                    ชื่อฟังก์ชันที่เราไม่ได้ประกาศ + ตัวที่ไม่มี query โดยตั้งใจ)
+
+                    ค้นแบบ blocking → ต้องผ่าน `to_thread` ไม่งั้น event loop ค้างทั้งเส้น
+                    รวมถึงการส่งเสียงที่ค้างอยู่ในคิว
+                    """
+                    from utils.voice import WEB_SEARCH_TOOL_NAME
+
+                    wanted = {cid: q for cid, _n, q in live_tool_call_queries(response)}
+                    replies = []
+                    for fc in (getattr(response.tool_call, "function_calls", None) or []):
+                        cid = getattr(fc, "id", "") or ""
+                        name = getattr(fc, "name", "") or WEB_SEARCH_TOOL_NAME
+                        query = wanted.get(cid)
+                        if query is None:
+                            logger.warning(f"[Voice WS] tool call ที่ไม่รับ: {name} → ตอบว่าใช้ไม่ได้")
+                            payload = {"error": "เรียกเครื่องมือนี้ไม่ได้ ให้บอกผู้ใช้ตรงๆ ว่าค้นไม่ได้"}
+                        else:
+                            try:
+                                from utils.llm import gemini_web_search
+                                ctx, srcs = await asyncio.to_thread(gemini_web_search, query)
+                                if not ctx:
+                                    from utils.websearch import web_search_with_results
+                                    ctx, srcs = await asyncio.to_thread(
+                                        web_search_with_results, query
+                                    )
+                                logger.info(
+                                    f"[Voice WS] ค้น {query!r} → {len(ctx)} ตัวอักษร "
+                                    f"{len(srcs or [])} แหล่ง"
+                                )
+                                payload = (
+                                    {"result": ctx}
+                                    if ctx
+                                    else {"error": "หาไม่เจอ ให้บอกผู้ใช้ตรงๆ ว่าหาไม่เจอ ห้ามแต่ง"}
+                                )
+                            except Exception as se:
+                                # ค้นล้มต้องไม่ทำให้ session ตาย — ปล่อยให้โมเดลพูดต่อได้
+                                logger.error(f"[Voice WS] ค้นล้ม {type(se).__name__}: {se}")
+                                payload = {"error": "ค้นไม่สำเร็จ ให้บอกผู้ใช้ตรงๆ ห้ามแต่งคำตอบ"}
+                        replies.append(
+                            types.FunctionResponse(id=cid, name=name, response=payload)
+                        )
+                    if replies:
+                        await session.send_tool_response(function_responses=replies)
+
                 async def send_loop():
                     nonlocal resume_handle
                     import base64
@@ -326,6 +377,11 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                     )
                                     regen.set()
                                     break
+
+                                # โมเดลขอค้นเว็บ — เราค้นให้แล้วส่งผลกลับ
+                                # (grounding ตรงๆ บนสาย Live ถูกกั้น tier → ดู utils/voice.py)
+                                if getattr(response, "tool_call", None) is not None:
+                                    await answer_tool_calls(session, response)
 
                                 if response.data:
                                     # วัด **ก่อน**ส่งออก — ทุกอย่างหลังจุดนี้ (worklet,

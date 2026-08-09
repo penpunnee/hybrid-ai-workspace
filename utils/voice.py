@@ -62,6 +62,87 @@ GEMINI_LIVE_MODEL_DEFAULT = "gemini-3.1-flash-live-preview"
 GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", GEMINI_LIVE_MODEL_DEFAULT)
 
 
+# ── ค้นเว็บในโหมดเสียง (เพิ่ม 2026-08-09) ──────────────────────────────────────
+# เดิม `build_live_config()` **ไม่ส่ง `tools` เลยแม้แต่ตัวเดียว** → โหมดเสียงค้นอะไร
+# ไม่ได้ ทั้งที่ฝั่งพิมพ์มี Google Search grounding เต็ม (`routers/chat.py:400`)
+# ความต่างนี้ไม่มี error/log อะไรบอกเลยสักตัว
+#
+# อาการที่ user เจอ (transcript จริง 2026-08-09 12:33–13:09): ขอให้เล่านิยายตามต้นฉบับ
+# → ได้ของแต่งล้วน และแต่ง**คนละเรื่องกัน 3 เรื่องภายใน 95 วินาที** · สั่ง "เรียบเรียงใหม่"
+# กี่ครั้งก็ได้ของแต่งชุดใหม่ทุกครั้ง เพราะไม่มีต้นฉบับให้เรียบเรียงตั้งแต่แรก
+# ⇒ **แก้ที่ prompt อย่างเดียวไม่มีทางพอ ต้องมีเครื่องมือให้มันใช้**
+#
+# 🔴 **ทางตรง `Tool(google_search=...)` ใช้ไม่ได้บนคีย์นี้** — วัดจริง 3/3 ครั้ง:
+# `connect()` ตายด้วย APIError 1011 "exceeded your current quota" ตั้งแต่ยังไม่ทันพูด
+# ขณะที่กลุ่มควบคุม (ไม่ส่ง tools) และ `function_declarations` ผ่านทั้งคู่ในนาทีเดียวกัน
+# ⇒ ไม่ใช่โควตาหมด แต่คือ grounding บนสาย Live ถูกกั้นที่ tier ที่คีย์นี้ไม่มี
+# **ถ้าใส่ทางตรงไป = เสียงดับทั้งระบบ ไม่ใช่แค่ค้นไม่ได้** (มี ratchet ที่
+# `tests/test_voice_grounding.py::test_does_not_use_the_tier_gated_google_search_tool`)
+#
+# ทางที่ใช้ได้: ประกาศเป็นฟังก์ชัน แล้ว **ฝั่งเราค้นเอง** ด้วย `utils.llm.gemini_web_search`
+# (ตัวเดียวกับที่ฝั่งพิมพ์ใช้ · วัดแล้วได้ 7 แหล่งบนคีย์นี้ผ่าน gemini-2.5-flash)
+# แล้วส่งผลกลับด้วย `session.send_tool_response()` — ดู `server.py` send_loop
+WEB_SEARCH_TOOL_NAME = "search_web"
+
+
+def web_search_tool():
+    """ประกาศฟังก์ชันค้นเว็บให้โมเดล live เรียก
+
+    ชื่อพารามิเตอร์ `query` ถูกผูกไว้กับ `live_tool_call_queries()` — เปลี่ยนที่เดียว
+    ไม่พอ ต้องเปลี่ยนคู่กัน (มีเทสจับ)
+    """
+    from google.genai import types
+
+    return types.Tool(
+        function_declarations=[
+            types.FunctionDeclaration(
+                name=WEB_SEARCH_TOOL_NAME,
+                description=(
+                    "ค้นข้อมูลจริงจากเว็บ ใช้เมื่อผู้ใช้ถามถึงสิ่งที่ต้องอ้างของจริง เช่น "
+                    "เนื้อเรื่องนิยาย/อนิเมะ/ซีรีส์ ข่าว ขั้นตอนวิธีทำ สเปก ราคา งานวิจัย "
+                    "หรือข้อมูลที่เปลี่ยนตามเวลา — ห้ามเดาคำตอบเองถ้าเรียกเครื่องมือนี้ได้"
+                ),
+                parameters=types.Schema(
+                    type="OBJECT",
+                    properties={
+                        "query": types.Schema(
+                            type="STRING",
+                            description="คำค้น เขียนให้ตรงประเด็นที่สุด ใส่ชื่อเฉพาะให้ครบ",
+                        )
+                    },
+                    required=["query"],
+                ),
+            )
+        ]
+    )
+
+
+def live_tool_call_queries(response) -> list[tuple[str, str, str]]:
+    """ดึง `(call_id, ชื่อฟังก์ชัน, คำค้น)` ออกจาก `LiveServerMessage` — pure → เทสได้
+
+    เหตุผลที่แยกออกมาเหมือน `live_control_signals`: ฝังไว้ใน `send_loop` แล้วจะ
+    ตรวจได้แค่ด้วยการ grep ซอร์ส ซึ่งพิสูจน์ไม่ได้ว่าค่าที่ไหลออกไปคืออะไร
+
+    ทิ้ง 2 กรณีโดยตั้งใจ:
+      · ชื่อฟังก์ชันที่เราไม่ได้ประกาศ — โมเดลกุชื่อขึ้นมาเรียกได้ ต้องไม่ทำตาม
+      · ไม่มี `query` — ค้นสตริงว่างคือเผาโควตาแล้วได้ผลหลอกกลับมา
+    ทั้งสองกรณียังต้องตอบกลับด้วย (ไม่งั้นโมเดลค้าง) — คนเรียกเป็นคนจัดการ
+    """
+    tc = getattr(response, "tool_call", None) if response is not None else None
+    if tc is None:
+        return []
+    out: list[tuple[str, str, str]] = []
+    for fc in (getattr(tc, "function_calls", None) or []):
+        name = getattr(fc, "name", "") or ""
+        if name != WEB_SEARCH_TOOL_NAME:
+            continue
+        query = ((getattr(fc, "args", None) or {}).get("query") or "").strip()
+        if not query:
+            continue
+        out.append((getattr(fc, "id", "") or "", name, query))
+    return out
+
+
 def build_live_config(slug: str, system_instruction: str, resume_handle: str | None):
     """ประกอบ `LiveConnectConfig` ทั้งก้อน — ที่เดียวที่รู้ว่าเสียงถูกตั้งยังไง
 
@@ -75,6 +156,7 @@ def build_live_config(slug: str, system_instruction: str, resume_handle: str | N
 
     return types.LiveConnectConfig(
         response_modalities=["AUDIO"],
+        tools=[web_search_tool()],
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=resolve_voice(slug))
