@@ -479,6 +479,165 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
             pass
 
 
+# ── ขวัญอ่านหนังสือ (2026-08-11) — ป้อนท่อนจาก BookStore ให้ Gemini Live อ่าน ────
+@app.websocket("/ws/reader")
+async def reader_websocket(websocket: WebSocket, source: str = "", token: str = ""):
+    """สตรีมเสียงขวัญอ่านหนังสือทีละท่อน · พัก/อ่านต่อได้ · ที่คั่นหน้าอยู่ใน SQLite
+
+    โปรโตคอล:
+      client → {type:"pause"} | {type:"resume"} | {type:"close"}
+      server → {type:"connected", source, pos, percent}
+             | {type:"audio", data:b64} | {type:"block", pos, percent}
+             | {type:"done_book"} | {type:"error", message}
+
+    การไหล: อ่าน bookmark → next_block → ป้อนให้โมเดลอ่าน → turn จบ → เลื่อน bookmark
+    → ป้อนท่อนถัดไป วนจนจบเล่มหรือ client สั่งพัก/ปิด
+
+    🔑 **ที่คั่นหน้าเลื่อนเมื่อโมเดลอ่านท่อนจบเท่านั้น** — เลื่อนตอนป้อนแล้วหลุดกลางท่อน
+    = ท่อนนั้นหายถาวร · เลื่อนหลังจบ = อย่างแย่แค่ฟังซ้ำท่อนเดียว
+    """
+    if not websocket_authorized(websocket, token):
+        await websocket.close(code=1008)
+        return
+
+    import asyncio
+    import base64
+
+    from google import genai
+    from google.genai import types
+    from routers.reader import _books, _marks   # ที่เก็บชุดเดียวกับ /api/reader
+    from utils.reader import next_block
+    from utils.voice import (
+        READER_FEED_PREFIX, build_reader_config, live_control_signals, next_read_action,
+    )
+
+    await websocket.accept()
+    if not GEMINI_API_KEY:
+        await websocket.send_json({"type": "error", "message": "GEMINI_API_KEY not set"})
+        return
+
+    text = _books.text(source)
+    if text is None:
+        await websocket.send_json({"type": "error", "message": f"ยังไม่มีเล่มนี้: {source}"})
+        await websocket.close()
+        return
+
+    client = genai.Client(api_key=GEMINI_API_KEY, http_options={"api_version": "v1alpha"})
+
+    stop = asyncio.Event()
+    paused = asyncio.Event()        # set = พักอยู่
+    resume_handle: str | None = None
+    announced = False
+
+    def _progress(pos: int) -> dict:
+        return {"pos": pos, "percent": 100 if pos >= len(text) else int(pos * 100 / len(text))}
+
+    try:
+        while not stop.is_set():
+            regen = asyncio.Event()
+            async with client.aio.live.connect(
+                model=GEMINI_LIVE_MODEL, config=build_reader_config(resume_handle)
+            ) as session:
+                if not announced:
+                    await websocket.send_json(
+                        {"type": "connected", "source": source, **_progress(_marks.get(source))}
+                    )
+                    announced = True
+
+                async def recv_loop():
+                    """รับคำสั่งพัก/อ่านต่อ/ปิดจาก client"""
+                    try:
+                        while not stop.is_set() and not regen.is_set():
+                            try:
+                                msg = await asyncio.wait_for(websocket.receive_json(), timeout=1.0)
+                            except asyncio.TimeoutError:
+                                continue
+                            t = msg.get("type", "")
+                            if t == "pause":
+                                paused.set()
+                            elif t == "resume":
+                                paused.clear()
+                            elif t == "close":
+                                stop.set()
+                    except WebSocketDisconnect:
+                        stop.set()
+                    except Exception as e:
+                        logger.error(f"[Reader WS] recv_loop {type(e).__name__}: {e}")
+                        stop.set()
+
+                async def feed_loop():
+                    """ป้อนท่อน → สตรีมเสียง → เลื่อนที่คั่น → ท่อนถัดไป"""
+                    nonlocal resume_handle
+                    try:
+                        while not stop.is_set() and not regen.is_set():
+                            pos = _marks.get(source)
+                            block, new_pos = next_block(text, pos)
+                            act = next_read_action(
+                                paused=paused.is_set(), block=block, at_end=(not block and new_pos >= len(text))
+                            )
+                            if act == "wait":
+                                await asyncio.sleep(0.3)
+                                continue
+                            if act == "finish":
+                                await websocket.send_json({"type": "done_book", **_progress(pos)})
+                                stop.set()
+                                return
+                            if act == "skip":
+                                _marks.set(source, new_pos)
+                                continue
+
+                            await session.send_client_content(
+                                turns=types.Content(
+                                    role="user", parts=[types.Part(text=READER_FEED_PREFIX + block)]
+                                ),
+                                turn_complete=True,
+                            )
+                            turn_done = False
+                            async for r in session.receive():
+                                if stop.is_set():
+                                    return
+                                got_go_away, _secs, new_handle = live_control_signals(r)
+                                if new_handle:
+                                    resume_handle = new_handle
+                                if got_go_away:
+                                    # ยังไม่เลื่อนที่คั่น — reconnect แล้วอ่านท่อนนี้ใหม่ทั้งท่อน
+                                    logger.info("[Reader WS] go_away → ต่อ session ใหม่")
+                                    regen.set()
+                                    return
+                                if r.data:
+                                    await websocket.send_json(
+                                        {"type": "audio", "data": base64.b64encode(r.data).decode()}
+                                    )
+                                sc = getattr(r, "server_content", None)
+                                if sc and getattr(sc, "turn_complete", False):
+                                    turn_done = True
+                                    break
+                            if turn_done:
+                                # โมเดลอ่านท่อนนี้จบจริง → ค่อยเลื่อนที่คั่นหน้า
+                                _marks.set(source, new_pos)
+                                await websocket.send_json({"type": "block", **_progress(new_pos)})
+                    except Exception as e:
+                        logger.error(f"[Reader WS] feed_loop {type(e).__name__}: {e}")
+                        stop.set()
+                        try:
+                            await websocket.send_json({"type": "error", "message": str(e)})
+                        except Exception:
+                            pass
+
+                await asyncio.gather(recv_loop(), feed_loop())
+
+            if regen.is_set() and not stop.is_set():
+                continue
+            break
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error(f"[Reader WS] {type(e).__name__}: {e}")
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except Exception:
+            pass
+
 
 if __name__ == "__main__":
     import uvicorn
