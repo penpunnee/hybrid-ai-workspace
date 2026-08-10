@@ -14,6 +14,7 @@ from utils.documents import (
 )
 from utils.summarize import summarize_document
 from utils.ocr import ocr_pdf, ocr_image
+from utils.thaipdf import fix_thai_pua
 from starlette.concurrency import run_in_threadpool
 
 from utils.http_limits import read_capped, json_body_capped, MAX_BODY_BYTES
@@ -39,7 +40,12 @@ def _decode_bytes(raw: bytes, filename: str) -> str:
             import pypdf
             reader = pypdf.PdfReader(io.BytesIO(raw))
             pages = [p.extract_text() or "" for p in reader.pages]
-            text = "\n\n".join(pages).strip()
+            # 🔴 ฟอนต์ไทยฝั่ง Windows (Angsana/Cordia) เก็บสระบน/วรรณยุกต์ไว้ในโซน
+            # Private Use Area — ไฟล์จริงของ user มี **6.6% ของตัวอักษรทั้งเล่ม**
+            # ('องครักษ' = องครักษ์) ถ้าไม่ซ่อมตรงนี้ ทั้ง TTS และการค้นด้วย
+            # ChromaDB จะเจอข้อความที่วรรณยุกต์หายหมด: ค้นยังไงก็ไม่เจอ อ่านก็ผิดทุกคำ
+            # ดู utils/thaipdf.py (ตารางยืนยันจากบริบทจริงทีละ codepoint)
+            text = fix_thai_pua("\n\n".join(pages)).strip()
             # ถ้าไม่มีข้อความ (PDF scan) → ใช้ OCR
             if not text:
                 logger.info(f"[Documents] PDF scan detected → OCR: {filename}")

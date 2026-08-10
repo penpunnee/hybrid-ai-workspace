@@ -109,3 +109,68 @@ class BookmarkStore:
     def clear(self, source: str) -> None:
         with self._conn() as c:
             c.execute("DELETE FROM reading_progress WHERE source = ?", (source,))
+
+
+class BookStore:
+    """เก็บ "ตัวเล่ม" (ข้อความต้นฉบับต่อเนื่อง) ไว้อ่านเรียง
+
+    **แยกจาก ChromaDB โดยตั้งใจ** — ที่นั่นเก็บ chunk 500 ตัวอักษร + overlap 50
+    เพื่อ *ค้นความหมาย* · เอามาอ่านเรียงกันจะอ่านซ้ำท่อนละ 50 ตัวอักษรทุกท่อน
+    ตัวอ่านต้องการของคนละอย่าง: ข้อความต่อเนื่องที่ index ตรงกับที่คั่นหน้าเป๊ะ
+
+    ⚠️ เก็บข้อความทั้งก้อนใน SQLite — ไฟล์จริงของ user คือ 4.6 ล้านตัวอักษร (~9 MB)
+    ซึ่ง SQLite รับได้สบาย (เพดาน BLOB ปริยาย 1 GB) แต่ **ห้ามเผลอ SELECT ทั้งคอลัมน์
+    ตอนทำ list()** — ดึงแค่ความยาวพอ
+    """
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self._init()
+
+    def _conn(self):
+        return sqlite3.connect(self.db_path, timeout=10)
+
+    def _init(self) -> None:
+        with self._conn() as c:
+            c.execute(
+                """CREATE TABLE IF NOT EXISTS books (
+                       source   TEXT PRIMARY KEY,
+                       text     TEXT NOT NULL,
+                       chars    INTEGER NOT NULL,
+                       added_at REAL    NOT NULL
+                   )"""
+            )
+
+    def put(self, source: str, text: str) -> None:
+        """เก็บ/ทับเล่มเดิม — เก็บข้อความดิบเป๊ะ ไม่ normalize อะไรเลย
+
+        normalize เมื่อไหร่ ตำแหน่งที่คั่นหน้าที่บันทึกไว้ก่อนหน้าจะเพี้ยนทันที
+        """
+        with self._conn() as c:
+            c.execute(
+                """INSERT INTO books (source, text, chars, added_at) VALUES (?, ?, ?, ?)
+                   ON CONFLICT(source) DO UPDATE SET text = excluded.text,
+                                                     chars = excluded.chars,
+                                                     added_at = excluded.added_at""",
+                (source, text, len(text), time.time()),
+            )
+
+    def text(self, source: str) -> str | None:
+        """คืน ``None`` เมื่อไม่มีเล่มนี้ — ต่างจาก ``""`` ที่แปลว่าเล่มว่างจริง
+        ปลายทางต้องบอกผู้ใช้คนละแบบ ("ยังไม่ได้อัปโหลด" vs "แกะข้อความไม่ได้เลย")
+        """
+        with self._conn() as c:
+            row = c.execute("SELECT text FROM books WHERE source = ?", (source,)).fetchone()
+        return row[0] if row else None
+
+    def list(self) -> list[dict]:
+        """รายชื่อเล่ม — **ไม่ดึงคอลัมน์ text** (เล่มละหลายเมกะไบต์)"""
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT source, chars, added_at FROM books ORDER BY added_at DESC"
+            ).fetchall()
+        return [{"source": s, "chars": n, "added_at": t} for s, n, t in rows]
+
+    def delete(self, source: str) -> None:
+        with self._conn() as c:
+            c.execute("DELETE FROM books WHERE source = ?", (source,))

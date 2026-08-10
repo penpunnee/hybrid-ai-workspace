@@ -163,3 +163,55 @@ class TestBookmarkStore:
         store.set("นิยาย.pdf", 900)
         store.clear("นิยาย.pdf")
         assert store.get("นิยาย.pdf") == 0
+
+
+class TestBookStore:
+    """เก็บ "ตัวเล่ม" ไว้อ่านเรียง — แยกจาก ChromaDB โดยตั้งใจ
+
+    ChromaDB เก็บ chunk ที่มี overlap 50 เพื่อ *ค้นความหมาย* — เอามาอ่านเรียงกัน
+    จะอ่านซ้ำท่อนละ 50 ตัวอักษร · ตัวอ่านต้องการ "ข้อความต้นฉบับต่อเนื่อง" คนละอย่างกัน
+    """
+
+    @pytest.fixture()
+    def store(self, tmp_path):
+        from utils.reader import BookStore
+
+        return BookStore(str(tmp_path / "b.db"))
+
+    def test_saves_and_reads_back_exactly(self, store):
+        """ต้องได้ข้อความกลับมาเป๊ะ — normalize อะไรเลยจะทำให้ตำแหน่งที่คั่นเพี้ยน"""
+        store.put("นิยาย.pdf", THAI)
+        assert store.text("นิยาย.pdf") == THAI
+
+    def test_unknown_book_is_none_not_empty_string(self, store):
+        """แยก "ไม่มีเล่มนี้" ออกจาก "เล่มนี้ว่าง" — ปลายทางต้องบอกผู้ใช้คนละแบบ"""
+        assert store.text("ไม่มี.pdf") is None
+
+    def test_replacing_a_book_does_not_leave_the_old_text(self, store):
+        store.put("นิยาย.pdf", "เก่า")
+        store.put("นิยาย.pdf", "ใหม่")
+        assert store.text("นิยาย.pdf") == "ใหม่"
+
+    def test_lists_books_with_their_size(self, store):
+        store.put("ก.pdf", "12345")
+        store.put("ข.pdf", "123")
+        got = {b["source"]: b["chars"] for b in store.list()}
+        assert got == {"ก.pdf": 5, "ข.pdf": 3}
+
+    def test_survives_reopening(self, store, tmp_path):
+        from utils.reader import BookStore
+
+        store.put("นิยาย.pdf", THAI)
+        assert BookStore(str(tmp_path / "b.db")).text("นิยาย.pdf") == THAI
+
+    def test_handles_a_book_far_larger_than_one_block(self, store):
+        """ไฟล์จริงของ user คือ 4.6 ล้านตัวอักษร — ต้องไม่มีเพดานซ่อนอยู่"""
+        big = "ก" * 200_000
+        store.put("ใหญ่.pdf", big)
+        assert len(store.text("ใหญ่.pdf")) == 200_000
+
+    def test_deleting_removes_it_from_the_list(self, store):
+        store.put("นิยาย.pdf", "x")
+        store.delete("นิยาย.pdf")
+        assert store.text("นิยาย.pdf") is None
+        assert store.list() == []

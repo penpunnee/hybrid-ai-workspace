@@ -18,7 +18,7 @@ from core.observability import install_logging, start_request, timing_summary
 from core.scheduler import start_scheduler
 from utils.skills import _load_skills_db
 
-from routers import auth, chat, sessions, memory, skills, dream, vault, tools, system, agent, documents, feedback, sandbox
+from routers import auth, chat, sessions, memory, skills, dream, vault, tools, system, agent, documents, feedback, sandbox, reader
 
 # install logging ก่อน import อื่นๆ ที่ใช้ logger — กัน duplicate handlers
 install_logging()
@@ -95,6 +95,7 @@ app.include_router(tools.router)
 app.include_router(system.router)
 app.include_router(agent.router)
 app.include_router(documents.router)
+app.include_router(reader.router)
 app.include_router(feedback.router)
 app.include_router(sandbox.router)
 
