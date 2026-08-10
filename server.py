@@ -215,8 +215,9 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     from google.genai import types
     from assistants.config import ASSISTANTS, voice_system_prompt
     from utils.voice import (
-        AUTO_CONTINUE_TEXT, AudioLevelMeter, build_live_config, live_server_content_events,
-        live_tool_call_queries, resolve_voice, should_auto_continue,
+        AUTO_CONTINUE_TEXT, SEARCH_LIMIT_REPLY, AudioLevelMeter, build_live_config,
+        live_server_content_events, live_tool_call_queries, resolve_voice,
+        should_auto_continue, should_run_search,
     )
     from utils.history import save_message as _save_msg
 
@@ -252,6 +253,9 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     # อยู่ **นอก**ลูป reconnect เพื่อให้สวิตช์ไม่ถูกรีเซ็ตทุกครั้งที่โดน go_away
     auto_continue = False
     auto_count = 0
+    # นับจำนวนครั้งที่ค้นใน turn ปัจจุบัน — กันโมเดลวนค้นจนไม่ยอมพูด
+    # (เกิดจริง 2026-08-10: ค้น 5 ครั้งใน 53 วิ แล้วไม่ส่งเสียงกลับมาเลย)
+    search_count = 0
     # ⚠️ สร้าง **นอก**ลูป reconnect โดยตั้งใจ — ถ้าอยู่ในลูป นาฬิกาจะรีเซ็ตทุกนาทีที่ 10
     # ซึ่งพอดีกับจุดที่เราสงสัยว่าเสียงเบาลง = มองไม่เห็นสิ่งที่ตั้งใจจะดู
     meter = AudioLevelMeter()
@@ -325,6 +329,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                     """
                     from utils.voice import WEB_SEARCH_TOOL_NAME
 
+                    nonlocal search_count
                     wanted = {cid: q for cid, _n, q in live_tool_call_queries(response)}
                     replies = []
                     for fc in (getattr(response.tool_call, "function_calls", None) or []):
@@ -334,8 +339,17 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                         if query is None:
                             logger.warning(f"[Voice WS] tool call ที่ไม่รับ: {name} → ตอบว่าใช้ไม่ได้")
                             payload = {"error": "เรียกเครื่องมือนี้ไม่ได้ ให้บอกผู้ใช้ตรงๆ ว่าค้นไม่ได้"}
+                        elif not should_run_search(search_count):
+                            # 🔴 ถึงเพดานแล้ว — **ต้องตอบกลับ ไม่ใช่เงียบ** ไม่งั้นโมเดลรอค้าง
+                            # และต้องสั่งให้มันตอบด้วยของที่มี ไม่งั้นมันจะค้นใหม่รอบหน้า
+                            logger.warning(
+                                f"[Voice WS] ค้นครบเพดาน {search_count} ครั้งใน turn นี้ "
+                                f"→ ปฏิเสธ {query!r} แล้วสั่งให้ตอบเลย"
+                            )
+                            payload = {"error": SEARCH_LIMIT_REPLY}
                         else:
                             try:
+                                search_count += 1
                                 from utils.llm import gemini_web_search
                                 ctx, srcs = await asyncio.to_thread(gemini_web_search, query)
                                 if not ctx:
@@ -363,7 +377,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                         await session.send_tool_response(function_responses=replies)
 
                 async def send_loop():
-                    nonlocal resume_handle, auto_count
+                    nonlocal resume_handle, auto_count, search_count
                     import base64
                     user_transcript = ""
                     ai_transcript = ""
@@ -414,6 +428,9 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                         await websocket.send_json(evt)
                                     if getattr(sc, "turn_complete", False):
                                         await websocket.send_json({"type": "done"})
+                                        # เพดานค้นนับต่อ turn — คำถามใหม่เริ่มนับใหม่เสมอ
+                                        # ไม่งั้นคุยยาวๆ จะชนเพดานถาวรแล้วค้นไม่ได้อีกทั้ง session
+                                        search_count = 0
                                         # พี่ปอยพูดใน turn นี้ไหม — ตัดสินก่อนล้าง buffer
                                         spoke = bool(user_transcript.strip())
                                         if spoke:

@@ -222,3 +222,80 @@ class TestExistingVoiceConfigUntouched:
         assert cfg.context_window_compression is not None
         assert cfg.realtime_input_config is not None
         assert cfg.session_resumption is not None
+
+
+class TestSearchLoopHasACeiling:
+    """🔴 อุบัติเหตุจริงบน prod 2026-08-10 12:37 — โมเดลค้น 5 ครั้งใน 53 วินาที
+    แล้ว **ไม่พูดอะไรเลยสักคำ**
+
+    หลักฐาน: `[VoiceLevel]` วันนั้น 0 บรรทัด (= Gemini ไม่ส่งเสียงกลับมาเลย) ·
+    ข้อความที่เซฟมีแต่ของ user 2 แถว ไม่มีของผู้ช่วย · และค้นคำเดิมซ้ำ
+    ('หลักทรัพย์ประกันตัว เกณฑ์' สองรอบ) = ลายเซ็นของการวนลูป
+
+    **ทำไมเทสเดิมจับไม่ได้:** probe ตอน verify ใช้คำถามที่ค้นครั้งเดียวจบ
+    ("Perfect World พระเอกชื่ออะไร") · คำถามกว้างๆ ที่ตอบยากต่างหากที่ทำให้วน
+
+    🔑 บทเรียน: ผมใส่เบรก 3 ชั้นให้ "เล่าต่ออัตโนมัติ" อย่างระวัง แต่**ลืมใส่ให้ tool
+    ค้นเว็บเลยสักชั้น** ทั้งที่เป็นลูปโครงสร้างเดียวกัน (โมเดลสั่ง → เราทำให้ → สั่งอีก)
+    """
+
+    def test_ceiling_exists_and_is_small(self):
+        from utils.voice import SEARCH_MAX_PER_TURN
+
+        assert 1 <= SEARCH_MAX_PER_TURN <= 4, (
+            "เพดานต้องเล็ก — ค้นครั้งละ 11-16 วินาที เกิน 3 ครั้งผู้ใช้ก็เงียบเกิน 45 วิแล้ว"
+        )
+
+    def test_under_the_ceiling_the_search_runs(self):
+        from utils.voice import SEARCH_MAX_PER_TURN, should_run_search
+
+        assert should_run_search(0) is True
+        assert should_run_search(SEARCH_MAX_PER_TURN - 1) is True
+
+    def test_at_the_ceiling_the_search_is_refused(self):
+        from utils.voice import SEARCH_MAX_PER_TURN, should_run_search
+
+        assert should_run_search(SEARCH_MAX_PER_TURN) is False
+        assert should_run_search(SEARCH_MAX_PER_TURN + 5) is False
+
+    def test_refusal_message_tells_the_model_to_answer_now(self):
+        """ปฏิเสธเฉยๆ ไม่พอ — ต้องสั่งให้มัน **ตอบด้วยของที่มี** ไม่งั้นมันจะเงียบต่อ
+
+        นี่คือจุดต่างจากการไม่ตอบ function_call เลย (ซึ่งทำให้โมเดลรอค้าง)
+        """
+        from utils.voice import SEARCH_LIMIT_REPLY
+
+        assert "ตอบ" in SEARCH_LIMIT_REPLY
+        assert "ห้ามค้น" in SEARCH_LIMIT_REPLY
+
+
+class TestSearchCeilingIsActuallyWired:
+    """ฟังก์ชันถูกแต่ไม่มีใครเรียก = ฟีเจอร์ตายสนิทโดยไม่มีอะไรแดง (เจอมาแล้วกับ fix_thai_pua)"""
+
+    @pytest.fixture()
+    def handler(self):
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parent.parent / "server.py").read_text(encoding="utf-8")
+        ws = src[src.index('@app.websocket("/ws/voice/'):]
+        return ws[: ws.index("\n@app.")] if "\n@app." in ws else ws
+
+    def test_handler_checks_the_ceiling(self, handler):
+        assert "should_run_search(" in handler
+
+    def test_handler_counts_each_search(self, handler):
+        assert "search_count += 1" in handler
+
+    def test_handler_replies_when_refusing(self, handler):
+        """ปฏิเสธแล้วต้องส่ง SEARCH_LIMIT_REPLY กลับ ไม่ใช่เงียบ (เงียบ = โมเดลรอค้าง)"""
+        assert "SEARCH_LIMIT_REPLY" in handler
+
+    def test_counter_resets_each_turn(self, handler):
+        """ไม่รีเซ็ต = คุยยาวๆ ชนเพดานถาวร ค้นไม่ได้อีกทั้ง session
+
+        นับ 3 ที่: ประกาศตัวแปร · เพิ่มค่า · รีเซ็ตตอน turn จบ
+        (บทเรียนจาก auto_count ที่ `in handler` ผ่านฟรีเพราะมีหลายที่)
+        """
+        assert handler.count("search_count = 0") == 2, "ต้องมี 2 ที่ — ประกาศ และรีเซ็ตตอน turn จบ"
+        after_done = handler[handler.index('"type": "done"'):]
+        assert "search_count = 0" in after_done, "ตัวรีเซ็ตไม่ได้อยู่ในสาย turn_complete"
