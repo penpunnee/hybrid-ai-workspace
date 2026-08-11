@@ -48,7 +48,7 @@ def test_ollama_provider_uses_ollama_even_when_lmstudio_set(monkeypatch):
 
     calls: list[str] = []
     monkeypatch.setattr(llm, "_stream_ollama",
-                        lambda m, model="": iter([(calls.append("ollama"), "hi")[1]]))
+                        lambda m, model="", **k: iter([(calls.append("ollama"), "hi")[1]]))
     monkeypatch.setattr(llm, "_stream_lmstudio",
                         lambda *a, **k: iter([(calls.append("lmstudio"), "x")[1]]))
 
@@ -92,7 +92,7 @@ def test_lmstudio_connection_failure_cascades_to_ollama(monkeypatch):
     import utils.llm as llm
     monkeypatch.setattr(llm, "_LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
     _mock_lmstudio_dead(monkeypatch, llm)
-    monkeypatch.setattr(llm, "_stream_ollama", lambda m: iter(["OLLAMA_ANSWER"]))
+    monkeypatch.setattr(llm, "_stream_ollama", lambda m, **k: iter(["OLLAMA_ANSWER"]))
 
     out = "".join(llm.stream_response(
         [{"role": "user", "content": "hi"}], provider="lmstudio"))
@@ -104,7 +104,7 @@ def test_lmstudio_failure_with_image_does_not_cascade_to_ollama(monkeypatch):
     import utils.llm as llm
     monkeypatch.setattr(llm, "_LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
     _mock_lmstudio_dead(monkeypatch, llm)
-    monkeypatch.setattr(llm, "_stream_ollama", lambda m: iter(["OLLAMA_ANSWER"]))
+    monkeypatch.setattr(llm, "_stream_ollama", lambda m, **k: iter(["OLLAMA_ANSWER"]))
 
     out = "".join(llm.stream_response(
         [{"role": "user", "content": "นี่รูปอะไร"}],

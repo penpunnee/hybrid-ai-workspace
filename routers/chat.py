@@ -428,6 +428,8 @@ async def chat(request: Request):
         # แหล่งอ้างอิงจาก Gemini Google Search grounding — generator yield ได้แต่ str
         # จึงรับผ่าน out-param แล้วค่อยแปลงเป็น citations หลัง stream จบ
         grounding_sources: list[dict] = []
+        # token จริงจาก provider (input/output) — แนบใน done ให้ UI แสดงแทนค่าประมาณ
+        usage_sink: dict = {}
 
         def _try_stream(prov, mdl=""):
             for ck in stream_response(messages, provider=prov, image_b64=image_b64,
@@ -435,7 +437,8 @@ async def chat(request: Request):
                                       model_override=mdl,
                                       thinking=req_thinking, effort=req_effort,
                                       web_grounding=gemini_grounding,
-                                      sources_sink=grounding_sources):
+                                      sources_sink=grounding_sources,
+                                      usage_sink=usage_sink):
                 yield ck
 
         def _save_crash(err_text: str):
@@ -667,6 +670,8 @@ async def chat(request: Request):
             "message_id": message_id,
             "request_id": current_request_id(),
             "timings": get_timings(),
+            # token จริงจาก provider (None = ไม่รายงาน → UI ถอยไปใช้ค่าประมาณ)
+            "usage": usage_sink or None,
         }
         yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
 
@@ -711,8 +716,10 @@ async def regenerate_response(request: Request):
 
     def gen_regen():
         full_response = ""
+        usage_sink: dict = {}
         try:
-            for chunk in stream_response(messages, provider=provider, agent_mode=agent_mode):
+            for chunk in stream_response(messages, provider=provider, agent_mode=agent_mode,
+                                         usage_sink=usage_sink):
                 full_response += chunk
                 yield f"data: {json.dumps({'chunk': chunk})}\n\n"
         except Exception as e:
@@ -727,7 +734,7 @@ async def regenerate_response(request: Request):
                 logger.error(f"[Regenerate] save partial response after crash failed too: {save_err}")
             return
         save_message(assistant, "assistant", full_response, provider, session_id)
-        yield f"data: {json.dumps({'done': True})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'usage': usage_sink or None})}\n\n"
 
     return StreamingResponse(gen_regen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

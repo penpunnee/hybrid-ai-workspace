@@ -138,44 +138,53 @@ def stream_response(messages: list[dict], provider: str = "auto",
                     image_b64: str = "", image_mime: str = "",
                     agent_mode: bool = False, model_override: str = "",
                     thinking: bool | None = None, effort: str = "",
-                    web_grounding: bool = False, sources_sink: list | None = None):
+                    web_grounding: bool = False, sources_sink: list | None = None,
+                    usage_sink: dict | None = None):
     """
     Stream response จาก LLM ที่เลือก
     provider: 'ollama' | 'gemini' | 'lmstudio' | 'kimi' | 'claude' | 'auto'
     model_override: ใช้ model นี้แทน default (per-request จาก dropdown / router)
     thinking: เปิด/ปิดโหมดคิด (None = ใช้ค่า default ของ provider — ไม่ override)
     effort: ระดับการคิดเมื่อ thinking เปิด (low|medium|high|xhigh|max; "" = ใช้ default)
+    usage_sink: dict ที่ provider จะเติม {"input_tokens","output_tokens"} จริง
+      (out-param แพทเทิร์นเดียวกับ sources_sink — generator yield ได้แต่ str)
+      ไม่ได้เติม = provider ไม่รายงาน ให้ผู้เรียกถอยไปใช้ค่าประมาณเอง
     """
     if provider == "gemini_agent":
         _last_failover["active"] = False
         yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=True,
-                                  model=model_override, thinking=thinking, effort=effort)
+                                  model=model_override, thinking=thinking, effort=effort,
+                                  usage_sink=usage_sink)
         return
 
     # Claude ต้องมาก่อน gemini catch-all — Claude จัดการ vision ของตัวเอง
     if provider in ("claude", "claude_agent"):
         _last_failover["active"] = False
         yield from _stream_claude(messages, image_b64, image_mime,
-                                  model=model_override, thinking=thinking, effort=effort)
+                                  model=model_override, thinking=thinking, effort=effort,
+                                  usage_sink=usage_sink)
         return
 
     if provider == "kimi":
         _last_failover["active"] = False
         yield from _stream_kimi(messages, model=model_override, thinking=thinking,
-                                effort=effort, image_b64=image_b64, image_mime=image_mime)
+                                effort=effort, image_b64=image_b64, image_mime=image_mime,
+                                usage_sink=usage_sink)
         return
 
     if provider == "gemini" or agent_mode or (image_b64 and provider not in ("lmstudio", "auto", "claude", "claude_agent")):
         _last_failover["active"] = False
         yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode,
                                   model=model_override, thinking=thinking, effort=effort,
-                                  web_grounding=web_grounding, sources_sink=sources_sink)
+                                  web_grounding=web_grounding, sources_sink=sources_sink,
+                                  usage_sink=usage_sink)
         return
 
     if provider in ("lmstudio", "lmstudio_web"):
         _last_failover["active"] = False
         yield from _stream_lmstudio_or_ollama(messages, model=model_override,
-                                              image_b64=image_b64, image_mime=image_mime)
+                                              image_b64=image_b64, image_mime=image_mime,
+                                              usage_sink=usage_sink)
         return
 
     # provider == "ollama" → ใช้ Ollama เสมอ (ไม่ redirect ไป LM Studio อีกต่อไป)
@@ -214,11 +223,45 @@ def stream_response(messages: list[dict], provider: str = "auto",
         return
 
     _last_failover["active"] = False
-    yield from _stream_ollama(messages, model=model_override)
+    yield from _stream_ollama(messages, model=model_override, usage_sink=usage_sink)
+
+
+# ── token usage จริงจาก provider (2026-08-12) ────────────────────────────────
+# OpenAI-compatible ทุกตัว (LM Studio/Ollama/Kimi): stream_options.include_usage
+# → chunk ท้ายมี usage แต่ choices=[] — loop เดิม chunk.choices[0] จะ IndexError
+# จึงต้อง guard choices ว่างทุกจุดที่เปิดฟีเจอร์นี้
+
+def _capture_openai_usage(chunk, usage_sink: dict | None) -> None:
+    """เก็บ usage จาก chunk (มีเฉพาะ chunk ท้ายเมื่อเปิด include_usage)"""
+    if usage_sink is None:
+        return
+    u = getattr(chunk, "usage", None)
+    if u is None:
+        return
+    it, ot = getattr(u, "prompt_tokens", None), getattr(u, "completion_tokens", None)
+    if it is not None or ot is not None:
+        usage_sink["input_tokens"] = int(it or 0)
+        usage_sink["output_tokens"] = int(ot or 0)
+
+
+def _create_stream_with_usage(completions_create, create_kwargs: dict, want_usage: bool):
+    """create() พร้อมขอ usage — เซิร์ฟเวอร์เก่าที่ไม่รู้จัก stream_options ให้ retry
+    แบบไม่ขอ (คำตอบต้องมาก่อนตัวเลขสถิติ) · error เกิดที่ create() ก่อน chunk แรกเสมอ
+    จึง retry ได้โดยไม่เสี่ยง yield ซ้ำ"""
+    if not want_usage:
+        return completions_create(**create_kwargs)
+    try:
+        return completions_create(**create_kwargs, stream_options={"include_usage": True})
+    except Exception as e:
+        if "stream_options" not in str(e).lower():
+            raise
+        logger.info("[LLM] เซิร์ฟเวอร์ไม่รู้จัก stream_options → ขอใหม่แบบไม่มี usage")
+        return completions_create(**create_kwargs)
 
 
 def _stream_lmstudio(messages: list[dict], model: str = "",
-                     image_b64: str = "", image_mime: str = ""):
+                     image_b64: str = "", image_mime: str = "",
+                     usage_sink: dict | None = None):
     """Stream จาก LM Studio (OpenAI-compatible API) รองรับ vision"""
     if not model:
         model = os.getenv("LMSTUDIO_CHAT_MODEL", "meta-llama-3.2-11b-vision-instruct")
@@ -254,13 +297,15 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
         msgs = messages
 
     try:
-        stream = lmstudio_client.chat.completions.create(
-            model=model,
-            messages=msgs,
-            stream=True,
-            temperature=temperature,
+        stream = _create_stream_with_usage(
+            lmstudio_client.chat.completions.create,
+            {"model": model, "messages": msgs, "stream": True, "temperature": temperature},
+            want_usage=usage_sink is not None,
         )
         for chunk in stream:
+            _capture_openai_usage(chunk, usage_sink)
+            if not chunk.choices:
+                continue  # chunk ท้ายจาก include_usage — มีแต่ตัวเลข ไม่มีข้อความ
             delta = chunk.choices[0].delta.content
             if delta:
                 yield delta
@@ -282,14 +327,16 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
 
 
 def _stream_lmstudio_or_ollama(messages: list[dict], model: str = "",
-                               image_b64: str = "", image_mime: str = ""):
+                               image_b64: str = "", image_mime: str = "",
+                               usage_sink: dict | None = None):
     """LM Studio ก่อน; ถ้า server ต่อไม่ได้ (connection) → cascade ไป Ollama อัตโนมัติ
 
     ยกเว้นโหมดรูปภาพ — Ollama (llama3) ดูรูปไม่ได้ → แจ้ง error ตรงๆ ดีกว่า cascade เงียบๆ
     """
     try:
         yield from _stream_lmstudio(messages, model=model,
-                                    image_b64=image_b64, image_mime=image_mime)
+                                    image_b64=image_b64, image_mime=image_mime,
+                                    usage_sink=usage_sink)
     except LMStudioUnavailable as e:
         if image_b64:
             yield (f"❌ เชื่อมต่อ LM Studio ไม่ได้ ({_LMSTUDIO_BASE_URL}) — "
@@ -298,7 +345,7 @@ def _stream_lmstudio_or_ollama(messages: list[dict], model: str = "",
             return
         logger.warning(f"LM Studio ต่อไม่ได้ → cascade ไป Ollama อัตโนมัติ ({e})")
         yield "⚠️ LM Studio ต่อไม่ได้ — สลับไป Ollama ให้อัตโนมัติ\n\n"
-        yield from _stream_ollama(messages)
+        yield from _stream_ollama(messages, usage_sink=usage_sink)
 
 
 def check_ollama_health(force: bool = False) -> tuple[bool, str]:
@@ -413,7 +460,7 @@ def check_lmstudio_health(force: bool = False) -> tuple[bool, str]:
         return _save(False, msg)
 
 
-def _stream_ollama(messages: list[dict], model: str = ""):
+def _stream_ollama(messages: list[dict], model: str = "", usage_sink: dict | None = None):
     """
     Stream จาก Ollama local พร้อม retry mechanism และ error handling ที่ละเอียด
     
@@ -443,21 +490,28 @@ def _stream_ollama(messages: list[dict], model: str = ""):
 
     for attempt in range(max_retries):
         try:
-            stream = ollama_client.chat.completions.create(
-                model=model,
-                messages=messages,
-                stream=True,
-                timeout=OLLAMA_TIMEOUT,
-                temperature=float(os.getenv("OLLAMA_TEMPERATURE", "0.7")),
-                top_p=float(os.getenv("OLLAMA_TOP_P", "0.85")),
-                extra_body={
-                    "options": {
-                        "num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "4096")),
-                        "repeat_penalty": float(os.getenv("OLLAMA_REPEAT_PENALTY", "1.1")),
-                    }
+            stream = _create_stream_with_usage(
+                ollama_client.chat.completions.create,
+                {
+                    "model": model,
+                    "messages": messages,
+                    "stream": True,
+                    "timeout": OLLAMA_TIMEOUT,
+                    "temperature": float(os.getenv("OLLAMA_TEMPERATURE", "0.7")),
+                    "top_p": float(os.getenv("OLLAMA_TOP_P", "0.85")),
+                    "extra_body": {
+                        "options": {
+                            "num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "4096")),
+                            "repeat_penalty": float(os.getenv("OLLAMA_REPEAT_PENALTY", "1.1")),
+                        }
+                    },
                 },
+                want_usage=usage_sink is not None,
             )
             for chunk in stream:
+                _capture_openai_usage(chunk, usage_sink)
+                if not chunk.choices:
+                    continue  # chunk ท้ายจาก include_usage
                 delta = chunk.choices[0].delta.content
                 if delta:
                     yield delta
@@ -565,7 +619,8 @@ def gemini_web_search(query: str, model: str = "") -> tuple[str, list[dict]]:
 def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = "",
                    agent_mode: bool = False, model: str = "",
                    thinking: bool | None = None, effort: str = "",
-                   web_grounding: bool = False, sources_sink: list | None = None):
+                   web_grounding: bool = False, sources_sink: list | None = None,
+                   usage_sink: dict | None = None):
     """
     Stream จาก Gemini Cloud ด้วย google-genai SDK ใหม่
 
@@ -680,6 +735,14 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
                             if chunk.text:
                                 yielded = True
                                 yield chunk.text
+                            # usage_metadata มากับ chunk ท้ายๆ เช่นกัน — เก็บชุดล่าสุดที่มีตัวเลข
+                            if usage_sink is not None:
+                                um = getattr(chunk, "usage_metadata", None)
+                                pt = getattr(um, "prompt_token_count", None) if um else None
+                                ct = getattr(um, "candidates_token_count", None) if um else None
+                                if pt is not None or ct is not None:
+                                    usage_sink["input_tokens"] = int(pt or 0)
+                                    usage_sink["output_tokens"] = int(ct or 0)
                             # grounding_metadata มักมากับ chunk ท้ายๆ — เก็บทุกครั้งที่เจอ
                             # (เก็บชุดล่าสุดที่ไม่ว่าง) เพื่อส่งออกเป็น citation ให้ผู้ใช้
                             # ตรวจสอบที่มาของตัวเลขได้ — ไม่งั้น Gemini = เส้นที่แม่นสุด
@@ -723,7 +786,8 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
 
 
 def _stream_claude(messages: list[dict], image_b64: str = "", image_mime: str = "",
-                   model: str = "", thinking: bool | None = None, effort: str = ""):
+                   model: str = "", thinking: bool | None = None, effort: str = "",
+                   usage_sink: dict | None = None):
     """Stream จาก Claude (Anthropic) ด้วย official SDK + prompt caching
 
     - system prompt → cached block (cache_control ephemeral, stable-first) ลด cost เมื่อ context ซ้ำ
@@ -792,6 +856,9 @@ def _stream_claude(messages: list[dict], image_b64: str = "", image_mime: str = 
             # log cache hit เพื่อ verify prompt caching ทำงาน (cache_read > 0 = ประหยัด)
             try:
                 u = stream.get_final_message().usage
+                if usage_sink is not None:
+                    usage_sink["input_tokens"] = int(u.input_tokens or 0)
+                    usage_sink["output_tokens"] = int(u.output_tokens or 0)
                 logger.info(
                     f"[Claude] {CLAUDE_MODEL} ok | in={u.input_tokens} "
                     f"cache_write={getattr(u, 'cache_creation_input_tokens', 0)} "
@@ -818,7 +885,8 @@ def _stream_claude(messages: list[dict], image_b64: str = "", image_mime: str = 
 
 def _stream_kimi(messages: list[dict], model: str = "",
                  thinking: bool | None = None, effort: str = "",
-                 image_b64: str = "", image_mime: str = ""):
+                 image_b64: str = "", image_mime: str = "",
+                 usage_sink: dict | None = None):
     """Stream จาก Kimi (Moonshot, OpenAI-compatible) — provider="kimi"
 
     - model: default KIMI_MODEL (kimi-k2.6)
@@ -858,8 +926,14 @@ def _stream_kimi(messages: list[dict], model: str = "",
         }
 
     try:
-        stream = kimi_client.chat.completions.create(**create_kwargs)
+        stream = _create_stream_with_usage(
+            kimi_client.chat.completions.create, create_kwargs,
+            want_usage=usage_sink is not None,
+        )
         for chunk in stream:
+            _capture_openai_usage(chunk, usage_sink)
+            if not chunk.choices:
+                continue  # chunk ท้ายจาก include_usage
             delta = chunk.choices[0].delta.content
             if delta:
                 yield delta

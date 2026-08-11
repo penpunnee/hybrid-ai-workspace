@@ -61,7 +61,7 @@ def test_stream_response_threads_web_grounding(monkeypatch):
 
     def fake_gemini(messages, image_b64="", image_mime="", agent_mode=False,
                     model="", thinking=None, effort="", web_grounding=False,
-                    sources_sink=None):
+                    sources_sink=None, usage_sink=None):
         captured["web_grounding"] = web_grounding
         yield "x"
 
