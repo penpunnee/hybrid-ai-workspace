@@ -66,7 +66,9 @@ def save_message(assistant: str, role: str, content: str, provider: str = "ollam
     conn = _get_conn()
     cur = conn.execute(
         "INSERT INTO messages (assistant, role, content, provider, created_at, session_id) VALUES (?, ?, ?, ?, ?, ?)",
-        (assistant, role, content, provider, datetime.now().isoformat(), session_id),
+        # astimezone() = ISO พร้อม UTC offset — container prod เป็น UTC แต่ผู้ใช้อยู่ ICT
+        # ถ้าเก็บ naive string UI จะโชว์เวลา UTC ตรงๆ (เพี้ยน +7 ชม. — เจอจริง 2026-08-11)
+        (assistant, role, content, provider, datetime.now().astimezone().isoformat(), session_id),
     )
     conn.commit()
     new_id = cur.lastrowid
@@ -78,12 +80,15 @@ def load_history(assistant: str, session_id: str = "default", include_meta: bool
     """โหลดประวัติแชทของ session นั้นจาก DB"""
     conn = _get_conn()
     rows = conn.execute(
-        "SELECT id, role, content, pinned FROM messages WHERE assistant = ? AND session_id = ? ORDER BY id ASC",
+        "SELECT id, role, content, pinned, created_at FROM messages WHERE assistant = ? AND session_id = ? ORDER BY id ASC",
         (assistant, session_id),
     ).fetchall()
     conn.close()
     if include_meta:
-        return [{"db_id": r[0], "role": r[1], "content": r[2], "pinned": bool(r[3])} for r in rows]
+        return [
+            {"db_id": r[0], "role": r[1], "content": r[2], "pinned": bool(r[3]), "created_at": r[4]}
+            for r in rows
+        ]
     return [{"role": r[1], "content": r[2]} for r in rows]
 
 
