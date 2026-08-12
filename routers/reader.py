@@ -35,6 +35,43 @@ _books = BookStore(_DB)
 _marks = BookmarkStore(_DB)
 
 
+# เพดานอ่านไฟล์จากดิสก์ — คนละเรื่องกับเพดาน HTTP (อันนั้นกัน RAM 2.5x/req ของ body)
+# อ่านจากดิสก์ไม่ผ่าน body จึงตั้งกว้างได้: เล่มใหญ่สุดที่มีจริง 56.8 MB → เผื่อ ~3.5 เท่า
+_MAX_DISK_BYTES = int(os.getenv("READER_MAX_DISK_BYTES", str(200 * 1024 * 1024)))
+
+
+def _ingest(source: str, content: str) -> dict:
+    """pipeline ขาเข้าร่วมของ /add และ /add-from-disk — สองเส้นต้องได้เล่มเหมือนกันเป๊ะ
+
+    ซ่อม PUA ก่อนเสมอ (มาร์กในโซน PUA มองไม่เห็นใน detector/สูตรช่องว่าง) แล้วซ่อม
+    ช่องว่างแทรกเฉพาะเล่มที่ detector ชี้ — สูตรมีขั้น A2 ที่กลืนวรรคจริงหลังมาร์ก
+    เล่มสะอาดห้ามโดน (ดู utils/thaipdf.py)
+    """
+    content = fix_thai_pua(content)
+    spacing_fixed = has_inserted_spaces(content)
+    if spacing_fixed:
+        content = fix_inserted_spaces(content)
+    content = content.strip()
+    if not source:
+        raise HTTPException(400, "ต้องมี source")
+    if not content:
+        raise HTTPException(400, "content ว่างเปล่า")
+
+    _books.put(source, content)
+    _marks.set(source, 0)
+
+    blocks, p = 0, 0
+    while p < len(content):
+        _b, p = next_block(content, p)
+        blocks += 1
+    logger.info(
+        f"[Reader] เก็บเล่ม {source!r}: {len(content)} ตัวอักษร / {blocks} ท่อน"
+        f" (ซ่อมช่องว่างแทรก: {'ใช่' if spacing_fixed else 'ไม่จำเป็น'})"
+    )
+    return {"ok": True, "source": source, "chars": len(content), "blocks": blocks,
+            "spacing_fixed": spacing_fixed}
+
+
 def _require_book(source: str) -> str:
     text = _books.text(source)
     if text is None:
@@ -63,33 +100,43 @@ async def add(request: Request):
     (ที่จริง `fix_thai_pua` แทนที่แบบตัวต่อตัวจึงยาวเท่าเดิม แต่ไม่ควรพึ่งคุณสมบัตินั้น)
     """
     data = await json_body_capped(request, MAX_BODY_BYTES)
-    source = (data.get("source") or "").strip()
-    # ซ่อม PUA ก่อนเสมอ — มาร์กที่ยังอยู่โซน PUA จะมองไม่เห็นใน detector/สูตรช่องว่าง
-    content = fix_thai_pua(data.get("content") or "")
-    # โรคช่องว่างแทรก (Perfect World) ซ่อมเฉพาะเล่มที่ detector ชี้ — สูตรมีขั้น A2
-    # ที่กลืนวรรคจริงหลังมาร์ก เล่มสะอาดห้ามโดน (ดู utils/thaipdf.py)
-    spacing_fixed = has_inserted_spaces(content)
-    if spacing_fixed:
-        content = fix_inserted_spaces(content)
-    content = content.strip()
-    if not source:
-        raise HTTPException(400, "ต้องมี source")
-    if not content:
-        raise HTTPException(400, "content ว่างเปล่า")
+    return _ingest((data.get("source") or "").strip(), data.get("content") or "")
 
-    _books.put(source, content)
-    _marks.set(source, 0)
 
-    blocks, p = 0, 0
-    while p < len(content):
-        _b, p = next_block(content, p)
-        blocks += 1
-    logger.info(
-        f"[Reader] เก็บเล่ม {source!r}: {len(content)} ตัวอักษร / {blocks} ท่อน"
-        f" (ซ่อมช่องว่างแทรก: {'ใช่' if spacing_fixed else 'ไม่จำเป็น'})"
-    )
-    return {"ok": True, "source": source, "chars": len(content), "blocks": blocks,
-            "spacing_fixed": spacing_fixed}
+@router.post("/add-from-disk")
+async def add_from_disk(request: Request):
+    """เก็บเล่มจากไฟล์ในดิสก์ — สำหรับเล่มที่ใหญ่เกินเพดาน HTTP (ห้ามขยายเพดานนั้น)
+
+    เล่มจริงที่ชนปัญหา: Perfect World 56.8 MB = 5.7 เท่าของเพดาน body
+    วิธีใช้: วางไฟล์ .txt ใน sandbox ของ fs_tools แล้วยิง {"path": "pw.txt"}
+
+    - path ผ่าน safe-root เดียวกับ fs_* tools ทุกประการ — เส้นนี้เปิดให้ server
+      อ่านไฟล์ตามคำสั่งผู้เรียก หลุด root เดียว = อ่านได้ทั้งคอนเทนเนอร์
+    - รับเฉพาะไฟล์ข้อความ — PDF ต้องแกะเป็น .txt ก่อน (เล่มจริง 165 MB ใช้เวลา
+      ระดับนาที ทำใน request = timeout + ยึด worker)
+    """
+    data = await json_body_capped(request, MAX_BODY_BYTES)  # body มีแค่ path — เล็กเสมอ
+    path = (data.get("path") or "").strip()
+    if not path:
+        raise HTTPException(400, "ต้องมี path")
+
+    from utils.fs_tools import FSError, _resolve_safe
+    try:
+        target = _resolve_safe(path)
+    except FSError:
+        # อย่าสะท้อน path/เหตุผลกลับไป — เป็นข้อมูลไว้เดาโครงสร้างดิสก์
+        raise HTTPException(400, "path อยู่นอก sandbox หรือ resolve ไม่ได้")
+    if not target.is_file():
+        raise HTTPException(404, "ไม่พบไฟล์ใน sandbox")
+    if target.suffix.lower() not in (".txt", ".md"):
+        raise HTTPException(400, "รับเฉพาะ .txt/.md — PDF ให้แกะข้อความเป็น .txt ก่อน")
+    size = target.stat().st_size
+    if size > _MAX_DISK_BYTES:
+        raise HTTPException(413, f"ไฟล์ {size} ไบต์ เกินเพดาน {_MAX_DISK_BYTES}")
+
+    content = target.read_text(encoding="utf-8", errors="ignore")
+    source = (data.get("source") or "").strip() or target.name
+    return _ingest(source, content)
 
 
 @router.get("/books")

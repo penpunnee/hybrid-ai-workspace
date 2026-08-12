@@ -194,3 +194,53 @@ class TestSpacingFixOnIngest:
         assert r.status_code == 200
         assert r.json()["spacing_fixed"] is False
         assert r.json()["chars"] == len(TEXT)
+
+
+class TestAddFromDisk:
+    """เส้นอ่านไฟล์จากดิสก์ — เล่มใหญ่เกินเพดาน HTTP (56.8 MB = 5.7 เท่าของเพดาน)
+
+    ห้ามขยายเพดาน HTTP แก้ปัญหานี้ (RAM 2.5x/req + เทสตรึง 10MB) — วางไฟล์ใน
+    sandbox ของ fs_tools แล้วให้ server อ่านเอง · path ต้องผ่าน safe-root เดียวกับ
+    fs_* tools ทุกประการ (ชี้ /etc/passwd ได้ = อ่านไฟล์อะไรก็ได้ในคอนเทนเนอร์)
+    """
+
+    @pytest.fixture()
+    def sandbox(self, tmp_path, monkeypatch):
+        import utils.fs_tools as fs
+        root = tmp_path / "sandbox"
+        root.mkdir()
+        monkeypatch.setattr(fs, "_ROOTS", [root])
+        return root
+
+    def test_ingests_book_from_sandbox_file(self, client, sandbox):
+        (sandbox / "pw.txt").write_text(
+            TestSpacingFixOnIngest.DISEASED, encoding="utf-8")
+        r = client.post("/api/reader/add-from-disk", json={"path": "pw.txt"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["source"] == "pw.txt"
+        assert body["spacing_fixed"] is True  # ผ่าน pipeline เดียวกับ /add เป๊ะ
+        first = client.post("/api/reader/next", json={"source": "pw.txt"}).json()["text"]
+        assert "เผ่าพันธุ์วิญญาณ" in first
+
+    def test_path_outside_sandbox_is_rejected(self, client, sandbox):
+        r = client.post("/api/reader/add-from-disk", json={"path": "/etc/passwd"})
+        assert r.status_code == 400
+        assert "passwd" not in str(r.json())  # อย่าสะท้อน path กลับไปให้เดาโครงสร้างดิสก์
+
+    def test_missing_file_404(self, client, sandbox):
+        assert client.post("/api/reader/add-from-disk",
+                           json={"path": "ไม่มี.txt"}).status_code == 404
+
+    def test_pdf_is_rejected_with_guidance(self, client, sandbox):
+        """PDF ต้องแกะเป็น .txt ก่อน — แกะ 165MB ใช้เวลาระดับนาที ห้ามทำใน request"""
+        (sandbox / "book.pdf").write_bytes(b"%PDF-1.4 fake")
+        r = client.post("/api/reader/add-from-disk", json={"path": "book.pdf"})
+        assert r.status_code == 400
+
+    def test_oversized_file_is_rejected(self, client, sandbox, monkeypatch):
+        import routers.reader as R
+        monkeypatch.setattr(R, "_MAX_DISK_BYTES", 10)
+        (sandbox / "big.txt").write_text("ยาวเกินเพดานสิบไบต์แน่นอน", encoding="utf-8")
+        assert client.post("/api/reader/add-from-disk",
+                           json={"path": "big.txt"}).status_code == 413
