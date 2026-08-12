@@ -77,6 +77,7 @@ def sync_vault(vault_path: str = "") -> dict:
     md_files = list(Path(vp).rglob("*.md"))
     added = 0
     skipped = 0
+    errors = 0
 
     for fp in md_files:
         if any(part.startswith(".") for part in fp.parts):
@@ -105,11 +106,17 @@ def sync_vault(vault_path: str = "") -> dict:
             )
             added += 1
         except Exception as e:
+            # error ≠ skip: 2026-08-12 upsert ที่ timeout (Ollama ตาย) เคยถูกนับเป็น skip
+            # ทำให้รายงาน ok:true ทั้งที่ sync ล้มทั้งหมด — ผู้เรียกต้องแยกสองอย่างนี้ออกได้
             logger.error(f"Vault sync error for {fp}: {str(e)}")
-            skipped += 1
+            errors += 1
 
-    logger.info(f"Vault sync complete: {added} added, {skipped} skipped out of {len(md_files)} total")
-    return {"ok": True, "total": len(md_files), "synced": added, "skipped": skipped}
+    logger.info(f"Vault sync complete: {added} added, {skipped} skipped, {errors} errors out of {len(md_files)} total")
+    out = {"ok": errors == 0, "total": len(md_files), "synced": added,
+           "skipped": skipped, "errors": errors}
+    if errors:
+        out["error"] = f"sync ไม่สำเร็จ {errors}/{len(md_files)} ไฟล์ (ดู log)"
+    return out
 
 
 def search_vault(query: str, n: int = 5, min_score: float | None = None) -> list[dict]:
