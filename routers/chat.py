@@ -733,8 +733,10 @@ async def regenerate_response(request: Request):
             except Exception as save_err:
                 logger.error(f"[Regenerate] save partial response after crash failed too: {save_err}")
             return
-        save_message(assistant, "assistant", full_response, provider, session_id)
-        yield f"data: {json.dumps({'done': True, 'usage': usage_sink or None})}\n\n"
+        # ⚠️ ต้องส่ง message_id ใน done เหมือนเส้น /api/chat — FE ใช้ตั้ง dbId
+        # ของข้อความ (เดิมทิ้งค่า return → ปุ่ม 👍/👎/📌 หายทุกครั้งหลัง regenerate)
+        mid = save_message(assistant, "assistant", full_response, provider, session_id)
+        yield f"data: {json.dumps({'done': True, 'message_id': mid, 'usage': usage_sink or None})}\n\n"
 
     return StreamingResponse(gen_regen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
