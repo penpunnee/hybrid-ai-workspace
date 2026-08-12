@@ -743,9 +743,38 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดตท้ายเซสชัน 2026-08-11)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดตท้ายเซสชัน 2026-08-12)
 
-> **รอบนี้สร้าง "ขวัญอ่านนิยาย" ครบวงจรจนใช้จริง — user ฟังต่อเนื่อง 30+ นาทีจากมือถือ**
+> **รอบ 08-12: UI polish 3 เรื่อง — ขอบขาว iPad · สถิติใต้คำตอบ · token จริงจาก provider**
+> commits: frontend `543eb06`→`8639580`→`2ab7711` · backend `4139156`→`215a78a`→`1030ddd`
+> ทุกตัว deployed + verified (md5 ตรง + probe จริงใน container) · เทส BE 1515 / FE 295 เขียว
+
+**สิ่งที่เพิ่ม/แก้ (2026-08-12):**
+- **ขอบขาวบน iPad ✅** — html/body ไม่เคยตั้งสีพื้น (ขาว default) มีแต่ div React `#060810`
+  → Safari โชว์ขาวที่แถบสถานะ/rubber-band. แก้: `html,body{background:#060810;overscroll-behavior:none}`
+  + `<meta name="theme-color">` (ปิด pull-to-refresh ไปด้วย — ตั้งใจ)
+- **สถิติถาวรใต้คำตอบ** (`formatFinalStats`) — `↓ 191 tokens · 5.4s · 35.4 t/s · 15:52`
+  ค้างหลัง stream จบ (เดิมหายทันที) + ข้อความในประวัติโชว์เวลา (`formatMsgTime`)
+- **token จริงจาก provider** — `usage_sink` (out-param แบบ `sources_sink`) ทะลุ
+  `stream_response` → done event มี `usage:{input_tokens,output_tokens}` ทั้ง /api/chat + /api/regenerate
+  · มีตัวเลขจริง = ไม่มี `~` · ไม่รายงาน = ถอยไปประมาณ ~4 ตัวอักษร/token
+
+**🔑 บั๊ก/gotcha ที่เจอรอบนี้ (อย่าโดนซ้ำ):**
+- **container prod = UTC + `datetime.now()` naive → UI โชว์เวลาเพี้ยน +7 ชม. มาตลอด**
+  (pinned modal/ผลค้นหา ไม่มีใครสังเกตเพราะไม่มีจุดเทียบ) — แก้: `save_message` ใช้
+  `astimezone().isoformat()` (มี offset) · ฝั่ง UI สตริง naive เก่าให้ถือเป็น UTC เสมอ
+- **OpenAI-compat `stream_options.include_usage`: chunk ท้ายมี `choices=[]`** —
+  loop เดิม `chunk.choices[0]` จะ IndexError กลาง stream ทันทีที่เปิด ต้อง guard ทุกจุด
+  · เซิร์ฟเวอร์เก่าไม่รู้จัก `stream_options` → retry แบบไม่ขอ (คำตอบมาก่อนตัวเลขเสมอ)
+- **output_tokens ของ reasoning model นับ think tokens ที่ UI ซ่อนด้วย** — probe จริง:
+  ตอบ "สวัสดี" คำเดียว = 841 tokens (qwen3.5-9b คิดใน `<think>`) ⇒ ตัวเลขโดดกว่า
+  ข้อความบนจอ = ปกติ ไม่ใช่บั๊ก · t/s สะท้อนความเร็ว generate จริง
+- prod อยู่หลัง auth — smoke test จากนอกทำไม่ได้ (ห้าม login แทน user) ให้
+  `docker exec ai-backend-1 python -c "...stream_response(...usage_sink=sink)..."` แทน
+
+---
+
+> **รอบ 08-11 สร้าง "ขวัญอ่านนิยาย" ครบวงจรจนใช้จริง — user ฟังต่อเนื่อง 30+ นาทีจากมือถือ**
 > commits: backend `ff5daa1`→`ad744c1`→`2d3fdd7`→`e8f033a`→`9b93700` · frontend `4dbaa5c`→`b8ced48`→`c9f0b93`
 > ทุกตัว deployed + verified (md5 bundle ตรงถึงปลายทาง)
 
