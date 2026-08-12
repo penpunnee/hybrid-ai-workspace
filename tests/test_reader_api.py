@@ -167,3 +167,30 @@ class TestBookmarkSurvivesRestart:
         app2.include_router(R.router)
         fresh = TestClient(app2)
         assert fresh.get("/api/reader/state", params={"source": BOOK}).json()["pos"] == pos
+
+
+class TestSpacingFixOnIngest:
+    """เล่มที่เป็นโรคช่องว่างแทรก (Perfect World) ต้องถูกซ่อมตอนขาเข้า — เล่มสะอาดห้ามโดน
+
+    fixture โรคมาจากข้อความจริงที่ pypdf แกะจาก PDF (กติกาเดียวกับ test_thaipdf*.py)
+    ทำซ้ำหลายรอบเพื่อให้อัตราโรคเกินขีด detector (วัดจากเล่มจริง: 0.94% vs สะอาด 0%)
+    """
+
+    DISEASED = ("เผ่าพันธุ ์วิญญาณ อ ส ู ร บ ร ร พ ก า ล ป ร า ก ฏ ต ั ว "
+                "สือฮ่าวเป ็ นตัวเอกของงานเลี้ยง ") * 30
+
+    def test_diseased_book_is_fixed_before_storage(self, client):
+        r = _add(client, source="pw.pdf", text=self.DISEASED)
+        assert r.status_code == 200
+        assert r.json()["spacing_fixed"] is True
+        # อ่านกลับต้องไม่มีวรรคปลอมกลางคำเหลือ
+        first = client.post("/api/reader/next", json={"source": "pw.pdf"}).json()["text"]
+        assert "เผ่าพันธุ์วิญญาณ" in first
+        assert "อสูรบรรพกาลปรากฏตัว" in first
+        assert "เป ็ น" not in first
+
+    def test_clean_book_is_stored_verbatim(self, client):
+        r = _add(client)  # TEXT สะอาด มีวรรคจริงระหว่างวลี
+        assert r.status_code == 200
+        assert r.json()["spacing_fixed"] is False
+        assert r.json()["chars"] == len(TEXT)

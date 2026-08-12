@@ -22,7 +22,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from utils.http_limits import MAX_BODY_BYTES, json_body_capped
 from utils.reader import BookmarkStore, BookStore, next_block
-from utils.thaipdf import fix_thai_pua
+from utils.thaipdf import fix_inserted_spaces, fix_thai_pua, has_inserted_spaces
 
 router = APIRouter(prefix="/api/reader", tags=["reader"])
 logger = logging.getLogger(__name__)
@@ -64,7 +64,14 @@ async def add(request: Request):
     """
     data = await json_body_capped(request, MAX_BODY_BYTES)
     source = (data.get("source") or "").strip()
-    content = fix_thai_pua(data.get("content") or "").strip()
+    # ซ่อม PUA ก่อนเสมอ — มาร์กที่ยังอยู่โซน PUA จะมองไม่เห็นใน detector/สูตรช่องว่าง
+    content = fix_thai_pua(data.get("content") or "")
+    # โรคช่องว่างแทรก (Perfect World) ซ่อมเฉพาะเล่มที่ detector ชี้ — สูตรมีขั้น A2
+    # ที่กลืนวรรคจริงหลังมาร์ก เล่มสะอาดห้ามโดน (ดู utils/thaipdf.py)
+    spacing_fixed = has_inserted_spaces(content)
+    if spacing_fixed:
+        content = fix_inserted_spaces(content)
+    content = content.strip()
     if not source:
         raise HTTPException(400, "ต้องมี source")
     if not content:
@@ -77,8 +84,12 @@ async def add(request: Request):
     while p < len(content):
         _b, p = next_block(content, p)
         blocks += 1
-    logger.info(f"[Reader] เก็บเล่ม {source!r}: {len(content)} ตัวอักษร / {blocks} ท่อน")
-    return {"ok": True, "source": source, "chars": len(content), "blocks": blocks}
+    logger.info(
+        f"[Reader] เก็บเล่ม {source!r}: {len(content)} ตัวอักษร / {blocks} ท่อน"
+        f" (ซ่อมช่องว่างแทรก: {'ใช่' if spacing_fixed else 'ไม่จำเป็น'})"
+    )
+    return {"ok": True, "source": source, "chars": len(content), "blocks": blocks,
+            "spacing_fixed": spacing_fixed}
 
 
 @router.get("/books")
