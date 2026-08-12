@@ -772,6 +772,20 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 - prod อยู่หลัง auth — smoke test จากนอกทำไม่ได้ (ห้าม login แทน user) ให้
   `docker exec ai-backend-1 python -c "...stream_response(...usage_sink=sink)..."` แทน
 
+**🔴 เจอตอนปิดเซสชัน 08-12 — vault RAG/embedding ล่มทั้งเส้น (pre-existing ไม่ใช่จากงานรอบนี้):**
+- อาการ: `sync_vault()` รายงาน `{ok:true, synced:0, skipped:68}` แต่ collection มี 66
+  และหน้าใหม่ไม่เข้า · `search_vault` ก็ timeout — **ตัวเลข skip โกหก: upsert ที่ timeout
+  ถูกกลืนเข้า except แล้วนับรวมเหมือนสำเร็จ** (ตระกูล measuring-instruments-lie)
+- root cause: embedding ทุก collection ใช้ `OllamaEmbeddingFunction` → **Ollama บน PC .235
+  (พอร์ต 11434) ตาย** — LM Studio (1234) เครื่องเดียวกันตอบปกติ · `ollama list` ผ่าน ssh
+  พยายาม auto-start แล้วล้ม "Unable to init instance: Unspecified error" (v0.32.9) ·
+  `ollama serve` ผ่าน ssh ก็ไม่ขึ้น — **ต้องให้ user เปิด/ซ่อม Ollama บนพีซีเอง (หน้าเครื่อง/GUI)**
+- ผลกระทบกว้างกว่า vault: recall/memory ทุกตัวที่ embed ผ่าน Ollama ก็ timeout เงียบๆ อยู่ตอนนี้
+- เมื่อ Ollama ฟื้น รันซ้ำ: `docker exec ai-backend-1 python -c "from utils.obsidian_sync import
+  sync_vault; print(sync_vault())"` แล้วเช็คว่า `obsidian_notes` count = จำนวนไฟล์จริง
+  (หน้า `naive-datetime-utc-container.md` ต้องเข้า) — **อย่าเชื่อ ok:true เปล่าๆ**
+- backlog: แก้ `sync_vault` ให้ (1) นับ error แยกจาก skip (2) `ok:false` เมื่อมี upsert ล้ม
+
 ---
 
 > **รอบ 08-11 สร้าง "ขวัญอ่านนิยาย" ครบวงจรจนใช้จริง — user ฟังต่อเนื่อง 30+ นาทีจากมือถือ**
