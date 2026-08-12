@@ -72,6 +72,24 @@ class TestRealFragmentsFromPerfectWorld:
     def test_fragment(self, raw, expect, why):
         assert fix_inserted_spaces(raw) == expect, why
 
+    @pytest.mark.parametrize(
+        "raw, expect, why",
+        [
+            ("คํ่าคืนดึกสงัด", "ค่ำคืนดึกสงัด",
+             "ประโยคเปิดเรื่อง PW ตัวจริง — ํ+่+า ต้องเป็น ่+ำ"),
+            ("าถัง นํ้าความยา", "าถัง น้ำความยา",
+             "'นํ้า' โผล่ 20,069 จุดทั้งเล่ม อ่านผิดคือพังทั้งเรื่อง"),
+            ("ไม่รุกลํ้าเข้าไป", "ไม่รุกล้ำเข้าไป",
+             "ํ+้+า อีกวรรณยุกต์หนึ่ง"),
+        ],
+    )
+    def test_sara_am_with_tone_mark_between(self, raw, expect, why):
+        """สระอำที่มีวรรณยุกต์คั่นกลาง (ํ+วรรณยุกต์+า) — เจอหลัง import จริง 2026-08-12
+
+        AM ธรรมดา (ํา ชิดกัน) มองไม่เห็นเพราะวรรณยุกต์คั่น · วัดทั้งเล่ม: PW 20,069
+        จุด · xianni 0 ⇒ เป็นโรคของฟอนต์เดียวกัน ไม่ใช่ภาษาไทยปกติ"""
+        assert fix_inserted_spaces(raw) == expect, why
+
     def test_known_limitation_pypdf_vowel_loss_is_not_our_job(self):
         """'จรงๆ' (สระหายจาก pypdf เอง) — สูตรนี้ **ไม่**พยายามเดาสระคืน
         golden ก็ปล่อยไว้เหมือนกัน · เดาสระ = เสี่ยงแก้คำถูกให้ผิด"""

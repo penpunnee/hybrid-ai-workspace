@@ -129,7 +129,7 @@ def fix_inserted_spaces(text: str) -> str:
         return text
     text = _RE_SPLIT_RUN.sub(lambda m: m.group().replace(" ", ""), text)
     text = text.replace("\n", " ")
-    text = text.replace("ํา", "ำ")  # ํ + า → ำ
+    text = _fix_sara_am(text)
     text = _RE_SPACE_BEFORE_MARK.sub(r"\1", text)
     text = _RE_SPACE_AFTER_MARK.sub(r"\1", text)
     # ── pass เก็บตก (วัดจากทั้งเล่มจริง 2026-08-12) ──
@@ -137,8 +137,19 @@ def fix_inserted_spaces(text: str) -> str:
     # AM รอบสอง: A2 เพิ่งดึง ํ กับ า มาชิดกันหลัง AM รอบแรกผ่านไปแล้ว (เหลือ 86 จุด)
     # ทั้งคู่เป็นโรคแน่นอน ไม่มีทางเป็นวรรคจริง — และไม่กระทบ golden (เทสตรึงยืนยัน)
     text = _RE_SPLIT_RUN.sub(lambda m: m.group().replace(" ", ""), text)
-    text = text.replace("ํา", "ำ")
+    text = _fix_sara_am(text)
     return text
+
+
+def _fix_sara_am(text: str) -> str:
+    """รวมสระอำที่ฟอนต์แยกส่วน — ทั้งแบบชิด (ํา→ำ) และแบบมีวรรณยุกต์คั่น
+
+    'คํ่าคืน' (ค+ํ+่+า) → 'ค่ำคืน' (ค+่+ำ) — เจอจากประโยคเปิดเรื่อง PW ตัวจริง
+    หลัง import 2026-08-12 · วัดทั้งเล่ม 20,069 จุด (รวม 'นํ้า' ที่โผล่ทุกหน้า)
+    ไม่กำกวม: ํ+วรรณยุกต์+า ไม่มีการอ่านแบบอื่นในภาษาไทย · xianni มี 0 จุด
+    """
+    text = text.replace("ํา", "ำ")
+    return _RE_AM_TONE.sub(r"\1ำ", text)
 
 
 # มาร์ก = ตัวที่ต้องเกาะพยัญชนะ: ั ิ ี ึ ื ุ ู ฺ ็ ่ ้ ๊ ๋ ์ ํ ๎ — วรรคขนาบมัน
@@ -149,6 +160,7 @@ _THAI_CLASS = r"[฀-๿]"
 _RE_SPLIT_RUN = _re.compile(rf"(?:{_THAI_CLASS} ){{5,}}{_THAI_CLASS}")
 _RE_SPACE_BEFORE_MARK = _re.compile(rf"\s+({_MARK_CLASS})")
 _RE_SPACE_AFTER_MARK = _re.compile(rf"({_MARK_CLASS})\s+")
+_RE_AM_TONE = _re.compile(r"ํ([่-๋])า")  # ํ + วรรณยุกต์ + า → วรรณยุกต์ + ำ
 
 
 # อัตรา "ช่องว่างก่อนมาร์ก" ต่อตัวอักษร — วัดจริงสองฝั่ง (2026-08-12):
