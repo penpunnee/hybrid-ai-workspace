@@ -772,7 +772,7 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 - prod อยู่หลัง auth — smoke test จากนอกทำไม่ได้ (ห้าม login แทน user) ให้
   `docker exec ai-backend-1 python -c "...stream_response(...usage_sink=sink)..."` แทน
 
-**✅ ปิดแล้ว 08-12 (เซสชันถัดมา): user ซ่อม Ollama หน้าเครื่อง → sync_vault ซ้ำ synced 5 · count 68 = ไฟล์จริง · หน้า naive-datetime เข้า + search_vault 3.0s เจอเป็นอันดับ 1 — เหลือแค่ backlog แก้ sync_vault นับ error (ข้อล่างสุด)**
+**✅ ปิดแล้ว 08-12 (เซสชันถัดมา): user ซ่อม Ollama หน้าเครื่อง → sync_vault ซ้ำ synced 5 · count 68 = ไฟล์จริง · หน้า naive-datetime เข้า + search_vault 3.0s เจอเป็นอันดับ 1 · backlog แก้ sync_vault ก็ปิดแล้ว (`df8e018` deployed+verified: errors แยกจาก skipped · ok:false เมื่อมี upsert ล้ม · +เทส 3 ตัว suite 1518)**
 
 **🔴 เจอตอนปิดเซสชัน 08-12 — vault RAG/embedding ล่มทั้งเส้น (pre-existing ไม่ใช่จากงานรอบนี้):**
 - อาการ: `sync_vault()` รายงาน `{ok:true, synced:0, skipped:68}` แต่ collection มี 66
@@ -786,7 +786,7 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 - เมื่อ Ollama ฟื้น รันซ้ำ: `docker exec ai-backend-1 python -c "from utils.obsidian_sync import
   sync_vault; print(sync_vault())"` แล้วเช็คว่า `obsidian_notes` count = จำนวนไฟล์จริง
   (หน้า `naive-datetime-utc-container.md` ต้องเข้า) — **อย่าเชื่อ ok:true เปล่าๆ**
-- backlog: แก้ `sync_vault` ให้ (1) นับ error แยกจาก skip (2) `ok:false` เมื่อมี upsert ล้ม
+- ~~backlog: แก้ `sync_vault` ให้ (1) นับ error แยกจาก skip (2) `ok:false` เมื่อมี upsert ล้ม~~ ✅ `df8e018`
 
 ---
 
