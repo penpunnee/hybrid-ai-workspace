@@ -24,7 +24,7 @@ import os
 
 import pytest
 
-from utils.thaipdf import fix_inserted_spaces, has_inserted_spaces
+from utils.thaipdf import fix_inserted_spaces, fix_leading_vowel_gaps, has_inserted_spaces
 
 _FIX = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -127,6 +127,75 @@ class TestCleanTextSafety:
         raw = _read("pw_raw_slice.txt")
         once = fix_inserted_spaces(raw)
         assert fix_inserted_spaces(once) == once
+
+
+class TestLeadingVowelGaps:
+    """โรคตกค้างตระกูลใหม่ (เจอ 2026-08-13 หลัง user เริ่มฟังจริง): สระหน้า เ แ โ ใ ไ
+    ถูกช่องว่างคั่นจากพยัญชนะ — คำขาดกลางแน่นอน 100% เพราะสระหน้าจบคำไม่ได้ในภาษาไทย
+
+    วัดจาก prod จริง: PW เหลือ 6,815 จุด (pass B เก็บเฉพาะช่วง ≥6 ตัว · A1/A2 จับเฉพาะ
+    มาร์ก — สระหน้าเป็น spacing char เลยรอดทุกด่าน) · xianni 564 จุด (ไม่ผ่านด่าน
+    detector เลยไม่เคยถูกซ่อมเลย) ⇒ ต้องมีทั้ง pass ในสูตรเต็ม (LV run) และตัวซ่อม
+    เบา `fix_leading_vowel_gaps` ที่ใช้กับทุกเล่มได้เพราะยิงเฉพาะลายเซ็นโรค
+    """
+
+    # ── pass LV ในสูตรเต็ม (เล่มป่วยแบบ PW): ยุบทั้ง run ที่เริ่มจากสระหน้า ──
+
+    @pytest.mark.parametrize(
+        "raw, expect, why",
+        [
+            ("กลุ่มเมฆปรากฏขึ้นกลางอากาศแ ผ่คลุมทั่วท้องฟ้า",
+             "กลุ่มเมฆปรากฏขึ้นกลางอากาศแผ่คลุมทั่วท้องฟ้า",
+             "จุดจริง pos 2238 — อยู่ในช่วงที่ user ฟังไปแล้ว"),
+            ("ความยาว 10 เ ม ต รส่องแสงสีเงิน",
+             "ความยาว 10 เมตรส่องแสงสีเงิน",
+             "run ต่อเนื่อง: join เดียวไม่พอ ('เม ต ร' ยังขาดกลาง) ต้องยุบทั้ง run"),
+            ("หิวโหยมิได้เ ร าต้องคิดหาหนทาง",
+             "หิวโหยมิได้เราต้องคิดหาหนทาง",
+             "run ที่มี า ปิดท้าย (เ+ร+า = เรา)"),
+            ("“เข้าใจขอรับ!” เ ด็ก ๆ ตอบกลับไป",
+             "“เข้าใจขอรับ!” เด็ก ๆ ตอบกลับไป",
+             "พยัญชนะในทาง run มีมาร์กเกาะได้ (ด็) · วรรคจริงก่อน ๆ ต้องรอด"),
+        ],
+    )
+    def test_full_formula_collapses_leading_vowel_runs(self, raw, expect, why):
+        assert fix_inserted_spaces(raw) == expect, why
+
+    # ── ตัวซ่อมเบา (ทุกเล่ม รวมเล่มที่ไม่ผ่านด่าน detector): join เดียว ห้ามกลืนวรรคจริง ──
+
+    @pytest.mark.parametrize(
+        "raw, expect, why",
+        [
+            ("หวังหลินเข้าไ ป อสูรยุงที่อ่อนแอ",
+             "หวังหลินเข้าไป อสูรยุงที่อ่อนแอ",
+             "xianni จริง pos 175623 — join ไ+ป แล้ววรรคจริงหลัง 'ไป' ต้องอยู่"),
+            ("บ่มเพาะเท่าใ ด กระนั้นก็ไม่มี",
+             "บ่มเพาะเท่าใด กระนั้นก็ไม่มี",
+             "xianni จริง — 'ใด' จบคำ วรรคหน้า 'กระนั้น' เป็นวรรคจริง ห้ามกลืน"),
+            ("ตอนนั้นเซี่ยฉิงแ ก่ชราแล้ว",
+             "ตอนนั้นเซี่ยฉิงแก่ชราแล้ว",
+             "xianni จริง pos 4211012"),
+        ],
+    )
+    def test_light_fixer_joins_without_swallowing_real_spaces(self, raw, expect, why):
+        assert fix_leading_vowel_gaps(raw) == expect, why
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "ผู้เยาว์เดินผ่านท้องฟ้า เห็นแสงนุ่มนวล",
+            "ฉันไปตลาด ซื้อของหลายอย่าง เจอเพื่อนเก่า",
+            "เขาไปแล้ว แต่เธอยังอยู่ ใครจะรู้",
+        ],
+    )
+    def test_light_fixer_leaves_clean_text_untouched(self, text):
+        """เล่มสะอาดแท้ไม่มีลายเซ็น 'สระหน้า+วรรค' อยู่แล้ว — ต้อง no-op ทุกตัวอักษร"""
+        assert fix_leading_vowel_gaps(text) == text
+
+    def test_light_fixer_idempotent_and_empty_safe(self):
+        assert fix_leading_vowel_gaps("") == ""
+        once = fix_leading_vowel_gaps("เข้าไ ป อสูร")
+        assert fix_leading_vowel_gaps(once) == once
 
 
 class TestDiseaseDetector:

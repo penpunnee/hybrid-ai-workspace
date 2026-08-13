@@ -22,7 +22,12 @@ from fastapi import APIRouter, HTTPException, Request
 
 from utils.http_limits import MAX_BODY_BYTES, json_body_capped
 from utils.reader import BookmarkStore, BookStore, next_block
-from utils.thaipdf import fix_inserted_spaces, fix_thai_pua, has_inserted_spaces
+from utils.thaipdf import (
+    fix_inserted_spaces,
+    fix_leading_vowel_gaps,
+    fix_thai_pua,
+    has_inserted_spaces,
+)
 
 router = APIRouter(prefix="/api/reader", tags=["reader"])
 logger = logging.getLogger(__name__)
@@ -51,6 +56,9 @@ def _ingest(source: str, content: str) -> dict:
     spacing_fixed = has_inserted_spaces(content)
     if spacing_fixed:
         content = fix_inserted_spaces(content)
+    # โรคสระหน้า+วรรค ("เข้าไ ป") มีได้แม้ในเล่มที่ detector ไม่ชี้ (xianni 564 จุด)
+    # — ตัวซ่อมเบา join เดียว ไม่กลืนวรรคจริง เล่มสะอาดแท้เป็น no-op (utils/thaipdf.py)
+    content = fix_leading_vowel_gaps(content)
     content = content.strip()
     if not source:
         raise HTTPException(400, "ต้องมี source")
