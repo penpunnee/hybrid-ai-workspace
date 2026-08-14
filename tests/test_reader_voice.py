@@ -99,6 +99,33 @@ class TestReadingTurnDecision:
         assert next_read_action(paused=False, block="   \n ", at_end=False) == "skip"
 
 
+class TestReaderPacing:
+    """ตัวคุมจังหวะป้อนท่อน — เจอ 2026-08-14: Gemini ผลิตเสียงเร็วกว่า realtime มาก
+    เซิร์ฟเวอร์ป้อนรัวจนที่คั่นวิ่ง 3,535→48,141 ใน ~4 นาที (หูจริงฟังถึงแค่ ~7,000)
+    พอ session ล่มกลางทาง user เปิดใหม่ = ข้ามเนื้อเรื่องหลายสิบนาที
+
+    หลัก: เสียงที่ผลิตแล้ว (วัดจาก byte ที่ส่ง) นำ "เวลาฟังจริง" (นาฬิกาเดินเฉพาะ
+    ตอนไม่พัก) ได้ไม่เกิน READER_MAX_LEAD_SECONDS — pure function เทสได้ตรงๆ"""
+
+    def test_no_wait_when_behind_or_within_lead(self):
+        from utils.voice import reader_pacing_wait
+
+        assert reader_pacing_wait(audio_seconds_sent=10.0, listened_seconds=30.0) == 0.0
+        assert reader_pacing_wait(audio_seconds_sent=30.0, listened_seconds=10.0, lead=25.0) == 0.0
+
+    def test_waits_by_the_excess_beyond_lead(self):
+        from utils.voice import reader_pacing_wait
+
+        assert reader_pacing_wait(audio_seconds_sent=100.0, listened_seconds=10.0, lead=25.0) == 65.0
+
+    def test_default_lead_bounds_how_far_bookmark_outruns_ears(self):
+        from utils.voice import READER_MAX_LEAD_SECONDS, reader_pacing_wait
+
+        at_limit = reader_pacing_wait(READER_MAX_LEAD_SECONDS, 0.0)
+        assert at_limit == 0.0
+        assert reader_pacing_wait(READER_MAX_LEAD_SECONDS + 1.0, 0.0) == 1.0
+
+
 class TestServerWiring:
     """กัน "ฟังก์ชันถูกแต่ไม่มีใครเรียก" — แบบเดียวกับ TestServerUsesBuilder"""
 
@@ -138,3 +165,25 @@ class TestServerWiring:
     def test_handler_handles_go_away(self, handler):
         """อ่านยาวเป็นชั่วโมง — go_away มาทุก ~9 นาทีแน่นอน ไม่รับมือ = ตายทุก 9 นาที"""
         assert "live_control_signals(" in handler
+
+    def test_feed_is_paced_by_listening_clock(self, handler):
+        """เหตุการณ์จริง 2026-08-14 10:15-10:19: ป้อนไม่คุมจังหวะ → ที่คั่นนำหู ~40k
+        ตัวอักษร · feed_loop ต้องถาม reader_pacing_wait ก่อนป้อนทุกท่อน"""
+        feed = handler[handler.index("async def feed_loop"):]
+        assert "reader_pacing_wait(" in feed, "ไม่มีตัวคุมจังหวะ — ที่คั่นจะวิ่งนำหูอีก"
+
+    def test_stall_watchdog_reconnects_instead_of_hanging_forever(self, handler):
+        """เหตุการณ์จริง 2026-08-14 10:19:30: Gemini หยุดส่งเฉยๆ (ไม่ error ไม่
+        turn_complete ไม่ go_away) → feed_loop รอไปตลอดกาล = "ฟังอยู่ ก็เงียบไปเลย"
+        และไม่มี log สักบรรทัด · ต้องมีเพดานรอ แล้วต่อ session ใหม่อ่านท่อนนี้ซ้ำ"""
+        feed = handler[handler.index("async def feed_loop"):]
+        assert "READER_STALL_TIMEOUT" in feed, "ไม่มี watchdog — เงียบค้างได้ไม่จำกัด"
+        assert "TimeoutError" in feed
+
+    def test_silent_turn_end_reconnects_too(self, handler):
+        """receive() จบเองโดยไม่มี turn_complete (session ตายเงียบ) ต้อง reconnect
+        ไม่ใช่วนไปป้อนท่อนเดิมบน session ที่ตายแล้ว — และต้องมี log ให้สืบย้อนได้"""
+        feed = handler[handler.index("async def feed_loop"):]
+        guard = feed.index("if turn_done:")
+        after = feed[guard:guard + 900]
+        assert "regen.set()" in after, "จบ turn เงียบแล้วไม่ reconnect — ค้างเหมือนเดิม"

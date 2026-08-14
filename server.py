@@ -505,10 +505,13 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
 
     from google import genai
     from google.genai import types
+    import time
+
     from routers.reader import _books, _marks   # ที่เก็บชุดเดียวกับ /api/reader
     from utils.reader import next_block
     from utils.voice import (
-        READER_FEED_PREFIX, build_reader_config, live_control_signals, next_read_action,
+        LIVE_AUDIO_BYTES_PER_SECOND, READER_FEED_PREFIX, READER_STALL_TIMEOUT,
+        build_reader_config, live_control_signals, next_read_action, reader_pacing_wait,
     )
 
     await websocket.accept()
@@ -528,6 +531,20 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
     paused = asyncio.Event()        # set = พักอยู่
     resume_handle: str | None = None
     announced = False
+
+    # นาฬิกาการฟัง + มิเตอร์เสียงที่ส่งแล้ว — อยู่นอก loop session เพราะ client ตัวเดิม
+    # เล่นเสียงต่อเนื่องข้าม reconnect (regen) · เดินเฉพาะตอนไม่พัก
+    audio_bytes_sent = 0
+    listened_seconds = 0.0
+    _last_tick = time.monotonic()
+
+    def tick_listening_clock() -> float:
+        nonlocal listened_seconds, _last_tick
+        now = time.monotonic()
+        if not paused.is_set():
+            listened_seconds += now - _last_tick
+        _last_tick = now
+        return listened_seconds
 
     def _progress(pos: int) -> dict:
         return {"pos": pos, "percent": 100 if pos >= len(text) else int(pos * 100 / len(text))}
@@ -567,9 +584,17 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
 
                 async def feed_loop():
                     """ป้อนท่อน → สตรีมเสียง → เลื่อนที่คั่น → ท่อนถัดไป"""
-                    nonlocal resume_handle
+                    nonlocal resume_handle, audio_bytes_sent
                     try:
                         while not stop.is_set() and not regen.is_set():
+                            # คุมจังหวะ: เสียงที่ผลิตแล้วห้ามนำหูเกินเพดาน — ไม่งั้นที่คั่น
+                            # วิ่งหนีตำแหน่งฟังจริง (เหตุการณ์ 2026-08-14: นำไป ~40k ตัวอักษร)
+                            if reader_pacing_wait(
+                                audio_bytes_sent / LIVE_AUDIO_BYTES_PER_SECOND, tick_listening_clock()
+                            ) > 0:
+                                await asyncio.sleep(0.3)
+                                continue
+
                             pos = _marks.get(source)
                             block, new_pos = next_block(text, pos)
                             act = next_read_action(
@@ -593,7 +618,21 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                 turn_complete=True,
                             )
                             turn_done = False
-                            async for r in session.receive():
+                            # watchdog: Gemini ตายเงียบได้จริง (10:19:30 — ไม่มี error
+                            # ไม่มี go_away แค่หยุดส่ง) → async for เปล่าๆ คือรอตลอดกาล
+                            rx = session.receive().__aiter__()
+                            while True:
+                                try:
+                                    r = await asyncio.wait_for(rx.__anext__(), timeout=READER_STALL_TIMEOUT)
+                                except StopAsyncIteration:
+                                    break
+                                except asyncio.TimeoutError:
+                                    logger.error(
+                                        f"[Reader WS] Gemini เงียบเกิน {READER_STALL_TIMEOUT:.0f}s "
+                                        "กลางท่อน → ต่อ session ใหม่ อ่านท่อนนี้ซ้ำ"
+                                    )
+                                    regen.set()
+                                    return
                                 if stop.is_set():
                                     return
                                 got_go_away, _secs, new_handle = live_control_signals(r)
@@ -605,6 +644,7 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                     regen.set()
                                     return
                                 if r.data:
+                                    audio_bytes_sent += len(r.data)
                                     await websocket.send_json(
                                         {"type": "audio", "data": base64.b64encode(r.data).decode()}
                                     )
@@ -616,6 +656,15 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                 # โมเดลอ่านท่อนนี้จบจริง → ค่อยเลื่อนที่คั่นหน้า
                                 _marks.set(source, new_pos)
                                 await websocket.send_json({"type": "block", **_progress(new_pos)})
+                            elif not stop.is_set() and not regen.is_set():
+                                # receive() จบเองโดยไม่มี turn_complete = session ตายเงียบ
+                                # ห้ามวนไปป้อนท่อนเดิมบน session ที่ตายแล้ว (ค้างเหมือนเดิม)
+                                logger.error(
+                                    "[Reader WS] receive จบโดยไม่มี turn_complete → "
+                                    "ต่อ session ใหม่ อ่านท่อนนี้ซ้ำ"
+                                )
+                                regen.set()
+                                return
                     except Exception as e:
                         logger.error(f"[Reader WS] feed_loop {type(e).__name__}: {e}")
                         stop.set()
