@@ -483,28 +483,6 @@ def build_reader_config(resume_handle: str | None):
     return cfg
 
 
-# ── จังหวะป้อนท่อน + watchdog (เพิ่ม 2026-08-14 จากเหตุการณ์ "ฟังอยู่ ก็เงียบไปเลย") ──
-# Live API ผลิตเสียงเร็วกว่า realtime มาก — ป้อนไม่คุมจังหวะ = ที่คั่นวิ่ง 3,535→48,141
-# ใน ~4 นาที (หูฟังถึงแค่ ~7,000) พอ session ล่ม user เปิดใหม่ = ข้ามเนื้อเรื่องหลายสิบนาที
-LIVE_AUDIO_BYTES_PER_SECOND = 48_000   # PCM16 mono 24kHz ของ Live API
-READER_MAX_LEAD_SECONDS = 25.0         # เสียงที่ผลิตแล้วนำ "เวลาฟังจริง" ได้สูงสุด
-READER_STALL_TIMEOUT = 45.0            # Gemini เงียบกลางท่อนได้นานสุด (chunk ปกติห่างกัน <5s)
-#                                        เกินนี้ = session ตายเงียบ (เจอจริง 10:19:30 ไม่มี
-#                                        error ไม่มี go_away) → ต่อ session ใหม่อ่านท่อนซ้ำ
-
-
-def reader_pacing_wait(
-    audio_seconds_sent: float, listened_seconds: float, lead: float = READER_MAX_LEAD_SECONDS
-) -> float:
-    """วินาทีที่ต้องหน่วงก่อนป้อนท่อนถัดไป — 0.0 = ป้อนได้เลย
-
-    `listened_seconds` = นาฬิกาที่เดินเฉพาะตอนไม่พัก (ประมาณตำแหน่งหูของ user
-    เพราะ client เล่นเสียงต่อเนื่องตามเวลาจริง) — ห้ามใช้ wall clock ดิบ ไม่งั้น
-    พักนานๆ แล้วกลับมา เซิร์ฟเวอร์จะคิดว่าตามหลังแล้วป้อนรัวจนนำหูเท่าช่วงที่พักไป
-    """
-    return max(0.0, audio_seconds_sent - listened_seconds - lead)
-
-
 def next_read_action(paused: bool, block: str, at_end: bool) -> str:
     """จบท่อนแล้วทำอะไรต่อ — pure → เทสได้
 
