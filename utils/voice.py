@@ -520,3 +520,78 @@ def next_read_action(paused: bool, block: str, at_end: bool) -> str:
     if not block.strip():
         return "skip"
     return "read"
+
+
+# ── log วินิจฉัย (2026-08-18) — "ทำให้เครื่องมือวัดมีตา" ก่อนจะแก้อาการ ─────────
+# ทั้งสามฟังก์ชันข้างล่างไม่เปลี่ยนพฤติกรรมอะไรเลย มีหน้าที่เดียวคือทำให้เหตุการณ์ที่
+# **เคยผ่านไปโดยไม่ทิ้งร่องรอย** อ่านย้อนหลังได้จาก log อย่างเดียว โดยไม่ต้องถาม user
+
+# เกณฑ์ "เงียบนานพอจนประตูไมค์ฝั่ง client น่าจะหมดอายุ" — มาจากช่วงที่วัดได้จริง
+# ตอนค้นเว็บ (15-45 วิ) ⚠️ เป็นเกณฑ์ **สำหรับติดธงใน log เท่านั้น** ไม่มีโค้ดไหน
+# ตัดสินใจจากค่านี้ — เปลี่ยนได้อิสระโดยไม่กระทบพฤติกรรมของเสียง
+VOICE_SILENCE_SUSPECT_SEC = 15.0
+
+
+def interrupt_log_line(silence_s: float | None, search_count: int,
+                       since_search_s: float | None) -> str:
+    """บรรทัด log ตอน Gemini ส่ง `interrupted` — pure → เทสได้
+
+    🔴 เหตุการณ์นี้ **ไม่เคยถูก log เลย** จนถึง 2026-08-18 ⇒ อาการ "คำตอบหลังค้นเว็บ
+    หาย เหลือแต่ข้อความ" พิสูจน์ไม่ได้โดยโครงสร้าง (`flushPlayback()` ล้างเสียงทิ้ง
+    แต่ไม่แตะข้อความ = ลายเซ็นที่ user เล่า แต่ไม่มีบรรทัดไหนยืนยันได้ว่าเกิดจริง)
+
+    บรรทัดนี้ต้องแยกสองสาเหตุออกจากกันให้ได้ด้วยตัวเอง:
+      1. user พูดแทรกเอง ⇒ เงียบมาแค่เศษวินาที (ขวัญกำลังพูดอยู่)
+      2. ประตูไมค์หมดอายุกลาง turn ⇒ เงียบมาสิบ ๆ วินาที มักตามหลังการค้นเว็บ
+    ⇒ ขาด "เงียบมากี่วินาที" ข้อเดียวบรรทัดนี้ก็ไร้ค่าเท่าไม่มี
+
+    `silence_s=None` = ยังไม่เคยส่งเสียงเลยใน session นี้ — **ห้ามติดธง**
+    (ไม่รู้ค่า ≠ เข้าเงื่อนไข · เดาว่าใช่คือวิธีที่ทำให้เสียเวลาไป 4 รอบเมื่อ 08-16)
+    """
+    silence = f"{silence_s:.1f}s" if silence_s is not None else "?"
+    if search_count > 0:
+        search = f"ค้น {search_count} ครั้งใน turn นี้"
+        if since_search_s is not None:
+            search += f" (เสร็จเมื่อ {since_search_s:.1f}s ก่อน)"
+    else:
+        search = "ไม่ได้ค้นใน turn นี้"
+    flag = (
+        ' ⚠️ เข้าเงื่อนไข "ประตูไมค์หมดอายุ"'
+        if silence_s is not None and silence_s >= VOICE_SILENCE_SUSPECT_SEC
+        else ""
+    )
+    return f"[Voice WS] interrupted — เงียบมา {silence} · {search}{flag}"
+
+
+# PCM 16-bit mono 24kHz = ฟอร์แมตเสียงขาออกของ Live API (ดู AudioLevelMeter.rate)
+READER_AUDIO_BYTES_PER_SEC = 24000 * 2
+
+
+def reader_feed_log_line(tag: str, pos: int, block_len: int) -> str:
+    """บรรทัดตอนป้อนท่อนให้โมเดลอ่าน — คู่กับ `reader_turn_log_line`
+
+    🔑 คู่กันถึงมีความหมาย: ลายเซ็นของ "Gemini ตายเงียบกลางท่อน" คือ **บรรทัด
+    ป้อนท่อนที่ไม่มีบรรทัดท่อนจบตามมา** (ลูป `session.receive()` ค้างรอ chunk ที่
+    ไม่มีวันมา ⇒ ไม่มี exception ไม่มีอะไรให้ log ในทางอื่นเลย)
+
+    `tag` = session tag เดียวกับบรรทัดเปิด/ปิด — ตอนตัวอ่านซ้อน (บั๊ก 08-15)
+    สอง session จะป้อนสลับกันใน log เดียว ไม่มี tag = อ่านไม่ออกว่าใครป้อนอะไร
+    """
+    return f"[Reader WS] ป้อนท่อน {tag} @{pos} ({block_len} ตัว)"
+
+
+def reader_turn_log_line(tag: str, pos: int, block_len: int, elapsed_s: float,
+                         audio_bytes: int) -> str:
+    """บรรทัดตอนโมเดลอ่านท่อนจบจริง (turn_complete) — pure → เทสได้
+
+    รายงาน **วินาทีของเสียง** ไม่ใช่ไบต์ดิบ เพราะไบต์เทียบกับนาฬิกาด้วยตาเปล่าไม่ได้
+    · เสียง ≈ เวลาจริง = ปกติ · เสียงน้อยกว่าเวลาจริงมาก = โมเดลอืด/เกือบตาย
+    · เสียง 0 = turn จบสมบูรณ์แต่ไม่ยอมอ่าน ⇒ ที่คั่นเลื่อนผ่านท่อนนี้ไปเงียบ ๆ
+      = เนื้อหาหายหนึ่งท่อนโดยไม่มีใครรู้ ⇒ ต้องติดธง
+    """
+    audio_s = audio_bytes / READER_AUDIO_BYTES_PER_SEC
+    flag = " ⚠️ ไม่มีเสียงเลย" if audio_bytes <= 0 else ""
+    return (
+        f"[Reader WS] ท่อนจบ {tag} @{pos} ({block_len} ตัว) "
+        f"· เสียง {audio_s:.1f}s ใน {elapsed_s:.1f}s{flag}"
+    )

@@ -216,8 +216,8 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     from assistants.config import ASSISTANTS, voice_system_prompt
     from utils.voice import (
         AUTO_CONTINUE_TEXT, SEARCH_LIMIT_REPLY, AudioLevelMeter, build_live_config,
-        live_server_content_events, live_tool_call_queries, resolve_voice,
-        should_auto_continue, should_run_search,
+        interrupt_log_line, live_server_content_events, live_tool_call_queries,
+        resolve_voice, should_auto_continue, should_run_search,
     )
     from utils.history import save_message as _save_msg
 
@@ -256,6 +256,14 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     # นับจำนวนครั้งที่ค้นใน turn ปัจจุบัน — กันโมเดลวนค้นจนไม่ยอมพูด
     # (เกิดจริง 2026-08-10: ค้น 5 ครั้งใน 53 วิ แล้วไม่ส่งเสียงกลับมาเลย)
     search_count = 0
+    # ── นาฬิกาสำหรับ log วินิจฉัยเท่านั้น (2026-08-18) ไม่มีโค้ดไหนตัดสินใจจากค่านี้ ──
+    # `last_audio_at` = เวลาที่ส่ง audio chunk ล่าสุด**ออก WebSocket** — ตรงกับสิ่งที่
+    # ขับ `playUntil` ของ `HalfDuplexGate` ฝั่ง client พอดี ⇒ "เงียบมากี่วินาที" ที่
+    # คำนวณจากค่านี้คือตัวเลขเดียวกับที่ประตูไมค์ใช้ตัดสินใจ (ไม่ใช่ค่าประมาณ)
+    # ⚠️ **ห้ามรีเซ็ตทุก turn** — ประตูไม่ได้รีเซ็ตตอนขึ้น turn ใหม่ ถ้ารีเซ็ตที่นี่
+    # ตัวเลขจะสวยขึ้นเฉย ๆ โดยไม่ตรงกับของจริง (บทเรียนเดียวกับ meter ข้างล่าง)
+    last_audio_at: float | None = None
+    search_done_at: float | None = None
     # ⚠️ สร้าง **นอก**ลูป reconnect โดยตั้งใจ — ถ้าอยู่ในลูป นาฬิกาจะรีเซ็ตทุกนาทีที่ 10
     # ซึ่งพอดีกับจุดที่เราสงสัยว่าเสียงเบาลง = มองไม่เห็นสิ่งที่ตั้งใจจะดู
     meter = AudioLevelMeter()
@@ -310,10 +318,10 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                 logger.info(f"[Voice WS] เล่าต่ออัตโนมัติ = {auto_continue}")
                             elif t == "close":
                                 stop.set()
-                            elif t == "reread":
-                                # 🔁 ฟังไม่ทัน — ตอนอ่านไมค์ปิด (user เคาะ 2026-08-17)
-                                # จึงสั่งด้วยเสียงไม่ได้ ต้องมาทางปุ่ม
-                                reread.set()
+                            # ⚠️ ไม่มี elif "reread" ที่นี่โดยตั้งใจ — 🔁 เป็นคำสั่งของ
+                            # **โหมดอ่าน** เท่านั้น (ธง `reread` ประกาศใน /ws/reader)
+                            # เคยมีก๊อปมาวางไว้ตรงนี้ตั้งแต่ f4e62e8 → NameError รอฆ่า
+                            # session เสียง + CI แดง 3 commit ติด (ดู test_voice_logging)
                     except WebSocketDisconnect:
                         stop.set()
                     except Exception as e:
@@ -333,10 +341,19 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                     """
                     from utils.voice import WEB_SEARCH_TOOL_NAME
 
-                    nonlocal search_count
+                    nonlocal search_count, search_done_at
                     wanted = {cid: q for cid, _n, q in live_tool_call_queries(response)}
+                    # 🔑 ขอบ**ซ้าย**ของช่วงเงียบ — เดิม log แค่ตอนค้นเสร็จ ⇒ รู้ว่าจบเมื่อไร
+                    # แต่ไม่รู้ว่าเริ่มเมื่อไร = วัดความยาวช่วงเงียบไม่ได้ ซึ่งเป็นตัวเลข
+                    # ทั้งหมดของสมมติฐาน "ประตูไมค์หมดอายุระหว่างค้น"
+                    calls = getattr(response.tool_call, "function_calls", None) or []
+                    t_search = time.monotonic()
+                    logger.info(
+                        f"[Voice WS] tool_call {len(calls)} ตัว → เริ่มค้น "
+                        f"(ตั้งแต่นี้จนตอบกลับ โมเดลจะไม่ส่งเสียงออกมาเลย)"
+                    )
                     replies = []
-                    for fc in (getattr(response.tool_call, "function_calls", None) or []):
+                    for fc in calls:
                         cid = getattr(fc, "id", "") or ""
                         name = getattr(fc, "name", "") or WEB_SEARCH_TOOL_NAME
                         query = wanted.get(cid)
@@ -379,9 +396,17 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                         )
                     if replies:
                         await session.send_tool_response(function_responses=replies)
+                    # ขอบ**ขวา** — คู่กับบรรทัด "เริ่มค้น" ข้างบน · ตัวเลขนี้คือความยาว
+                    # ช่วงที่ client ไม่ได้รับเสียงเลย ซึ่งต้องเอาไปเทียบกับ
+                    # VOICE_SILENCE_SUSPECT_SEC ในบรรทัด interrupted ที่ตามมา (ถ้ามี)
+                    search_done_at = time.monotonic()
+                    logger.info(
+                        f"[Voice WS] ค้นเสร็จ ตอบกลับ {len(replies)} ตัว "
+                        f"· เงียบไป {search_done_at - t_search:.1f}s"
+                    )
 
                 async def send_loop():
-                    nonlocal resume_handle, auto_count, search_count
+                    nonlocal resume_handle, auto_count, search_count, last_audio_at
                     import base64
                     user_transcript = ""
                     ai_transcript = ""
@@ -423,11 +448,23 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                         "type": "audio",
                                         "data": base64.b64encode(response.data).decode()
                                     })
+                                    # จดหลังส่งสำเร็จเท่านั้น — จดก่อนส่งแล้ว send ค้าง
+                                    # = log บอกว่า "เพิ่งส่งเสียงไป" ทั้งที่ยังไม่ถึง client
+                                    last_audio_at = time.monotonic()
                                 sc = getattr(response, "server_content", None)
                                 if sc:
                                     events, user_delta, ai_delta = live_server_content_events(sc)
                                     user_transcript += user_delta
                                     ai_transcript += ai_delta
+                                    if any(e.get("type") == "interrupted" for e in events):
+                                        now = time.monotonic()
+                                        logger.info(interrupt_log_line(
+                                            silence_s=(None if last_audio_at is None
+                                                       else now - last_audio_at),
+                                            search_count=search_count,
+                                            since_search_s=(None if search_done_at is None
+                                                            else now - search_done_at),
+                                        ))
                                     for evt in events:
                                         await websocket.send_json(evt)
                                     if getattr(sc, "turn_complete", False):
@@ -513,7 +550,7 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
     from utils.reader import next_block
     from utils.voice import (
         READER_FEED_PREFIX, build_reader_config, live_control_signals, next_read_action,
-        reader_stream_action,
+        reader_feed_log_line, reader_stream_action, reader_turn_log_line,
     )
 
     await websocket.accept()
@@ -604,6 +641,12 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                 continue
 
                             reread.clear()   # ธงเป็นของท่อนที่กำลังจะอ่าน ไม่ใช่ท่อนก่อน
+                            # 🔑 ต้อง log **ก่อน**เข้าลูปรับเสียง — ท่อนที่ Gemini ตายเงียบ
+                            # จะค้างอยู่ใน `async for` ตลอดกาลโดยไม่มี exception ⇒ ถ้า log
+                            # หลังลูป ท่อนนั้นจะไม่มีบรรทัดไหนเลย ซึ่งคือเคสเดียวที่เราตามหา
+                            logger.info(reader_feed_log_line(session_tag, pos, len(block)))
+                            t_block = time.monotonic()
+                            audio_bytes = 0
                             await session.send_client_content(
                                 turns=types.Content(
                                     role="user", parts=[types.Part(text=READER_FEED_PREFIX + block)]
@@ -652,6 +695,9 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                     await websocket.send_json(
                                         {"type": "audio", "data": base64.b64encode(r.data).decode()}
                                     )
+                                    # นับตรงจุดที่ส่งออกสายจริง — นับที่อื่นคือนับสิ่งที่
+                                    # ผู้ใช้ไม่ได้ยิน (เช่น chunk ที่ถูกทิ้งตอน abort)
+                                    audio_bytes += len(r.data)
                                 sc = getattr(r, "server_content", None)
                                 if sc and getattr(sc, "turn_complete", False):
                                     turn_done = True
@@ -659,6 +705,10 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                             if turn_done:
                                 # โมเดลอ่านท่อนนี้จบจริง → ค่อยเลื่อนที่คั่นหน้า
                                 _marks.set(source, new_pos)
+                                logger.info(reader_turn_log_line(
+                                    session_tag, new_pos, len(block),
+                                    time.monotonic() - t_block, audio_bytes,
+                                ))
                                 await websocket.send_json({"type": "block", **_progress(new_pos)})
                     except Exception as e:
                         logger.error(f"[Reader WS] feed_loop {type(e).__name__}: {e}")
