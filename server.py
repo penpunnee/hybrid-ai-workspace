@@ -217,7 +217,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     from utils.voice import (
         AUTO_CONTINUE_TEXT, SEARCH_LIMIT_REPLY, AudioLevelMeter, build_live_config,
         interrupt_log_line, live_server_content_events, live_tool_call_queries,
-        resolve_voice, should_auto_continue, should_run_search,
+        resolve_voice, run_until_both_done, should_auto_continue, should_run_search,
     )
     from utils.history import save_message as _save_msg
 
@@ -503,7 +503,17 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                         except Exception:
                             pass
 
-                await asyncio.gather(recv_loop(), send_loop())
+                # 🔴 ห้ามกลับไปใช้ `asyncio.gather()` — มัน **รอครบทุกตัว** ไม่ cancel ใคร
+                # ⇒ ตอน browser หลุดกลางช่วงที่โมเดลเงียบ (ค้นเว็บ 15-45 วิ) `send_loop`
+                # ค้างใน `session.receive()` ตลอดกาล ⇒ บรรทัดล่างไม่มีวันถูกเรียก
+                # ⇒ Gemini session ค้างกิน slot = ที่มาของ `1011 quota` บน prod 13:10:56
+                # (เหตุผลเต็ม + เหตุผลที่ไม่เลือก `session.close()` อยู่ที่ `utils/voice.py`)
+                cancelled = await run_until_both_done(recv_loop(), send_loop())
+                if cancelled:
+                    logger.info(
+                        f"[Voice WS] ปิดสาย — cancel ลูปที่ค้าง {cancelled} ตัว "
+                        f"(stop={stop.is_set()} regen={regen.is_set()})"
+                    )
 
             # ออกจาก `async with` = session เก่าปิดเรียบร้อยแล้ว (ไม่ค้างให้ Gemini ตัดเอง)
             if regen.is_set() and not stop.is_set():

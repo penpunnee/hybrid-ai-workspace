@@ -1,3 +1,4 @@
+import asyncio
 import math
 import os
 import struct
@@ -595,3 +596,63 @@ def reader_turn_log_line(tag: str, pos: int, block_len: int, elapsed_s: float,
         f"[Reader WS] ท่อนจบ {tag} @{pos} ({block_len} ตัว) "
         f"· เสียง {audio_s:.1f}s ใน {elapsed_s:.1f}s{flag}"
     )
+
+
+# ── ปิด Gemini Live session ที่ค้าง เมื่อ browser หลุดตอนโมเดลเงียบ (2026-08-17) ──
+#
+# 🔴 **อุบัติเหตุจริงบน prod 13:10:56** — `1011 Resource has been exhausted (quota)`
+# ครั้งแรกในทั้งไฟล์ log · เกิดจากมี **2 Live session พร้อมกันบน key เดียว**:
+# หน้าเว็บถูกโหลดใหม่ตอน 13:10:09 ขณะสายเสียงของหน้าเก่ายังเปิดอยู่ ⇒ สายเก่ากลายเป็นผี
+#
+# ต้นเหตุคือ `asyncio.gather()` **ไม่ cancel พี่น้องเมื่อตัวหนึ่งจบปกติ — มันรอครบทุกตัว**
+# ส่วน `send_loop` ค้างอยู่ใน `async for ... session.receive()` ที่ไม่มี timeout จึงเห็นธง
+# `stop` ได้เฉพาะ **เมื่อมีข้อความเข้ามาจาก Gemini** ⇒ ตอน browser หลุดกลางช่วงที่โมเดล
+# เงียบ (ค้นเว็บใช้ 15-45 วิ) ไม่มีใครปลุกมัน ⇒ `gather` ไม่คืน ⇒ `async with` ไม่ออก
+# ⇒ session ค้างกิน slot จนกระทั่ง Gemini เอง reap ทิ้ง = **คือ 1008 ที่ ~151 วินาที**
+#
+# ⚠️ **ห้ามส่ง coroutine เข้า `asyncio.wait()` ตรงๆ** — Python 3.11 (prod = 3.11.15) โยน
+# `TypeError: Passing coroutines is forbidden, use tasks explicitly.` = พังทุกการเชื่อมต่อ
+# โดยที่เทสที่มีอยู่จับไม่ได้ (ไม่มีเทสไหนเคยเดินมาถึง `gather` เลยแม้แต่ตัวเดียว)
+#
+# 🔑 `asyncio.CancelledError` สืบจาก **`BaseException` ไม่ใช่ `Exception`** (วัดบน 3.11.15)
+# ⇒ `except Exception` ใน `send_loop` **ไม่กลืนมัน** จึงไม่มี log error ปลอมตอนปิดปกติ
+# (ต่างจากทางเลือก `session.close()` ซึ่งจะทำให้ `recv()` โยน `APIError` เข้า except นั้น
+#  แล้วพิมพ์ ERROR ทุกครั้งที่ปิดหน้าเว็บ = ไปปนกับสัญญาณ 1008/1011 ที่เราใช้ตามบั๊กอยู่)
+LOOP_EXIT_GRACE_SEC = float(os.getenv("VOICE_LOOP_EXIT_GRACE_SEC", "1.5"))
+
+
+async def run_until_both_done(*coros, grace: float = LOOP_EXIT_GRACE_SEC) -> int:
+    """รันลูป recv/send คู่กันแทน `asyncio.gather()` — คืน**จำนวนลูปที่ต้อง cancel**
+
+    กติกา: ใครจบก่อน อีกตัวได้เวลา `grace` จบเอง **ไม่จบแล้วค่อย cancel**
+
+    🔴 กฎนี้ไม่สมมาตรโดยตั้งใจ เพราะ 2 ลูปคุณสมบัติไม่เท่ากัน:
+      · `recv_loop` มีจุดตื่นเอง (`wait_for(receive_json(), timeout=1.0)`) ⇒ จบเองได้ ≤1 วิ
+      · `send_loop` ไม่มีจุดตื่น (`async for` บน stream ที่เงียบได้ไม่จำกัด) ⇒ ต้องมีคน cancel
+    ⇒ **เส้น `go_away`/regen เดินทางเดิมบิตต่อบิต**: ที่นั่น `send_loop` จบก่อนแล้ว
+    `recv_loop` เห็นธงเองใน ≤1 วิ < `grace` ⇒ **ไม่มีการ cancel เกิดขึ้นเลย** ซึ่งสำคัญ
+    เพราะเส้นนั้นวิ่งทุก ~10 นาทีและทำงานถูกอยู่แล้ว — cancel มันกลาง `receive_json()`
+    เสี่ยงทิ้งเฟรมเสียงจาก client ทั้งที่ไม่ได้มีอะไรเสีย (จึงมีเทสตรึงข้อนี้ไว้)
+
+    ⚠️ ต้อง `await` ตัวที่ cancel ให้เสร็จ **ก่อน**คืน ไม่งั้น caller จะออกจาก
+    `async with client.aio.live.connect(...)` ไปปิด ws ทับตอนที่ยังยกเลิกไม่จบ
+    """
+    tasks = {asyncio.ensure_future(c) for c in coros}
+    await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+
+    still = {t for t in tasks if not t.done()}
+    if still:
+        _, still = await asyncio.wait(still, timeout=grace)
+    for t in still:
+        t.cancel()
+    if still:
+        await asyncio.gather(*still, return_exceptions=True)
+
+    # ทั้งสองลูปดัก `Exception` ของตัวเองอยู่แล้ว — ถ้ามีตัวไหนหลุดมาถึงที่นี่ **ห้ามกลืน**
+    # (พฤติกรรมเดิมของ `gather` คือโยนต่อให้ handler ข้างนอก log + ส่ง error ให้ client
+    #  กลืนที่นี่ = สายตายเงียบโดยไม่มีบรรทัดไหนบอก ซึ่งคือกับดักที่เพิ่งเสียเวลาไปทั้งวัน)
+    for t in tasks - still:
+        if not t.cancelled() and t.exception() is not None:
+            raise t.exception()
+
+    return len(still)
