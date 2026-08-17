@@ -1,3 +1,39 @@
+## 🔴 กับดัก single-file bind mount + inode (เจอจริง 2026-08-17 — เกือบรายงาน deploy เท็จ)
+
+`server.py` ถูก mount เป็น **ไฟล์เดี่ยว** ไม่ใช่โฟลเดอร์:
+```
+/volume1/homes/pawin/ui/server.py -> /app/server.py
+```
+bind mount ของไฟล์เดี่ยวผูกกับ **inode** · `git reset --hard` / `git checkout` **เขียนไฟล์ใหม่
+= inode ใหม่** ⇒ คอนเทนเนอร์ยังชี้ inode เก่า **โค้ดใหม่ไม่เข้า แม้จะ `docker restart` แล้ว**
+
+หลักฐานตอนเจอ (deploy `dd8f273`):
+```
+host      : 235585   grep run_until_both_done = 2
+container : 233334   grep run_until_both_done = 0    ← โค้ดเก่า!
+```
+
+⚠️ **สิ่งที่ทำให้หลอกตา:** โฟลเดอร์ที่ mount เป็น **directory** (`utils/` `routers/` `core/`
+`agents/` `static/` `tests/` `assistants/` `reasoning/` `memory/`) **เห็นของใหม่ทันที**
+⇒ ถ้าเช็คแค่ `utils/` แล้วเห็นโค้ดใหม่ จะสรุปว่า deploy สำเร็จทั้งที่ `server.py` ยังเก่า
+
+✅ **วิธีที่ถูก:**
+```bash
+# 1) deploy
+ssh nas-cf 'cd /var/services/homes/pawin/ui && git fetch origin main && git reset --hard origin/main'
+ssh nas-cf 'cd /var/services/homes/pawin/ui && sudo -n /usr/local/bin/docker compose up -d --force-recreate hybrid-ai'
+# 2) 🔴 พิสูจน์ว่าโค้ดถึงจริง — inode ต้องตรงกัน
+ssh nas-cf 'ls -i /volume1/homes/pawin/ui/server.py; sudo -n /usr/local/bin/docker exec ai-backend-1 ls -i /app/server.py'
+```
+
+⚠️ **`--force-recreate` ล้มกลางทางได้** — รอบแรกได้ `Error response from daemon: No such
+container: <id>` แล้ว **prod ดับ**: คอนเทนเนอร์เก่าถูกเปลี่ยนชื่อเป็น `<id>_ai-backend-1`
+สถานะ `Created` (ไม่รัน) และตัวใหม่ยังไม่เกิด
+🔑 **กู้ด้วย `compose up -d hybrid-ai` เฉยๆ (ไม่ต้องใส่ `--force-recreate` ซ้ำ)** — compose
+จะเก็บงาน recreate ที่ค้างให้จบเอง · healthy ใน ~25 วิ (poll `docker inspect --format
+"{{.State.Health.Status}}"` ดีกว่าเดา)
+
+---
 # Infrastructure — NAS / LMStudio / ChromaDB / deploy channels
 
 > ยกมาจาก memory `hybrid_ai_infra.md` เมื่อ 2026-08-17 · **เนื้อไม่ถูกแก้**
