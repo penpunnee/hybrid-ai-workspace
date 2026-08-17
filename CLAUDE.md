@@ -2,6 +2,35 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🗺️ อะไรอยู่ที่ไหน (จัดโครงใหม่ 2026-08-17)
+
+**กติกา: ของโปรเจกต์อยู่ในโปรเจกต์** — เดิมบันทึกกระจาย 5 ที่ และวัดแล้วพบว่า
+**ทั้งสามแหล่งจดคนละชุด ไม่ใช่สำเนากัน**: บรรทัดยาว >40 อักษรที่เหมือนกันเป๊ะ
+`CLAUDE.md` ∩ `DEVLOG` = **0** · memory ∩ `DEVLOG` = **0** · memory ∩ `CLAUDE.md` = **2**
+⇒ เซสชันที่โหลดมาทางเดียวได้ประวัติไม่ครบโดยไม่มีสัญญาณอะไรบอก · ยกเข้ารีโปหมดแล้ว
+
+| ต้องการอะไร | เปิดที่ไหน |
+|---|---|
+| **เริ่มเซสชัน / งานถัดไป / ข้อห้าม** | หัวข้อ **▶️ เซสชันหน้าเริ่มตรงนี้** ในไฟล์นี้ — **ที่เดียว** |
+| คำสั่งรัน/deploy/ทดสอบ | `## Commands` ข้างล่าง |
+| สถาปัตยกรรม backend/FE/routing | `## Architecture` + [`CONTEXT.md`](CONTEXT.md) (glossary) |
+| ประวัติงานย้อนหลัง | [`docs/session-log/`](docs/session-log/README.md) — `devlog.md` + `from-memory-status.md` |
+| infra NAS / LMStudio / ChromaDB / deploy channel | [`docs/reference/infra-nas.md`](docs/reference/infra-nas.md) 🔴 อ่านก่อน deploy |
+| โหมดขวัญอ่านนิยาย (`/ws/reader`) | [`docs/reference/reader-mode.md`](docs/reference/reader-mode.md) |
+| แผนระยะยาว / ดีไซน์ / คู่มือ | [`ROADMAP.md`](ROADMAP.md) · [`DESIGN.md`](DESIGN.md) · [`GUIDE.md`](GUIDE.md) |
+| React source ของ SPA | `~/appscript.ui/` (มี `CLAUDE.md` ของตัวเอง) — **แก้ UI ที่นั่น ไม่ใช่ overlay** |
+
+### 🔴 กฎการจดตั้งแต่ 2026-08-17
+1. **จบเซสชัน → เขียน `docs/session-log/devlog.md`** แล้วอัปเดตหัวข้อ ▶️ ในไฟล์นี้
+2. **memory `hybrid_ai_status` / `hybrid_ai_infra` / `project_khim_reader` เป็นตัวชี้แล้ว
+   ห้ามจดเนื้อหาลงไป** — git ตรวจย้อนได้ด้วย `git log -S` · memory ตรวจย้อนไม่ได้
+3. `MEMORY.md` เก็บได้แค่ "เปิดไฟล์ไหนก่อน + ข้อห้ามที่ยังมีผล"
+4. ⚠️ ไฟล์นี้ถูกฉีดเข้า context **ทันทีที่แตะไฟล์ใดก็ตามในรีโป** (nested CLAUDE.md ·
+   เพดาน CLI = 4 MB จึงไม่มีการตัดให้) ⇒ **มันโตเมื่อไหร่เสียโควตาทุกเซสชันทันที**
+   ตอนนี้ ~88 KB · บทเรียนเต็มที่ vault `wiki/concepts/claude-md-context-budget.md`
+
+---
+
 ## System Overview
 
 **Hybrid AI Workspace** — a FastAPI backend serving a React SPA, deployed on a Synology NAS (DS923+) and exposed via Cloudflare Tunnel at `https://ai.pawinhome.com`.
@@ -643,7 +672,26 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-08-17 บ่าย)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-08-18** · ยกมาจากหัว `MEMORY.md` ตอนจัดโครง 08-17)
+
+> #### 🥇 งานแรกเซสชันหน้า (ยกมาจาก `MEMORY.md` — สถานะต้องอยู่ที่นี่ที่เดียว)
+> อ่าน log ที่เพิ่งเติม (`2df117b`) ชี้ขาดสมมติฐาน **"คำตอบหลังค้นเว็บหาย"** —
+> grep `interrupted|เริ่มค้น|ค้นเสร็จ` ใน `/app/logs/server.log`
+> · เห็น **"เงียบมา 20s+ ⚠️"** = ยืนยันสมมติฐาน
+> · เห็น **"เงียบมา 0.x s" ทุกบรรทัด** = **สมมติฐานตาย อย่าดันต่อ**
+> · ค้างต่อ: **Gemini ตายเงียบไม่มี watchdog** · **voice idle 1008-loop**
+>
+> #### 🔴 DB backup ตายมา 36 วัน (ตรวจจริง 2026-08-18)
+> ตัวล่าสุด 12 ก.ค. · **ไม่มี DSM task เรียก `db_backup.sh`** ⇒ `chat_history.db` +
+> `reader.db` (130 MB) ไม่มีสำเนา
+> ⚠️ **`db_backups/` ดูสดเพราะโฟลเดอร์ `phrae-data-map/` คนละโปรเจกต์** — ดูชื่อไฟล์
+> ให้ตรงงาน อย่าดูวันที่โฟลเดอร์ · `db_backups/` ไม่มี `reader.db`
+>
+> #### 🔒 ข้อห้ามเพิ่มเติมที่ยังมีผล
+> ห้ามใช้ `BaseHTTPMiddleware` คุม body · `_BodyTooLarge` ห้ามสืบทอด `HTTPException`
+> · `~/appscript.ui` มี dependency ที่ไม่ประกาศใน `package.json`
+
+#### ▼ สถานะรอบ 2026-08-17 บ่าย
 
 > ✅ **แก้ครบ 4 อาการของโหมดอ่านนิยาย + deploy + ยืนยันด้วย log จริงแล้ว**
 > commit: `f4e62e8` → `5f190d4` (server+bundle) · `4ec0cb7` → `a627f3f` (React source)
@@ -728,10 +776,10 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ---
 
-## ⏭️ backlog เก่า — ย้ายประวัติไป `DEVLOG.md` แล้ว (2026-08-18)
+## ⏭️ backlog เก่า — ย้ายประวัติไป `docs/session-log/devlog.md` แล้ว (2026-08-18 · ไฟล์ย้ายที่ 08-17)
 
 ประวัติเซสชัน 08-05→08-16 · backlog 08-04 · backlog 06-18 · overlay §22/Model Picker
-**ย้ายลง `DEVLOG.md` ทั้งหมด** (CLAUDE.md ลดจาก 223 KB → ~83 KB เพราะ 53% เป็นประวัติ)
+**ย้ายลง `docs/session-log/devlog.md` ทั้งหมด** (CLAUDE.md ลดจาก 223 KB → ~83 KB เพราะ 53% เป็นประวัติ)
 
 ⚠️ **ยังไม่ได้กวาดว่าอะไรปิดไปแล้ว — อย่าถือว่าปิด** กวาดจาก 49 รายการที่ยังไม่ติด ✅
 เหลือที่ยังเปิดอยู่จริงเท่าที่ตรวจได้:

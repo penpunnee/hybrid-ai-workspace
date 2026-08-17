@@ -120,7 +120,7 @@
 | Anti-hallucination | 4 ชั้น (system guard / tool guard / learn gate / ข้อมูลจริง) + Agent mode |
 | Backup โค้ด | ui → GitHub ✅ · appscript.ui → NAS + GitHub ✅ (เพิ่งปิดช่องโหว่ 2026-07-05) |
 | Thai embedding | แก้ทั้งระบบแล้ว (`5a26ba5`) — MiniLM → Ollama multilingual |
-| Docs | CLAUDE.md / CONTEXT.md / DEVLOG.md ละเอียดผิดปกติ (ในทางดี) — รักษาวินัยนี้ไว้ |
+| Docs | CLAUDE.md / CONTEXT.md / docs/session-log/devlog.md ละเอียดผิดปกติ (ในทางดี) — รักษาวินัยนี้ไว้ |
 
 ---
 
