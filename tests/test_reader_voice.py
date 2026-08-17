@@ -138,3 +138,139 @@ class TestServerWiring:
     def test_handler_handles_go_away(self, handler):
         """อ่านยาวเป็นชั่วโมง — go_away มาทุก ~9 นาทีแน่นอน ไม่รับมือ = ตายทุก 9 นาที"""
         assert "live_control_signals(" in handler
+
+    def test_session_open_and_close_are_logged(self, handler):
+        """🔑 ท่อนี้เคย log เฉพาะทางสายพัง — 17 วันได้ 3 บรรทัด (นับจริง 2026-08-17)
+
+        ผลคือทุกอาการของโหมดอ่าน (สองเสียง · ที่คั่นวิ่ง · กดพักไม่หยุด) **พิสูจน์
+        จาก log ไม่ได้เลยสักข้อ** — ไม่ใช่ "หาแล้วไม่เจอ" แต่ "มองไม่เห็นโดยโครงสร้าง"
+        หนึ่งบรรทัดตอนเปิด + หนึ่งตอนปิด = ตอบได้ว่ามี session ทับช่วงเวลากันไหม
+        """
+        assert "เปิด {session_tag}" in handler, "ไม่ log ตอนเปิด session"
+        assert "ปิด {session_tag}" in handler, "ไม่ log ตอนปิด session"
+        assert "finally:" in handler, (
+            "บรรทัด 'ปิด' ต้องอยู่ใน finally — ไม่งั้นทางที่ error จะไม่ถูกบันทึก "
+            "แล้ว log จะเห็นแต่ 'เปิด' ค้างเป็นแถว"
+        )
+
+    def test_regen_flushes_stale_audio_before_rereading(self, handler):
+        """ต่อ session ใหม่ = อ่านท่อนเดิมซ้ำตั้งแต่ต้น (ตั้งใจ: ฟังซ้ำดีกว่าเนื้อหาหาย)
+
+        🔴 user ยืนยันด้วยหู 2026-08-14: "ประโยคเดิมซ้ำ" — เพราะ WebSocket เป็นสายเดิม
+        เสียงท่อนเก่าที่ค้างใน jitter buffer ฝั่ง client เล่นต่อ แล้วตามด้วยท่อนเดิม
+        ทั้งท่อนอีกรอบ ⇒ ถ้าจะอ่านซ้ำ **ต้องสั่งล้างของเก่าก่อนเสมอ**
+        (บทเรียนเดียวกับปุ่มพักที่เขียนไว้แล้วใน bookreader.ts แต่ไม่ได้เอามาใช้ตรงนี้)
+
+        ผูก assertion กับบล็อก regen จริง ไม่ใช่ "มีคำว่า flush ที่ไหนสักแห่งในไฟล์"
+        """
+        marker = "if regen.is_set() and not stop.is_set():"
+        assert marker in handler, "ไม่พบบล็อก regen — โครงเปลี่ยนไปแล้ว ต้องแก้เทสนี้ด้วย"
+        block = handler[handler.index(marker):]
+        block = block[: block.index("continue")]
+        assert '"flush"' in block, (
+            "regen ต่อ session ใหม่แล้วอ่านท่อนซ้ำ โดยไม่สั่ง client ล้างเสียงค้าง "
+            "→ ผู้ใช้ได้ยินท้ายท่อนเก่าต่อด้วยท่อนเดิมทั้งท่อน"
+        )
+
+
+class TestPauseStopsAudioMidBlock:
+    """🔴 user รายงาน 2026-08-15 ตี 1: **"กดพักแล้วไม่พักเลย พูดต่อไปอีก"**
+
+    ต้นเหตุ: ลูปสตรีมเสียงข้างใน (`async for r in session.receive()`) เช็คแต่
+    `stop.is_set()` — **ไม่เคยเช็ค `paused` เลย** · ธง `paused` ถูกอ่านที่หัว
+    feed_loop ผ่าน `next_read_action` เท่านั้น = "จบท่อนแล้วค่อยพัก"
+    ท่อนละ READ_BLOCK_CHARS (600 ตัวอักษร ≈ ราว 1 นาทีของเสียง)
+    ⇒ กดพักกลางท่อน = ยังพูดต่ออีกเป็นนาที ตรงกับที่ user ได้ยินเป๊ะ
+
+    ℹ️ ตัวแก้ชุดนี้ร่างไว้ตั้งแต่ 08-15 แต่ผูกกับตัวคุมจังหวะของ 55b8594 ซึ่งถูก
+    revert ไปแล้ว (2670c8e) — รอบนี้เอาเฉพาะส่วนที่แยกออกจาก pacing ได้
+    """
+
+    def test_pause_mid_block_aborts_instead_of_streaming_on(self):
+        from utils.voice import reader_stream_action
+
+        assert reader_stream_action(stopped=False, paused=True) == "abort"
+
+    def test_normal_chunk_is_sent(self):
+        from utils.voice import reader_stream_action
+
+        assert reader_stream_action(stopped=False, paused=False) == "send"
+
+    def test_stop_beats_pause(self):
+        """ปิด WS ระหว่างพักอยู่ — ต้องเลิกทั้งหมด ไม่ใช่ค้างรออ่านต่อ"""
+        from utils.voice import reader_stream_action
+
+        assert reader_stream_action(stopped=True, paused=True) == "stop"
+
+    def test_streaming_loop_actually_consults_paused(self):
+        """กัน "ฟังก์ชันถูกแต่ไม่มีใครเรียก" — ผูกกับลูปสตรีมจริง ไม่ใช่แค่มีคำนี้ในไฟล์
+
+        ช่วงที่ตรวจคือตั้งแต่เปิด iterator ของ session.receive() จนถึง `if turn_done:`
+        = ลูปที่ยิง chunk ออก WS · ถ้าไม่มีการเช็คพักในนี้ = พักไม่ทันท่อน
+        """
+        src = (REPO / "server.py").read_text(encoding="utf-8")
+        ws = src[src.index('@app.websocket("/ws/reader")'):]
+        feed = ws[ws.index("async def feed_loop"):]
+        loop = feed[feed.index("session.receive()"): feed.index("if turn_done:")]
+        assert "paused" in loop, (
+            "ลูปสตรีมเสียงไม่เคยดูธง paused — กดพักแล้วเสียงจะไหลต่อจนจบท่อน"
+        )
+
+    def test_aborting_does_not_advance_the_bookmark(self):
+        """พักกลางท่อนแล้วที่คั่นต้องไม่ขยับ — กดอ่านต่อได้ยินท่อนนี้ใหม่ตั้งแต่ต้น
+        (ดีลเดียวกับทั้งระบบ: ฟังซ้ำดีกว่าเนื้อหาหาย)"""
+        src = (REPO / "server.py").read_text(encoding="utf-8")
+        ws = src[src.index('@app.websocket("/ws/reader")'):]
+        feed = ws[ws.index("async def feed_loop"):]
+        loop = feed[feed.index("session.receive()"): feed.index("if turn_done:")]
+        assert "_marks.set(" not in loop, (
+            "มีตัวเลื่อนที่คั่นอยู่ในลูปสตรีม — พักกลางท่อนแล้วเนื้อหาจะหาย"
+        )
+
+
+class TestRereadCurrentBlock:
+    """🔁 "อ่านท่อนนี้ใหม่" (user เคาะ 2026-08-17)
+
+    บริบท: ตอนนิยายอ่านอยู่ **ไมค์ปิด** (user เคาะวันเดียวกัน) ⇒ สั่งด้วยเสียงไม่ได้
+    จึงต้องมีปุ่ม · ฟังไม่ทันตรงไหนกดแล้วได้ยินท่อนนั้นใหม่ตั้งแต่ต้น
+
+    ใช้เส้นทางเดียวกับ abort ของปุ่มพัก: ทิ้ง turn ปัจจุบัน **ไม่เลื่อนที่คั่น** แล้ว
+    regen — ซึ่ง regen สั่ง flush ให้อยู่แล้ว (ดู test_regen_flushes_stale_audio)
+    ต่างกันตรงไม่ตั้งธง paused จึงป้อนท่อนเดิมต่อทันทีแทนที่จะรอกดอ่านต่อ
+    """
+
+    def test_reread_restarts_the_block(self):
+        from utils.voice import reader_stream_action
+
+        assert reader_stream_action(stopped=False, paused=False, reread=True) == "restart"
+
+    def test_pause_beats_reread(self):
+        """กดพักแล้วกด 🔁 ตามติด — ต้องพักไว้ก่อน ไม่ใช่วิ่งอ่านต่อเอง"""
+        from utils.voice import reader_stream_action
+
+        assert reader_stream_action(stopped=False, paused=True, reread=True) == "abort"
+
+    def test_stop_beats_everything(self):
+        from utils.voice import reader_stream_action
+
+        assert reader_stream_action(stopped=True, paused=True, reread=True) == "stop"
+
+    def test_reread_defaults_off(self):
+        """ค่าปริยายต้องไม่เปลี่ยนพฤติกรรมเดิม"""
+        from utils.voice import reader_stream_action
+
+        assert reader_stream_action(stopped=False, paused=False) == "send"
+
+    def test_recv_loop_accepts_the_reread_command(self):
+        src = (REPO / "server.py").read_text(encoding="utf-8")
+        ws = src[src.index('@app.websocket("/ws/reader")'):]
+        recv = ws[ws.index("async def recv_loop"): ws.index("async def feed_loop")]
+        assert '"reread"' in recv, "recv_loop ไม่รับคำสั่ง reread — ปุ่มจะกดแล้วเงียบ"
+
+    def test_stream_loop_consults_reread(self):
+        """กัน "ฟังก์ชันถูกแต่ไม่มีใครเรียก" — ผูกกับลูปสตรีมจริง"""
+        src = (REPO / "server.py").read_text(encoding="utf-8")
+        ws = src[src.index('@app.websocket("/ws/reader")'):]
+        feed = ws[ws.index("async def feed_loop"):]
+        loop = feed[feed.index("session.receive()"): feed.index("if turn_done:")]
+        assert "reread" in loop, "ลูปสตรีมไม่ดูธง reread — กดปุ่มแล้วต้องรอจนจบท่อน"

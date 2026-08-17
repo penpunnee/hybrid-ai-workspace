@@ -483,6 +483,28 @@ def build_reader_config(resume_handle: str | None):
     return cfg
 
 
+def reader_stream_action(stopped: bool, paused: bool, reread: bool = False) -> str:
+    """ระหว่างสตรีมเสียง **กลางท่อน** — ทำอะไรกับ chunk ถัดไป (pure → เทสได้)
+
+    คืน: "stop" (ปิดไปเลย) · "abort" (พัก → ทิ้งท่อนที่เหลือ ไม่เลื่อนที่คั่น)
+         · "restart" (🔁 อ่านท่อนนี้ใหม่ตั้งแต่ต้น) · "send"
+
+    🔴 มีเพราะบั๊กจริง 2026-08-15: ลูปสตรีมเช็คแต่ `stop` ⇒ กดพักกลางท่อนแล้ว
+    เสียงไหลต่อจนจบท่อน (600 ตัวอักษร ≈ ราว 1 นาที) · ธง `paused` เดิมถูกอ่านที่
+    หัว feed_loop ผ่าน `next_read_action` เท่านั้น = "พักได้เมื่อจบท่อน" ซึ่งช้าเกินไป
+    สำหรับปุ่มที่ผู้ใช้กดแล้วคาดหวังว่าจะเงียบทันที
+
+    ⚠️ `stop` ต้องชนะ `paused` เสมอ — ปิด WS ระหว่างพักอยู่ต้องเลิก ไม่ใช่ค้างรอ
+    """
+    if stopped:
+        return "stop"
+    if paused:
+        return "abort"
+    if reread:
+        return "restart"
+    return "send"
+
+
 def next_read_action(paused: bool, block: str, at_end: bool) -> str:
     """จบท่อนแล้วทำอะไรต่อ — pure → เทสได้
 

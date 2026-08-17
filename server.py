@@ -310,6 +310,10 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                 logger.info(f"[Voice WS] เล่าต่ออัตโนมัติ = {auto_continue}")
                             elif t == "close":
                                 stop.set()
+                            elif t == "reread":
+                                # 🔁 ฟังไม่ทัน — ตอนอ่านไมค์ปิด (user เคาะ 2026-08-17)
+                                # จึงสั่งด้วยเสียงไม่ได้ ต้องมาทางปุ่ม
+                                reread.set()
                     except WebSocketDisconnect:
                         stop.set()
                     except Exception as e:
@@ -509,6 +513,7 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
     from utils.reader import next_block
     from utils.voice import (
         READER_FEED_PREFIX, build_reader_config, live_control_signals, next_read_action,
+        reader_stream_action,
     )
 
     await websocket.accept()
@@ -526,8 +531,16 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
 
     stop = asyncio.Event()
     paused = asyncio.Event()        # set = พักอยู่
+    reread = asyncio.Event()        # set = 🔁 ขออ่านท่อนปัจจุบันใหม่ตั้งแต่ต้น
     resume_handle: str | None = None
     announced = False
+
+    # 🔑 ท่อนี้เคย **ไม่ log อะไรเลยนอกจากทางสายพัง** — 17 วันมี 3 บรรทัด ⇒ อาการ
+    # "สองเสียง/ที่คั่นวิ่ง/พักไม่หยุด" ทุกอย่างพิสูจน์จาก log ไม่ได้เลยสักข้อ
+    # (เจอ 2026-08-17) · หนึ่งบรรทัดต่อ session = ตอบคำถาม "เปิดซ้อนกันไหม" ได้ตรงๆ
+    # โดยไม่กลบ log อื่น (ทั้งวันมีราว 3,000 บรรทัด · rotate ที่ 10MB)
+    session_tag = f"{source}#{id(websocket) & 0xFFFF:04x}"
+    logger.info(f"[Reader WS] เปิด {session_tag} ที่คั่น {_marks.get(source)}")
 
     def _progress(pos: int) -> dict:
         return {"pos": pos, "percent": 100 if pos >= len(text) else int(pos * 100 / len(text))}
@@ -559,6 +572,10 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                 paused.clear()
                             elif t == "close":
                                 stop.set()
+                            elif t == "reread":
+                                # 🔁 ฟังไม่ทัน — ตอนอ่านไมค์ปิด (user เคาะ 2026-08-17)
+                                # จึงสั่งด้วยเสียงไม่ได้ ต้องมาทางปุ่ม
+                                reread.set()
                     except WebSocketDisconnect:
                         stop.set()
                     except Exception as e:
@@ -586,6 +603,7 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                 _marks.set(source, new_pos)
                                 continue
 
+                            reread.clear()   # ธงเป็นของท่อนที่กำลังจะอ่าน ไม่ใช่ท่อนก่อน
                             await session.send_client_content(
                                 turns=types.Content(
                                     role="user", parts=[types.Part(text=READER_FEED_PREFIX + block)]
@@ -594,7 +612,33 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                             )
                             turn_done = False
                             async for r in session.receive():
-                                if stop.is_set():
+                                act_now = reader_stream_action(
+                                    stopped=stop.is_set(), paused=paused.is_set(),
+                                    reread=reread.is_set(),
+                                )
+                                if act_now == "stop":
+                                    return
+                                if act_now == "abort":
+                                    # 🔴 user กดพักกลางท่อน (2026-08-15 "กดพักแล้วไม่พักเลย")
+                                    # ต้องหยุดส่งเสียง **เดี๋ยวนี้** ไม่ใช่รอจบท่อน (ท่อนละ
+                                    # ~1 นาทีของเสียง) · ไม่เลื่อนที่คั่น ⇒ กดอ่านต่อแล้ว
+                                    # ได้ยินท่อนนี้ใหม่ตั้งแต่ต้น (ฟังซ้ำดีกว่าเนื้อหาหาย)
+                                    # · regen เพราะ turn นี้ถูกทิ้งกลางคัน ปล่อยค้างบน
+                                    #   session เดิมแล้วป้อนซ้ำทีหลัง = สองท่อนพันกัน
+                                    logger.info(
+                                        "[Reader WS] พักกลางท่อน → หยุดส่งเสียงทันที "
+                                        "· ที่คั่นไม่ขยับ อ่านท่อนนี้ซ้ำเมื่อกดอ่านต่อ"
+                                    )
+                                    regen.set()
+                                    return
+                                if act_now == "restart":
+                                    # ที่คั่นยังไม่ขยับ ⇒ session ใหม่จะป้อนท่อนเดิม
+                                    # ซ้ำเอง · regen สั่ง flush ให้อยู่แล้ว
+                                    reread.clear()
+                                    logger.info(
+                                        "[Reader WS] 🔁 อ่านท่อนนี้ใหม่ตามคำสั่งผู้ใช้"
+                                    )
+                                    regen.set()
                                     return
                                 got_go_away, _secs, new_handle = live_control_signals(r)
                                 if new_handle:
@@ -627,6 +671,12 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                 await asyncio.gather(recv_loop(), feed_loop())
 
             if regen.is_set() and not stop.is_set():
+                # 🔴 ต่อ session ใหม่ = อ่านท่อนเดิม **ซ้ำตั้งแต่ต้น** (ตั้งใจ: ฟังซ้ำ
+                # ดีกว่าเนื้อหาหาย) แต่ WebSocket เป็นสายเดิม — เสียงท่อนเก่าที่ยังค้าง
+                # ใน jitter buffer ฝั่ง client จะเล่นต่อแล้วตามด้วยท่อนเดิมทั้งท่อน
+                # = "ประโยคเดิมซ้ำ" (user ยืนยันด้วยหู 2026-08-14)
+                # ⇒ สั่งล้างก่อนเสมอ · บทเรียนเดียวกับปุ่มพักใน bookreader.ts:101
+                await websocket.send_json({"type": "flush"})
                 continue
             break
     except WebSocketDisconnect:
@@ -637,6 +687,9 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
             await websocket.send_json({"type": "error", "message": str(e)})
         except Exception:
             pass
+    finally:
+        # คู่กับบรรทัด "เปิด" — สอง session ที่ทับช่วงเวลากันจะเห็นได้ทันทีจาก log
+        logger.info(f"[Reader WS] ปิด {session_tag} ที่คั่น {_marks.get(source)}")
 
 
 if __name__ == "__main__":
