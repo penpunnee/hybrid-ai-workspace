@@ -227,6 +227,74 @@ class TestVoiceHandlerWiring:
         assert "เริ่มค้น" in tool_calls, "ไม่ log ตอนเริ่มค้น = ไม่รู้ขอบซ้ายของช่วงเงียบ"
 
 
+class TestSearchWindowClosesTheMicGate:
+    """ประตูไมค์ต้องปิดตลอดช่วง tool call — ยืนยันบน prod 2026-08-21 07:43:45/07:43:53 UTC
+    (= 14:43 ไทย) `interrupted` สองครั้งพร้อม "ค้น 1 ครั้งใน turn นี้ · เงียบมา 22.4s/30.3s"
+    คือ turn ยังเปิดอยู่ตอนโดนตัด ⇒ ประตูฝั่ง client หมดอายุระหว่างที่เราเงียบ
+
+    🔑 เดินด้วย `ast` ไม่ใช่ค้นสตริงในซอร์ส — บทเรียน 2026-08-18: เทส `"reread" not in src`
+    เคยแดงเพราะไปโดน**คอมเมนต์ที่อธิบายบั๊กนั้นเอง** · `ast` ไม่เห็นคอมเมนต์
+    """
+
+    @pytest.fixture()
+    def tool_call_fn(self):
+        import ast
+        src = (REPO / "server.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "answer_tool_calls":
+                return node
+        pytest.fail("ไม่เจอ answer_tool_calls ใน server.py")
+
+    @staticmethod
+    def _send_json_lines(fn, event: str) -> list[int]:
+        """บรรทัดของ `websocket.send_json({"type": <event>})` ทุกจุดในฟังก์ชัน"""
+        import ast
+        out = []
+        for n in ast.walk(fn):
+            if not (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)):
+                continue
+            if n.func.attr != "send_json" or not n.args:
+                continue
+            arg = n.args[0]
+            if not isinstance(arg, ast.Dict):
+                continue
+            for k, v in zip(arg.keys, arg.values):
+                if (isinstance(k, ast.Constant) and k.value == "type"
+                        and isinstance(v, ast.Constant) and v.value == event):
+                    out.append(n.lineno)
+        return out
+
+    @staticmethod
+    def _call_lines(fn, attr: str) -> list[int]:
+        import ast
+        return [
+            n.lineno for n in ast.walk(fn)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+            and n.func.attr == attr
+        ]
+
+    def test_client_is_told_the_search_started(self, tool_call_fn):
+        assert self._send_json_lines(tool_call_fn, "searching"), (
+            "ไม่ส่ง event `searching` ⇒ ประตูฝั่ง client ตัดสินจาก playUntil อย่างเดียว "
+            "ซึ่งหมดอายุตั้งแต่วินาทีแรกของช่วงค้น = บั๊กเดิมกลับมาทั้งดุ้น"
+        )
+
+    def test_client_is_told_the_search_finished(self, tool_call_fn):
+        assert self._send_json_lines(tool_call_fn, "search_done"), (
+            "ไม่ส่ง event `search_done` ⇒ ประตูปิดจนกว่าจะชนเพดาน 60s ทุกครั้งที่ค้น"
+        )
+
+    def test_gate_opens_only_after_the_answer_is_handed_back(self, tool_call_fn):
+        """ปลดล็อกก่อนส่งผลค้นกลับ = ไมค์เปิดในช่วงที่โมเดลยังไม่เริ่มพูด = ช่องเดิมเป๊ะ"""
+        start = min(self._send_json_lines(tool_call_fn, "searching"))
+        done = max(self._send_json_lines(tool_call_fn, "search_done"))
+        handoff = self._call_lines(tool_call_fn, "send_tool_response")
+        assert handoff, "ไม่เจอ send_tool_response — โครงฟังก์ชันเปลี่ยนไป เทสนี้วัดผิดที่แล้ว"
+        assert start < min(handoff), "ปิดประตูช้าไป ต้องปิดก่อนเริ่มค้น"
+        assert done > max(handoff), "ปลดประตูเร็วไป ต้องปลดหลังส่งผลค้นกลับให้โมเดลแล้ว"
+
+
 class TestReaderHandlerWiring:
     @pytest.fixture()
     def feed(self):

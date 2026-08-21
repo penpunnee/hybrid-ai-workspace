@@ -352,6 +352,12 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                         f"[Voice WS] tool_call {len(calls)} ตัว → เริ่มค้น "
                         f"(ตั้งแต่นี้จนตอบกลับ โมเดลจะไม่ส่งเสียงออกมาเลย)"
                     )
+                    # 🔴 บอก client ให้ปิดประตูไมค์ตลอดช่วงนี้ (ยืนยันบน prod 2026-08-21
+                    # 07:43:45 + 07:43:53 UTC): ประตูฝั่ง client ตัดสินจาก "เสียงชิ้นสุดท้าย
+                    # จะเล่นจบเมื่อไร" อย่างเดียว ⇒ พอเราเงียบ 5-46 วิ ประตูหมดอายุ ไมค์เปิด
+                    # กลาง turn เสียงแวดล้อมเข้า VAD ตัด turn แล้วคำตอบที่กำลังจะพูดถูกล้างทิ้ง
+                    # (ข้อความบนจอไม่โดนแตะ = อาการ "คำตอบหลังค้นเว็บหาย" ที่ user รายงาน)
+                    await websocket.send_json({"type": "searching"})
                     replies = []
                     for fc in calls:
                         cid = getattr(fc, "id", "") or ""
@@ -400,6 +406,9 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                     # ช่วงที่ client ไม่ได้รับเสียงเลย ซึ่งต้องเอาไปเทียบกับ
                     # VOICE_SILENCE_SUSPECT_SEC ในบรรทัด interrupted ที่ตามมา (ถ้ามี)
                     search_done_at = time.monotonic()
+                    # คืนประตูให้ client — ต้องอยู่**หลัง** send_tool_response เสมอ
+                    # (ปลดก่อน = ไมค์เปิดในช่วงที่โมเดลยังไม่เริ่มพูด = ช่องเดิมที่เพิ่งอุด)
+                    await websocket.send_json({"type": "search_done"})
                     logger.info(
                         f"[Voice WS] ค้นเสร็จ ตอบกลับ {len(replies)} ตัว "
                         f"· เงียบไป {search_done_at - t_search:.1f}s"
