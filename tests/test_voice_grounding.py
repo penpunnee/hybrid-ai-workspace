@@ -224,6 +224,50 @@ class TestExistingVoiceConfigUntouched:
         assert cfg.session_resumption is not None
 
 
+class TestVadIsNotLeftOnMaximumSensitivity:
+    """🔴 ค่า default ที่ "ไม่ได้ตั้ง" ไม่ใช่ค่ากลาง
+
+    `AutomaticActivityDetection()` เปล่าๆ ดูเหมือนไม่ได้เลือกอะไร แต่ API reference
+    ระบุว่า **"The default is START_SENSITIVITY_HIGH"** = "detect the start of speech
+    more often" ⇒ เราสั่ง VAD ให้ไวที่สุดมาตลอดโดยไม่รู้ตัว แล้วไปกันเสียงรบกวนเอาเอง
+    ด้วยประตูไมค์ฝั่ง client (ซึ่งกันได้เฉพาะช่วงที่รู้ล่วงหน้าว่าจะเงียบ)
+
+    อาการที่ตามมา: เสียงแวดล้อมสั้นๆ ถูกนับเป็น "ผู้ใช้พูด" → ตัด turn → client
+    ล้างเสียงคำตอบทิ้ง (user ยืนยัน 2026-08-22 ว่าคำตอบหายจริง)
+
+    LOW = "requires clear, sustained speech" — คนพูดจริงยังแทรกได้ เสียงจามหรือ
+    เสียงเก้าอี้ไม่ผ่าน · จงใจไม่แตะ end sensitivity / silence_duration_ms:
+    คู่มือเตือนเองว่า silence ต่ำจะ "split a single utterance into multiple fragments"
+    และไม่มีอันไหนเกี่ยวกับบั๊กนี้
+    · `prefix_padding_ms` **ไม่แตะ** — API reference กับบทความภายนอกนิยามขัดกัน
+      (ตัวกรองเสียงสั้น vs look-back) ⇒ ยังไม่มีหลักฐานพอ
+    """
+
+    def test_start_of_speech_is_not_hair_trigger(self, cfg):
+        from google.genai import types
+
+        vad = cfg.realtime_input_config.automatic_activity_detection
+        assert vad is not None, "ไม่ได้ตั้ง VAD เลย = รับ HIGH มาเต็มๆ"
+        assert vad.start_of_speech_sensitivity == types.StartSensitivity.START_SENSITIVITY_LOW, (
+            "ปล่อยเป็น default = START_SENSITIVITY_HIGH = จับแม้เสียงเบาที่สุด "
+            "⇒ เสียงแวดล้อมตัด turn ทิ้งคำตอบ"
+        )
+
+    def test_automatic_vad_stays_enabled(self, cfg):
+        """ปิด VAD อัตโนมัติ = client ต้องส่ง activityStart/activityEnd เอง
+        ซึ่งเราไม่ได้ทำ (recv_loop ละเลย activity_* โดยตั้งใจ) ⇒ ปิดเมื่อไรเสียงตายทันที"""
+        vad = cfg.realtime_input_config.automatic_activity_detection
+        assert not vad.disabled
+
+    def test_barge_in_is_still_possible_at_the_api_level(self, cfg):
+        """user เคาะให้ลด sensitivity ไม่ใช่ตัด barge-in ทิ้ง — สวิตช์พูดแทรกต้องยังจริง
+        (NO_INTERRUPTION จะทำให้สวิตช์นั้นกลายเป็นสวิตช์หลอก)"""
+        from google.genai import types
+
+        assert (cfg.realtime_input_config.activity_handling
+                == types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS)
+
+
 class TestSearchLoopHasACeiling:
     """🔴 อุบัติเหตุจริงบน prod 2026-08-10 12:37 — โมเดลค้น 5 ครั้งใน 53 วินาที
     แล้ว **ไม่พูดอะไรเลยสักคำ**

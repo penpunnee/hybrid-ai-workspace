@@ -247,7 +247,32 @@ def build_live_config(slug: str, system_instruction: str, resume_handle: str | N
         # ความเสี่ยง echo ตัดคำตอบตัวเองจะเกิดเฉพาะกับคนที่เปิดสวิตช์ "พูดแทรกได้"
         # ซึ่งเป็นเจตนาของสวิตช์นั้นพอดี · ถ้าเจอปัญหาให้ปิดสวิตช์ ไม่ต้องแก้ไฟล์นี้
         realtime_input_config=types.RealtimeInputConfig(
-            automatic_activity_detection=types.AutomaticActivityDetection(),
+            # 🔴 ต้องระบุ sensitivity เอง — `AutomaticActivityDetection()` เปล่าๆ
+            # **ไม่ใช่ "ค่ากลาง"** แต่คือ `START_SENSITIVITY_HIGH` ("The default is
+            # START_SENSITIVITY_HIGH" · "detect the start of speech more often")
+            # ⇒ เราสั่ง VAD ให้ไวที่สุดมาตลอดโดยไม่รู้ตัว แล้วไปกันเสียงรบกวนเอาเอง
+            # ด้วยประตูไมค์ฝั่ง client ซึ่งกันได้เฉพาะช่วงที่รู้ล่วงหน้าว่าจะเงียบ
+            # (ช่วงค้นเว็บ) แต่กันไม่ได้ตอนที่ปิดประตูไม่ได้ — เช่นจังหวะที่ผู้ใช้
+            # เพิ่งพูดจบก่อนโมเดลเริ่มตอบ
+            #
+            # LOW = "requires clear, sustained speech" ⇒ คนพูดจริงยังแทรกได้
+            # เสียงจาม/เก้าอี้/ป๊อกจากการ flush บัฟเฟอร์ไม่ผ่าน
+            # (อาการจริง 2026-08-22 03:29:57: เสียงแวดล้อมตัด turn → คำตอบหาย)
+            #
+            # ⚠️ **จงใจไม่แตะอีก 3 ตัว:**
+            # · `end_of_speech_sensitivity` — ไม่เกี่ยวกับบั๊กนี้ และ LOW จะทำให้
+            #   turn จบช้าลง = รอนานขึ้นทุกประโยค
+            # · `silence_duration_ms` — คู่มือเตือนเองว่าค่าต่ำ "split a single
+            #   utterance into multiple small audio fragments"
+            # · `prefix_padding_ms` — API reference ("required duration of detected
+            #   speech before start-of-speech is committed") กับบทความภายนอก
+            #   ("look-back audio") **นิยามขัดกัน** ให้ผลตรงข้ามเรื่องกันเสียงรบกวน
+            #   ⇒ ยังไม่มีหลักฐานพอ อย่าเดา
+            automatic_activity_detection=types.AutomaticActivityDetection(
+                start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
+            ),
+            # คงไว้ — user เคาะว่าให้ลด sensitivity ไม่ใช่ตัด barge-in ทิ้ง
+            # (`NO_INTERRUPTION` จะทำให้สวิตช์พูดแทรกฝั่ง client กลายเป็นสวิตช์หลอก)
             activity_handling=types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
         ),
         # ⚠️ คอมเมนต์เดิมเขียนว่า compression ทำให้ "session ไม่มีลิมิตอายุ → ไม่มี go_away
