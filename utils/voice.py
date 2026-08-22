@@ -534,7 +534,8 @@ VOICE_SILENCE_SUSPECT_SEC = 15.0
 
 
 def interrupt_log_line(silence_s: float | None, search_count: int,
-                       since_search_s: float | None) -> str:
+                       since_search_s: float | None,
+                       since_mic_s: float | None = None) -> str:
     """บรรทัด log ตอน Gemini ส่ง `interrupted` — pure → เทสได้
 
     🔴 เหตุการณ์นี้ **ไม่เคยถูก log เลย** จนถึง 2026-08-18 ⇒ อาการ "คำตอบหลังค้นเว็บ
@@ -548,6 +549,15 @@ def interrupt_log_line(silence_s: float | None, search_count: int,
 
     `silence_s=None` = ยังไม่เคยส่งเสียงเลยใน session นี้ — **ห้ามติดธง**
     (ไม่รู้ค่า ≠ เข้าเงื่อนไข · เดาว่าใช่คือวิธีที่ทำให้เสียเวลาไป 4 รอบเมื่อ 08-16)
+
+    `since_mic_s` (เพิ่ม 2026-08-22) = เสียงจาก**ไมค์ผู้ใช้**เข้ามาล่าสุดเมื่อกี่วินาทีก่อน
+    🔑 ทำไมต้องมี: สองรอบแรกของงานนี้ (08-21 และ 08-22 เช้า) ชี้ขาดไม่ได้ว่าเสียงที่
+    ตัด turn เข้ามา*ตอนไหน* — ต้องอนุมานจากตำแหน่งเวลาของบรรทัด log แทน เพราะ
+    **ไม่มีอะไรใน server ที่ log เสียงขาเข้าเลย** (`[VoiceLevel]` วัด `response.data`
+    = เสียงที่ขวัญพูด ไม่ใช่ไมค์) · หลังปิดช่องส่งไม้ต่อแล้ว ตัวเลขนี้แยกได้ทันที:
+      · ~0.0s ⇒ client ยังส่งเสียงอยู่ตอนโดนตัด = ยังมีรูเหลือ
+      · สิบ ๆ วินาที ⇒ ประตูปิดได้จริง ต้นเหตุอยู่ที่อื่น
+    `None` = ไม่เคยมีเสียงไมค์เข้ามาเลย — ต้องพิมพ์ต่างจาก 0.0 ไม่งั้นหลอกตาเหมือนเดิม
     """
     silence = f"{silence_s:.1f}s" if silence_s is not None else "?"
     if search_count > 0:
@@ -561,7 +571,9 @@ def interrupt_log_line(silence_s: float | None, search_count: int,
         if silence_s is not None and silence_s >= VOICE_SILENCE_SUSPECT_SEC
         else ""
     )
-    return f"[Voice WS] interrupted — เงียบมา {silence} · {search}{flag}"
+    mic = (f" · ไมค์เข้าเมื่อ {since_mic_s:.1f}s ก่อน" if since_mic_s is not None
+           else " · ไม่มีเสียงไมค์เข้ามาเลยใน session นี้")
+    return f"[Voice WS] interrupted — เงียบมา {silence} · {search}{mic}{flag}"
 
 
 # PCM 16-bit mono 24kHz = ฟอร์แมตเสียงขาออกของ Live API (ดู AudioLevelMeter.rate)

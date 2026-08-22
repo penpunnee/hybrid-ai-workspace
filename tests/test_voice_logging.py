@@ -66,6 +66,37 @@ class TestInterruptLogLine:
         assert isinstance(line, str) and line.strip()
         assert "⚠️" not in line, "ไม่รู้ค่า ≠ เข้าเงื่อนไข — ห้ามเดาว่าใช่"
 
+    def test_line_says_when_mic_audio_last_arrived(self):
+        """🔑 ตัวชี้ขาดที่ขาดมาตลอด — สองรอบที่ผ่านมาสรุปไม่ได้ว่าเสียงที่ตัด turn
+        เข้ามา *ตอนไหน* ต้องเดาจากตำแหน่งเวลาของบรรทัด log แทน
+
+        ที่ต้องแยกให้ออกหลังปิดช่องส่งไม้ต่อ (2026-08-22):
+          · ไมค์เข้าเมื่อ ~0.0s ก่อน ⇒ client ยังส่งเสียงอยู่ตอนโดนตัด = ยังมีรูเหลือ
+          · ไมค์เข้าเมื่อสิบ ๆ วินาทีก่อน ⇒ ประตูปิดได้จริง ต้นเหตุอยู่ที่อื่น
+        ⇒ ไม่มีตัวเลขนี้ = วินิจฉัยรอบหน้าก็ยังเป็นการเดาเหมือนเดิม
+        """
+        from utils.voice import interrupt_log_line
+
+        line = interrupt_log_line(
+            silence_s=32.8, search_count=1, since_search_s=0.0, since_mic_s=0.3
+        )
+        assert "0.3" in line, "ไม่บอกว่าไมค์ส่งเสียงเข้ามาล่าสุดเมื่อไร = ชี้ขาดไม่ได้"
+
+    def test_no_mic_audio_at_all_is_stated_not_guessed(self):
+        """ไม่เคยมีเสียงไมค์เข้ามาเลย ≠ เพิ่งเข้ามา — ห้ามพิมพ์ 0.0 หลอกตา
+        (กฎเดียวกับ silence_s=None: ไม่รู้ค่า ≠ เข้าเงื่อนไข)"""
+        from utils.voice import interrupt_log_line
+
+        line = interrupt_log_line(
+            silence_s=5.0, search_count=0, since_search_s=None, since_mic_s=None
+        )
+        assert "0.0" not in line
+
+    def test_mic_field_is_optional_so_old_callers_do_not_crash(self):
+        from utils.voice import interrupt_log_line
+
+        interrupt_log_line(silence_s=1.0, search_count=0, since_search_s=None)
+
     def test_search_context_is_included(self):
         """ต้องรู้ว่า turn นี้ค้นเว็บไปกี่ครั้ง + ค้นเสร็จไปนานแล้วเท่าไร"""
         from utils.voice import interrupt_log_line
@@ -219,6 +250,45 @@ class TestVoiceHandlerWiring:
         used = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
         assert "reread" not in used, (
             "handler เสียงอ้างถึงธง `reread` ที่ไม่มีในสโคปนี้ — NameError จะฆ่า session"
+        )
+
+    def test_mic_audio_arrival_is_recorded(self):
+        """กัน "ฟังก์ชันถูกแต่ไม่มีใครเรียก" — `interrupt_log_line` รับ since_mic_s ได้
+        ไม่แปลว่ามีใครจดเวลาให้มัน · ถ้า recv_loop ไม่จด บรรทัด log จะบอก
+        "ไม่มีเสียงไมค์เข้ามาเลย" ทุกครั้ง = ตาบอดแบบใหม่ที่ดูเหมือนมีข้อมูล
+
+        เดิน `ast` จากทั้งไฟล์ ไม่ตัดซอร์สเป็นสตริง — ซอร์สที่ตัดมาเป็นบล็อกย่อหน้า
+        `ast.parse` แปลไม่ได้ และ `dedent` ก็ไม่ช่วยเพราะบรรทัดแรกไม่มีย่อหน้าติดมา
+        """
+        import ast
+        tree = ast.parse((REPO / "server.py").read_text(encoding="utf-8"))
+        voice = next(
+            n for n in ast.walk(tree)
+            if isinstance(n, ast.AsyncFunctionDef) and n.name == "voice_websocket"
+        )
+        recv = next(
+            n for n in ast.walk(voice)
+            if isinstance(n, ast.AsyncFunctionDef) and n.name == "recv_loop"
+        )
+        assigned = {
+            t.id
+            for n in ast.walk(recv)
+            if isinstance(n, ast.Assign)
+            for t in n.targets
+            if isinstance(t, ast.Name)
+        }
+        declared = {
+            name for n in ast.walk(recv)
+            if isinstance(n, ast.Nonlocal) for name in n.names
+        }
+        assert "last_mic_at" in assigned, "recv_loop ไม่จดเวลาเสียงไมค์"
+        assert "last_mic_at" in declared, (
+            "จดใส่ตัวแปร local ของ recv_loop เอง — send_loop จะไม่มีวันเห็นค่า"
+        )
+
+    def test_interrupt_line_is_given_the_mic_timing(self, send_loop):
+        assert "since_mic_s=" in send_loop, (
+            "จดเวลาไว้แต่ไม่ได้ส่งเข้าบรรทัด log = ชี้ขาดรอบหน้าไม่ได้เหมือนเดิม"
         )
 
     def test_search_window_has_a_left_edge(self, tool_calls):

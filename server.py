@@ -263,6 +263,12 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     # ⚠️ **ห้ามรีเซ็ตทุก turn** — ประตูไม่ได้รีเซ็ตตอนขึ้น turn ใหม่ ถ้ารีเซ็ตที่นี่
     # ตัวเลขจะสวยขึ้นเฉย ๆ โดยไม่ตรงกับของจริง (บทเรียนเดียวกับ meter ข้างล่าง)
     last_audio_at: float | None = None
+    # 🔑 เวลาที่ได้รับเสียงจาก**ไมค์ผู้ใช้**ล่าสุด (2026-08-22) — ตัวชี้ขาดที่ขาดมาตลอด
+    # server ไม่เคย log เสียงขาเข้าเลย (`[VoiceLevel]` วัด response.data = เสียงขวัญ)
+    # ⇒ สองรอบแรกของงานนี้ต้องอนุมานว่า "เสียงเข้ามาตอนไหน" จากตำแหน่งเวลาของ log
+    # ⚠️ นอกลูป reconnect ด้วยเหตุผลเดียวกับ last_audio_at — ประตูฝั่ง client
+    # ไม่ได้รีเซ็ตตอนต่อ session ใหม่ ตัวเลขจึงต้องไม่รีเซ็ตตาม
+    last_mic_at: float | None = None
     search_done_at: float | None = None
     # ⚠️ สร้าง **นอก**ลูป reconnect โดยตั้งใจ — ถ้าอยู่ในลูป นาฬิกาจะรีเซ็ตทุกนาทีที่ 10
     # ซึ่งพอดีกับจุดที่เราสงสัยว่าเสียงเบาลง = มองไม่เห็นสิ่งที่ตั้งใจจะดู
@@ -279,6 +285,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                     announced = True
 
                 async def recv_loop():
+                    nonlocal last_mic_at
                     try:
                         while not stop.is_set() and not regen.is_set():
                             try:
@@ -288,6 +295,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                             t = msg.get("type", "")
                             if t == "audio":
                                 import base64
+                                last_mic_at = time.monotonic()   # ดูเหตุผลที่ประกาศตัวแปร
                                 pcm = base64.b64decode(msg["data"])
                                 await session.send_realtime_input(
                                     audio=types.Blob(data=pcm, mime_type="audio/pcm;rate=16000")
@@ -473,6 +481,8 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                             search_count=search_count,
                                             since_search_s=(None if search_done_at is None
                                                             else now - search_done_at),
+                                            since_mic_s=(None if last_mic_at is None
+                                                         else now - last_mic_at),
                                         ))
                                     for evt in events:
                                         await websocket.send_json(evt)
