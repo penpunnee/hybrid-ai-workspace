@@ -677,51 +677,58 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-08-18** · ยกมาจากหัว `MEMORY.md` ตอนจัดโครง 08-17)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-08-23**)
 
-> #### 🥇 ข้อ 1 ชี้ขาดแล้ว (08-18 เที่ยง): turn **ยังเปิดอยู่** ตอนโดน `interrupted` = บั๊กจริง → แก้ที่ประตู
-> คำถามค้าง "ตอน `interrupted` เข้ามา turn จบแล้วหรือยัง" ตอบได้**โดยไม่ต้องเติม log** — หลักฐาน 3 ชั้น:
-> 1. **สเปก:** field `interrupted` = "a client message has interrupted **current model
->    generation**" — ยิงได้เฉพาะตอน generation กำลังเดินเท่านั้น ([ai.google.dev/api/live](https://ai.google.dev/api/live))
-> 2. **ลำดับตามสเปก:** turn ที่โดนขัดไป `interrupted > turn_complete` (ไม่มี
->    `generation_complete`) ⇒ `turn_complete` เป็น*ผล*ของ interrupt ไม่ใช่ตัวจบ turn ปกติ
-> 3. **พยานทางอ้อมใน log เดิม:** `server.py` reset `search_count = 0` ทันทีที่
->    `turn_complete` มา (มีตั้งแต่ 08-10) — บรรทัด interrupt 13:11:22 พิมพ์ **"ค้น 1 ครั้ง
->    ใน turn นี้"** ⇒ ไม่มี `turn_complete` มาก่อนเลยตั้งแต่ค้นเสร็จจนโดนตัด
+> #### ✅ ปิดคดี "คำตอบหลังค้นเว็บหาย" แล้ว — งานค้างข้อ 1 ที่เปิดมาตั้งแต่ 08-14
+> ค้น 6 รอบ (08-23 12:24-12:33) **interrupt ที่จังหวะค้นเสร็จ 0 ครั้ง** · user ยืนยัน "ผ่านรอบนี้"
+> เดิม 3/3 ครั้งที่บันทึกได้ ตัดวินาทีเดียวกับ "ค้นเสร็จ" เป๊ะ · แก้ 3 ชั้น deploy+verify ครบ:
+> `d32c88b`+`07419d2` (ปิดประตูตลอด tool call) · `8fb2022`+`d4999d0` (ปลดล็อกตอนเสียงชิ้นแรก
+> ไม่ใช่ตอนส่งผลค้น) · `3432d29` (VAD `start_of_speech_sensitivity` = LOW)
+> **รายละเอียดเต็ม + บทเรียน + กับดักทั้งหมดอยู่ใน `docs/session-log/devlog.md` หัวข้อ [2026-08-21 → 08-23]**
 >
-> ❌ สมมติฐานย่อยเดิม "หมดอายุ*ระหว่างค้นเว็บ* 15-45 วิ" ยังตายอยู่ (เงียบแค่ 2.4s ไม่ใช่ 20s+)
-> — กลไกที่เข้าเค้าตอนนี้: **โมเดลหยุดส่งเสียงกลางคัน 2.4s+ ทั้งที่ turn ยังไม่จบ** →
-> `playUntil` หมด + หาง 250ms (`~/appscript.ui/utils/voicegate.ts:27`) → ไมค์เปิด →
-> เสียงแวดล้อมเข้า trigger VAD → ตัด turn → `flushPlayback()` ล้างเสียงที่เหลือ
-> ⇒ **งานถัดไป:** (ก) เก็บรอบใช้จริง 1 รอบบน prod สะอาดยืนยันลายเซ็นซ้ำ — session
-> หลักฐาน 08-17 แปดเปื้อนอุบัติเหตุสายผี `1011` ซึ่ง `dd8f273` เพิ่งแก้*ทีหลัง* ·
-> (ข) แก้ที่ประตู: `HalfDuplexGate` ต้องรู้สถานะ turn (ผูกกับ event `done`) ไม่ใช่ดูแค่
-> `playUntil` · failing test ก่อนเสมอ · (ค) ถ้าอยากเลิกพึ่งพยานทางอ้อม เติม log บรรทัดเดียว
-> ตอน `turn_complete` ฝั่ง voice (`server.py:470` ตอนนี้ส่ง `done` เงียบ ๆ ไม่ log)
+> 🔑 บทเรียนที่ใช้ซ้ำได้: `AutomaticActivityDetection()` **เปล่าๆ ไม่ใช่ "ค่ากลาง"** แต่คือ
+> `START_SENSITIVITY_HIGH` (สเปกเขียนตรงๆ) ⇒ เราสั่ง VAD ให้ไวสุดมาตลอดแล้วเอาประตูฝั่ง
+> client ไปกันเสียงรบกวนแทน · และ **ตำแหน่ง**ของ event บอกกลไกแม่นกว่า**ความยาว**ของช่วงเงียบ
+> · vault: `wiki/concepts/gemini-live-vad-defaults.md`
 >
-> ⚠️ **log คอนเทนเนอร์เป็น UTC** — `13:10` ใน log = **20:10 ไทย** (เคยทำ timeline สับสน
-> มาแล้ว: session หลักฐานเกิด*หลัง* deploy `2df117b` 13:55 ไทย ไม่ใช่ก่อน) ·
-> log rotate แล้ว **grep ต้องรวม `server.log.1` ด้วย** ไม่งั้นเจอแต่ health poll
+> #### 🥇 งานถัดไป — เลือกได้
+> 1. **ธง ⚠️ ใน `interrupt_log_line` over-fire แล้ว** (เล็ก) — เกณฑ์ดูแค่ความยาวความเงียบ
+>    ซึ่งตอนนี้ส่วนใหญ่คือ "user คิดนานแค่ไหนก่อนพูด" · 08-23 ติดธง 1 ครั้งทั้งที่
+>    `เสร็จเมื่อ 33.4s ก่อน` = ไม่เกี่ยวกับการค้นเลย ⇒ ผูกเกณฑ์กับ `since_search_s` ด้วย
+>    (กับดักเดียวกับที่เขียนเตือนตัวเองไว้ใน `test_short_silence_is_not_flagged`)
+> 2. 🔴 **ไมค์ตายหลังสายโทรเข้าบน iPhone** — ค้นข้อมูลไว้แล้ว ยังไม่ได้ทำ · เกิดจริง 08-21
+>    14:49-14:51 (สายเข้า → ปัดทิ้ง → กลับมาพูด เปิดสวิตช์แทรกด้วย ก็ยังเงียบสนิท 89 วิ)
+>    · ยืนยันจาก log ว่า **ฝั่ง server ไม่ผิด** — resume หลัง go_away ต่อติด (`regen=False`
+>    ตอนปิดสาย) และเส้นนี้เคยทำงานได้จริง 5 รอบติดเมื่อ 08-09
+>    · ตัวแก้ `c0b25be` ปลุกแค่ `AudioContext` (อยู่ในบันเดิลจริง ตรวจแล้ว) แต่**ไม่มีการเช็ค
+>    `MediaStreamTrack` เลย** (grep `onmute`/`onended`/`track.readyState` = ไม่มี)
+>    · สิ่งที่ค้นมาได้: iOS ปิดเสียงเองตอนมีสายเข้า **โดยไม่มี DOM event ใดๆ แจ้ง** และวิธีกู้
+>    คือ `stop()` ทุก track แล้ว `getUserMedia` ใหม่ ([twilio-video.js#941](https://github.com/twilio/twilio-video.js/issues/941)
+>    · [twilio-voice.js#91](https://github.com/twilio/twilio-voice.js/issues/91))
+>    🔴 **สองอย่างที่ต้องทำและโค้ดที่ user เอามาให้ดูขาดไป:** ตรวจด้วย**ระดับสัญญาณ** (RMS
+>    300-500ms) ไม่ใช่ธง `muted` (track อาจ live+unmuted แต่ป้อนความเงียบ) · และต้อง
+>    **ต่อ `MediaStreamAudioSourceNode` ใหม่เข้ากราฟ** — เปลี่ยนแค่ `this.mic` ไม่มีผล
+>    เพราะ `proc.onaudioprocess` ไม่เคยอ่านตัวแปรนั้น (`voicelive.ts:155-173`)
+> 3. **Gemini ตายเงียบกลางท่อน ไม่ฟื้นเอง** — prod ไม่มี watchdog (revert `2670c8e` ตั้งแต่ 08-15)
+>    ถ้าเอากลับ **เอาเฉพาะ watchdog อย่าเอา pacing** · ลายเซ็น: `ป้อนท่อน …` ที่ไม่มี `ท่อนจบ …` ตาม
+> 4. **voice idle 1008-loop** ยังอยู่ · แย่ลงโดยอ้อมตอนอ่านนิยาย (ไมค์ปิด ⇒ session แชทเสียง
+>    idle ตลอด ⇒ 1008 ทุก ~151 วิทั้งเล่ม)
+> 5. 🧹 `aiSpeaking()` มีกับดัก `> 0` ตัวเดียวกับที่ `externalSpeaking()` เคยโดน —
+>    `now < Math.max(0,0) + tail` จริงทุกครั้งที่ `now < tailMs` · ของจริงไม่กระทบ
+>    (session เริ่มหลังคลิก) แต่ควรแยกคอมมิตพร้อมเทสของมันเอง
 >
-> ⚠️ **`[VoiceLevel]` ไม่ใช่ไมค์** — `server.py:444` วัด `response.data` = **เสียงที่ขวัญพูด**
-> ช่องว่างของบรรทัดพวกนั้น = "ขวัญไม่ได้พูด" ไม่ใช่ "ไมค์ปิด" · **สถานะไมค์อยู่ฝั่ง client
-> ทั้งหมด server ไม่เคย log** ⇒ อาการ "ไมค์สลับเปิดปิดเอง" ยังพิสูจน์ไม่ได้โดยโครงสร้าง
-> ⚠️ เสียงจาก Gemini **มาถึงเร็วกว่าเวลาจริง ~2.5 เท่า** (10 วิของเสียงมาใน 4 วินาฬิกา) แต่
-> `playUntil` นับถูกอยู่แล้ว (`base = Math.max(now, this.playUntil)`) ⇒ **ความบูดของ stream
-> ไม่ได้ทำให้ประตูกระพริบ อย่าไปแก้จุดนั้น**
->
-> #### ✅ ปิดไปแล้ว 08-17 เย็น — สาย `/ws/voice` ค้างเป็นผี (`dd8f273` deployed+verified)
-> `1011 Resource has been exhausted (quota)` **ครั้งแรกในทั้งไฟล์ log** เกิดจากมี **2 Live
-> session พร้อมกัน**: หน้าเว็บโหลดใหม่ตอน 13:10:09 ขณะสายเก่ายังเปิด ⇒ สายเก่าเป็นผี
-> ต้นเหตุ: `send_loop` ค้างใน `async for ... session.receive()` (ไม่มี timeout) เห็นธง `stop`
-> ได้เฉพาะเมื่อ Gemini ส่งอะไรมา + `asyncio.gather()` **ไม่ cancel พี่น้อง มันรอครบทุกตัว**
-> ⇒ แก้ด้วย `run_until_both_done()` (`utils/voice.py`) · รายละเอียดเต็มใน `docs/session-log/devlog.md`
-> ⚠️ **ตัวแก้นี้ครอบเฉพาะตอน client หลุดไปแล้ว** — ข้อ 3 (1008-loop) เป็นสาย **ที่ยังต่ออยู่
-> แต่ idle** ซึ่ง `send_loop` ก็ยังนั่งใน `session.receive()` เหมือนเดิม ⇒ **อย่าเหมาว่าปิดไปด้วย**
-> (เคยเขียนเชื่อมโยงแรงเกินหลักฐานแล้วต้องกลับมาแก้ — ดูผลเทส idle ใน devlog)
-> 🔴 **กับดัก deploy:** `server.py` mount เป็น **ไฟล์เดี่ยว** ⇒ `git reset --hard` ทำ inode ใหม่
-> แต่คอนเทนเนอร์ยังชี้ inode เก่า **`docker restart` ไม่พอ ต้อง `--force-recreate`**
-> ⇒ **เทียบ `ls -i` host กับ container ก่อนเชื่อว่า deploy ถึง** (ดู `docs/reference/infra-nas.md`)
+> #### 🔴 กติกาที่เพิ่งได้บทเรียนมา — อ่านก่อนลงมือ
+> - **ห้ามรัน pytest ชุดเต็มในคอนเทนเนอร์ prod** — cwd `/app` ⇒ เขียน log ลง
+>   `/app/logs/server.log` ตัวจริง กลบหลักฐานที่กำลังจะใช้ verify (พลาดซ้ำ 08-21)
+>   ⇒ ชุดเต็มให้ CI รัน (`gh run list`) · ในคอนเทนเนอร์รันได้เฉพาะไฟล์เดียวที่ไม่แตะ log
+> - เครื่อง Mac **ไม่มี ruff/pytest** และคอนเทนเนอร์ไม่มี ruff ⇒ `uvx ruff check .` ·
+>   `uvx --with pytest --with google-genai --from pytest pytest tests/<file> -q`
+>   ⚠️ sandbox uvx ขาด `dotenv` ⇒ `test_core_config_and_voice_module_agree` แดงเสมอ
+>   (พิสูจน์แล้วว่าไม่ใช่ regression — stash การแก้ทิ้งแล้วก็ยังแดง)
+> - **ก่อน `sync_static.sh` ต้องพิสูจน์ว่า build จาก HEAD สะอาดได้ hash เดียวกับที่ prod
+>   เสิร์ฟอยู่** ไม่งั้นอาจกลืนงานที่ยังไม่ได้ commit ทิ้ง
+> - `--force-recreate` ล้มกลางทางได้จริง (เจอซ้ำ 08-22) — กู้ด้วย `compose up -d hybrid-ai`
+>   เฉยๆ · เทียบ `ls -i` host กับ container เสมอ (ดู `docs/reference/infra-nas.md`)
 >
 > #### 🔴 DB backup ตายมา 36 วัน (ตรวจจริง 2026-08-18)
 > ตัวล่าสุด `db_backup_20260712_194423.tar.gz` (12 ก.ค.) · **ไม่มี DSM task ไหนเรียก
@@ -733,6 +740,9 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > #### 🔒 ข้อห้ามเพิ่มเติมที่ยังมีผล
 > ห้ามใช้ `BaseHTTPMiddleware` คุม body · `_BodyTooLarge` ห้ามสืบทอด `HTTPException`
 > · `~/appscript.ui` มี dependency ที่ไม่ประกาศใน `package.json`
+> · **ห้ามแตะ `end_of_speech_sensitivity` / `silence_duration_ms` / `prefix_padding_ms`**
+>   โดยไม่มีหลักฐานใหม่ — เหตุผลรายตัวเขียนคาไว้ใน `utils/voice.py` แล้ว
+>   (`prefix_padding_ms` โดยเฉพาะ: สเปกกับบทความภายนอกนิยาม**ขัดกัน**)
 
 #### ▼ สถานะรอบ 2026-08-17 บ่าย
 
