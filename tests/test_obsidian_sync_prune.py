@@ -143,3 +143,11 @@ def test_a_file_that_failed_to_embed_is_never_pruned(vault, col, monkeypatch):
     assert col.count() == 2, "ลบ index ทิ้งเพราะ Ollama ดับ = หายนะ"
     assert col.deleted_calls == []
     assert mod  # กัน import ไม่ถูกใช้
+
+
+# ⚠️ เคยเขียนเทส "get() คืน id ไม่ครบ → ห้าม prune" แล้วลบทิ้ง (2026-08-23) —
+# **มันผ่านแบบว่างเปล่า** เพราะทิศทางความเสี่ยงกลับด้านกับที่คิด:
+#   stale = [i for i in col.get()["ids"] if i not in seen]
+# get() ขาด ⇒ รายการ stale สั้นลง ⇒ **ลบน้อยลง** (ของเก่าค้าง = กู้ได้)
+# ทิศที่อันตรายจริงคือ `seen` ขาด ซึ่งมีเทสคุมแล้วสองเคส (embed ล้ม · vault ว่าง)
+# วัดบน prod 08-23: chromadb 1.5.9 · count()=87 · len(get()["ids"])=87 = ครบ
