@@ -151,3 +151,21 @@ def test_a_file_that_failed_to_embed_is_never_pruned(vault, col, monkeypatch):
 # get() ขาด ⇒ รายการ stale สั้นลง ⇒ **ลบน้อยลง** (ของเก่าค้าง = กู้ได้)
 # ทิศที่อันตรายจริงคือ `seen` ขาด ซึ่งมีเทสคุมแล้วสองเคส (embed ล้ม · vault ว่าง)
 # วัดบน prod 08-23: chromadb 1.5.9 · count()=87 · len(get()["ids"])=87 = ครบ
+
+
+def test_prune_failure_must_not_pollute_the_error_count(vault, col, monkeypatch):
+    """🔴 `errors` มีสัญญาว่า "จำนวนไฟล์ที่ upsert ล้ม" — ตรึงไว้ที่
+    tests/test_vault_sync_errors.py (บั๊ก 2026-08-12 ที่ `skipped` โกหกว่าเขียว)
+
+    รอบแรกของ prune บวก prune failure เข้า `errors` ⇒ **CI แดง 3 ตัว** เพราะ mock
+    ในไฟล์นั้นคืน dict ที่ไม่มีคีย์ `ids` ⇒ ตัวเลขสองความหมายมารวมกัน = ตัวชี้วัด
+    โกหกรอบใหม่ในโค้ดที่เขียนมาแก้ตัวชี้วัดโกหกพอดี
+    """
+    from utils.obsidian_sync import sync_vault
+
+    sync_vault(str(vault))
+    monkeypatch.setattr(col, "get", lambda ids=None, **k: {"metadatas": []})
+    out = sync_vault(str(vault))
+
+    assert out["errors"] == 0, "prune ล้มไม่ใช่ไฟล์ล้ม ห้ามปนกัน"
+    assert out["removed"] == 0

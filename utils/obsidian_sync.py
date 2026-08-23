@@ -122,16 +122,23 @@ def sync_vault(vault_path: str = "") -> dict:
     # หน้าจริง 0.372) = ตอบคำถามจากเนื้อหาที่เจ้าของตั้งใจลบทิ้ง
     # · ตัวชี้วัดโกหกด้วย: คืน ok:true errors:0 ทั้งที่ index 88 แต่ไฟล์จริง 87
     removed = 0
+    prune_error = ""
     if seen:
         try:
-            stale = [i for i in (col.get()["ids"] or []) if i not in seen]
+            # `.get("ids") or []` ไม่ใช่ `["ids"]` — collection บางตัว (และ mock ในเทส)
+            # ไม่คืนคีย์นี้เมื่อยังว่าง · KeyError ที่นี่ = prune ล้มทั้งที่ sync ปกติ
+            all_ids = (col.get() or {}).get("ids") or []
+            stale = [i for i in all_ids if i not in seen]
             if stale:
                 col.delete(ids=stale)
                 removed = len(stale)
                 logger.info(f"Vault sync: prune {removed} เอกสารที่ไม่มีไฟล์แล้ว")
         except Exception as e:
+            # 🔴 **ห้ามบวกเข้า `errors`** — คีย์นั้นมีสัญญาว่า "จำนวนไฟล์ที่ upsert ล้ม"
+            # ตรึงไว้ด้วย tests/test_vault_sync_errors.py (บั๊ก 2026-08-12 ที่ skip โกหก)
+            # เอา prune ไปปน = ตัวเลขคนละความหมายมารวมกัน = ตัวชี้วัดโกหกรอบใหม่
             logger.error(f"Vault sync prune failed: {e}")
-            errors += 1
+            prune_error = str(e)
     elif md_files:
         # สแกนเจอไฟล์แต่ถูกกรองทิ้งหมด (ทุกตัวอยู่ใต้โฟลเดอร์ที่ขึ้นต้นด้วยจุด)
         logger.warning("Vault sync: ไม่มีไฟล์ที่ไม่ถูกซ่อนเลย ข้าม prune")
@@ -144,6 +151,8 @@ def sync_vault(vault_path: str = "") -> dict:
     logger.info(f"Vault sync complete: {added} added, {skipped} skipped, {removed} removed, {errors} errors out of {len(md_files)} total")
     out = {"ok": errors == 0, "total": len(md_files), "synced": added,
            "skipped": skipped, "removed": removed, "errors": errors}
+    if prune_error:
+        out["prune_error"] = prune_error
     if errors:
         out["error"] = f"sync ไม่สำเร็จ {errors}/{len(md_files)} ไฟล์ (ดู log)"
     return out

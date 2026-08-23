@@ -723,13 +723,21 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 >    (session เริ่มหลังคลิก) แต่ควรแยกคอมมิตพร้อมเทสของมันเอง
 >
 > #### 🔴 กติกาที่เพิ่งได้บทเรียนมา — อ่านก่อนลงมือ
-> - **ห้ามรัน pytest ชุดเต็มในคอนเทนเนอร์ prod** — cwd `/app` ⇒ เขียน log ลง
->   `/app/logs/server.log` ตัวจริง กลบหลักฐานที่กำลังจะใช้ verify (พลาดซ้ำ 08-21)
->   ⇒ ชุดเต็มให้ CI รัน (`gh run list`) · ในคอนเทนเนอร์รันได้เฉพาะไฟล์เดียวที่ไม่แตะ log
-> - เครื่อง Mac **ไม่มี ruff/pytest** และคอนเทนเนอร์ไม่มี ruff ⇒ `uvx ruff check .` ·
->   `uvx --with pytest --with google-genai --from pytest pytest tests/<file> -q`
->   ⚠️ sandbox uvx ขาด `dotenv` ⇒ `test_core_config_and_voice_module_agree` แดงเสมอ
->   (พิสูจน์แล้วว่าไม่ใช่ regression — stash การแก้ทิ้งแล้วก็ยังแดง)
+> - ✅ **รันชุดเต็มบนเครื่องได้ 47 วินาที — ทำทุกครั้งก่อน push** (ตั้งไว้ 08-23)
+>   ```bash
+>   uv venv /tmp/uivenv --python 3.12 && VIRTUAL_ENV=/tmp/uivenv uv pip install -r requirements.txt
+>   LOG_FILE=/tmp/test.log /tmp/uivenv/bin/python -m pytest -q      # 1625 passed / 15 skipped
+>   uvx ruff check .
+>   ```
+>   🔑 **`LOG_FILE=` สำคัญ** — ไม่ตั้ง = เขียนทับ `server.log` ที่กำลังใช้ verify อยู่
+>   · รันเป็นไฟล์ๆ ด้วย `uvx --with pytest --with python-dotenv --with google-genai …`
+>   ก็ได้ แต่ **อย่าใช้แทนชุดเต็ม** — 08-23 รันแค่ 4 ไฟล์แล้ว push ⇒ CI แดงเพราะ
+>   `tests/test_vault_sync_errors.py` ที่ไม่รู้ว่ามีอยู่
+> - ❌ **ห้ามรัน pytest ในคอนเทนเนอร์ prod** — cwd `/app` ⇒ เขียน log ลง
+>   `/app/logs/server.log` ตัวจริง (พลาดมาแล้ว 08-21) · ตอนนี้ไม่มีเหตุต้องรันที่นั่นแล้ว
+> - 🔴 **ก่อนแก้ฟังก์ชันไหน `grep -rl "<ชื่อฟังก์ชัน>" tests/` ก่อนเสมอ** — สัญญาของค่า
+>   ที่มันคืนอาจถูกตรึงไว้ในไฟล์ที่ชื่อไม่เกี่ยวกันเลย (`sync_vault` ถูกตรึงที่
+>   `test_vault_sync_errors.py` ซึ่งไม่มีคำว่า obsidian ในชื่อ)
 > - **ก่อน `sync_static.sh` ต้องพิสูจน์ว่า build จาก HEAD สะอาดได้ hash เดียวกับที่ prod
 >   เสิร์ฟอยู่** ไม่งั้นอาจกลืนงานที่ยังไม่ได้ commit ทิ้ง
 > - `--force-recreate` ล้มกลางทางได้จริง (เจอซ้ำ 08-22) — กู้ด้วย `compose up -d hybrid-ai`
