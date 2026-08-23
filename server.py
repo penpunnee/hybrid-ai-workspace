@@ -579,6 +579,7 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
     from utils.reader import next_block
     from utils.voice import (
         READER_FEED_PREFIX, build_reader_config, live_control_signals, next_read_action,
+        READER_STALL_TIMEOUT,
         reader_feed_log_line, reader_stream_action, reader_turn_log_line,
     )
 
@@ -683,7 +684,26 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                 turn_complete=True,
                             )
                             turn_done = False
-                            async for r in session.receive():
+                            # watchdog: Gemini ตายเงียบได้จริง (2026-08-14 10:19:30 —
+                            # ไม่มี error ไม่มี go_away แค่หยุดส่ง) ⇒ `async for` เปล่าๆ
+                            # คือรอตลอดกาล · ต้องเดิน iterator เองถึงจะครอบ timeout ได้
+                            rx = session.receive().__aiter__()
+                            while True:
+                                try:
+                                    r = await asyncio.wait_for(
+                                        rx.__anext__(), timeout=READER_STALL_TIMEOUT
+                                    )
+                                except StopAsyncIteration:
+                                    break
+                                except asyncio.TimeoutError:
+                                    # regen ไม่ใช่ stop — ที่คั่นยังไม่ขยับ ⇒ ต่อ session
+                                    # ใหม่แล้วอ่านท่อนเดิมซ้ำ · stop = ปิดหนังสือทิ้งทั้งเล่ม
+                                    logger.error(
+                                        f"[Reader WS] Gemini เงียบเกิน {READER_STALL_TIMEOUT:.0f}s "
+                                        "กลางท่อน → ต่อ session ใหม่ อ่านท่อนนี้ซ้ำ"
+                                    )
+                                    regen.set()
+                                    return
                                 act_now = reader_stream_action(
                                     stopped=stop.is_set(), paused=paused.is_set(),
                                     reread=reread.is_set(),
@@ -731,6 +751,16 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                 if sc and getattr(sc, "turn_complete", False):
                                     turn_done = True
                                     break
+                            if not turn_done and not stop.is_set() and not regen.is_set():
+                                # receive() จบเองโดยไม่มี turn_complete = session ตายเงียบ
+                                # อีกแบบ · ห้ามวนไปป้อนท่อนถัดไปบน session ที่ตายแล้ว
+                                # (จะค้างที่ `__anext__` รอบหน้าเหมือนเดิม)
+                                logger.error(
+                                    "[Reader WS] receive จบโดยไม่มี turn_complete → "
+                                    "ต่อ session ใหม่ อ่านท่อนนี้ซ้ำ"
+                                )
+                                regen.set()
+                                return
                             if turn_done:
                                 # โมเดลอ่านท่อนนี้จบจริง → ค่อยเลื่อนที่คั่นหน้า
                                 _marks.set(source, new_pos)

@@ -78,10 +78,15 @@ def sync_vault(vault_path: str = "") -> dict:
     added = 0
     skipped = 0
     errors = 0
+    # id ของไฟล์ที่ "ยังอยู่จริง" ณ รอบนี้ — ใช้เทียบตอน prune ท้ายฟังก์ชัน
+    # เก็บทุกไฟล์ที่สแกนเจอ **รวมตัวที่ error ด้วย** เพราะไฟล์ยังอยู่ แค่ embed ไม่ผ่าน
+    # (ลบตัวที่ embed ล้ม = Ollama ดับหนึ่งรอบแล้ว index หายทั้ง vault)
+    seen: set[str] = set()
 
     for fp in md_files:
         if any(part.startswith(".") for part in fp.parts):
             continue
+        seen.add(_doc_id(fp))
         try:
             info = _parse_md(fp)
             doc_id = _doc_id(fp)
@@ -111,9 +116,34 @@ def sync_vault(vault_path: str = "") -> dict:
             logger.error(f"Vault sync error for {fp}: {str(e)}")
             errors += 1
 
-    logger.info(f"Vault sync complete: {added} added, {skipped} skipped, {errors} errors out of {len(md_files)} total")
+    # ── prune: ลบเอกสารของไฟล์ที่หายไปจาก vault ────────────────────────────
+    # 🔴 บั๊กจริง 2026-08-23: เดิม sync เป็น add/update อย่างเดียว ⇒ ลบหน้าใน vault แล้ว
+    # เอกสารเก่าค้างใน ChromaDB และ **ชนะอันดับ 1 ในการค้น** (หน้าที่ลบได้ระยะ 0.276
+    # หน้าจริง 0.372) = ตอบคำถามจากเนื้อหาที่เจ้าของตั้งใจลบทิ้ง
+    # · ตัวชี้วัดโกหกด้วย: คืน ok:true errors:0 ทั้งที่ index 88 แต่ไฟล์จริง 87
+    removed = 0
+    if seen:
+        try:
+            stale = [i for i in (col.get()["ids"] or []) if i not in seen]
+            if stale:
+                col.delete(ids=stale)
+                removed = len(stale)
+                logger.info(f"Vault sync: prune {removed} เอกสารที่ไม่มีไฟล์แล้ว")
+        except Exception as e:
+            logger.error(f"Vault sync prune failed: {e}")
+            errors += 1
+    elif md_files:
+        # สแกนเจอไฟล์แต่ถูกกรองทิ้งหมด (ทุกตัวอยู่ใต้โฟลเดอร์ที่ขึ้นต้นด้วยจุด)
+        logger.warning("Vault sync: ไม่มีไฟล์ที่ไม่ถูกซ่อนเลย ข้าม prune")
+    else:
+        # 🔴 vault ว่างเปล่า = แยกไม่ออกว่า "ลบหมดจริง" หรือ "mount หลุด"
+        # ⇒ เลือกฝั่งที่กู้คืนได้: ปล่อยค้างไว้ (ลบทีหลังได้) ดีกว่าล้างแล้วต้อง
+        # re-embed ทั้ง vault ตอน Ollama อาจไม่ว่าง
+        logger.warning(f"Vault sync: ไม่พบไฟล์ .md เลยใน {vp} — ข้าม prune กันกรณี mount หลุด")
+
+    logger.info(f"Vault sync complete: {added} added, {skipped} skipped, {removed} removed, {errors} errors out of {len(md_files)} total")
     out = {"ok": errors == 0, "total": len(md_files), "synced": added,
-           "skipped": skipped, "errors": errors}
+           "skipped": skipped, "removed": removed, "errors": errors}
     if errors:
         out["error"] = f"sync ไม่สำเร็จ {errors}/{len(md_files)} ไฟล์ (ดู log)"
     return out

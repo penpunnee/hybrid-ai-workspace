@@ -556,6 +556,11 @@ def next_read_action(paused: bool, block: str, at_end: bool) -> str:
 # ตอนค้นเว็บ (15-45 วิ) ⚠️ เป็นเกณฑ์ **สำหรับติดธงใน log เท่านั้น** ไม่มีโค้ดไหน
 # ตัดสินใจจากค่านี้ — เปลี่ยนได้อิสระโดยไม่กระทบพฤติกรรมของเสียง
 VOICE_SILENCE_SUSPECT_SEC = 15.0
+# ช่วงหลังค้นเสร็จที่ยัง "น่าสงสัย" อยู่ — วัดจาก prod 2026-08-22 ว่า `search_done`
+# (server ส่งผลค้นให้โมเดล) ห่างจากเสียงชิ้นแรกของโมเดล **1-4 วินาทีสม่ำเสมอ** (6 รอบ:
+# 3/3/1/3/4/3) · เผื่อเป็น 8s ⇒ ครอบทั้งลายเซ็นเดิม (interrupt วินาทีเดียวกับค้นเสร็จ)
+# และช่องส่งไม้ต่อ โดยไม่กวาด interrupt ที่เกิดตอน user คิดนาน ๆ เข้ามาด้วย
+VOICE_POST_SEARCH_SUSPECT_SEC = 8.0
 
 
 def interrupt_log_line(silence_s: float | None, search_count: int,
@@ -591,15 +596,39 @@ def interrupt_log_line(silence_s: float | None, search_count: int,
             search += f" (เสร็จเมื่อ {since_search_s:.1f}s ก่อน)"
     else:
         search = "ไม่ได้ค้นใน turn นี้"
-    flag = (
-        ' ⚠️ เข้าเงื่อนไข "ประตูไมค์หมดอายุ"'
-        if silence_s is not None and silence_s >= VOICE_SILENCE_SUSPECT_SEC
-        else ""
+    # 🔴 ธงต้องแคบพอที่จะยังมีความหมาย (แก้ 2026-08-23)
+    # เดิมดู `silence_s` อย่างเดียว ⇒ หลังปิดรูแล้ว ธงขึ้นกับ interrupt ปกติที่
+    # "ขวัญตอบจบ → user คิด 22 วิ → user พูด" (เจอจริง 08-23 12:31:38 · ค้นเสร็จไป
+    # 33.4s แล้ว = คนละกลไก) · ถ้าติดธงทุกบรรทัด ธงจะไม่มีความหมาย = ตาบอดแบบใหม่
+    # (กฎเดียวกับที่เขียนไว้ใน test_short_silence_is_not_flagged)
+    #
+    # ลายเซ็นจริงต้องครบ **สามอย่าง**: เงียบยาว + มีการค้นใน turn นี้ + interrupt
+    # มาติดกับวินาทีที่ค้นเสร็จ (ทั้ง 3 ครั้งที่บันทึกได้ since_search = 0.0s)
+    suspect = (
+        silence_s is not None
+        and silence_s >= VOICE_SILENCE_SUSPECT_SEC
+        and search_count > 0
+        and since_search_s is not None
+        and since_search_s <= VOICE_POST_SEARCH_SUSPECT_SEC
     )
+    flag = ' ⚠️ เข้าเงื่อนไข "ประตูไมค์หมดอายุ"' if suspect else ""
     mic = (f" · ไมค์เข้าเมื่อ {since_mic_s:.1f}s ก่อน" if since_mic_s is not None
            else " · ไม่มีเสียงไมค์เข้ามาเลยใน session นี้")
     return f"[Voice WS] interrupted — เงียบมา {silence} · {search}{mic}{flag}"
 
+
+# ── watchdog กัน Gemini ตายเงียบกลางท่อน (คืนมา 2026-08-23 จาก 55b8594) ──────
+# เจอจริง 2026-08-14 10:19:30: โมเดลหยุดส่งเฉยๆ **ไม่มี error ไม่มี go_away**
+# ⇒ `async for ... session.receive()` รอ chunk ที่ไม่มีวันมาตลอดกาล
+# watchdog ตัวเดิมยิงจริงบน prod: `18:27:11 ERROR Gemini เงียบเกิน 45s กลางท่อน`
+#
+# 🔒 **ตัวเดิมถูก revert (`2670c8e`) เพราะมัดรวมกับ pacing** — รอบนี้เอากลับ
+# **เฉพาะ watchdog** · `reader_pacing_wait` / `LIVE_AUDIO_BYTES_PER_SECOND` /
+# `READER_MAX_LEAD_SECONDS` / นาฬิกาการฟัง **ห้ามเอากลับ** (user เคาะปิดคดี 08-17
+# + พิสูจน์แล้วว่าที่คั่นวิ่งเกิดจากตัวอ่านซ้อน ไม่ใช่ป้อนเร็ว: 13.8 ตัว/วิ vs 185.9)
+#
+# 45s มาจากของเดิม: chunk ปกติห่างกัน <5s ⇒ เกิน 45s = ตายเงียบแน่นอน ไม่ใช่ช้า
+READER_STALL_TIMEOUT = float(os.getenv("READER_STALL_TIMEOUT", "45"))
 
 # PCM 16-bit mono 24kHz = ฟอร์แมตเสียงขาออกของ Live API (ดู AudioLevelMeter.rate)
 READER_AUDIO_BYTES_PER_SEC = 24000 * 2

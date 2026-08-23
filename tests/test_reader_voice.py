@@ -274,3 +274,130 @@ class TestRereadCurrentBlock:
         feed = ws[ws.index("async def feed_loop"):]
         loop = feed[feed.index("session.receive()"): feed.index("if turn_done:")]
         assert "reread" in loop, "ลูปสตรีมไม่ดูธง reread — กดปุ่มแล้วต้องรอจนจบท่อน"
+
+
+class TestSilentDeathWatchdog:
+    """🔴 Gemini ตายเงียบกลางท่อนได้จริง — ไม่มี error ไม่มี go_away แค่หยุดส่ง
+
+    เกิดจริง 2026-08-14 10:19:30 · watchdog เคยมีแล้ว (`55b8594`) และ **ยิงจริงบน prod**:
+
+        2026-08-14 18:27:11 ERROR [Reader WS] Gemini เงียบเกิน 45s กลางท่อน
+                                    → ต่อ session ใหม่ อ่านท่อนนี้ซ้ำ
+
+    แต่ถูก revert ทั้งก้อนพร้อม pacing (`2670c8e` 08-15) เพราะ pacing เป็นการรักษา
+    ปลายเหตุ · เอากลับ **เฉพาะ watchdog** — `reader_pacing_wait` / นาฬิกาการฟัง /
+    `LIVE_AUDIO_BYTES_PER_SECOND` **ห้ามเอากลับ** (user เคาะ + ที่คั่นวิ่งเกิดจาก
+    ตัวอ่านซ้อน ไม่ใช่ป้อนเร็ว — วัดแล้ว 13.8 ตัว/วิ เทียบ 185.9 ตอนพัง)
+
+    เดินด้วย `ast` ไม่ค้นสตริง — บทเรียน 08-18: เทสที่อ่าน "ตัวหนังสือ" ไปโดนคอมเมนต์
+    ที่อธิบายบั๊กนั้นเอง (คอมเมนต์ข้างล่างนี้ก็มีคำว่า READER_STALL_TIMEOUT อยู่)
+    """
+
+    @pytest.fixture()
+    def feed_fn(self):
+        import ast
+        tree = ast.parse((REPO / "server.py").read_text(encoding="utf-8"))
+        reader = next(
+            n for n in ast.walk(tree)
+            if isinstance(n, ast.AsyncFunctionDef) and n.name == "reader_websocket"
+        )
+        return next(
+            n for n in ast.walk(reader)
+            if isinstance(n, ast.AsyncFunctionDef) and n.name == "feed_loop"
+        )
+
+    @staticmethod
+    def _names(fn):
+        import ast
+        return {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
+
+    @staticmethod
+    def _handlers(fn):
+        """ชื่อ exception ทุกตัวที่ feed_loop ดักไว้"""
+        import ast
+        out = set()
+        for n in ast.walk(fn):
+            if isinstance(n, ast.ExceptHandler) and n.type is not None:
+                for t in ast.walk(n.type):
+                    if isinstance(t, ast.Name):
+                        out.add(t.id)
+                    elif isinstance(t, ast.Attribute):
+                        out.add(t.attr)
+        return out
+
+    def test_receive_has_a_stall_timeout(self, feed_fn):
+        """`async for r in session.receive()` เปล่าๆ = รอ chunk ที่ไม่มีวันมาตลอดกาล
+        ไม่มี exception ไม่มีอะไรให้ log ⇒ ต้องมีเพดานเวลา"""
+        assert "READER_STALL_TIMEOUT" in self._names(feed_fn), (
+            "ไม่มี watchdog — Gemini เงียบค้างได้ไม่จำกัด (เจอจริง 08-14)"
+        )
+
+    def test_the_timeout_is_actually_caught(self, feed_fn):
+        assert "TimeoutError" in self._handlers(feed_fn), (
+            "ตั้ง timeout แล้วไม่ดัก = โยนขึ้นไปที่ except กว้างแล้ว stop.set() "
+            "= จบการอ่านทั้งเล่มแทนที่จะต่อ session ใหม่"
+        )
+
+    def test_iterator_is_stepped_manually_so_the_timeout_applies(self, feed_fn):
+        """`asyncio.wait_for` ครอบ `async for` ทั้งก้อนไม่ได้ — ต้องเดิน `__anext__()` เอง"""
+        import ast
+        attrs = {n.attr for n in ast.walk(feed_fn) if isinstance(n, ast.Attribute)}
+        assert "__anext__" in attrs and "__aiter__" in attrs
+
+    def test_stall_does_not_end_the_book(self, feed_fn):
+        """ตายเงียบ = ต่อ session ใหม่อ่านท่อนเดิมซ้ำ **ไม่ใช่** ปิดการอ่าน
+        (ที่คั่นยังไม่ขยับ ⇒ ฟังซ้ำท่อนเดียว ดีกว่าเนื้อหาหาย)"""
+        import ast
+        for h in ast.walk(feed_fn):
+            if not isinstance(h, ast.ExceptHandler) or h.type is None:
+                continue
+            if "TimeoutError" not in {
+                t.attr if isinstance(t, ast.Attribute) else getattr(t, "id", "")
+                for t in ast.walk(h.type)
+            }:
+                continue
+            calls = {
+                n.func.attr for n in ast.walk(h)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+            }
+            assert "set" in calls, "ไม่ได้สั่ง regen.set() → ไม่ต่อ session ใหม่"
+            names = {n.id for n in ast.walk(h) if isinstance(n, ast.Name)}
+            assert "regen" in names, "ต้อง regen ไม่ใช่ stop — stop = ปิดหนังสือทิ้ง"
+            assert "stop" not in names, "ห้าม stop.set() ตอนตายเงียบ (จบการอ่านทั้งเล่ม)"
+            return
+        pytest.fail("ไม่เจอ except TimeoutError ใน feed_loop")
+
+    def test_receive_ending_without_turn_complete_also_reconnects(self, feed_fn):
+        """watchdog ชิ้นที่สอง — `receive()` **จบเอง**โดยไม่เคยส่ง `turn_complete`
+
+        คนละอาการกับเงียบค้าง: generator จบปกติ ไม่มี timeout ให้ดัก · ถ้าไม่จับ
+        โค้ดจะวนไปป้อนท่อนถัดไปบน session ที่ตายแล้ว → ค้างที่ `__anext__` รอบหน้า
+        (= อาการเดิมเป๊ะ แค่ช้าไปหนึ่งท่อน)
+
+        🔴 เทสนี้เกิดจาก mutation ที่ **รอด**: ถอด branch นี้ออกแล้วไม่มีใครแดงเลย
+        """
+        import ast
+        for n in ast.walk(feed_fn):
+            if not isinstance(n, ast.If):
+                continue
+            names = {x.id for x in ast.walk(n.test) if isinstance(x, ast.Name)}
+            if "turn_done" not in names or not isinstance(n.test, ast.BoolOp):
+                continue          # เอาเฉพาะ `if not turn_done and …` ไม่ใช่ `if turn_done:`
+            body_names = {x.id for x in ast.walk(ast.Module(body=n.body, type_ignores=[]))
+                          if isinstance(x, ast.Name)}
+            if "regen" in body_names:
+                assert "stop" not in body_names or "is_set" in {
+                    a.attr for a in ast.walk(n) if isinstance(a, ast.Attribute)
+                }, "ต้อง regen ไม่ใช่ stop"
+                return
+        pytest.fail(
+            "ไม่มี branch จัดการ 'receive จบโดยไม่มี turn_complete' — "
+            "จะวนไปป้อนท่อนถัดไปบน session ที่ตายแล้ว"
+        )
+
+    def test_pacing_must_not_come_back(self, feed_fn):
+        """🔒 user เคาะปิดคดีจังหวะการอ่าน — `55b8594` มัด watchdog กับ pacing ไว้ด้วยกัน
+        เอากลับทั้งก้อนเมื่อไรคือละเมิดข้อห้าม"""
+        banned = {"reader_pacing_wait", "LIVE_AUDIO_BYTES_PER_SECOND",
+                  "READER_MAX_LEAD_SECONDS", "tick_listening_clock", "listened_seconds"}
+        assert not (banned & self._names(feed_fn)), "pacing กลับมาแล้ว"

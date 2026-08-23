@@ -66,6 +66,68 @@ class TestInterruptLogLine:
         assert isinstance(line, str) and line.strip()
         assert "⚠️" not in line, "ไม่รู้ค่า ≠ เข้าเงื่อนไข — ห้ามเดาว่าใช่"
 
+    def test_long_silence_far_from_a_search_is_not_flagged(self):
+        """🔴 ธง over-fire หลังปิดรูแล้ว (เจอจริง 2026-08-23 12:31:38)
+
+            interrupted — เงียบมา 22.3s · ค้น 1 ครั้งใน turn นี้
+                          (เสร็จเมื่อ 33.4s ก่อน) · ไมค์เข้าเมื่อ 0.1s ก่อน ⚠️
+
+        ค้นเสร็จไปแล้ว 33 วินาที = ไม่เกี่ยวกับกลไก "ประตูหมดอายุระหว่างค้น" เลย ·
+        ความเงียบ 22.3s คือ **ขวัญตอบจบแล้ว user กำลังคิดก่อนพูด** = พฤติกรรมปกติ
+        ⇒ ติดธงแบบนี้ = ธงไร้ความหมาย (กับดักเดียวกับที่เขียนเตือนตัวเองไว้ใน
+        `test_short_silence_is_not_flagged`: ถ้าติดธงทุกบรรทัด ธงจะไม่มีความหมาย)
+        """
+        from utils.voice import VOICE_SILENCE_SUSPECT_SEC, interrupt_log_line
+
+        line = interrupt_log_line(
+            silence_s=VOICE_SILENCE_SUSPECT_SEC + 10, search_count=1,
+            since_search_s=33.4, since_mic_s=0.1,
+        )
+        assert "⚠️" not in line
+
+    def test_long_silence_with_no_search_at_all_is_not_flagged(self):
+        """ไม่ได้ค้นใน turn นี้ ⇒ ไม่มีช่วงเงียบที่เราจงใจสร้างขึ้น ⇒ ไม่ใช่ลายเซ็นนี้"""
+        from utils.voice import VOICE_SILENCE_SUSPECT_SEC, interrupt_log_line
+
+        line = interrupt_log_line(
+            silence_s=VOICE_SILENCE_SUSPECT_SEC + 10, search_count=0, since_search_s=None
+        )
+        assert "⚠️" not in line
+
+    def test_the_real_signature_is_still_flagged(self):
+        """กลุ่มควบคุม — ลายเซ็นจริงที่เจอ 3 ครั้ง (08-21 07:43:45/07:43:53, 08-22 03:29:57):
+        เงียบยาว **และ** interrupt มาติดกับวินาทีที่ค้นเสร็จ · ธงต้องยังขึ้น
+        ไม่งั้นเราจะมองไม่เห็นตอนบั๊กกลับมา"""
+        from utils.voice import interrupt_log_line
+
+        line = interrupt_log_line(
+            silence_s=22.4, search_count=1, since_search_s=0.0, since_mic_s=0.0
+        )
+        assert "⚠️" in line
+
+    def test_barge_in_right_after_a_search_answer_is_not_flagged(self):
+        """เงียบสั้น + เพิ่งค้นเสร็จ = user พูดแทรกตอนขวัญกำลังอ่านคำตอบจากการค้น
+        เป็นพฤติกรรมปกติ ไม่ใช่ประตูหมดอายุ ⇒ ห้ามติดธง
+
+        🔴 เทสนี้เกิดจาก mutation ที่ **รอด**: ถอดเงื่อนไข `silence_s >= …` ออกแล้ว
+        ไม่มีเทสไหนแดงเลย = เกณฑ์สามข้อมีแค่สองข้อที่ถูกตรึงไว้จริง
+        """
+        from utils.voice import interrupt_log_line
+
+        line = interrupt_log_line(
+            silence_s=1.2, search_count=1, since_search_s=3.0, since_mic_s=0.0
+        )
+        assert "⚠️" not in line
+
+    def test_handoff_gap_window_is_still_flagged(self):
+        """ช่องส่งไม้ต่อวัดได้ 1-4 วินาที (prod 08-22) — ถ้าบั๊กกลับมาทางนี้ต้องเห็น"""
+        from utils.voice import interrupt_log_line
+
+        line = interrupt_log_line(
+            silence_s=30.0, search_count=1, since_search_s=4.0, since_mic_s=0.0
+        )
+        assert "⚠️" in line
+
     def test_line_says_when_mic_audio_last_arrived(self):
         """🔑 ตัวชี้ขาดที่ขาดมาตลอด — สองรอบที่ผ่านมาสรุปไม่ได้ว่าเสียงที่ตัด turn
         เข้ามา *ตอนไหน* ต้องเดาจากตำแหน่งเวลาของบรรทัด log แทน
