@@ -321,3 +321,23 @@ def test_response_without_model_field_is_accepted(monkeypatch, tmp_path):
 
     monkeypatch.setattr(embed._ollama_client, "embeddings", _NoModel(mapping={"x": [3.0, 4.0]}))
     assert embed.embed_query("x") == [3.0, 4.0]
+
+
+def test_model_mismatch_counter_is_reported(monkeypatch, tmp_path):
+    """ตัวนับ model_mismatch ต้องโผล่ใน cache_stats() ไม่ใช่แค่เพิ่มเงียบๆ
+
+    🔴 `_metrics_block()` เลือกคีย์ทีละตัวด้วยมือ — เพิ่มตัวนับใหม่แล้วไม่เติมตรงนั้น
+    = นับไปก็ไม่มีใครเห็น (เจอตอน verify บน prod 2026-08-24)
+    """
+    monkeypatch.setattr(embed, "_CACHE_DB", str(tmp_path / "c.db"))
+    monkeypatch.setattr(embed, "_cache_conn", None)
+    embed._embed_one_cached.cache_clear()
+    embed.reset_metrics()
+    assert "model_mismatch" in embed.cache_stats(), "ตัวนับไม่ถูกรายงานออกมา"
+    assert embed.cache_stats()["model_mismatch"] == 0
+
+    monkeypatch.setattr(embed._ollama_client, "embeddings",
+                        FakeEmbeddings(mapping={"x": [1.0, 2.0]}, served_model="คนละตัว"))
+    monkeypatch.setattr(embed._client, "embeddings", FakeEmbeddings(fail=True))
+    embed.embed_query("x")
+    assert embed.cache_stats()["model_mismatch"] >= 1

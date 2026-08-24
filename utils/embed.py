@@ -210,6 +210,7 @@ def _metrics_block() -> dict:
         sqlite_hits = _metrics["sqlite_hits"]
         api_calls = _metrics["api_calls"]
         ollama_fallback = _metrics["ollama_fallback"]
+        model_mismatch = _metrics["model_mismatch"]
     # embed_query (hot path) ผ่าน LRU: total = hits + misses
     lru_total = info.hits + info.misses
     return {
@@ -219,7 +220,10 @@ def _metrics_block() -> dict:
         "lru_maxsize": info.maxsize,
         "sqlite_hits": sqlite_hits,     # warm hits (LRU miss → sqlite ใช้ได้)
         "api_calls": api_calls,         # cold round-trips (LM Studio หรือ Ollama)
-        "ollama_fallback": ollama_fallback,   # กี่ครั้งที่ตก fallback ไป Ollama (LM Studio fail)
+        # ⚠️ ชื่อคีย์ค้างจากยุคก่อน 2026-08-02 — ทิศทางจริงตอนนี้กลับกัน:
+        # Ollama = ตัวหลัก, LM Studio = fallback (คงชื่อไว้กัน dashboard/เทสเดิมพัง)
+        "ollama_fallback": ollama_fallback,   # กี่ครั้งที่ตัวหลักล่มจนต้องตก fallback
+        "model_mismatch": model_mismatch,     # เซิร์ฟเวอร์ตอบด้วยโมเดลคนละตัว → ทิ้ง vector
         # hit rate ของ hot path embed_query
         "lru_hit_rate": round(info.hits / lru_total, 3) if lru_total else None,
     }
