@@ -20,10 +20,13 @@ import utils.embed as embed
 class FakeEmbeddings:
     """แทน _client.embeddings — บันทึก call + คืน vector ตาม mapping"""
 
-    def __init__(self, mapping=None, fail=False):
+    def __init__(self, mapping=None, fail=False, served_model=None):
         self.calls = []          # list ของ input ที่ถูกส่งเข้ามา (แต่ละครั้ง)
         self.mapping = mapping or {}
         self.fail = fail
+        # ชื่อโมเดลที่ "เซิร์ฟเวอร์ตอบกลับ" — None = ตอบชื่อเดียวกับที่ขอ (พฤติกรรมปกติ)
+        # ตั้งค่าเพื่อจำลอง LM Studio ที่สลับไปใช้โมเดลอื่นให้เงียบๆ
+        self.served_model = served_model
 
     def create(self, model, input):
         self.calls.append(list(input))
@@ -31,7 +34,9 @@ class FakeEmbeddings:
             raise RuntimeError("embed provider down")
         data = [SimpleNamespace(embedding=self.mapping.get(t, [float(len(t)), 1.0, 0.0]))
                 for t in input]
-        return SimpleNamespace(data=data)
+        # 🔴 ของจริงคืน `model` เสมอ (OpenAI SDK CreateEmbeddingResponse) — fake ต้องคืนด้วย
+        # ไม่งั้นเทสจะไม่มีวันจับเคส "เซิร์ฟเวอร์สลับโมเดลให้เงียบๆ" ได้เลย
+        return SimpleNamespace(data=data, model=self.served_model or model)
 
 
 @pytest.fixture
@@ -235,3 +240,84 @@ def test_embed_fallback_can_be_disabled(monkeypatch, tmp_path):
     monkeypatch.setattr(embed._client, "embeddings", lm)
     assert embed.embed_query("x") == []
     assert lm.calls == [], "ปิด fallback แล้วต้องไม่แตะ LM Studio เลย"
+
+
+# ── 🔴 ด่านกัน "เซิร์ฟเวอร์สลับโมเดลให้เงียบๆ" (2026-08-24) ────────────────────
+# วัดของจริงบน prod วันนี้: ขอ LM Studio ด้วย model="paraphrase-multilingual"
+# แต่มันตอบ model="text-embedding-nomic-embed-text-v1.5" **โดยไม่ error**
+# มิติ 768 เท่ากันเป๊ะ → ไม่มี assertion ไหนเดิมจับได้
+# cosine ของข้อความเดียวกันจากสองฝั่ง = 0.0458 (ตั้งฉาก = คนละ vector space)
+#
+# ซ้ำร้าย ตัวที่มันสลับไปใช้คือ nomic-embed = ตัวที่ถูกถอดออกไปเมื่อ 2026-08-02
+# เพราะแมปประโยคไทยทุกประโยคเป็น vector เดียวกัน (`42156dd`)
+# ⇒ ประตูที่สร้างไว้กันมัน กลายเป็นประตูที่มันเดินกลับเข้ามา
+#
+# สมมติฐานเดิมในโค้ดที่พังคือ "ถ้า LM Studio ไม่มีโมเดลนี้จะ raise"
+# — เป็นสมมติฐานเรื่องพฤติกรรมของ**เครื่องมือภายนอก** ที่ไม่เคยถูกทดสอบ
+def test_lmstudio_fallback_serving_a_different_model_is_rejected(monkeypatch, tmp_path):
+    """fallback ที่ได้ vector จากคนละโมเดล = ต้องทิ้ง ห้ามคืนและห้าม cache
+
+    ยอมไม่มี embedding ดีกว่าได้ embedding ผิด space (เจตนาเดิมของ `42156dd`)
+    """
+    monkeypatch.setattr(embed, "_CACHE_DB", str(tmp_path / "c.db"))
+    monkeypatch.setattr(embed, "_cache_conn", None)
+    embed._embed_one_cached.cache_clear()
+    embed.reset_metrics()
+    monkeypatch.setattr(embed._ollama_client, "embeddings", FakeEmbeddings(fail=True))
+    monkeypatch.setattr(embed._client, "embeddings",
+                        FakeEmbeddings(mapping={"x": [9.0, 9.0]},
+                                       served_model="text-embedding-nomic-embed-text-v1.5"))
+    assert embed.embed_query("x") == [], "ได้ vector คนละโมเดลมาแล้วยังคืนออกไป = พิษเข้าคลัง"
+    assert embed._cache_get("x") in (None, [], ()), "ห้าม cache vector ที่ปฏิเสธ"
+
+
+def test_ollama_primary_serving_a_different_model_is_rejected(monkeypatch, tmp_path):
+    """ด่านเดียวกันต้องคุมตัวหลักด้วย ไม่ใช่คุมแค่ fallback
+
+    (ถ้าคุมแค่ fallback = ตัวหลักสลับโมเดลเมื่อไหร่ก็พิษเข้าเงียบๆ เหมือนเดิม)
+    """
+    monkeypatch.setattr(embed, "_CACHE_DB", str(tmp_path / "c.db"))
+    monkeypatch.setattr(embed, "_cache_conn", None)
+    embed._embed_one_cached.cache_clear()
+    embed.reset_metrics()
+    monkeypatch.setattr(embed._ollama_client, "embeddings",
+                        FakeEmbeddings(mapping={"x": [1.0, 2.0]}, served_model="llama3"))
+    monkeypatch.setattr(embed._client, "embeddings", FakeEmbeddings(fail=True))
+    assert embed.embed_query("x") == []
+
+
+def test_model_name_with_latest_tag_is_accepted(monkeypatch, tmp_path):
+    """`X` กับ `X:latest` = ตัวเดียวกัน — Ollama ตั้งชื่อแบบมี tag
+
+    🔴 ถ้าไม่ normalize ตรงนี้ ด่านใหม่จะปฏิเสธของถูกต้องบน prod ทั้งหมด
+    (`/api/tags` ของ Ollama คืน `paraphrase-multilingual:latest`)
+    """
+    monkeypatch.setattr(embed, "_CACHE_DB", str(tmp_path / "c.db"))
+    monkeypatch.setattr(embed, "_cache_conn", None)
+    embed._embed_one_cached.cache_clear()
+    embed.reset_metrics()
+    monkeypatch.setattr(embed._ollama_client, "embeddings",
+                        FakeEmbeddings(mapping={"x": [1.0, 2.0]},
+                                       served_model=f"{embed._EMBED_MODEL}:latest"))
+    assert embed.embed_query("x") == [1.0, 2.0]
+
+
+def test_response_without_model_field_is_accepted(monkeypatch, tmp_path):
+    """ไม่มี field `model` ในคำตอบ = ตรวจไม่ได้ → ปล่อยผ่าน (ไม่ใช่ปฏิเสธ)
+
+    เจตนา: ด่านนี้จับ "สลับโมเดล" ที่พิสูจน์ได้เท่านั้น · การปฏิเสธเพราะ
+    "ตรวจไม่ได้" จะทำให้ provider ที่ไม่ส่ง field นี้ใช้ไม่ได้ทั้งตัว
+    ซึ่งแลกไม่คุ้ม (ของจริงทั้ง Ollama และ LM Studio ส่งครบอยู่แล้ว)
+    """
+    monkeypatch.setattr(embed, "_CACHE_DB", str(tmp_path / "c.db"))
+    monkeypatch.setattr(embed, "_cache_conn", None)
+    embed._embed_one_cached.cache_clear()
+    embed.reset_metrics()
+
+    class _NoModel(FakeEmbeddings):
+        def create(self, model, input):
+            r = super().create(model, input)
+            return SimpleNamespace(data=r.data)          # ตัด field model ทิ้ง
+
+    monkeypatch.setattr(embed._ollama_client, "embeddings", _NoModel(mapping={"x": [3.0, 4.0]}))
+    assert embed.embed_query("x") == [3.0, 4.0]

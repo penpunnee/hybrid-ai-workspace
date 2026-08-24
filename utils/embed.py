@@ -49,6 +49,38 @@ _client = OpenAI(base_url=_LMSTUDIO_BASE_URL or "http://localhost:1234/v1",
 _ollama_client = OpenAI(base_url=_OLLAMA_BASE_URL, api_key="ollama", timeout=_EMBED_TIMEOUT)
 
 
+class EmbedModelMismatch(RuntimeError):
+    """เซิร์ฟเวอร์ตอบด้วยโมเดลคนละตัวกับที่ขอ — vector คนละ space ห้ามใช้"""
+
+
+def _strip_latest(name: str) -> str:
+    """`X:latest` → `X` — Ollama ใส่ tag ให้เอง (`/api/tags` คืน `...:latest`)"""
+    return name[:-7] if name.endswith(":latest") else name
+
+
+def _verify_model(resp, requested: str, provider: str) -> None:
+    """ยืนยันว่า vector ที่ได้มาจากโมเดลที่ **ขอ** จริง
+
+    🔴 ทำไมต้องมี: วัดของจริง 2026-08-24 — ขอ LM Studio ด้วย
+    `paraphrase-multilingual` แต่มันคืน `text-embedding-nomic-embed-text-v1.5`
+    **โดยไม่ error** · มิติ 768 เท่ากันเป๊ะจึงไม่มีอะไรจับได้ ·
+    cosine ของข้อความเดียวกันจากสองฝั่ง = 0.0458 (คนละ space)
+
+    สมมติฐานเดิมที่พังคือ "ถ้าไม่มีโมเดลนี้ เซิร์ฟเวอร์จะ raise" — ไม่จริง
+
+    ไม่มี field `model` = ตรวจไม่ได้ → ปล่อยผ่าน (ปฏิเสธเพราะตรวจไม่ได้
+    จะทำให้ provider ที่ไม่ส่ง field นี้ใช้ไม่ได้ทั้งตัว แลกไม่คุ้ม)
+    """
+    served = getattr(resp, "model", None)
+    if not served or _strip_latest(served) == _strip_latest(requested):
+        return
+    with _metrics_lock:
+        _metrics["model_mismatch"] += 1
+    raise EmbedModelMismatch(
+        f"{provider} ตอบด้วยโมเดล {served!r} แต่ขอ {requested!r} — "
+        f"คนละ vector space จึงทิ้ง (ยอมไม่มี embedding ดีกว่าได้ของผิด)")
+
+
 def _create_embeddings(inputs: list[str]) -> tuple[list[list[float]], str]:
     """embed ผ่าน Ollama (multilingual) → fallback LM Studio ด้วยโมเดลชื่อเดียวกัน
     คืน (vecs, model_ที่ใช้จริง). raise ถ้าทั้งคู่ fail
@@ -58,6 +90,7 @@ def _create_embeddings(inputs: list[str]) -> tuple[list[list[float]], str]:
     """
     try:
         resp = _ollama_client.embeddings.create(model=_EMBED_MODEL, input=inputs)
+        _verify_model(resp, _EMBED_MODEL, "Ollama")
         vecs = [list(d.embedding) for d in resp.data]
         with _metrics_lock:
             _metrics["api_calls"] += 1
@@ -67,6 +100,7 @@ def _create_embeddings(inputs: list[str]) -> tuple[list[list[float]], str]:
             raise
         logger.warning(f"[Embed] Ollama embed fail ({e}) → fallback LM Studio (model เดิม {_EMBED_MODEL})")
         resp = _client.embeddings.create(model=_EMBED_MODEL, input=inputs)
+        _verify_model(resp, _EMBED_MODEL, "LM Studio")
         vecs = [list(d.embedding) for d in resp.data]
         with _metrics_lock:
             _metrics["api_calls"] += 1
@@ -80,13 +114,13 @@ _cache_conn: sqlite3.Connection | None = None
 # hit-rate metrics (Phase G4): LRU hits/misses ดึงจาก _embed_one_cached.cache_info()
 # ส่วน sqlite_hits (warm) + api_calls (cold round-trips) นับเอง
 _metrics_lock = threading.Lock()
-_metrics = {"sqlite_hits": 0, "api_calls": 0, "ollama_fallback": 0}
+_metrics = {"sqlite_hits": 0, "api_calls": 0, "ollama_fallback": 0, "model_mismatch": 0}
 
 
 def reset_metrics() -> None:
     """รีเซ็ตตัวนับ + ล้าง LRU (ใช้ตอน bench/test)"""
     with _metrics_lock:
-        _metrics.update(sqlite_hits=0, api_calls=0, ollama_fallback=0)
+        _metrics.update(sqlite_hits=0, api_calls=0, ollama_fallback=0, model_mismatch=0)
     _embed_one_cached.cache_clear()
 
 
