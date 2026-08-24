@@ -722,3 +722,44 @@ async def run_until_both_done(*coros, grace: float = LOOP_EXIT_GRACE_SEC) -> int
             raise t.exception()
 
     return len(still)
+
+
+# ── เครื่องมือวัดสภาพไมค์ฝั่ง client (2026-08-24) ──────────────────────────────
+# ชั้น**วัด**เท่านั้น ไม่ใช่ตัวกู้ — งาน ค. (ปุ่มกู้ไมค์) รอผลจากบรรทัดนี้ก่อน
+#
+# คำถามที่ต้องการคำตอบ: บนเครื่อง user จริง `track.muted` / event `mute`,`unmute`
+# ยิงไหม · หลักฐานจากภายนอกขัดกันเอง (Twilio issue #941 บอกใช้ไม่ได้ แต่โค้ด
+# production ของ Twilio เอง + LiveKit + Amazon Chime ใช้อยู่ทั้งสามเจ้า)
+# ดู vault `wiki/concepts/ios-audio-interruption-recovery.md`
+_MIC_PROBE_FIELDS = (
+    ("reason", "reason"),        # 'zeros' (track ตาย) | 'no-callback' (context ค้าง)
+    ("track_muted", "muted"),    # 🎯 ค่าที่ต้องการรู้ที่สุด
+    ("track_ready", "ready"),    # live | ended
+    ("track_enabled", "enabled"),
+    ("cap_state", "cap"),        # AudioContext ขาไมค์
+    ("play_state", "play"),      # AudioContext ขาเล่น
+    ("silent_ms", "silent_ms"),
+    ("since_mute_ms", "since_mute_ms"),
+)
+
+
+def mic_probe_log_line(payload: dict) -> str:
+    """บรรทัด log ของ probe จาก client — pure → เทสได้
+
+    🔴 **ค่าที่ยังไม่รู้พิมพ์เป็น `?` ห้ามพิมพ์เป็น `False`/`0`** — ไม่งั้นเราจะ
+    สรุปว่า "iOS ไม่ตั้งธง muted" ทั้งที่จริงคือฝั่ง client อ่านค่าไม่ได้
+    (บทเรียนเดียวกับ `silence_s=None` ใน `interrupt_log_line`:
+     ไม่รู้ค่า ≠ เข้าเงื่อนไข · เดาว่าใช่ = เสียเวลาไปหลายรอบเมื่อ 08-16)
+
+    ต้องไม่ raise ไม่ว่า payload จะเพี้ยนแค่ไหน — ชั้นวัดพังห้ามล้ม session เสียง
+    """
+    try:
+        p = payload if isinstance(payload, dict) else {}
+        event = p.get("event")
+        parts = [f"mic_probe {event if event is not None else '?'}"]
+        for key, label in _MIC_PROBE_FIELDS:
+            v = p.get(key)
+            parts.append(f"{label}={'?' if v is None else v}")
+        return " · ".join(parts)
+    except Exception:                      # pragma: no cover — กันตายท่าเดียว
+        return "mic_probe ? (payload อ่านไม่ได้)"

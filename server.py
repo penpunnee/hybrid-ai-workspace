@@ -217,7 +217,8 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     from utils.voice import (
         AUTO_CONTINUE_TEXT, SEARCH_LIMIT_REPLY, AudioLevelMeter, build_live_config,
         interrupt_log_line, live_server_content_events, live_tool_call_queries,
-        resolve_voice, run_until_both_done, should_auto_continue, should_run_search,
+        mic_probe_log_line, resolve_voice, run_until_both_done, should_auto_continue,
+        should_run_search,
     )
     from utils.history import save_message as _save_msg
 
@@ -324,6 +325,13 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                 auto_continue = bool(msg.get("on"))
                                 auto_count = 0          # เปิด/ปิดใหม่ = เริ่มนับใหม่เสมอ
                                 logger.info(f"[Voice WS] เล่าต่ออัตโนมัติ = {auto_continue}")
+                            elif t == "mic_probe":
+                                # 🔬 ชั้น**วัด**สภาพไมค์ฝั่ง client (2026-08-24) —
+                                # ไม่ส่งอะไรต่อให้ Gemini ทั้งสิ้น แค่ลง log
+                                # อาการ "ไมค์ป้อนศูนย์หลังสายเข้า" เกิดบน iPhone จริง
+                                # เท่านั้น เปิด devtools ตอนนั้นไม่ได้ ⇒ ต้องเด้งค่า
+                                # กลับมาที่ server.log เหมือนทุกอย่างที่พิสูจน์ได้วันนี้
+                                logger.info(f"[Voice WS] {mic_probe_log_line(msg)}")
                             elif t == "close":
                                 stop.set()
                             # ⚠️ ไม่มี elif "reread" ที่นี่โดยตั้งใจ — 🔁 เป็นคำสั่งของ
