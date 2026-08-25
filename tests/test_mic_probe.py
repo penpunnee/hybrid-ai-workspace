@@ -97,3 +97,19 @@ def test_mic_probe_helper_is_imported():
     imports = re.findall(r"from utils\.voice import \(([^)]*)\)|from utils\.voice import ([^\n]*)", SRC)
     flat = " ".join(a + b for a, b in imports)
     assert "mic_probe_log_line" in flat, "เรียกใช้แต่ไม่ได้ import = NameError ตอนรันจริง"
+
+
+class TestFieldsAddedAfterScrutinize20260825:
+    """field ที่เพิ่มหลัง /scrutinize — ถ้า server ไม่พิมพ์ ก็เท่ากับ client ส่งลม"""
+
+    def test_พิมพ์_visibility(self):
+        line = mic_probe_log_line({"event": "silent", "visibility": "hidden"})
+        assert "vis=hidden" in line
+
+    def test_พิมพ์_note_ของ_resume_ที่ล้ม(self):
+        line = mic_probe_log_line({"event": "resume-failed", "note": "cap:NotAllowedError"})
+        assert "cap:NotAllowedError" in line
+
+    def test_ไม่รู้ค่าต้องเป็นเครื่องหมายคำถาม_ไม่ใช่ค่าปลอม(self):
+        line = mic_probe_log_line({"event": "silent"})
+        assert "vis=?" in line

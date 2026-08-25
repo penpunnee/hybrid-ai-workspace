@@ -366,6 +366,81 @@ class AudioLevelMeter:
         )
 
 
+# ── log ตอนรับสาย /ws/voice ───────────────────────────────────────────────────
+# 🐛 2026-08-25: ไล่อาการ "สายโทรเข้า → ไมค์ตาย → ไม่กลับมาเลย" แล้วติดตรงที่
+# **ไม่มีอะไร log ตอน `websocket.accept()` เลย** ⇒ ตอบไม่ได้ว่า client หลุดแล้วต่อใหม่
+# (`scheduleRetry()` ฝั่ง `voicelive.ts`) หรือ WS อยู่ครบตลอดสาย
+#
+# ที่ผ่านมาใช้ proxy: `AudioLevelMeter` สร้างนอกลูป reconnect ⇒ "ตั้งแต่เริ่ม N นาที"
+# รีเซ็ตเมื่อมี WS handler ใหม่ · แต่ meter วัด `response.data` = **อ่านได้เฉพาะตอน
+# ขวัญพูด** ⇒ สายเข้าแล้วขวัญเงียบ = ไม่มีบรรทัดให้ดูพอดีตอนที่ต้องการที่สุด
+#
+# 🔑 บรรทัดนี้ต้องแยกสองอย่างให้ได้ในตัวเอง ไม่ต้องเอาเวลาไปไล่เทียบ
+# (บทเรียนเดียวกับ `since_mic_s` ของ `interrupt_log_line`):
+#   · ครั้งที่ 1                    = เริ่มสายใหม่
+#   · ครั้งที่ 2+ ห่างไม่กี่วินาที   = client ต่อใหม่ ⇒ `active=false` เคยเกิดจริง
+
+
+class VoiceOpenTracker:
+    """นับว่า session_id นี้เปิด WS มาแล้วกี่ครั้ง + ห่างจากครั้งก่อนเท่าไร
+
+    ⚠️ **ต้องมีเพดาน** — process อยู่ยาวเป็นเดือน dict ที่โตอิสระคือ leak
+    ทิ้งตัวเก่าสุดเมื่อเต็ม (ค่าที่ทิ้งไปแล้วแค่ทำให้กลับไปนับ 1 ใหม่ ไม่ทำให้ผิด)
+    """
+
+    def __init__(self, max_entries: int = 256):
+        self.max_entries = max_entries
+        self._seen: dict[str, tuple[int, float]] = {}
+
+    def note(self, session_id: str, now: float | None = None) -> tuple[int, float | None]:
+        now = time.monotonic() if now is None else now
+        prev = self._seen.get(session_id)
+        if prev is None:
+            nth, since = 1, None
+        else:
+            nth, since = prev[0] + 1, now - prev[1]
+        # 🔑 ลบก่อน assign — assign ทับ key เดิมใน dict ของ Python **ไม่ย้ายลำดับ**
+        # ถ้าไม่ลบก่อน การไล่ด้านล่างจะเตะ session ที่ยังใช้อยู่ทิ้งก่อนตัวที่ตายแล้ว
+        self._seen.pop(session_id, None)
+        self._seen[session_id] = (nth, now)
+        while len(self._seen) > self.max_entries:
+            self._seen.pop(next(iter(self._seen)))   # ตัวที่ไม่ได้แตะนานสุด
+        return nth, since
+
+
+#: ห่างจากครั้งก่อนไม่เกินเท่านี้ถึงจะนับว่า "น่าจะต่อใหม่กลางสาย"
+#
+# 🔴 ทำไมต้องมีเกณฑ์ ไม่ใช่ติดธงทุกครั้งที่ nth>=2: `session_id` ที่ client ส่งมาคือ
+# id ของ **ห้องแชท** ไม่ใช่ของสายเสียง (`app.tsx:900` → `sessionId || 'voice_default'`)
+# ⇒ เปิดสายรอบสองในห้องเดิมตอนไหนก็ได้ก็ได้ nth=2 · ติดธงหมด = ธงไร้ความหมาย
+# (กฎเดียวกับที่ `interrupt_log_line` ต้องแก้เมื่อ 2026-08-23 ด้วยเหตุผลเดียวกันเป๊ะ)
+#
+# 30s: retry ของ client หมดโควตาใน ~7s (`voiceretry.ts` 1+2+4) เผื่อ timer ที่ถูก
+# throttle ตอนหน้าเว็บ background ไว้อีกเท่าตัว
+VOICE_RECONNECT_SUSPECT_SEC = float(os.getenv("VOICE_RECONNECT_SUSPECT_SEC", "30"))
+
+
+def voice_open_log_line(session_id: str, slug: str, nth: int,
+                        since_prev_s: float | None) -> str:
+    """บรรทัด log ตอนรับสาย — pure → เทสได้
+
+    `since_prev_s=None` = ครั้งแรกของ session นี้ · **ห้ามพิมพ์เป็น 0.0**
+    (ไม่รู้ค่า ≠ ห่าง 0 วินาที — กฎเดียวกับ `silence_s` ของ interrupt_log_line)
+
+    ⚠️ **ตัวเลขดิบพิมพ์เสมอ ธงติดเฉพาะตอนเข้าเกณฑ์** — แยกข้อมูลออกจากข้อสรุป
+    ให้คนอ่านตัดสินเองได้ ต่อให้เกณฑ์ที่เราตั้งไว้ผิด
+    """
+    # `session_id` มาจาก query param ตรงๆ — บรรทัดนี้เป็นหลักฐานทางนิติเวช
+    # ถ้าฝัง newline แล้วปลอมบรรทัด `[Voice WS]` ได้ ก็หมดความหมายของมันเอง
+    sid = str(session_id)[:64].replace("\n", "").replace("\r", "")
+    line = f"[Voice WS] เปิดสาย {slug} · session={sid} · ครั้งที่ {nth}"
+    if since_prev_s is not None:
+        line += f" · ห่างจากครั้งก่อน {since_prev_s:.1f}s"
+        if since_prev_s <= VOICE_RECONNECT_SUSPECT_SEC:
+            line += " ⚠️ น่าจะต่อใหม่กลางสาย"
+    return line
+
+
 def speakable_part_text(part) -> str | None:
     """คืน text ของ Gemini Live part เฉพาะส่วนที่ "พูดออกมา" จริง.
 
@@ -740,6 +815,9 @@ _MIC_PROBE_FIELDS = (
     ("play_state", "play"),      # AudioContext ขาเล่น
     ("silent_ms", "silent_ms"),
     ("since_mute_ms", "since_mute_ms"),
+    # เพิ่ม 2026-08-25 หลัง /scrutinize — ตัวแยกสมมติฐานที่ชั้นวัดเดิมตอบไม่ได้
+    ("visibility", "vis"),       # 🎯 หน้าเว็บ hidden ตอนสายเข้าไหม (ตัดสินว่ามีตาข่ายชั้นสองหรือไม่)
+    ("note", "note"),            # error จริงของ `resume()` ที่เคยถูก `.catch(() => {})` กลืนทิ้ง
 )
 
 

@@ -202,6 +202,13 @@ fetch('/api/shared/{token}').then(r=>r.json()).then(d=>{{
     return HTMLResponse(content=html)
 
 
+# ตัวนับการเปิดสายต่อ session — **ต้องอยู่ระดับโมดูล** ไม่ใช่ในตัว handler
+# เพราะจุดประสงค์ทั้งหมดคือให้มันรอดข้าม WS handler คนละตัว (นั่นแหละคือสิ่งที่จะวัด)
+from utils.voice import VoiceOpenTracker
+
+_VOICE_OPENS = VoiceOpenTracker()
+
+
 # ── Voice WebSocket (ยังอยู่ใน server.py เพราะต้องการ lifespan context) ──────
 @app.websocket("/ws/voice/{assistant_slug}")
 async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id: str = "voice_default",
@@ -218,11 +225,17 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
         AUTO_CONTINUE_TEXT, SEARCH_LIMIT_REPLY, AudioLevelMeter, build_live_config,
         interrupt_log_line, live_server_content_events, live_tool_call_queries,
         mic_probe_log_line, resolve_voice, run_until_both_done, should_auto_continue,
+        voice_open_log_line,
         should_run_search,
     )
     from utils.history import save_message as _save_msg
 
     await websocket.accept()
+    # 🔬 ตัวชี้ขาด "client ต่อใหม่กลางสาย หรือ เริ่มสายใหม่" — ดูเหตุผลเต็มที่
+    # `utils/voice.py:VoiceOpenTracker` · ต้องอยู่**หลัง** accept ไม่งั้นนับรวมคนที่
+    # โดน gate ปิดไปแล้วด้วย
+    _nth, _since = _VOICE_OPENS.note(session_id)
+    logger.info(voice_open_log_line(session_id, assistant_slug, _nth, _since))
     if not GEMINI_API_KEY:
         await websocket.send_json({"type": "error", "message": "GEMINI_API_KEY not set"})
         return
