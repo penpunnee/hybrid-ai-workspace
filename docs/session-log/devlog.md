@@ -44,6 +44,27 @@ Live connect ในคอนเทนเนอร์ → ได้เสีย�
 log: ไม่มี prepayment/429 อีก
 ```
 
+### ปิดรูทั้งสองที่งานนี้เปิดไว้ (commit `0c8e331`)
+
+| # | รู | ที่แก้ |
+|---|---|---|
+| 1 | default = `gemini-2.0-flash` (ปิดไปแล้ว 1 มิ.ย. 2026) | `GEMINI_MODEL_DEFAULT = "gemini-3.5-flash"` + `RETIRED_GEMINI_MODELS` ให้เทสตรึง · เทสกันทั้งค่า default และกันการ hardcode ทับค่าคงที่ |
+| 2 | `/api/status` เขียวเพราะ**มี key** | `check_gemini_health()` + ฟิลด์ `gemini_ok` / `gemini_message` (คง `gemini` เดิมไว้ UI ใช้อยู่) |
+
+🔑 **ต้องยิง `:generateContent` เท่านั้น** — `ListModels` ตอบ 200 ฉลุยทั้งที่เครดิตหมด
+⇒ health check ที่เช็คแค่ list คือชั้นวัดที่รายงานเขียวตอนระบบตาย
+🔑 **แยก "เครดิตหมด" ออกจาก "โควตาเต็ม"** — 429 เหมือนกันแต่ทางแก้คนละทาง
+(โควตารอแล้วหาย · เครดิตไม่มีวันหายเอง) · + เตือนล่วงหน้าเมื่อโมเดลมีวันปิดประกาศแล้ว
+· cache 5 นาที เพราะทุกครั้งที่เช็ค = เงินจริง (`/api/status` ถูก poll ทุก 60 วิ)
+
+**หลักฐาน:** เทสชุดเต็ม **1675 passed / 15 skipped** · mutation **7/7 ถูกฆ่า** (fail-loud)
+· deploy แล้ว restart (mount เป็น directory ไม่ต้อง recreate) · prod ตอบ
+`gemini_ok: True` · **และพิสูจน์กับของจริง**: ป้อน key เก่าที่เครดิตหมดเข้าไปในคอนเทนเนอร์
+prod → `False | ❌ เครดิต Gemini หมด — เติมที่ ai.studio/projects` ⇒ ตัวตรวจจับได้จริง
+ไม่ใช่แค่ผ่าน mock
+
+🟡 ยังไม่ทำ: เอา `gemini_message` ขึ้นแสดงบน UI (ตอนนี้เห็นได้จาก `/api/status` เท่านั้น)
+
 ### สิ่งที่ยอมรับไปแล้ว (free tier)
 - **วาดรูปพัง** — `gemini-2.5-flash-image` / `3.1-flash-image` คืน 429 quota
 - **บทสนทนาเสียงเข้าชุดข้อมูลของ Google** (free tier ใช้ prompt/คำตอบไปปรับปรุงผลิตภัณฑ์ได้
