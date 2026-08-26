@@ -728,8 +728,11 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 >   ✅ **ขึ้นจอแล้วด้วย** (`e3be2bb`/`95f32cb` · bundle `index-CWv847Pl.js` md5 ตรง) —
 >   แถบเหนือ ChatBox จาก `utils/cloudstatus.ts` (มีเทส · mutation 8/8)
 >   🔴 **ต้องเป็นแถบข้อความ ไม่ใช่ tooltip** — เครื่องหลักคือ iPhone ไม่มี hover
-> - 💡 อยู่ในบ้าน (`192.168.51.x`) ให้ใช้ **`ssh nas`** ไม่ใช่ `nas-cf` — วิ่งออก Cloudflare
->   แล้ววกกลับเข้าวงเดิมจะตัน ("timed out during banner exchange") ทั้งที่ tunnel healthy
+> - 💡 **`ssh nas-cf` ค้าง/timeout ทั้งที่ tunnel healthy = Cloudflare Access หมดอายุ**
+>   (มันพยายามเปิดเบราว์เซอร์ให้ล็อกอินแล้วรอค้าง) — แก้ด้วย
+>   `cloudflared access login https://ssh.pawinhomelab.com` · อยู่ในบ้านใช้ **`ssh nas`** ได้เลย
+>   🔴 อาการที่เห็น ("timed out during banner exchange") ไม่ได้บอกสาเหตุ — ต้องดู output
+>   ของคำสั่งที่ค้างจริง ๆ ถึงจะเห็นบรรทัด "If the browser failed to open…" 
 > - **ก2** (`getUserMedia` ใหม่ ไม่แตะ WS ⇒ ความจำอยู่ครบ) — ยกระดับเมื่อ user รำคาญ
 >   ว่าขวัญลืมเรื่องที่คุยทุกครั้งที่กู้ · ก1 เป็นฐานที่วัดผลได้แล้ว
 > - เสียงลำโพงแตกตอนปัดจอลง (ของเก่า ไม่ใช่ regression · ยังไม่มีตัวเลขวัด — ดูข้างล่าง)

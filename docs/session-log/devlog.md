@@ -86,8 +86,14 @@ prod → `False | ❌ เครดิต Gemini หมด — เติมที
 หางที่บอกสิ่งที่ยังใช้ได้ · `/api/status` = `gemini_ok: True`
 
 ⚠️ ระหว่าง deploy: `ssh nas-cf` ตัน ("timed out during banner exchange") **ไม่ใช่ระบบพัง** —
-Mac ย้ายเข้าวง LAN (`192.168.51.248`) ระหว่างเซสชัน · tunnel ทั้ง 3 ตัว healthy
-⇒ วิ่งออก Cloudflare แล้ววกกลับเข้าวงเดิม (hairpin) · **อยู่ในบ้านให้ใช้ `ssh nas` ตรง**
+tunnel ทั้ง 3 ตัว healthy · **สาเหตุจริง = Cloudflare Access หมดอายุ** — คำสั่งที่ค้างพยายาม
+เปิดเบราว์เซอร์ให้ล็อกอินแล้วรอ (`"If the browser failed to open, please visit the URL above"`)
+⇒ แก้ด้วย `cloudflared access login https://ssh.pawinhomelab.com` · อยู่ในบ้านใช้ `ssh nas` ได้เลย
+
+🔴 **บทเรียน: ผมสรุปสาเหตุผิดรอบแรก** — เห็น "timed out" + เห็นว่า Mac อยู่ในวง LAN
+แล้วสรุปว่าเป็น hairpin ซึ่ง**เข้ากันได้กับหลักฐานพอดีแต่ผิด** · ตัวที่ชี้ขาดคือ
+**output ของคำสั่งที่ค้างเอง** ซึ่งตอนนั้นยังอ่านไม่ได้เพราะมันยังไม่จบ
+⇒ อาการเดียวกัน (timeout) มีได้หลายสาเหตุ อย่าปิดคดีก่อนอ่าน output ตัวจริง
 
 ### สิ่งที่ยอมรับไปแล้ว (free tier)
 - **วาดรูปพัง** — `gemini-2.5-flash-image` / `3.1-flash-image` คืน 429 quota
