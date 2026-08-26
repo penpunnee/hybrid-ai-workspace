@@ -692,7 +692,21 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > (free tier) — แชทข้อความไม่กระทบ เพราะ `route()` ส่งไป LM Studio ในบ้านอยู่แล้ว
 > 🟡 **TTS ยังไม่พิสูจน์** ว่าใช้ได้บนโปรเจกต์ใหม่
 >
-> ## 🥇 งานแรก: **repro ตัวกู้ไมค์บนเครื่องจริง แล้วอ่าน `recover-*` จาก log**
+> ## ✅ ตัวกู้ไมค์ **สำเร็จจริงแล้ว** (2026-08-26 14:59 · `sig=1`)
+> `signal=0 → 61` หลังกดปุ่ม · ตัวจุดชนวนที่ยิงคือ **`zeros`** ไม่ใช่ `ended`
+> · รูที่เจอตามมา (`recover-result` หายเพราะ WS ยังไม่ OPEN) **ปิดแล้ว** (`a5bfc93`)
+> · bundle ปัจจุบัน **`index-D_Yv5ltW.js`**
+>
+> ## 🥇 งานแรก: **อ่าน `underruns` จาก heartbeat หลังใช้เสียงจริงอีกรอบ**
+> เพิ่งใส่ตัวนับ worklet underrun เพื่อตอบอาการ "เสียงดังบ้างเบาบ้าง"
+> · `[VoiceLevel]` พิสูจน์แล้วว่า**ต้นทางนิ่ง** (-15.8 ถึง -17.8 dBFS ทุกตัวอย่าง)
+> ⇒ ถ้า `underruns>0` ตรงกับช่วงที่หูได้ยินว่าเบา = เจอตัวการ · ถ้าเป็น 0 ตลอด
+> = **ไม่ใช่ underrun** ต้องไปดู audio session ของ iOS แทน
+> ```bash
+> ssh nas 'sudo -n /usr/local/bin/docker exec ai-backend-1 \
+>   sh -c "grep -a underruns /app/logs/server.log | tail -30"'
+> ```
+> ⚠️ ห้ามแตะค่าเสียง/จังหวะก่อนมีตัวเลข (ของต้องห้ามเดิม)
 > ตัวกู้ไมค์ (ก1) **deployed + verified บน prod แล้ว** (`e97c9ac` appscript.ui ·
 > `80cfe69` ui · bundle **`index-DZsRgW3D.js`** md5 ตรง host=container)
 > แต่ **ยังไม่เคยมีใครกดปุ่มนี้บนเครื่องจริง** ⇒ ยังไม่มีข้อมูลของรอบกู้สักบรรทัด
