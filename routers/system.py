@@ -9,7 +9,8 @@ from starlette.concurrency import run_in_threadpool
 from core.config import GEMINI_API_KEY, DB_PATH, NAS_DATA_PATH, LMSTUDIO_BASE_URL
 from core.scheduler import scheduler
 from assistants.config import ASSISTANTS
-from utils.llm import OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health, check_lmstudio_health, _last_failover, stream_response
+import utils.llm as _llm
+from utils.llm import OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health, check_lmstudio_health, check_gemini_health, _last_failover, stream_response
 from utils.memory import is_memory_available, get_memory_stats
 from utils.skills import get_skill_count
 from utils.dream import get_latest_report
@@ -121,10 +122,14 @@ def status():
     from concurrent.futures import ThreadPoolExecutor
     import logging
     logger = logging.getLogger(__name__)
-    with ThreadPoolExecutor(max_workers=3) as ex:
+    with ThreadPoolExecutor(max_workers=4) as ex:
         f1 = ex.submit(check_ollama_health)
         f2 = ex.submit(is_memory_available)
         f3 = ex.submit(check_lmstudio_health)
+        # 🔑 ยิงงานจริงกับ Gemini — "มี key" ไม่ได้แปลว่า "ใช้ได้"
+        # (2026-08-26: เครดิตหมด ระบบตายทั้งแชทและเสียง แต่ status ขึ้นเขียว)
+        # เรียกผ่านโมดูลเพื่อให้เทส patch ตัวเดียวได้ (from-import จะ bind ค่าตายตัว)
+        f4 = ex.submit(lambda: _llm.check_gemini_health())
         try:
             ollama_ok, ollama_msg = f1.result(timeout=5)
         except Exception as e:
@@ -140,6 +145,11 @@ def status():
         except Exception as e:
             lmstudio_ok, lmstudio_msg = False, "Health check error"
             logger.warning(f"LM Studio health check failed: {e}")
+        try:
+            gemini_ok, gemini_msg = f4.result(timeout=18)
+        except Exception as e:
+            gemini_ok, gemini_msg = False, "Health check error"
+            logger.warning(f"Gemini health check failed: {e}")
     next_dream = None
     job = scheduler.get_job("dream_nightly")
     if job and job.next_run_time:
@@ -153,7 +163,12 @@ def status():
         "lmstudio_message": lmstudio_msg,
         "local_provider": local_provider,
         "local_ok": lmstudio_ok if local_provider == "lmstudio" else ollama_ok,
+        # `gemini` = **มี key ไหม** (ฟิลด์เดิม UI ใช้อยู่ ห้ามถอด) ·
+        # `gemini_ok` = **ยิงได้จริงไหม** — สองอย่างนี้ต่างกัน และวันที่เครดิตหมด
+        # มีแต่ตัวหลังที่บอกความจริง
         "gemini": bool(GEMINI_API_KEY),
+        "gemini_ok": gemini_ok,
+        "gemini_message": gemini_msg,
         "memory": mem_ok,
         "skills": get_skill_count(),
         "failover_active": _last_failover.get("active", False),

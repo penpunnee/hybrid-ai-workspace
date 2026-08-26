@@ -70,7 +70,19 @@ ollama_client = OpenAI(
 
 # --- Gemini (Cloud LLM) ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+# 🔴 **รุ่นที่ Google ปิดไปแล้ว — ห้ามเป็น default เด็ดขาด**
+# ของเดิม default คือ `gemini-2.0-flash` ซึ่งถูกปิด **1 มิ.ย. 2026** ⇒ วันไหน `.env`
+# หาย/ไม่ถูก mount ระบบจะ 404 ทุกคำขอ โดยหน้าตาเหมือน "แชทพัง" ไม่ใช่ "โมเดลตาย"
+# (เจอ 2026-08-26 ตอนไล่โครงสร้าง · มีเทสตรึงที่ `tests/test_gemini_health.py`)
+RETIRED_GEMINI_MODELS = frozenset({
+    "gemini-2.0-flash", "gemini-2.0-flash-001",           # ปิด 2026-06-01
+    "gemini-2.0-flash-lite", "gemini-2.0-flash-lite-001",  # ปิด 2026-06-01
+})
+# ⏳ ประกาศวันปิดแล้วแต่ยังใช้ได้ — ใช้เตือนล่วงหน้าใน health check
+GEMINI_MODEL_SUNSET = {"gemini-2.5-flash": "2026-10-16"}
+GEMINI_MODEL_DEFAULT = "gemini-3.5-flash"
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", GEMINI_MODEL_DEFAULT)
 # โมเดล Gemini สำรองเมื่อตัวที่ขอ transient-fail (เช่น preview 3.1-flash-lite 503)
 # default ว่าง = ไม่สลับโมเดล (retry-then-local) — กันเผา quota ตัวอื่นโดยไม่ตั้งใจ
 # ตั้งเป็นตัว quota เยอะ (เช่น gemini-3.1-flash-lite) ถ้าอยากอยู่กับ Gemini ก่อนถอย local
@@ -416,6 +428,84 @@ def check_ollama_health(force: bool = False) -> tuple[bool, str]:
 
 
 _lm_health_cache: dict = {"ok": None, "ts": 0.0, "msg": ""}  # cache 30s แบบเดียวกับ ollama
+
+
+_gemini_health_cache = {"ok": None, "ts": 0.0, "msg": ""}
+# ยาวกว่า lmstudio (30 วิ) เพราะการเช็คนี้ **เสียเงินจริง** — ยิงงานจริงกับ cloud
+_GEMINI_HEALTH_TTL = 300
+
+
+def check_gemini_health(force: bool = False) -> tuple[bool, str]:
+    """ยิงงานจริงกับ Gemini แล้วบอกว่า "ตอนนี้ใช้ได้ไหม" — ไม่ใช่ "มี key ไหม"
+
+    🐛 ของจริง 2026-08-26: เครดิต prepay ของโปรเจกต์หมด ⇒ **ทั้งแชทและสายเสียง
+    ยิงไม่ออกเลย** (429 `prepayment credits are depleted` / Live 1011) แต่ไม่มีอะไร
+    ในระบบบอกสักอย่าง — `/api/status` ยังขึ้น `gemini: true` เพราะเช็คแค่ว่ามี key
+    · เจอโดยบังเอิญตอนไปเปิดหน้าโควตา
+
+    🔑 **ต้องยิง `:generateContent` เท่านั้น** — `ListModels` ตอบ 200 ฉลุยทั้งที่
+    เครดิตหมด (ยืนยันด้วยการยิงจริงวันนั้น) ⇒ health check ที่เช็คแค่ list
+    คือชั้นวัดที่รายงาน "เขียว" ตอนระบบตาย
+    (vault `wiki/concepts/measuring-instruments-lie.md`)
+
+    🔑 **แยก "เครดิตหมด" ออกจาก "โควตาเต็ม"** — สองอย่างนี้เป็น 429 เหมือนกันแต่
+    ทางแก้คนละทาง: โควตาเต็มรอเวลาแล้วหาย · เครดิตหมด**ไม่มีวันหายเอง** ต้องเติมเงิน
+    · เขียนรวมกันว่า "โควตาหมด" = ไปนั่งรอสิ่งที่ไม่มีวันมา
+
+    คืน `(ok, msg)` แบบเดียวกับ `check_ollama_health` / `check_lmstudio_health`
+    · cache 5 นาที เพราะทุกครั้งที่เรียกคือเงินจริง (`/api/status` ถูก poll ทุก 60 วิ)
+    """
+    import urllib.request, urllib.error, time, json as _json
+    if not GEMINI_API_KEY:
+        return False, "ยังไม่ได้ตั้งค่า GEMINI_API_KEY ใน .env"
+    if not force and _gemini_health_cache["ok"] is not None:
+        if time.time() - _gemini_health_cache["ts"] < _GEMINI_HEALTH_TTL:
+            return _gemini_health_cache["ok"], _gemini_health_cache.get("msg", "")
+
+    def _save(ok: bool, msg: str) -> tuple[bool, str]:
+        _gemini_health_cache.update({"ok": ok, "ts": time.time(), "msg": msg})
+        return ok, msg
+
+    # คำขอที่ถูกที่สุดที่ยัง "เป็นงานจริง": 1 token เข้า 1 token ออก
+    body = _json.dumps({
+        "contents": [{"parts": [{"text": "1"}]}],
+        "generationConfig": {"maxOutputTokens": 1},
+    }).encode()
+    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+           f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
+    req = urllib.request.Request(url, data=body,
+                                 headers={"Content-Type": "application/json"})
+    try:
+        urllib.request.urlopen(req, timeout=15)
+    except urllib.error.HTTPError as e:
+        try:
+            detail = _json.loads(e.read()).get("error", {}).get("message", "")
+        except Exception:
+            detail = ""
+        low = detail.lower()
+        if "prepayment" in low or "depleted" in low:
+            msg = ("❌ เครดิต Gemini หมด — เติมที่ ai.studio/projects "
+                   "(ไม่ใช่โควตา รอไปก็ไม่กลับมาเอง)")
+        elif e.code == 429:
+            msg = f"❌ โควตา Gemini เต็ม ({GEMINI_MODEL}) — รอรอบถัดไปหรือลดการใช้"
+        elif e.code == 404:
+            msg = (f"❌ โมเดล {GEMINI_MODEL} ใช้กับโปรเจกต์นี้ไม่ได้ "
+                   f"(ถูกปิด/ไม่มีสิทธิ์) — เปลี่ยน GEMINI_MODEL ใน .env")
+        elif e.code in (401, 403):
+            msg = f"❌ GEMINI_API_KEY ใช้ไม่ได้ ({e.code})"
+        else:
+            msg = f"❌ Gemini ตอบ {e.code}: {detail[:120]}"
+        logger.warning(f"Gemini health: {msg}")
+        return _save(False, msg)
+    except Exception as e:
+        msg = f"❌ ต่อ Gemini ไม่ได้ ({type(e).__name__}: {e})"
+        logger.error(f"Gemini health check error: {e}")
+        return _save(False, msg)
+
+    sunset = GEMINI_MODEL_SUNSET.get(GEMINI_MODEL)
+    if sunset:
+        return _save(True, f"⏳ {GEMINI_MODEL} จะถูกปิด {sunset} — วางแผนย้ายรุ่น")
+    return _save(True, "")
 
 
 def check_lmstudio_health(force: bool = False) -> tuple[bool, str]:
