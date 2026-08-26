@@ -31,3 +31,5 @@ skills_db.json.bak-*
 
 # FS tools sandbox — ไดเรกทอรีรันไทม์ (FS_TOOLS_ROOTS default)
 sandbox/
+# สำรอง .env ตอนสลับ key — มีความลับอยู่ข้างใน ห้ามเข้า git
+.env.bak*
