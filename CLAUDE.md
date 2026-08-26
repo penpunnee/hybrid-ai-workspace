@@ -725,7 +725,11 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 >   (`gemini-3.5-flash`) + `RETIRED_GEMINI_MODELS` มีเทสตรึง · `/api/status` มี
 >   **`gemini_ok` / `gemini_message`** ที่ยิง `:generateContent` จริง แยก "เครดิตหมด"
 >   ออกจาก "โควตาเต็ม" (cache 5 นาที) · พิสูจน์กับ key เก่าที่เครดิตหมดบน prod แล้ว
->   🟡 เหลืออย่างเดียว: เอา `gemini_message` ขึ้นโชว์บน UI (ตอนนี้ดูได้จาก API เท่านั้น)
+>   ✅ **ขึ้นจอแล้วด้วย** (`e3be2bb`/`95f32cb` · bundle `index-CWv847Pl.js` md5 ตรง) —
+>   แถบเหนือ ChatBox จาก `utils/cloudstatus.ts` (มีเทส · mutation 8/8)
+>   🔴 **ต้องเป็นแถบข้อความ ไม่ใช่ tooltip** — เครื่องหลักคือ iPhone ไม่มี hover
+> - 💡 อยู่ในบ้าน (`192.168.51.x`) ให้ใช้ **`ssh nas`** ไม่ใช่ `nas-cf` — วิ่งออก Cloudflare
+>   แล้ววกกลับเข้าวงเดิมจะตัน ("timed out during banner exchange") ทั้งที่ tunnel healthy
 > - **ก2** (`getUserMedia` ใหม่ ไม่แตะ WS ⇒ ความจำอยู่ครบ) — ยกระดับเมื่อ user รำคาญ
 >   ว่าขวัญลืมเรื่องที่คุยทุกครั้งที่กู้ · ก1 เป็นฐานที่วัดผลได้แล้ว
 > - เสียงลำโพงแตกตอนปัดจอลง (ของเก่า ไม่ใช่ regression · ยังไม่มีตัวเลขวัด — ดูข้างล่าง)
