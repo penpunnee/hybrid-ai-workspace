@@ -133,3 +133,24 @@ class TestHeartbeatFields:
 
     def test_probe_ของ_user_ไม่มีตัวนับ_ต้องเป็นเครื่องหมายคำถาม(self):
         assert "frames=?" in mic_probe_log_line({"event": "user-mute"})
+
+
+class TestUnderruns:
+    """🔊 "เสียงดังบ้างเบาบ้าง" (user 2026-08-26)
+
+    `[VoiceLevel]` พิสูจน์แล้วว่า**ต้นทางนิ่ง** (-15.8 ถึง -17.8 dBFS ทุกตัวอย่าง
+    รวมช่วงที่รายงานอาการ) ⇒ ความดังที่แกว่งเกิดฝั่งเล่นในเครื่อง
+    ผู้ต้องสงสัยที่วัดได้ถูกที่สุด = worklet underrun (คิวหมด → เล่นศูนย์จนกว่าจะ prime ใหม่)
+
+    🔑 ตัวเลขที่ client เด้งกลับมาต้อง**โผล่ใน log** ไม่งั้นเท่ากับไม่ได้วัด
+    """
+
+    def test_underruns_ปรากฏใน_log(self):
+        line = mic_probe_log_line({"event": "heartbeat", "frames": 59,
+                                   "signal_frames": 0, "armed_ms": 5000, "underruns": 3})
+        assert "underruns=3" in line
+
+    def test_ไม่มีค่า_พิมพ์_question_mark_ไม่ใช่_ศูนย์(self):
+        """0 = วัดได้ว่าไม่มีเลย · ? = ไม่ได้วัด — สองอย่างนี้ห้ามอ่านเหมือนกัน"""
+        line = mic_probe_log_line({"event": "mute"})
+        assert "underruns=?" in line
