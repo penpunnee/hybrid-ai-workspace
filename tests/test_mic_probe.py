@@ -113,3 +113,23 @@ class TestFieldsAddedAfterScrutinize20260825:
     def test_ไม่รู้ค่าต้องเป็นเครื่องหมายคำถาม_ไม่ใช่ค่าปลอม(self):
         line = mic_probe_log_line({"event": "silent"})
         assert "vis=?" in line
+
+
+class TestHeartbeatFields:
+    """ตัวนับดิบของ heartbeat — client ส่งมาแล้ว server ต้องพิมพ์ ไม่งั้นเท่ากับส่งลม"""
+
+    def test_พิมพ์ตัวนับครบสามตัว(self):
+        line = mic_probe_log_line({
+            "event": "heartbeat", "frames": 58, "signal_frames": 58, "armed_ms": 4980,
+        })
+        assert "frames=58" in line
+        assert "signal=58" in line
+        assert "armed_ms=4980" in line
+
+    def test_ศูนย์เฟรมต้องอ่านออกว่าเป็นศูนย์_ไม่ใช่_ไม่รู้(self):
+        """0 = ไม่มีเฟรมเข้ามาเลย (ของจริง) · ? = อ่านค่าไม่ได้ — คนละเรื่องกัน"""
+        line = mic_probe_log_line({"event": "heartbeat", "frames": 0, "signal_frames": 0})
+        assert "frames=0" in line and "frames=?" not in line
+
+    def test_probe_ของ_user_ไม่มีตัวนับ_ต้องเป็นเครื่องหมายคำถาม(self):
+        assert "frames=?" in mic_probe_log_line({"event": "user-mute"})
