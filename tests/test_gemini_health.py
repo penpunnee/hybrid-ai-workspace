@@ -211,6 +211,19 @@ class TestGeminiStateAndScope:
         assert llm._GEMINI_FLAKY_TTL < llm._GEMINI_HEALTH_TTL, (
             "cache ยาวเท่ากัน = อาการที่หายเองใน 10 วิ ค้างบนจอ 5 นาที")
 
+    def test_RED_โควตาเต็ม_คือรายโมเดล_ไม่ใช่ทั้งโปรเจกต์(self, monkeypatch):
+        """🐛 วัดจากของจริง 2026-08-27: `gemini-3.5-flash` คืน 429 quota
+        แต่ `gemini-3.5-flash-lite` ตอบ OK และสายเสียงได้เสียงกลับมา 8,642 ไบต์
+        ในนาทีเดียวกัน ⇒ **โควตาเป็นรายโมเดล** (หน้าโควตาก็มีแถวแยกทุกโมเดล)
+        การเหมาว่าเป็น project = บอกผู้ใช้ผิดว่าสายเสียงพังด้วย"""
+        _reset()
+        monkeypatch.setattr(llm, "GEMINI_API_KEY", "k")
+        with patch("urllib.request.urlopen",
+                   side_effect=self._err(429, "You exceeded your current quota")):
+            ok, _ = llm.check_gemini_health(force=True)
+        assert ok is False
+        assert llm.gemini_health_detail() == {"state": "down", "scope": "model"}
+
     def test_RED_เครดิตหมด_คือทั้งโปรเจกต์(self, monkeypatch):
         _reset()
         monkeypatch.setattr(llm, "GEMINI_API_KEY", "k")

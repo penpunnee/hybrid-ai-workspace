@@ -512,8 +512,12 @@ def check_gemini_health(force: bool = False) -> tuple[bool, str]:
         if e.code in (401, 403):
             return _save(False, f"❌ GEMINI_API_KEY ใช้ไม่ได้ ({e.code})", "down", "project")
         if e.code == 429:
-            msg = f"❌ โควตา Gemini เต็ม ({GEMINI_MODEL}) — รอรอบถัดไปหรือลดการใช้"
-            return _save(False, msg, "down", "project")
+            # 🔑 **โควตาเป็นรายโมเดล ไม่ใช่รายโปรเจกต์** — วัดจากของจริง 2026-08-27:
+            # `gemini-3.5-flash` 429 แต่ `gemini-3.5-flash-lite` OK และสายเสียง
+            # ได้เสียงกลับมา 8,642 ไบต์ ในนาทีเดียวกัน (หน้าโควตาก็แยกแถวทุกโมเดล)
+            msg = (f"❌ โควตาของ {GEMINI_MODEL} เต็ม — รอรอบถัดไป "
+                   f"หรือเปลี่ยน GEMINI_MODEL เป็นรุ่นที่โควตาเหลือ")
+            return _save(False, msg, "down", "model")
         if e.code == 404:
             msg = (f"❌ โมเดล {GEMINI_MODEL} ใช้กับโปรเจกต์นี้ไม่ได้ "
                    f"(ถูกปิด/ไม่มีสิทธิ์) — เปลี่ยน GEMINI_MODEL ใน .env")
