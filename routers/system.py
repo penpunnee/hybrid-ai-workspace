@@ -169,6 +169,9 @@ def status():
         "gemini": bool(GEMINI_API_KEY),
         "gemini_ok": gemini_ok,
         "gemini_message": gemini_msg,
+        # 🔑 สองมิติที่ bool เดียวตอบไม่ได้: **ชั่วคราวหรือถาวร** และ
+        # **กระทบทั้งโปรเจกต์ (เสียงพังด้วย) หรือแค่โมเดลแชท** (ดู utils/llm.py)
+        **{f"gemini_{k}": v for k, v in _llm.gemini_health_detail().items()},
         "memory": mem_ok,
         "skills": get_skill_count(),
         "failover_active": _last_failover.get("active", False),

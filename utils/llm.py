@@ -430,9 +430,28 @@ def check_ollama_health(force: bool = False) -> tuple[bool, str]:
 _lm_health_cache: dict = {"ok": None, "ts": 0.0, "msg": ""}  # cache 30s แบบเดียวกับ ollama
 
 
-_gemini_health_cache = {"ok": None, "ts": 0.0, "msg": ""}
+_gemini_health_cache = {"ok": None, "ts": 0.0, "msg": "", "state": "ok", "scope": None}
 # ยาวกว่า lmstudio (30 วิ) เพราะการเช็คนี้ **เสียเงินจริง** — ยิงงานจริงกับ cloud
 _GEMINI_HEALTH_TTL = 300
+# 🔴 อาการ**ชั่วคราว**ต้อง cache สั้นกว่ามาก — `gemini-3.5-flash` กะพริบจริง
+# (2026-08-27 ยิงซ้ำ 3 รอบ: OK 5.0s / OK 6.8s / timeout 25s) ถ้าใช้ TTL เดียวกัน
+# อาการที่หายเองใน 10 วินาทีจะค้างบนจอผู้ใช้ 5 นาที = เตือนผิดจนไม่มีใครเชื่อแถบอีก
+_GEMINI_FLAKY_TTL = 45
+
+
+def gemini_health_detail() -> dict:
+    """รายละเอียดของผลเช็คล่าสุด — แยก 2 มิติที่ `(ok, msg)` เดิมตอบไม่ได้
+
+    · `state`: `ok` | **`flaky`** (503/timeout/5xx — ชั่วคราว ยังใช้งานได้อยู่)
+      | `down` (เครดิตหมด/คีย์ตาย/โมเดลตาย)
+    · `scope`: **`project`** (เครดิต/คีย์ — **สายเสียงพังด้วย**) | `model`
+      (503/404 ของโมเดลแชท — สายเสียงใช้ `gemini-3.1-flash-live-preview` คนละตัว)
+
+    🔑 ทำไมต้องมี `scope`: 2026-08-27 โมเดลแชทล้มแต่สายเสียงยังได้เสียง 7,202 ไบต์
+    ⇒ การเหมาว่า "โหมดเสียงใช้ไม่ได้" คือการโกหกผู้ใช้
+    """
+    return {"state": _gemini_health_cache.get("state", "ok"),
+            "scope": _gemini_health_cache.get("scope")}
 
 
 def check_gemini_health(force: bool = False) -> tuple[bool, str]:
@@ -455,15 +474,18 @@ def check_gemini_health(force: bool = False) -> tuple[bool, str]:
     คืน `(ok, msg)` แบบเดียวกับ `check_ollama_health` / `check_lmstudio_health`
     · cache 5 นาที เพราะทุกครั้งที่เรียกคือเงินจริง (`/api/status` ถูก poll ทุก 60 วิ)
     """
-    import urllib.request, urllib.error, time, json as _json
+    import urllib.request, urllib.error, time, socket, json as _json
     if not GEMINI_API_KEY:
         return False, "ยังไม่ได้ตั้งค่า GEMINI_API_KEY ใน .env"
     if not force and _gemini_health_cache["ok"] is not None:
-        if time.time() - _gemini_health_cache["ts"] < _GEMINI_HEALTH_TTL:
+        ttl = (_GEMINI_FLAKY_TTL if _gemini_health_cache.get("state") == "flaky"
+               else _GEMINI_HEALTH_TTL)
+        if time.time() - _gemini_health_cache["ts"] < ttl:
             return _gemini_health_cache["ok"], _gemini_health_cache.get("msg", "")
 
-    def _save(ok: bool, msg: str) -> tuple[bool, str]:
-        _gemini_health_cache.update({"ok": ok, "ts": time.time(), "msg": msg})
+    def _save(ok: bool, msg: str, state: str = "ok", scope: str | None = None) -> tuple[bool, str]:
+        _gemini_health_cache.update({"ok": ok, "ts": time.time(), "msg": msg,
+                                     "state": state, "scope": scope})
         return ok, msg
 
     # คำขอที่ถูกที่สุดที่ยัง "เป็นงานจริง": 1 token เข้า 1 token ออก
@@ -486,21 +508,40 @@ def check_gemini_health(force: bool = False) -> tuple[bool, str]:
         if "prepayment" in low or "depleted" in low:
             msg = ("❌ เครดิต Gemini หมด — เติมที่ ai.studio/projects "
                    "(ไม่ใช่โควตา รอไปก็ไม่กลับมาเอง)")
-        elif e.code == 429:
+            return _save(False, msg, "down", "project")
+        if e.code in (401, 403):
+            return _save(False, f"❌ GEMINI_API_KEY ใช้ไม่ได้ ({e.code})", "down", "project")
+        if e.code == 429:
             msg = f"❌ โควตา Gemini เต็ม ({GEMINI_MODEL}) — รอรอบถัดไปหรือลดการใช้"
-        elif e.code == 404:
+            return _save(False, msg, "down", "project")
+        if e.code == 404:
             msg = (f"❌ โมเดล {GEMINI_MODEL} ใช้กับโปรเจกต์นี้ไม่ได้ "
                    f"(ถูกปิด/ไม่มีสิทธิ์) — เปลี่ยน GEMINI_MODEL ใน .env")
-        elif e.code in (401, 403):
-            msg = f"❌ GEMINI_API_KEY ใช้ไม่ได้ ({e.code})"
-        else:
-            msg = f"❌ Gemini ตอบ {e.code}: {detail[:120]}"
+            return _save(False, msg, "down", "model")
+        if e.code >= 500:
+            # 🔑 5xx = **ชั่วคราว** — โมเดลล้นชั่วขณะ ไม่ใช่ระบบพัง · แชทจริงยัง
+            # สตรีมผ่านได้ในนาทีเดียวกัน (พิสูจน์จาก log 2026-08-27)
+            msg = (f"⏳ {GEMINI_MODEL} ตอบช้า/ล้มเป็นครั้งคราวอยู่ตอนนี้ "
+                   f"({e.code}) — ระบบจะถอยไปโมเดลสำรอง/โมเดลในบ้านให้เอง")
+            logger.warning(f"Gemini health (flaky): {e.code} {detail[:100]}")
+            return _save(True, msg, "flaky", "model")
+        msg = f"❌ Gemini ตอบ {e.code}: {detail[:120]}"
         logger.warning(f"Gemini health: {msg}")
-        return _save(False, msg)
+        return _save(False, msg, "down", "model")
+    except (TimeoutError, socket.timeout) as e:
+        # timeout = ปลายทางช้าเกินไป ณ ขณะนั้น — อาการเดียวกับ 5xx ในทางปฏิบัติ
+        msg = (f"⏳ {GEMINI_MODEL} ตอบช้าเป็นครั้งคราวอยู่ตอนนี้ "
+               f"— ระบบจะถอยไปโมเดลสำรอง/โมเดลในบ้านให้เอง")
+        logger.warning(f"Gemini health (flaky): timeout {e}")
+        return _save(True, msg, "flaky", "model")
     except Exception as e:
+        if isinstance(getattr(e, "reason", None), (TimeoutError, socket.timeout)):
+            msg = f"⏳ {GEMINI_MODEL} ตอบช้าเป็นครั้งคราวอยู่ตอนนี้"
+            logger.warning(f"Gemini health (flaky): {e}")
+            return _save(True, msg, "flaky", "model")
         msg = f"❌ ต่อ Gemini ไม่ได้ ({type(e).__name__}: {e})"
         logger.error(f"Gemini health check error: {e}")
-        return _save(False, msg)
+        return _save(False, msg, "down", "project")
 
     sunset = GEMINI_MODEL_SUNSET.get(GEMINI_MODEL)
     if sunset:

@@ -160,3 +160,87 @@ class TestStatusEndpoint:
         with patch.object(llm, "check_gemini_health", return_value=(True, "")):
             d = client.get("/api/status").json()
         assert d["gemini_ok"] is True and d["gemini_message"] == ""
+
+
+class TestGeminiStateAndScope:
+    """แยก "ชั่วคราว" ออกจาก "ถาวร" และ "เฉพาะโมเดล" ออกจาก "ทั้งโปรเจกต์"
+
+    🐛 ของจริง 2026-08-27: `gemini-3.5-flash` **กะพริบ** — ยิงซ้ำ 3 รอบได้
+    OK 5.0s / OK 6.8s / timeout 25s (Flash Lite ตอบ 0.8s ตลอด) · แชทจริงก็ยัง
+    สตรีมสำเร็จอยู่ใน log ⇒ ระบบ**ไม่ได้พัง** แต่แถบขึ้นแดงค้าง 5 นาที (cache)
+    = false alarm ซึ่งผิดกติกาข้อแรกที่ตั้งไว้เอง ("แถบที่เตือนผิด = แถบที่ไม่มีใครเชื่อ")
+
+    🔑 **ขอบเขตของความพังต่างกันด้วย**: เครดิตหมด/คีย์ตาย = **ทั้งโปรเจกต์**
+    (สายเสียงพังด้วย) · 503/404 ของโมเดลแชท = **เฉพาะโมเดลนั้น** — สายเสียงใช้
+    `gemini-3.1-flash-live-preview` คนละตัว (พิสูจน์แล้ววันนี้: แชทล้มแต่เสียงได้ 7,202 ไบต์)
+    ⇒ เหมาว่า "เสียงใช้ไม่ได้" คือการโกหกผู้ใช้
+    """
+
+    def _err(self, code, message):
+        import io, json as _j, urllib.error
+        body = _j.dumps({"error": {"code": code, "message": message}}).encode()
+        return urllib.error.HTTPError("u", code, "err", {}, io.BytesIO(body))
+
+    def test_ปกติ_state_ok_ไม่มี_scope(self, monkeypatch):
+        _reset()
+        monkeypatch.setattr(llm, "GEMINI_API_KEY", "k")
+        with patch("urllib.request.urlopen", return_value=MagicMock()):
+            llm.check_gemini_health(force=True)
+        assert llm.gemini_health_detail() == {"state": "ok", "scope": None}
+
+    def test_RED_503_คือชั่วคราว_ห้ามนับเป็น_down(self, monkeypatch):
+        _reset()
+        monkeypatch.setattr(llm, "GEMINI_API_KEY", "k")
+        with patch("urllib.request.urlopen", side_effect=self._err(503, "high demand")):
+            ok, msg = llm.check_gemini_health(force=True)
+        d = llm.gemini_health_detail()
+        assert d["state"] == "flaky"
+        assert d["scope"] == "model"
+        assert ok is True, "ชั่วคราว = ยังไม่ถือว่าใช้ไม่ได้ (แชทจริงยังสตรีมผ่าน)"
+        assert "ครั้งคราว" in msg or "ช้า" in msg
+
+    def test_RED_timeout_ก็คือชั่วคราว(self, monkeypatch):
+        _reset()
+        monkeypatch.setattr(llm, "GEMINI_API_KEY", "k")
+        with patch("urllib.request.urlopen", side_effect=TimeoutError("read timed out")):
+            ok, _ = llm.check_gemini_health(force=True)
+        assert llm.gemini_health_detail()["state"] == "flaky"
+        assert ok is True
+
+    def test_RED_ชั่วคราวต้อง_cache_สั้นกว่าปกติ(self):
+        assert llm._GEMINI_FLAKY_TTL < llm._GEMINI_HEALTH_TTL, (
+            "cache ยาวเท่ากัน = อาการที่หายเองใน 10 วิ ค้างบนจอ 5 นาที")
+
+    def test_RED_เครดิตหมด_คือทั้งโปรเจกต์(self, monkeypatch):
+        _reset()
+        monkeypatch.setattr(llm, "GEMINI_API_KEY", "k")
+        with patch("urllib.request.urlopen",
+                   side_effect=self._err(429, "Your prepayment credits are depleted")):
+            ok, _ = llm.check_gemini_health(force=True)
+        assert ok is False
+        assert llm.gemini_health_detail() == {"state": "down", "scope": "project"}
+
+    def test_RED_โมเดลตาย_404_กระทบแค่โมเดลนั้น(self, monkeypatch):
+        _reset()
+        monkeypatch.setattr(llm, "GEMINI_API_KEY", "k")
+        with patch("urllib.request.urlopen",
+                   side_effect=self._err(404, "no longer available")):
+            ok, _ = llm.check_gemini_health(force=True)
+        assert ok is False
+        assert llm.gemini_health_detail()["scope"] == "model", (
+            "เหมาว่าทั้งโปรเจกต์ = บอกผู้ใช้ผิดว่าสายเสียงพังด้วย")
+
+    def test_key_ผิด_คือทั้งโปรเจกต์(self, monkeypatch):
+        _reset()
+        monkeypatch.setattr(llm, "GEMINI_API_KEY", "k")
+        with patch("urllib.request.urlopen", side_effect=self._err(403, "denied")):
+            llm.check_gemini_health(force=True)
+        assert llm.gemini_health_detail()["scope"] == "project"
+
+    def test_status_ส่ง_state_และ_scope_ต่อให้_UI(self):
+        _reset()
+        with patch.object(llm, "check_gemini_health", return_value=(True, "ช้าเป็นครั้งคราว")), \
+             patch.object(llm, "gemini_health_detail", return_value={"state": "flaky", "scope": "model"}):
+            d = client.get("/api/status").json()
+        assert d["gemini_state"] == "flaky"
+        assert d["gemini_scope"] == "model"
