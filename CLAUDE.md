@@ -697,6 +697,13 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > · รูที่เจอตามมา (`recover-result` หายเพราะ WS ยังไม่ OPEN) **ปิดแล้ว** (`a5bfc93`)
 > · bundle ปัจจุบัน **`index-D_Yv5ltW.js`**
 >
+> ## ⚡ โมเดลแชทเปลี่ยนแล้ว (2026-08-27)
+> `GEMINI_MODEL=gemini-3.5-flash-lite` · `GEMINI_FALLBACK_MODEL=gemini-3.1-flash-lite`
+> — ตัว `gemini-3.5-flash` บนโปรเจกต์นี้ **โควตาเต็ม + กะพริบ** (OK 5s / OK 6.8s /
+> timeout 25s) ส่วน Lite ตอบ 0.8 วิเสมอ
+> 🔑 **โควตา Gemini เป็นรายโมเดล ไม่ใช่รายโปรเจกต์** — วัดแล้ว: flash 429 แต่ Lite OK
+> และสายเสียงได้เสียง 8,642 ไบต์ในนาทีเดียวกัน ⇒ อย่าเหมาว่า "Gemini ล่ม"
+>
 > ## 🥇 งานแรก: **อ่าน `underruns` จาก heartbeat หลังใช้เสียงจริงอีกรอบ**
 > เพิ่งใส่ตัวนับ worklet underrun เพื่อตอบอาการ "เสียงดังบ้างเบาบ้าง"
 > · `[VoiceLevel]` พิสูจน์แล้วว่า**ต้นทางนิ่ง** (-15.8 ถึง -17.8 dBFS ทุกตัวอย่าง)
