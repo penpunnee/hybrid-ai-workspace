@@ -22,7 +22,11 @@ def token_matches(provided: str) -> bool:
 # /api/shared = public share link (token อยู่ใน URL), /api/health = monitoring probe
 _OPEN_PATHS = {"/", "/api/config", "/api/status", "/api/health",
                "/api/auth/check", "/api/auth/login"}
-_OPEN_PREFIXES = ("/static", "/assets", "/shared", "/api/shared", "/ws", "/gen")
+# /api/files = ลิงก์ดาวน์โหลดจาก tool export_file — <a download> เป็น navigation
+# แนบ header ไม่ได้ (นอกบ้านโดน 401 → ได้ไฟล์เปล่า) · ความปลอดภัยอยู่ที่
+# token 128-bit ใน URL แบบเดียวกับ /gen
+_OPEN_PREFIXES = ("/static", "/assets", "/shared", "/api/shared", "/ws", "/gen",
+                  "/api/files")
 
 
 def _ip_is_private(ip_str: str) -> bool:

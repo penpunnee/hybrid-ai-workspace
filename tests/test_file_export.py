@@ -147,3 +147,35 @@ def test_save_export_strips_hash_and_percent(export_dir):
     for bad in ["รายงาน#1.md", "a%20b.md"]:
         fname = save_export(bad, "x")["url"].rsplit("/", 1)[1]
         assert "#" not in fname and "%" not in fname, fname
+
+
+# ── auth: ลิงก์ดาวน์โหลดต้องกดได้จากนอกบ้าน ───────────────────────────────────
+# บั๊กจริง 08-28: <a download> เป็น browser navigation แนบ header x-auth-token
+# ไม่ได้ → ผ่าน Cloudflare โดน 401 → Safari เซฟ body ของ error เป็น "ไฟล์เปล่า"
+# ความปลอดภัยของ /api/files อยู่ที่ token 128-bit เดาไม่ได้ (ระดับเดียวกับ /gen
+# ที่เปิด public อยู่แล้ว) — จึงต้องอยู่ใน open allowlist
+
+def test_download_works_without_auth_header_via_cloudflare(client, export_dir, monkeypatch):
+    from core import auth
+    from utils.file_export import save_export
+    monkeypatch.setattr(auth, "UI_PASSWORD", "secret")
+    r = save_export("จากนอกบ้าน.md", "เนื้อหา")
+    resp = client.get(r["url"], headers={"cf-connecting-ip": "1.2.3.4"})
+    assert resp.status_code == 200
+    assert resp.text == "เนื้อหา"
+
+
+def test_other_api_paths_still_locked_via_cloudflare(client, export_dir, monkeypatch):
+    # กลุ่มควบคุม: เปิดเฉพาะ /api/files — path อื่นต้องยัง 401 เหมือนเดิม
+    from core import auth
+    monkeypatch.setattr(auth, "UI_PASSWORD", "secret")
+    resp = client.get("/api/memory/stats", headers={"cf-connecting-ip": "1.2.3.4"})
+    assert resp.status_code == 401
+
+
+def test_api_files_prefix_no_segment_leak(client, export_dir, monkeypatch):
+    # /api/filesecrets ต้องไม่หลุดตาม prefix (กติกา _under_open_prefix ตรงทั้ง segment)
+    from core import auth
+    monkeypatch.setattr(auth, "UI_PASSWORD", "secret")
+    resp = client.get("/api/filesecrets", headers={"cf-connecting-ip": "1.2.3.4"})
+    assert resp.status_code == 401
