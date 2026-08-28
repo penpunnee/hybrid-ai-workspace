@@ -685,6 +685,11 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > · mutation 9/9 KILLED · รายละเอียด+บทเรียนใน devlog "2026-08-28" — อย่ารื้อ/ทำซ้ำ
 > · **user ยังไม่ได้ลองกดลิงก์บนเครื่องจริง** (ต้องรีเฟรชเอา bundle ใหม่ก่อน)
 >
+> ## 🔴 ใหม่ 08-28 บ่าย: "ขวัญตอบว่าง" ตอนแนบรูป — วินิจฉัยจบแล้ว ยังไม่ได้แก้
+> ชน ctx 8192 ของ qwen3.5-9b (prompt+รูป = 9,242 token) · โหมด stream ได้ **stream เปล่า
+> ไม่ใช่ 400** ⇒ log มีแค่ WARNING empty · ดู devlog "2026-08-28 (2)" — งานแก้: trim เส้น
+> LM Studio + แจ้งผู้ใช้เมื่อ stream 0 chunk · quick fix: reload โมเดลที่ ctx 16384+
+>
 > ## 🔊 เสียงเบา — สถานะ 08-28 (ยังไม่ปิด)
 > ตัดแล้ว: underrun ฝั่งคิวเรา (29/265 เป็น drain จบประโยคทั้งหมด) · ต้นทาง
 > (`[VoiceLevel]` นิ่ง) · VPIO/ไมค์ (user เทียบโหมดเสียง vs นิยายบน iPhone —

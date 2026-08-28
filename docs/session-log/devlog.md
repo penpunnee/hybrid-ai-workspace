@@ -2242,6 +2242,30 @@ user ทดสอบ **iPhone 16 Pro Max ลำโพงเครื่อง (�
 - **`await` บนสัญญาที่อาจไม่มีวัน resolve = แขวนเงียบ** (`ctx.resume()` ที่ยังไม่มี user activation)
   · ทุก entry point ต้องมี `catch` ที่แสดงผลบนจอ
 
+## 2026-08-28 (2) — วินิจฉัย "ขวัญตอบว่าง" ตอนแนบรูป: ชน context 8192 ของ LM Studio ✅ (ยังไม่ได้แก้โค้ด)
+
+**อาการ:** user แนบรูปถ่าย + "สรุปข้อมูลตามคำถามในภาพ แล้วส่งเป็นไฟล์ให้หน่อย" (msg 2239, 14:31)
+→ `[Chat] empty response from provider=lmstudio — inject notice` 2 ครั้งซ้อน (req_61b8c599, req_03b267c1)
+→ เทิร์นถัดมาขวัญตอบ "ยังไม่มีภาพแนบมา" (รูปไม่ติดไป history — เก็บแต่ text)
+
+**Smoking gun (ยิงตรง LM Studio จาก NAS):** บริบทยาว ~5k token + รูปมือถือ 2.3MB (~3k token) →
+`HTTP 400 exceed_context_size_error: request (9242 tokens) exceeds the available context size (8192 tokens)`
+· qwen/qwen3.5-9b โหลดที่ ctx **8192** (`/api/v0/models` field `loaded_context_length`)
+· 🔑 **โหมด stream ไม่ได้ 400 — ได้ stream เปล่ากลับมาเงียบๆ** (`_stream_lmstudio` จบ loop ปกติ
+  0 chunk → log "stream OK" → คำตอบว่าง) ⇒ อาการนี้ไม่มี error ใน log เลยนอกจาก WARNING empty
+
+**ตัดออกแล้วด้วยการยิงตรงทีละตัวแปร (ทุกเคสผ่านหมด):** prompt สั้น · prompt 5.1k token ·
+รูปเล็ก 1px · รูปใหญ่ 2.3MB เดี่ยวๆ (2,979 token) · เรียงความยาว 4.3k token completion ·
+`reasoning_effort` (ไม่มีผล — confound กับ max_tokens ที่เผลอเปลี่ยนพร้อมกัน ต้องแยกตัวแปรถึงเห็น)
+· หมายเหตุ: ที่ 08-03 จดว่า "max_tokens 200/800 ก็ว่าง" นั่นคือเพดานต่ำจน reasoning กินหมด —
+วันนี้วัดแล้ว ไม่จำกัด max_tokens โมเดลตอบได้ปกติ (reasoning ~200-1900 แล้วค่อย content)
+
+**ทางแก้ (ยังไม่ทำ):**
+1. (user, เครื่อง .235) reload qwen3.5-9b ที่ ctx 16384/32768 — หายทันทีสำหรับเคสส่วนใหญ่
+2. (โค้ด) เส้น LM Studio ไม่มีการ trim context/history เลย (มีแต่เส้น Ollama) → ต้อง trim ให้พอดี
+   เพดาน + จับเคส "stream จบด้วย 0 chunk" แล้วแจ้งผู้ใช้ตรงๆ (แยกจาก notice ว่างทั่วไป)
+3. (โค้ด) รูปไม่ persist ใน history → เทิร์นถัดไปโมเดลไม่เห็นรูปโดย design — ควรบอกผู้ใช้ใน UI
+
 ## 2026-08-28 — tool `export_file` (ขวัญส่งไฟล์ให้ user ในแชท) + ไล่อาการเสียงเบา
 
 **export_file (เสร็จ+deployed+verified):** `3cba949` backend · `35ae915` appscript.ui · bundle `index-Edxj4Cvt.js` (md5 ตรง host=container)
