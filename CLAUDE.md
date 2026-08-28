@@ -686,7 +686,9 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > · **user ยังไม่ได้ลองกดลิงก์บนเครื่องจริง** (ต้องรีเฟรชเอา bundle ใหม่ก่อน)
 >
 > ## 🔴 ใหม่ 08-28 บ่าย: "ขวัญตอบว่าง" ตอนแนบรูป — วินิจฉัยจบแล้ว ยังไม่ได้แก้
-> ชน ctx 8192 ของ qwen3.5-9b (prompt+รูป = 9,242 token) · โหมด stream ได้ **stream เปล่า
+> ✅ ctx แก้แล้ว (user reload 16384 · verify 15:59 คำตอบมาจริง) · 🔴 เหลือ: **agent mode
+> ทิ้งรูปเงียบๆ** — `run_agent()` ไม่มี image_b64 ⇒ "สรุปภาพ→export ไฟล์" เทิร์นเดียวยังไม่ได้
+> > ชน ctx 8192 ของ qwen3.5-9b (prompt+รูป = 9,242 token) · โหมด stream ได้ **stream เปล่า
 > ไม่ใช่ 400** ⇒ log มีแค่ WARNING empty · ดู devlog "2026-08-28 (2)" — งานแก้: trim เส้น
 > LM Studio + แจ้งผู้ใช้เมื่อ stream 0 chunk · quick fix: reload โมเดลที่ ctx 16384+
 >
