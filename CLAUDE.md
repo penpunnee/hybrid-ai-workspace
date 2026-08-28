@@ -692,6 +692,26 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > ไม่ใช่ 400** ⇒ log มีแค่ WARNING empty · ดู devlog "2026-08-28 (2)" — งานแก้: trim เส้น
 > LM Studio + แจ้งผู้ใช้เมื่อ stream 0 chunk · quick fix: reload โมเดลที่ ctx 16384+
 >
+> ## 🥇 งานเซสชันหน้า: tool `fetch_url` (user เคาะแล้ว 08-28 — วิจัย+แผนเสร็จ รอลงมือ)
+> ให้ขวัญอ่านเนื้อหาเต็มจาก URL ที่ user วางในแชท — ตอนนี้ `web_search` รับแต่ query
+> ความรู้ SSRF ที่ต้องใช้: **vault `ssrf-safe-url-fetch.md`** (กลไกโจมตี 4 แบบ + แหล่ง)
+> **แผน (TDD ตามลำดับ):**
+> 1. `utils/urlguard.py` ใหม่ — `resolve_and_validate(url) -> list[ip]`:
+>    scheme http/https เท่านั้น · `getaddrinfo` ทุก IP (A+AAAA) · ปฏิเสธถ้าตัวใด
+>    private/loopback/link-local/reserved (`ipaddress`) — เทส: IP ตรง, decimal IP,
+>    `[::1]`, hostname ที่ resolve เป็น private (mock getaddrinfo), scheme แปลก
+> 2. `fetch_url_safe()` — **pin IP** (ต่อที่ IP + `Host` header · HTTPS ใช้แนว
+>    HostHeaderSSLAdapter เช็ค cert กับโดเมนเดิม — แนวแพตช์ AutoGPT GHSA-wvjg-9879-3m7w
+>    กัน DNS rebinding TTL=0) · `allow_redirects=False` เดินเอง ≤3 hop validate ทุก hop
+>    · stream + cap ขนาด (~1MB) · timeout เดิม `_FETCH_TIMEOUT` · GET เท่านั้น
+> 3. tool `fetch_url(url)` ใน `agents/tools.py` — reuse `_extract_text()` เดิม ·
+>    description บอกโมเดล "user วางลิงก์/ขอให้อ่านหน้าเว็บ" · clamp ผลตาม execute_tool
+> 4. (ตัดสินใจตอนทำ) ให้ `_fetch_url` ของ web_search ใช้ guard เดียวกันด้วยไหม —
+>    เสี่ยงต่ำกว่า (URL จาก DDG) แต่ใช้ฟรีถ้า refactor ดี
+> 5. mutation: ถอด private-IP check / ถอด per-hop validate / ถอด pin-IP → ต้องแดง
+> ⚠️ อย่าลืม: เทสเต็มชุดบนเครื่อง (uv venv + LOG_FILE=/tmp) · deploy = push + NAS pull
+> + `docker restart ai-backend-1` · **verify แบบ public (`cf-connecting-ip`) ไม่ใช่แค่ localhost**
+>
 > ## 🔊 เสียงเบา — สถานะ 08-28 (ยังไม่ปิด)
 > ตัดแล้ว: underrun ฝั่งคิวเรา (29/265 เป็น drain จบประโยคทั้งหมด) · ต้นทาง
 > (`[VoiceLevel]` นิ่ง) · VPIO/ไมค์ (user เทียบโหมดเสียง vs นิยายบน iPhone —
