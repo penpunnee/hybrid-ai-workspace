@@ -1,5 +1,45 @@
 ---
 
+## [2026-08-28 เย็น] SECTION — tool `fetch_url` เสร็จครบวง (TDD ตามแผน ▶️ 08-28)
+
+ขวัญอ่านเนื้อหาเต็มจาก URL ที่ user วางในแชทได้แล้ว — `661feae` (backend อย่างเดียว
+ไม่มีงาน frontend) · ทำตามแผน 5 ขั้นใน ▶️ เดิมเป๊ะ ไม่มีวางแผนใหม่
+
+### ของที่ได้
+- **`utils/urlguard.py`** — เกราะ SSRF เต็มตาม vault `ssrf-safe-url-fetch.md`:
+  - `resolve_and_validate(url)` — scheme http/https เท่านั้น · บล็อก userinfo ·
+    `getaddrinfo` ทุก IP (A+AAAA) แล้วเช็ค **`not addr.is_global`** (ครอบ
+    private/loopback/link-local/reserved/CGNAT ในเงื่อนไขเดียว) · ตัวเดียวไม่ผ่าน
+    = บล็อกทั้ง URL · IPv4 ขึ้นก่อน (คอนเทนเนอร์ไม่มี route IPv6)
+  - `fetch_url_safe()` — **pin IP** ด้วย `urllib3.HTTPSConnectionPool(host=ip,
+    server_hostname=hostname, assert_hostname=hostname)` (ไม่ต้องพึ่ง requests_toolbelt)
+    · เดิน redirect เอง ≤3 hop validate ทุก hop · stream + cap 1MB · GET เท่านั้น
+    · content-type allowlist (html/text/json/xml) · decode ตาม charset ใน header
+- tool **`fetch_url`** ใน `agents/tools.py` + บรรทัดใน `AGENT_SYSTEM_HINT`
+- ขั้น 4 ในแผน (เคาะแล้ว: ทำ) — **`_fetch_url` ของ web_search ใช้เกราะเดียวกัน**
+  (เทสเดิม patch ที่ชื่อ `_fetch_url` จึง refactor ข้างในได้ฟรี)
+- แถม: ตัด F401 `check_gemini_health` ใน `routers/system.py` (`989d4ff`) —
+  **CI แดงมา 3 commit ไม่มีใครรู้** เจอเพราะทำตามกติกา "รัน ruff เองก่อนเริ่มงาน"
+
+### การพิสูจน์
+- เทสใหม่ `tests/test_urlguard.py` 34 ตัว · ชุดเต็มบนเครื่อง **1738 passed** + ruff ผ่าน
+- **mutation 3/3 KILLED** (baseline+restore เขียวทุกรอบ): ถอด private-IP check ·
+  per-hop validate (hop ถัดไปตรวจ URL เดิมแทนปลายทาง) · ถอด pin-IP
+- smoke จริงบนเครื่อง (เทส mock pool ไว้ — `_open_pool` ตัวจริงต้องยิงจริงถึงเชื่อได้):
+  https ตรง · redirect จริง 2 hop (`http://wikipedia.org` → `https://www.wikipedia.org/`)
+  · CDN ที่ cert ต้องเช็คกับโดเมนไม่ใช่ IP · บล็อก `192.168.51.1`
+- verify ใน**คอนเทนเนอร์ prod**: `execute_tool` ดึง example.com สำเร็จ · บล็อก
+  `192.168.51.49:8080` + `169.254.169.254` · E2E `/api/chat` agent mode:
+  ขวัญเรียก `fetch_url` เอง สรุปเนื้อหาถูก · สั่งเปิด router → tool บล็อก ขวัญรายงานตรง
+
+### กับดัก/บทเรียน
+- **`ipaddress.is_global` บล็อก TEST-NET (203.0.113.x) ด้วย** — fixture ในเทสต้องใช้
+  IP public จริง (1.1.1.1) ไม่ใช่ IP ตัวอย่างจากเอกสาร
+- **`/api/chat` รับ field `prompt` ไม่ใช่ `message`** — ส่งผิดแล้วขวัญทักทายเฉยๆ
+  เหมือน prompt ว่าง ไม่มี error อะไรบอกเลย (เกือบสรุปผิดว่า agent ไม่เรียก tool)
+
+---
+
 ## [2026-08-27 เช้ามืด] SECTION — แถบเตือนที่เตือนผิด 2 ทาง + ย้ายโมเดลแชทไป Flash Lite
 
 user เห็นแถบแดงบนหน้าแรก → ไล่ดูของจริง แล้วพบว่า**แถบถูกครึ่งเดียว** และผมสรุปผิด 2 รอบ
