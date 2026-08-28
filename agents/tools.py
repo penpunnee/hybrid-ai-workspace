@@ -334,6 +334,24 @@ def _t_generate_image(prompt: str) -> str:
     return f"สร้างรูปไม่สำเร็จ: {result.get('error', 'unknown')}"
 
 
+def _t_fetch_url(url: str) -> str:
+    """ดึงเนื้อหาเต็มจาก URL ที่ user วางในแชท — ผ่านเกราะ SSRF (utils/urlguard)"""
+    from utils import urlguard
+    from utils.websearch import _extract_text
+    try:
+        res = urlguard.fetch_url_safe(url)
+    except urlguard.URLBlockedError as e:
+        return f"❌ ดึง URL นี้ไม่ได้ (ถูกบล็อกเพื่อความปลอดภัย): {e} — ห้ามลองเลี่ยงด้วย URL อื่นของปลายทางเดิม"
+    except Exception as e:
+        return f"❌ ดึง {url} ไม่สำเร็จ: {e}"
+    if "html" in res.content_type:
+        body = _extract_text(res.text, max_chars=4200)
+    else:
+        body = res.text[:4200]
+    note = " (เนื้อหายาวเกิน ถูกตัดท้าย)" if res.truncated or len(res.text) > 4200 else ""
+    return f"📄 เนื้อหาจาก {res.url}{note}\n\n{body}"
+
+
 def _t_export_file(filename: str, content: str) -> str:
     """เขียน content เป็นไฟล์ แล้วคืน markdown link ให้ user กดดาวน์โหลดในแชท"""
     from utils.file_export import save_export
@@ -393,6 +411,21 @@ _ALL_TOOLS: dict[str, dict[str, Any]] = {
             "required": ["query"],
         },
         "fn": _t_web_search,
+    },
+    "fetch_url": {
+        "description": (
+            "อ่านเนื้อหาเต็มจากหน้าเว็บตาม URL ที่ระบุ "
+            "ใช้เมื่อ user วางลิงก์ในแชท หรือขอให้อ่าน/สรุปหน้าเว็บที่รู้ URL อยู่แล้ว "
+            "(ถ้ายังไม่รู้ URL ให้ใช้ web_search แทน)"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "URL เต็มของหน้าที่จะอ่าน (http/https)"},
+            },
+            "required": ["url"],
+        },
+        "fn": _t_fetch_url,
     },
     "weather": {
         "description": (

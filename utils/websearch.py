@@ -115,17 +115,17 @@ def _extract_text(html: str, max_chars: int = _FETCH_MAX_CHARS) -> str:
 
 
 def _fetch_url(url: str) -> str:
-    """ดึง HTML จาก URL แล้ว extract text — best effort"""
+    """ดึง HTML จาก URL แล้ว extract text — best effort
+
+    ผ่านเกราะ SSRF เดียวกับ tool fetch_url (`utils/urlguard`) — URL จาก DDG
+    เสี่ยงต่ำกว่า URL จากบทสนทนา แต่ผลค้นก็ redirect ไปที่ไหนก็ได้เหมือนกัน
+    """
     try:
-        import requests
-        resp = requests.get(url, timeout=_FETCH_TIMEOUT,
-                            headers={"User-Agent": _UA, "Accept-Language": "th,en;q=0.9"})
-        if resp.status_code != 200:
+        from utils.urlguard import fetch_url_safe
+        res = fetch_url_safe(url, timeout=_FETCH_TIMEOUT)
+        if "html" not in res.content_type and "text" not in res.content_type:
             return ""
-        ct = resp.headers.get("content-type", "").lower()
-        if "html" not in ct and "text" not in ct:
-            return ""
-        return _extract_text(resp.text)
+        return _extract_text(res.text)
     except Exception as e:
         logger.debug(f"[WebSearch] fetch {url} failed: {e}")
         return ""

@@ -128,6 +128,7 @@ OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 AGENT_SYSTEM_HINT = (
     "\n\n[Agent Mode] คุณมีเครื่องมือที่ใช้ได้:\n"
     "- web_search: ค้นหาข้อมูลในเน็ต\n"
+    "- fetch_url: อ่านเนื้อหาเต็มจากหน้าเว็บตาม URL (ใช้เมื่อ user วางลิงก์/รู้ URL แล้ว)\n"
     "- weather: พยากรณ์อากาศ\n"
     "- wikipedia: ข้อมูลจาก Wikipedia\n"
     "- memory_recall: ค้นความทรงจำเก่า\n"
