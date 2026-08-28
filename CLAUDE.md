@@ -681,7 +681,7 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 > ## ✅ tool `export_file` เสร็จ+deployed+verified (2026-08-28)
 > ขวัญเขียนข้อมูลเป็นไฟล์ส่งลิงก์ดาวน์โหลดในแชทได้แล้ว — `3cba949` backend ·
-> `35ae915` appscript.ui · bundle **`index-Edxj4Cvt.js`** (md5 ตรง host=container)
+> `35ae915` appscript.ui · bundle **`index-BCJviwjp.js`** (md5 ตรง host=container · รวม fix /scrutinize `b065eb8`)
 > · mutation 9/9 KILLED · รายละเอียด+บทเรียนใน devlog "2026-08-28" — อย่ารื้อ/ทำซ้ำ
 > · **user ยังไม่ได้ลองกดลิงก์บนเครื่องจริง** (ต้องรีเฟรชเอา bundle ใหม่ก่อน)
 >

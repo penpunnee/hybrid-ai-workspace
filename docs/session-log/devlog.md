@@ -2283,3 +2283,9 @@ user ทดสอบ **iPhone 16 Pro Max ลำโพงเครื่อง (�
 - verify prod: tool ใน registry + เขียนไฟล์จริง · fake token 404 / ไฟล์จริง 200
 
 **เสียงเบา (ยังไม่ปิด):** underruns จาก heartbeat = 29/265 ทั้งหมด `=1` ตรงรอยต่อ gate เปิดกลับ (drain จบประโยคปกติ ไม่มีสักครั้งกลาง `armed_ms=0`) ⇒ ไม่ใช่ตัวการ · `[VoiceLevel]` นิ่ง (-16.5..-18.4) ⇒ เบาที่ตัวเครื่อง · user เทียบ 2 โหมด: **โหมดเสียง vs นิยาย เบา/ดังเท่ากัน** ⇒ ตัด VPIO ซ้ำ (รอบนี้ iPhone) · อาการ "ค่อยๆ ลง ค่อยๆ เร่ง" ตรงกลไก (i) FIFO สัดส่วนเงียบแกว่ง (vault `ios-web-audio-playback-distortion.md` §ข้อมูลใหม่ 08-28, commit vault `fa33bc9` ยังไม่ push) · **รอคำตอบ 2 ข้อ: เกิดตอนไม่แตะจอไหม + Low Power Mode/แบต/ความร้อน** — ถ้าเกิดตลอด เงื่อนไข "ไม่แก้" ของ 08-25 เปลี่ยน ต้องชั่ง ManagedMediaSource ใหม่
+
+**/scrutinize รอบเดียว → แก้ 2 ข้อ (deployed `b065eb8` · bundle `index-BCJviwjp.js`):**
+1. [major] `[text](//evil.com)` ผ่านกฎ "path ภายใน" ได้ทั้งกฎรูป (รูเก่า) และกฎลิงก์ใหม่ → เพิ่ม `(?!\/)` ทั้งคู่ (`35ae915`→`8e…` appscript.ui)
+2. [minor] `#`/`%` ในชื่อไฟล์ทำลิงก์ 404 (fragment / percent-decode) → เข้า `_BAD_CHARS`
+- mutation 3/3 KILLED · เทสรวม backend 1701 / frontend 474
+- ค้างไว้ (จดแล้วไม่ทำ): purge exports เก่า >30 วันใน core/scheduler.py · ลิงก์/bold แทรกใน `<pre>` ได้ (พฤติกรรมเดิม)
