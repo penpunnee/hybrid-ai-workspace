@@ -2289,3 +2289,8 @@ user ทดสอบ **iPhone 16 Pro Max ลำโพงเครื่อง (�
 2. [minor] `#`/`%` ในชื่อไฟล์ทำลิงก์ 404 (fragment / percent-decode) → เข้า `_BAD_CHARS`
 - mutation 3/3 KILLED · เทสรวม backend 1701 / frontend 474
 - ค้างไว้ (จดแล้วไม่ทำ): purge exports เก่า >30 วันใน core/scheduler.py · ลิงก์/bold แทรกใน `<pre>` ได้ (พฤติกรรมเดิม)
+
+**บั๊กไฟล์เปล่า (user เจอจริง) — root cause + fix `ba90dfb` deployed+verified:**
+- อาการ: กดลิงก์ดาวน์โหลดได้ไฟล์ไม่มีเนื้อหา · log ชี้ชัด `GET /api/files/... → 401` ครั้งแรก (ผ่าน Cloudflare) แล้ว Safari เซฟ error body เป็นไฟล์
+- root cause: `<a download>` เป็น browser navigation **แนบ header `x-auth-token` ไม่ได้** และ `/api/files` ไม่อยู่ใน `_OPEN_PREFIXES` — ที่ verify รอบแรก "ผ่าน" เพราะ curl จาก 127.0.0.1 = LAN bypass ⇒ **บทเรียน: verify endpoint ที่มี auth ต้องยิงแบบ public (ใส่ `cf-connecting-ip`) ไม่ใช่แค่ localhost**
+- fix: เพิ่ม `/api/files` เข้า `_OPEN_PREFIXES` (ความปลอดภัย = token 128-bit แบบ `/gen`) · เทส 3 ตัว + mutation KILLED · verify prod: public 200/13633B · `/api/memory/stats` ยัง 401
