@@ -333,6 +333,16 @@ def _t_generate_image(prompt: str) -> str:
         return f"{caption}\n\n![generated image]({result['url']})"
     return f"สร้างรูปไม่สำเร็จ: {result.get('error', 'unknown')}"
 
+
+def _t_export_file(filename: str, content: str) -> str:
+    """เขียน content เป็นไฟล์ แล้วคืน markdown link ให้ user กดดาวน์โหลดในแชท"""
+    from utils.file_export import save_export
+    result = save_export(filename, content)
+    if result.get("ok"):
+        name = result["url"].rsplit("/", 1)[1]
+        return f"บันทึกไฟล์เรียบร้อย: [📄 {name}]({result['url']})"
+    return f"❌ ทำไฟล์ไม่สำเร็จ: {result.get('error', 'unknown')}"
+
 # ── Registry ─────────────────────────────────────────────────────────────────
 
 _ALL_TOOLS: dict[str, dict[str, Any]] = {
@@ -350,6 +360,23 @@ _ALL_TOOLS: dict[str, dict[str, Any]] = {
             "required": ["prompt"],
         },
         "fn": _t_generate_image,
+    },
+
+    "export_file": {
+        "description": (
+            "เขียนข้อมูล/ข้อความเป็นไฟล์ให้ user ดาวน์โหลด "
+            "ใช้เมื่อ user ขอให้สรุปเป็นไฟล์ ทำรายงาน ทำ .md/.csv/.txt ส่งให้ "
+            "ผลลัพธ์เป็น markdown link ให้ใส่ไว้ในคำตอบตรงๆ ห้ามแก้ URL"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "filename": {"type": "string", "description": "ชื่อไฟล์พร้อมนามสกุล เช่น 'รายงาน.md', 'data.csv'"},
+                "content": {"type": "string", "description": "เนื้อหาไฟล์ทั้งหมด"},
+            },
+            "required": ["filename", "content"],
+        },
+        "fn": _t_export_file,
     },
 
     "web_search": {

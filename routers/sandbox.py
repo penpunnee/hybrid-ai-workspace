@@ -11,9 +11,11 @@ Endpoints:
 """
 import logging
 from fastapi import APIRouter, Request, HTTPException
+from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
 
 from utils.code_sandbox import run_python, info as sandbox_info
+from utils.file_export import resolve_export
 from utils.fs_tools import list_dir, read_file, write_file, search_files, info as fs_info
 from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 
@@ -98,3 +100,14 @@ async def fs_search(request: Request):
 @router.get("/fs/info")
 def fs_status():
     return fs_info()
+
+
+@router.get("/files/{token}/{filename}")
+async def download_export(token: str, filename: str):
+    """เสิร์ฟไฟล์ที่ tool `export_file` เขียนไว้ — ไม่มี auth แต่ token เดาไม่ได้
+    (แนวเดียวกับ /gen ของรูป) · ตอบ 404 เดียวทุกกรณี ไม่บอกใบ้ว่าพลาดชั้นไหน"""
+    path = await run_in_threadpool(resolve_export, token, filename)
+    if not path:
+        raise HTTPException(404, "ไม่พบไฟล์")
+    return FileResponse(path, filename=filename,
+                        media_type="application/octet-stream")
