@@ -21,8 +21,9 @@ MAX_EXPORT_BYTES = int(os.getenv("EXPORT_MAX_BYTES", str(1024 * 1024)))  # 1MB
 
 _TOKEN_RE = re.compile(r"^[0-9a-f]{32}$")
 # อักขระที่พัง markdown link / URL / filesystem — แทนด้วย _
-# (ช่องว่างกับวงเล็บทำ regex `\((\/[^)\s]+)\)` ฝั่ง frontend ตัดลิงก์ขาด)
-_BAD_CHARS = re.compile(r'[\\/:*?"<>|()\s]+')
+# (ช่องว่างกับวงเล็บทำ regex `\((\/[^)\s]+)\)` ฝั่ง frontend ตัดลิงก์ขาด ·
+#  '#' เบราว์เซอร์ตัดเป็น fragment · '%' โดน percent-decode ฝั่ง server แล้วชื่อไม่ตรง)
+_BAD_CHARS = re.compile(r'[\\/:*?"<>|()#%\s]+')
 
 
 def sanitize_filename(filename: str) -> str:

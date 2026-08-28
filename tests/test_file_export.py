@@ -138,3 +138,12 @@ def test_download_non_token_dir_unreachable(client, export_dir):
     stray.mkdir()
     (stray / "f.txt").write_text("secret")
     assert client.get("/api/files/notahexdir/f.txt").status_code == 404
+
+
+def test_save_export_strips_hash_and_percent(export_dir):
+    # '#' → เบราว์เซอร์ตัดเป็น fragment · '%' → percent-decode ฝั่ง server ทำชื่อไม่ตรง
+    # ทั้งคู่ทำลิงก์ที่สร้างไป 404 — ต้องถูกแทนที่ตั้งแต่ตอนเซฟ (พบจาก /scrutinize 08-28)
+    from utils.file_export import save_export
+    for bad in ["รายงาน#1.md", "a%20b.md"]:
+        fname = save_export(bad, "x")["url"].rsplit("/", 1)[1]
+        assert "#" not in fname and "%" not in fname, fname
