@@ -2241,3 +2241,15 @@ user ทดสอบ **iPhone 16 Pro Max ลำโพงเครื่อง (�
   ว่า "รอดเพราะกิน CPU น้อยกว่า" ต้องไปอ่านซอร์สถึงรู้ว่าเป็นคนละกระบวนการ
 - **`await` บนสัญญาที่อาจไม่มีวัน resolve = แขวนเงียบ** (`ctx.resume()` ที่ยังไม่มี user activation)
   · ทุก entry point ต้องมี `catch` ที่แสดงผลบนจอ
+
+## 2026-08-28 — tool `export_file` (ขวัญส่งไฟล์ให้ user ในแชท) + ไล่อาการเสียงเบา
+
+**export_file (เสร็จ+deployed+verified):** `3cba949` backend · `35ae915` appscript.ui · bundle `index-Edxj4Cvt.js` (md5 ตรง host=container)
+- `utils/file_export.py` — `save_export()` → `NAS_DATA_PATH/exports/<uuid-hex-token>/<name>` (persist ผ่าน mount `/app/data`) · sanitize ชื่อ (ตัด traversal/ช่องว่าง/วงเล็บที่พัง markdown link) · cap 1MB (`EXPORT_MAX_BYTES`)
+- `routers/sandbox.py` — `GET /api/files/{token}/{filename}` FileResponse attachment · 404 เดียวทุกกรณี · ไม่มี auth แต่ token เดาไม่ได้ (แนวเดียวกับ `/gen`)
+- `agents/tools.py` — tool `export_file` คืน markdown link ให้ใส่ในคำตอบตรงๆ
+- `utils/markdown.tsx` (React) — กฎใหม่ `[text](/path)` → `<a download>` เฉพาะ path ภายใน (อยู่หลังกฎรูป) · เทส 4 ตัวรวม XSS-attribute
+- เทส backend 14 · mutation **9/9 KILLED** — บทเรียน 2 ข้อ: (1) เทส XSS แรกตรวจผิดฝั่ง (substring ใน text ที่ escape แล้วไม่อันตราย — ต้องตรวจตัวแท็ก `<a …>` เป๊ะ) (2) เทส token guard ผ่านฟรีเพราะ TestClient normalize `/./` ก่อนถึง route — เปลี่ยนเป็น plant โฟลเดอร์ non-hex จริงแล้วยิงตรง
+- verify prod: tool ใน registry + เขียนไฟล์จริง · fake token 404 / ไฟล์จริง 200
+
+**เสียงเบา (ยังไม่ปิด):** underruns จาก heartbeat = 29/265 ทั้งหมด `=1` ตรงรอยต่อ gate เปิดกลับ (drain จบประโยคปกติ ไม่มีสักครั้งกลาง `armed_ms=0`) ⇒ ไม่ใช่ตัวการ · `[VoiceLevel]` นิ่ง (-16.5..-18.4) ⇒ เบาที่ตัวเครื่อง · user เทียบ 2 โหมด: **โหมดเสียง vs นิยาย เบา/ดังเท่ากัน** ⇒ ตัด VPIO ซ้ำ (รอบนี้ iPhone) · อาการ "ค่อยๆ ลง ค่อยๆ เร่ง" ตรงกลไก (i) FIFO สัดส่วนเงียบแกว่ง (vault `ios-web-audio-playback-distortion.md` §ข้อมูลใหม่ 08-28, commit vault `fa33bc9` ยังไม่ push) · **รอคำตอบ 2 ข้อ: เกิดตอนไม่แตะจอไหม + Low Power Mode/แบต/ความร้อน** — ถ้าเกิดตลอด เงื่อนไข "ไม่แก้" ของ 08-25 เปลี่ยน ต้องชั่ง ManagedMediaSource ใหม่
