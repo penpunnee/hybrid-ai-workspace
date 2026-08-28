@@ -2294,3 +2294,6 @@ user ทดสอบ **iPhone 16 Pro Max ลำโพงเครื่อง (�
 - อาการ: กดลิงก์ดาวน์โหลดได้ไฟล์ไม่มีเนื้อหา · log ชี้ชัด `GET /api/files/... → 401` ครั้งแรก (ผ่าน Cloudflare) แล้ว Safari เซฟ error body เป็นไฟล์
 - root cause: `<a download>` เป็น browser navigation **แนบ header `x-auth-token` ไม่ได้** และ `/api/files` ไม่อยู่ใน `_OPEN_PREFIXES` — ที่ verify รอบแรก "ผ่าน" เพราะ curl จาก 127.0.0.1 = LAN bypass ⇒ **บทเรียน: verify endpoint ที่มี auth ต้องยิงแบบ public (ใส่ `cf-connecting-ip`) ไม่ใช่แค่ localhost**
 - fix: เพิ่ม `/api/files` เข้า `_OPEN_PREFIXES` (ความปลอดภัย = token 128-bit แบบ `/gen`) · เทส 3 ตัว + mutation KILLED · verify prod: public 200/13633B · `/api/memory/stats` ยัง 401
+
+**fetch_url (ยังไม่ทำ — วิจัย+แผนเสร็จ):** vault `ssrf-safe-url-fetch.md` + แผน 5 ขั้นใน ▶️ · เริ่มเซสชันหน้า
+**ปิดเซสชัน 08-28:** export_file ครบวง (user ยืนยัน "ขึ้นแล้ว") · เสียงเบา = รอ user ตอบเรื่อง Bluetooth/48kHz-16kHz (ดู ▶️)
