@@ -160,6 +160,24 @@ def _google_search(query: str, max_results: int = 5) -> list[dict]:
             params={"key": api_key, "cx": cx, "q": query, "num": min(max_results, 10)},
             timeout=8,
         )
+        # ⚠️ ห้ามอ่าน items โดยไม่ดูสถานะก่อน — body ของ error ไม่มีคีย์ "items"
+        # ⇒ 403/429 จะกลายเป็น "0 results" ระดับ INFO ซึ่งอ่านแล้วเหมือน
+        # "ค้นแล้วไม่เจอ" ทั้งที่จริงคือ "ค้นไม่ได้เลย"
+        # เกิดจริง 2026-08-31: คีย์อยู่ในโปรเจกต์ที่ไม่ได้เปิด Custom Search JSON API
+        # → 403 ทุกคำขอ **48/48 ครั้ง** เท่าที่ log ย้อนไปถึง โดยไม่มีสัญญาณอะไรเลย
+        # เหลือแต่ DDG ที่คืนเว็บโป๊มาเป็นผลค้นราคาเกม (ดู WEB_SEARCH_MIN_SCORE)
+        if resp.status_code != 200:
+            try:
+                err = resp.json().get("error", {})
+                detail = f"{err.get('status', '')} {err.get('message', '')}".strip()
+            except Exception:
+                detail = ""
+            logger.error(
+                f"[Google] ค้นไม่ได้ HTTP {resp.status_code}: {detail or 'ไม่มีรายละเอียด'}"
+                f" — ตกไปใช้ DDG ซึ่งคุณภาพต่ำกว่ามาก"
+            )
+            return []
+
         items = resp.json().get("items", [])
         results = [{"title": i.get("title", ""), "body": i.get("snippet", ""), "href": i.get("link", "")} for i in items]
         logger.info(f"[Google] '{query}' → {len(results)} results")
