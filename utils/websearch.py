@@ -10,6 +10,8 @@ Flow:
 import logging
 import os
 import re
+import threading
+import time
 import html as html_lib
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -147,6 +149,78 @@ def _enrich_with_fetch(results: list[dict], top_n: int = _FETCH_TOP_N) -> list[d
     return results
 
 
+# ── Brave Search ─────────────────────────────────────────────────────────────
+# provider ตัวแรกของชั้นค้นเว็บ (2026-08-31) — user เลือกเพราะ **ไม่ผูกกับ Google
+# Cloud project**: ก่อนหน้านี้ Gemini grounding 429 ทุกครั้ง (free tier ไม่เปิด)
+# และ CSE 403 ทุกครั้งเพราะคีย์อยู่คนละ project กับที่เปิด API ไว้ — การไล่แก้คีย์
+# วนกลับมาที่เดิมทุกครั้งที่ย้าย project เหลือ DDG ตัวเดียวซึ่งคืนเว็บโป๊มาเป็นผลค้น
+_BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
+
+# free tier = 1 คำขอ/วินาที · `_web_search_impl` ยิง sub-query ติดกันในลูปเดียว
+# ⇒ ไม่หน่วง = ตัวที่ 2 เป็นต้นไปได้ 429 ทุกครั้ง แล้วเราจะสรุปผิดว่า "Brave ใช้ไม่ได้"
+# ทั้งที่เป็นความผิดฝั่งเราเอง · lock ด้วยเพราะ _enrich_with_fetch ใช้ threadpool
+_brave_last_call = 0.0
+_brave_lock = threading.Lock()
+
+
+def _brave_min_interval() -> float:
+    """ค่าบวกเท่านั้น — 0/ติดลบ ทำให้ตัวหน่วงหายไปเงียบๆ (บทเรียน TTS_MAX_CHARS=0)"""
+    try:
+        v = float(os.getenv("BRAVE_MIN_INTERVAL", "1.1"))
+    except ValueError:
+        v = 0.0
+    if v <= 0:
+        logger.warning("[Brave] BRAVE_MIN_INTERVAL ไม่ถูกต้อง — ใช้ค่า default 1.1")
+        return 1.1
+    return v
+
+
+def _brave_search(query: str, max_results: int = 5) -> list[dict]:
+    """ค้นผ่าน Brave Search API — ปล่อย BRAVE_SEARCH_API_KEY ว่าง = ปิด"""
+    import requests
+    token = os.getenv("BRAVE_SEARCH_API_KEY", "")
+    if not token:
+        return []
+
+    global _brave_last_call
+    with _brave_lock:
+        wait = _brave_min_interval() - (time.monotonic() - _brave_last_call)
+        if wait > 0:
+            time.sleep(wait)
+        _brave_last_call = time.monotonic()
+
+    try:
+        resp = requests.get(
+            _BRAVE_ENDPOINT,
+            # token ไปทาง header ไม่ใช่ query string — URL ถูก log/แคชได้ header ไม่
+            headers={"X-Subscription-Token": token, "Accept": "application/json"},
+            params={"q": query, "count": min(max_results, 20),
+                    # ขอกรองที่ต้นทาง — DDG รับ safesearch แล้วไม่กรองให้จริง
+                    # (มีเทสยืนยัน) พื้นคะแนน WEB_SEARCH_MIN_SCORE เป็นด่านที่สอง
+                    "safesearch": "strict"},
+            timeout=10,
+        )
+        # ⚠️ ต้องดูสถานะก่อนอ่าน body เสมอ — บทเรียนสดจาก _google_search ที่ 403
+        # มา 48/48 ครั้งโดยกลายเป็น "0 results" ระดับ INFO (commit 436f22b)
+        if resp.status_code != 200:
+            try:
+                detail = str(resp.json())[:150]
+            except Exception:
+                detail = ""
+            logger.error(f"[Brave] ค้นไม่ได้ HTTP {resp.status_code}: "
+                         f"{detail or 'ไม่มีรายละเอียด'} — ตกไปใช้ provider ถัดไป")
+            return []
+
+        items = (resp.json().get("web") or {}).get("results", []) or []
+        results = [{"title": i.get("title", ""), "body": i.get("description", ""),
+                    "href": i.get("url", "")} for i in items]
+        logger.info(f"[Brave] '{query}' → {len(results)} results")
+        return results
+    except Exception as e:
+        logger.error(f"[Brave] search failed: {type(e).__name__}: {e}")
+        return []
+
+
 def _google_search(query: str, max_results: int = 5) -> list[dict]:
     """ค้นผ่าน Google Custom Search API"""
     import os, requests
@@ -204,8 +278,16 @@ def _ddg_search(query: str, max_results: int = 5, region: str = "th-th",
 
 
 def search_web(query: str, max_results: int = 5, region: str = "th-th") -> list[dict]:
-    """ค้นหา — ลอง Google ก่อน fallback DDG (retry 1 ครั้งกัน throttle ชั่วคราว)"""
-    # ลอง Google Custom Search ก่อน
+    """ค้นหา — Brave → Google CSE → DDG (retry 1 ครั้งกัน throttle ชั่วคราว)
+
+    ลำดับสำคัญกว่าที่เห็น: `_google_search` log ERROR ทุกครั้งที่ล้ม ถ้ายังถูกเรียก
+    ทั้งที่ Brave สำเร็จแล้ว = ปลุกเสียงเตือนทุกคำค้นจนคนเลิกฟังเสียงเตือน
+    """
+    results = _brave_search(query, max_results)
+    if results:
+        return results
+
+    # Google Custom Search — คงไว้เป็นชั้นสอง (ใช้ได้เมื่อคีย์อยู่ project ที่เปิด API)
     results = _google_search(query, max_results)
     if results:
         return results

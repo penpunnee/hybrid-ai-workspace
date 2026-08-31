@@ -559,7 +559,12 @@ reasoning/router.py → LMStudio/DeepSeek → Gemini → Ollama (last resort)
 
 ## Web Search (2026-06-04)
 `utils/websearch.py` อัปเดต:
-- **Google Custom Search API** เป็น provider หลัก (ต้องตั้ง `GOOGLE_SEARCH_API_KEY` + `GOOGLE_SEARCH_CX`) → fallback DDG
+- **ลำดับ provider (2026-08-31): Brave → Google CSE → DDG** (`search_web`)
+  · **Brave = ตัวหลัก** (`BRAVE_SEARCH_API_KEY`) เลือกเพราะ **ไม่ผูกกับ Google Cloud project**
+  · ⚠️ free tier = **1 คำขอ/วินาที** แต่ `_web_search_impl` ยิง sub-query ติดกันในลูปเดียว
+    → มีตัวหน่วง `BRAVE_MIN_INTERVAL` (default 1.1s, มี lock เพราะ enrich ใช้ threadpool)
+    **ไม่หน่วง = ตัวที่ 2 ได้ 429 ทุกครั้ง แล้วจะสรุปผิดว่า "Brave ใช้ไม่ได้"**
+  · Google CSE (`GOOGLE_SEARCH_API_KEY` + `GOOGLE_SEARCH_CX`) เป็นชั้นสอง → fallback DDG
 - **Domain credibility scoring** — `_domain_score(url)` คืน (score, label):
   - 🟢 แหล่งทางการ (1.2x): `.go.th`, `.gov.`, `.edu.`, `wikipedia.org`, `bbc.com`, `reuters.com` ฯลฯ
   - 🔵 ทั่วไป (1.0x): เว็บทั่วไป
@@ -570,10 +575,30 @@ reasoning/router.py → LMStudio/DeepSeek → Gemini → Ollama (last resort)
 
 **ENV ที่ต้องตั้งบน NAS:**
 ```env
+BRAVE_SEARCH_API_KEY=       # ตัวหลัก · ปล่อยว่าง = ปิด (ไม่ยิงเน็ตเลย ไม่บ่น)
+BRAVE_MIN_INTERVAL=1.1      # วินาที · <=0 ถอยไปใช้ default พร้อม warning
 GOOGLE_SEARCH_API_KEY=AIza...
 GOOGLE_SEARCH_CX=44c7c0b7c3c5049a2
 WEB_SEARCH_MIN_SCORE=0.35   # พื้นคะแนนสัมบูรณ์ — ต่ำกว่านี้ไม่ฉีด/ไม่ cite (ปิดด้วย =off)
 ```
+
+### 🔴 บทเรียน 2026-08-31 — ชั้นค้นเว็บตาย 2 ชั้นพร้อมกันโดยไม่มีใครรู้ 8 วัน
+user รายงานว่า "ขวัญตอบไม่ดี" — ไล่ log แล้วพบว่าไม่ใช่เรื่องคุณภาพโมเดล:
+- **Gemini grounding 429 ทุกครั้ง** — วัดแยกตัวแปรแล้ว: โมเดลเดียวกันเรียกได้ปกติ
+  แต่พอใส่ `google_search` = 429 ทันที ⇒ **free tier ไม่เปิด grounding เลย**
+  (ลายเซ็น `limit: 0` เดิม) **เปลี่ยนโมเดล/รอวันใหม่ไม่ช่วย ต้องเปิด billing เท่านั้น**
+- **Google CSE 403 ทุกครั้ง 48/48** — `This project does not have the access to
+  Custom Search JSON API` เพราะคีย์อยู่คนละ Cloud project กับที่เปิด API ไว้
+  (ผลพวงจากย้ายโปรเจกต์ 08-26) · **ยืนยันด้วยการยิงด้วย 2 คีย์เทียบกัน**:
+  คีย์ Gemini ได้ `...are blocked` (= project เปิดแล้ว ติดที่ key restriction)
+  ส่วนคีย์ search ได้ `does not have the access` (= project ยังไม่เปิด) — **ข้อความ
+  error 2 แบบนี้แยก "ผิดที่คีย์" ออกจาก "ผิดที่โปรเจกต์" ได้ ใช้เป็นเครื่องมือวินิจฉัยได้**
+- 🔑 **ต้นเหตุที่รอดสายตา: `_google_search` อ่าน `resp.json().get("items", [])`
+  โดยไม่เคยดู `status_code`** ⇒ 403 กลายเป็น `INFO … → 0 results` ซึ่งอ่านแล้วเหมือน
+  "ค้นแล้วไม่เจอ" ทั้งที่คือ "ค้นไม่ได้เลย" · แก้แล้ว (`436f22b`) — **ทุก provider ต้องแยก
+  สองอย่างนี้ออกจากกันเสมอ** และ log ระดับ ERROR พร้อมสาเหตุจริง
+- ⚠️ ผลลัพธ์ปลายทาง: เหลือ DDG ตัวเดียว → ถามราคาเกมแล้ว **ได้เว็บโป๊มาเป็นผลค้น**
+  (พื้นคะแนน 0.35 ตัดทิ้งถูกต้อง แต่เหลือ 0 ตัวอักษร = ขวัญตอบโดยไม่มีข้อมูล)
 
 ### ⚠️ พื้นคะแนนสัมบูรณ์ (`WEB_SEARCH_MIN_SCORE`, เพิ่ม 2026-08-03 · `b81d988`)
 **จัดอันดับอย่างเดียวไม่พอ — "อันดับ 1 ของผลที่ห่วยทั้งหมด" ก็ยังห่วย**
