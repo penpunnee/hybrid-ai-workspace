@@ -146,12 +146,17 @@ def test_ทุก_db_ที่ประกาศใน_config_ต้องถ�
     import core.config as cfg
     from utils.db_backup import _default_db_paths
 
+    # 🔑 จับตาม **ค่า** (ลงท้าย .db) ไม่ใช่ตาม **ชื่อตัวแปร** — เกณฑ์ชื่อ
+    #    ("_DB"/"_DB_PATH") มองไม่เห็น DB_PATH เองด้วยซ้ำ และ DB ใบใหม่ที่ตั้งชื่อ
+    #    ไม่ตรงแบบ (NOTES_PATH, FOO_DATABASE) จะรอดไปเงียบๆ = ratchet ที่ไม่กันอะไร
     declared = {
         name for name in dir(cfg)
-        if (name.endswith("_DB") or name.endswith("_DB_PATH"))
+        if not name.startswith("_")
         and isinstance(getattr(cfg, name), str)
         and getattr(cfg, name).endswith(".db")
     }
+    assert declared, "ไม่เจอค่าคงที่ .db เลยใน core/config.py — เทสนี้กลายเป็นเทสเปล่า"
+
     backed = {os.path.basename(p) for p in _default_db_paths()}
     missing = {n for n in declared
                if os.path.basename(getattr(cfg, n)) not in backed}
