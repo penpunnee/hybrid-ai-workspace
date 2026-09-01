@@ -427,8 +427,8 @@ def delete_lesson(doc_id: str) -> bool:
     if client is None:
         return False
     try:
-        col = get_or_create_collection(client, "lessons")
-        col.delete(ids=[doc_id])
+        from memory.dualvec import delete_with_keys
+        delete_with_keys(client, "lessons", [doc_id])
         return True
     except Exception as e:
         logger.warning(f"delete_lesson failed for id '{doc_id}': {e}")
@@ -482,12 +482,15 @@ def cleanup_old_memories(days: int = 30) -> dict:
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
     deleted_total = 0
     detail = {}
+    # เงาต้องหายเพราะ "ตัวหลักถูกลบ" ไม่ใช่เพราะถูกกวาดเองแยกกัน — กวาดแยก =
+    # สองชุดเดินคนละจังหวะแล้วดริฟต์ (ดู memory/dualvec.is_keys_collection)
+    from memory.dualvec import is_keys_collection
     skip_collections = {"long_term_memory", "preferences"}
     try:
         all_collections = client.list_collections()
         for col_info in all_collections:
             name = col_info.name if hasattr(col_info, "name") else str(col_info)
-            if name in skip_collections:
+            if name in skip_collections or is_keys_collection(name):
                 continue
             try:
                 col = get_collection(client, name)
@@ -498,7 +501,8 @@ def cleanup_old_memories(days: int = 30) -> dict:
                     if meta and meta.get("timestamp", "9999") < cutoff
                 ]
                 if ids_to_delete:
-                    col.delete(ids=ids_to_delete)
+                    from memory.dualvec import delete_with_keys
+                    delete_with_keys(client, name, ids_to_delete)
                     deleted_total += len(ids_to_delete)
                     detail[name] = len(ids_to_delete)
             except Exception as e:

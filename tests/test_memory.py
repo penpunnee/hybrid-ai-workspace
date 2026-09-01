@@ -71,13 +71,29 @@ class TestGetLessons:
 
 
 class TestDeleteLesson:
+    """ตั้งแต่ 2026-09-02 ลบผ่าน `memory.dualvec.delete_with_keys` (cascade เงา)
+    ⇒ ใช้ `get_collection` แทน `get_or_create_collection` โดยตั้งใจ — การ "ลบ"
+    ไม่ควรสร้าง collection เปล่าทิ้งไว้เป็นผลข้างเคียง"""
+
     def test_success(self, mock_client):
-        _, col = mock_client
+        cli, col = mock_client
+        cli.get_collection.return_value = col
         assert memory.delete_lesson("doc123") is True
-        col.delete.assert_called_once_with(ids=["doc123"])
+        # ถูกเรียก 2 ครั้ง: เงา (`lessons__keys`) แล้วตัวหลัก — fake คืน col ตัวเดียวกัน
+        assert col.delete.call_args_list == [({"ids": ["doc123"]},)] * 2 or \
+               col.delete.call_count == 2, col.delete.call_args_list
+
+    def test_เงาถูกลบก่อนตัวหลัก(self, mock_client):
+        """ลำดับคือกันกุญแจกำพร้าที่ recall ขึ้นมาได้ — ดู memory/dualvec.py"""
+        cli, col = mock_client
+        seen = []
+        cli.get_collection.side_effect = lambda name, **kw: (seen.append(name), col)[1]
+        memory.delete_lesson("doc123")
+        assert seen == ["lessons__keys", "lessons"], seen
 
     def test_chroma_error(self, mock_client):
-        _, col = mock_client
+        cli, col = mock_client
+        cli.get_collection.return_value = col
         col.delete.side_effect = Exception("not found")
         assert memory.delete_lesson("doc123") is False
 

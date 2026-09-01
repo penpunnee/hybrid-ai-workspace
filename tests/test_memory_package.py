@@ -297,14 +297,17 @@ def test_delete_entry_no_client_returns_false(monkeypatch):
 
 
 def test_delete_entry_calls_col_delete_with_id(monkeypatch):
-    deleted_ids = []
-    col = SimpleNamespace(delete=lambda ids: deleted_ids.extend(ids))
-    client = SimpleNamespace(get_collection=lambda name: col)
+    """ตั้งแต่ 2026-09-02 ต้องลบ **สองที่**: เงา `memory_logic__keys` ก่อน แล้วตัวหลัก
+    (กุญแจกำพร้า = `merge_max()` ฉีดของที่ลบไปแล้วกลับเข้า context ได้)"""
+    touched = []
+    col = SimpleNamespace(delete=lambda ids: None)
+    client = SimpleNamespace(
+        get_collection=lambda name, **kw: (touched.append(name), col)[1])
     monkeypatch.setattr(store, "_get_chroma_client", lambda: client)
 
     ok = store.delete_entry("logic", "mem_1")
     assert ok is True
-    assert deleted_ids == ["mem_1"]
+    assert touched == ["memory_logic__keys", "memory_logic"], touched
 
 
 # ════════════════════════ operations.py ════════════════════════

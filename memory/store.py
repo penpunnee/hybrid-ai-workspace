@@ -340,9 +340,8 @@ def delete_entry(assistant: str, doc_id: str) -> bool:
         return False
     col_name = f"memory_{resolve_slug(assistant)}"
     try:
-        from utils.memory import get_collection
-        col = get_collection(client, col_name)
-        col.delete(ids=[doc_id])
+        from .dualvec import delete_with_keys
+        delete_with_keys(client, col_name, [doc_id])
         return True
     except Exception as e:
         logger.error(f"delete_entry failed for id '{doc_id}': {e}")

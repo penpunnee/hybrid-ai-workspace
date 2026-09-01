@@ -183,7 +183,7 @@ Ollama branch: context cap 2000 chars; trim history to <3000 tokens.
 | Feedback (thumbs up/down) | `chat_history.db` table `feedback` (Phase C) |
 | Long-term + episodic memory | ChromaDB (external service) |
 | User facts (shared ทุก assistant) | ChromaDB `user_facts` — บันทึกจาก "จำไว้ว่า" / prefer / correction |
-| Skills knowledge base | `skills/*.md` (file system) + `skills_db.json` + ChromaDB `skills_search` |
+| Skills knowledge base | `skills/*.md` (file system) + `skills_db.json` + ChromaDB `skills_collection` (⚠️ ชื่อ collection ไม่ใช่ `skills_search` — นั่นคือชื่อ *โมดูล* `utils/skills_search.py`) |
 | Dream reports | `dream_reports/dream_YYYYMMDD_HHMMSS.json` |
 | Document chunks (Phase B) | ChromaDB collection `documents` |
 | Embedding cache (Phase E) | `data/embed_cache.db` (SQLite WAL, float32 blobs) |
@@ -235,7 +235,7 @@ Ollama branch: context cap 2000 chars; trim history to <3000 tokens.
 **Phase D — Multi-modal Agent**
 - `utils/code_sandbox.py` — Python in Docker / subprocess sandbox
 - `utils/fs_tools.py` — whitelist-restricted FS ops
-- `agents/tools.py` — tool registry (22 tools: web/wiki/memory/`run_python`/`fs_*` + home tools + `generate_image`)
+- `agents/tools.py` — tool registry (`_ALL_TOOLS` 24 ตัว: web/wiki/memory/`run_python`/`fs_*` + home tools + `generate_image`)
 
 **Phase E — Performance**
 - `utils/embed.py` — LMStudio embed + sqlite persistent cache + LRU
@@ -777,6 +777,15 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > 6. 🧪 **voice retry ยังไม่เคยถูกกระตุ้นจริงบน prod** — ยืนยันได้แค่ unit test
 > 7. user ยังไม่ได้กดลิงก์ `export_file` บนเครื่องจริง (ต้องรีเฟรช bundle ก่อน)
 > 8. 🎨 `enhanced.js` map สีตามตระกูลเฉด ยังไม่ได้ไล่ความหมายรายจุด
+> 9. ⚪ **`CHROMA_PATH` เป็น dead config** — `core/config.py:33` อ่านจาก env แต่
+>    ไม่มีผู้บริโภคสักที่ (ChromaDB เป็นคอนเทนเนอร์แยกที่มี volume ของตัวเอง)
+> 10. ⚪ **collection กำพร้าบน prod**: `memory_a` · `memory_logic` ·
+>     `memory_logic__keys` (ว่างทั้งหมด · slug จริงมีแค่ `kwan`)
+> 11. ⚪ **`pythainlp` ไม่มีทั้งใน requirements และในคอนเทนเนอร์** ⇒ เทส 14 ตัวของ
+>     `utils/thaiscatter.py` (เครื่องมือแก้ข้อความหนังสือใน `reader.db`) **ถูกข้าม
+>     ทุกที่รวม CI** — skip ที่มีเหตุผลเขียนไว้ ก็ยังเป็น skip
+> 12. ⚪ ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน — ตอนนี้เป็นเครื่องมือรันมือ
+>     (คู่มือ Qdrant: reconciliation คือตัวที่จับเศษที่ cascade พลาด)
 > 9. ⚪ **config ไม่มี single source of truth** — `os.getenv` **195 จุดใน 40 ไฟล์**
 >    (`core/config.py` ถือแค่ 28 = 14% · `utils/llm.py` อ่านเอง 28 จุด) ⇒ `.env.example`
 >    / `CLAUDE.md` / `docker-compose.yml` ดริฟต์จากกันได้เงียบๆ · ทางมาตรฐาน (ตรวจ

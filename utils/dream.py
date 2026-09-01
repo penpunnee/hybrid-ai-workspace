@@ -50,6 +50,9 @@ def classify_theme(name: str, summary: str) -> str:
     return "both"
 
 # Configure logging for dream cycle
+# 🔑 collection เงา `<name>__keys` ก็ขึ้นต้นด้วย `memory_` — ตัวกวาดทุกตัวต้องกรองออก
+from memory.dualvec import is_keys_collection
+
 logger = logging.getLogger(__name__)
 
 
@@ -151,7 +154,7 @@ def light_sleep(hours: int = 24) -> list[dict]:
 
     for col_info in collections:
         name = col_info.name if hasattr(col_info, "name") else str(col_info)
-        if not name.startswith("memory_"):
+        if not name.startswith("memory_") or is_keys_collection(name):
             continue
         # per-collection try/except (เหมือน memory_decay/memory_prune) — กัน collection
         # เดียวพังแล้วลาก Light Sleep ทั้งเฟสร่วง (เจอจริง 2026-07-09: collection backup
@@ -357,7 +360,7 @@ def memory_decay(decay_rate: float = 0.05, min_confidence: float = 0.2) -> dict:
         collections = client.list_collections()
         for col_info in collections:
             name = col_info.name if hasattr(col_info, "name") else str(col_info)
-            if not name.startswith("memory_"):
+            if not name.startswith("memory_") or is_keys_collection(name):
                 continue
             try:
                 col = get_collection(client, name)
@@ -443,7 +446,7 @@ def memory_prune(cap: int = None, max_age_days: int = 30, min_confidence: float 
     try:
         for col_info in client.list_collections():
             name = col_info.name if hasattr(col_info, "name") else str(col_info)
-            if not name.startswith("memory_"):
+            if not name.startswith("memory_") or is_keys_collection(name):
                 continue
             try:
                 col = get_collection(client, name)
@@ -481,7 +484,8 @@ def memory_prune(cap: int = None, max_age_days: int = 30, min_confidence: float 
                     kept += len(prunable)
 
                 if to_delete:
-                    col.delete(ids=to_delete)
+                    from memory.dualvec import delete_with_keys
+                    delete_with_keys(client, name, to_delete)
                     pruned += len(to_delete)
             except Exception as e:
                 logger.debug(f"Prune collection {name} error: {e}")

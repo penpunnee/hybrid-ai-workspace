@@ -139,13 +139,66 @@ def key_hits(client, col_name: str, query: str, n_results: int = 5) -> tuple[dic
     return scores, texts
 
 
-def delete_keys(client, col_name: str, ids: list[str]) -> None:
-    """ลบกุญแจให้ตรงกับตัวหลัก — กัน orphan ค้างแล้วถูก recall ทั้งที่ของจริงถูกลบไปแล้ว"""
+def is_keys_collection(name: str) -> bool:
+    """`name` เป็น collection เงาหรือไม่
+
+    🔑 ตัวกวาดที่เขียนไว้ก่อน dualvec เกิด ใช้ `name.startswith("memory_")` ซึ่ง
+    **จับ `memory_kwan__keys` ด้วย** — ทุกที่ที่วน `list_collections()` ต้องกรองด้วย
+    ตัวนี้ ไม่ใช่เขียนเงื่อนไข `__keys` ซ้ำเอง
+    """
+    return name.endswith(_KEYS_SUFFIX)
+
+
+def delete_keys(client, col_name: str, ids: list[str]) -> bool:
+    """ลบกุญแจของ `ids` — คืน True เมื่อลบสำเร็จ (หรือไม่มีอะไรต้องลบ)
+
+    เดิมคืน None และกลืน exception ลง debug log ⇒ ผู้เรียกแยกไม่ออกว่า
+    "ไม่มีเงาให้ลบ" กับ "ลบเงาไม่สำเร็จ" ซึ่งอย่างหลังทิ้งกำพร้าไว้
+    """
+    if not ids:
+        return True
+    from utils.memory import get_collection
+
+    try:
+        col = get_collection(client, keys_collection(col_name))
+    except Exception as e:
+        # ยังไม่มี collection เงา (ยังไม่ backfill / assistant ใหม่) = ไม่มีอะไรกำพร้า
+        # ⚠️ ต้องแยกเคสนี้ออกจาก "ลบไม่สำเร็จ" ไม่งั้นจะเตือนกำพร้าผิดทุกครั้ง
+        logger.debug(f"[dualvec] ไม่มี collection เงาของ {col_name}: {e}")
+        return True
+    try:
+        col.delete(ids=ids)
+        return True
+    except Exception as e:
+        logger.debug(f"[dualvec] delete_keys ล้ม ({col_name}): {e}")
+        return False
+
+
+def delete_with_keys(client, col_name: str, ids: list[str]) -> None:
+    """ลบทั้งตัวหลักและเงา — **ตัวกลางเดียวที่ทุกเส้นลบต้องเรียก**
+
+    🔑 **ลบเงาก่อนตัวหลักเสมอ** — ChromaDB ไม่มี transaction ข้าม collection
+    จึงต้องเลือกว่า "ถ้าล้มกลางทาง อยากเหลือเศษแบบไหน":
+    · ล้มหลังลบเงา → ตัวหลักไม่มีกุญแจ = **สถานะปกติที่ระบบรองรับอยู่แล้ว**
+      (`key_text()` คืน None ได้ · `key_hits()` คืน {} เมื่อไม่มี collection)
+      เสียแค่คะแนนบูสต์ของรายการนั้น
+    · ล้มหลังลบตัวหลัก → **กุญแจกำพร้า** ที่ `merge_max()` ฉีดกลับเข้า context ได้
+      = ของที่สั่งลบไปแล้วโผล่กลับมา (เกิดจริงบน prod รอบล้าง 2026-07-13)
+
+    เงาล้ม **ไม่บล็อก**การลบตัวหลัก (เจตนาผู้ใช้คือให้ข้อมูลหาย) แต่ log ERROR
+    ให้ตัวกวาดกำพร้าตามเก็บได้ — แนวทาง reconciliation ที่คู่มือ Qdrant แนะนำ
+    ("every sync architecture drifts eventually")
+    """
     if not ids:
         return
-    try:
-        from utils.memory import get_collection
+    if not delete_keys(client, col_name, ids):
+        logger.error(
+            f"[dualvec] ลบกุญแจของ {col_name} ไม่สำเร็จ ({len(ids)} id) — "
+            f"ลบตัวหลักต่อ แต่จะเหลือกุญแจกำพร้า ให้รัน scripts/reconcile_keys.py")
+    from utils.memory import get_collection
 
-        get_collection(client, keys_collection(col_name)).delete(ids=ids)
-    except Exception as e:
-        logger.debug(f"[dualvec] delete_keys ข้าม ({col_name}): {e}")
+    # ใช้ wrapper ตัวเดียวกับที่ทั้งโปรเจกต์ใช้ (inject embedding_function)
+    # ⚠️ ตั้งใจใช้ `get_collection` ไม่ใช่ `get_or_create_collection` — การ "ลบ"
+    # ไม่ควรสร้าง collection เปล่าทิ้งไว้เป็นผลข้างเคียง (เส้น delete_lesson เดิม
+    # ทำแบบนั้น แล้วคืน True ทั้งที่ไม่มีอะไรให้ลบ)
+    get_collection(client, col_name).delete(ids=ids)
