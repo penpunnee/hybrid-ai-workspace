@@ -162,7 +162,7 @@ overlay แบบ vanilla (ไม่ต้อง build, ทำงานคู่
 Ollama branch: context cap 2000 chars; trim history to <3000 tokens.
 
 ### LLM Routing
-> ℹ️ **Ollama = dormant fallback only (2026-06-15)** — เลิกใช้เป็นตัวหลักแล้ว. local provider จริง = **LM Studio (qwen3.5-9b)** (`local_provider:lmstudio`). Ollama เหลือบทบาทแค่ safety net 3 จุด: routing fallback ตัวสุดท้าย, embeddings fallback ตอน LM Studio embed ล่ม (`OLLAMA_EMBED_MODEL`), dream fallback. คงไว้เพื่อ resilience — `ollama:true` ใน status = PC `.235` ต่อติด ไม่ได้แปลว่ามันรับงานจริง
+> ℹ️ **Ollama = dormant fallback only (2026-06-15)** — เลิกใช้เป็นตัวหลักแล้ว. local provider จริง = **LM Studio (qwen3.5-9b)** (`local_provider:lmstudio`). Ollama เหลือบทบาท safety net 2 จุด: routing fallback ตัวสุดท้าย, dream fallback. ⚠️ **ยกเว้น embeddings ที่ทิศกลับกัน — Ollama เป็นตัวหลัก** (`EMBEDDING_MODEL=paraphrase-multilingual` · `utils/embed.py:_create_embeddings`) แล้ว fallback ไป LM Studio ด้วยโมเดล**ชื่อเดียวกัน** (ห้าม fallback ข้ามโมเดล = คนละ vector space cosine เพี้ยนเงียบๆ). คงไว้เพื่อ resilience — `ollama:true` ใน status = PC `.235` ต่อติด ไม่ได้แปลว่ามันรับงานจริง
 
 **ปุ่มแยกชัด — แต่ละ provider ไปตัวเดียวกันเสมอ (ไม่มี redirect ข้ามตัว)**
 - `provider: "ollama"` → **Ollama เสมอ** (`OLLAMA_BASE_URL`, model `llama3`) — ไม่ redirect ไป LM Studio อีกต่อไป
@@ -304,15 +304,16 @@ OLLAMA_BASE_URL=http://localhost:11434/v1
 OLLAMA_MODEL=llama3
 OLLAMA_TIMEOUT=120
 OLLAMA_NUM_CTX=4096
-OLLAMA_EMBED_MODEL=nomic-embed-text   # ใช้เป็น fallback embeddings เมื่อ LM Studio ล่ม (ต้อง `ollama pull nomic-embed-text`)
 LMSTUDIO_BASE_URL=          # opt-in: ปล่อยว่าง=ปิด (local หลักคือ Ollama). ใส่ค่าเฉพาะเมื่อรัน LM Studio จริง
 LMSTUDIO_API_KEY=lmstudio   # ⚠️ LM Studio รุ่นใหม่บังคับ token — ใส่ให้ตรง (หรือปิด "Require API key" ใน LM Studio)
 LMSTUDIO_CHAT_MODEL=qwen/qwen3.5-9b
 LMSTUDIO_REASON_MODEL=qwen/qwen3.5-9b
 LMSTUDIO_VISION_MODEL=qwen/qwen3.5-9b
-LMSTUDIO_EMBED_MODEL=text-embedding-nomic-embed-text-v1.5
 LMSTUDIO_TIMEOUT=180
 SHOW_THINKING=false
+# Embeddings — **env ตัวเดียวคุมทั้ง Ollama (ตัวหลัก) และ LM Studio (fallback)**
+EMBEDDING_MODEL=paraphrase-multilingual   # ⛔ ห้ามใช้ `nomic-embed-text` เป็นตัวหลัก — พิสูจน์บน prod 2026-08-02 ว่าแมปประโยคไทยทุกประโยคเป็น vector เดียวกันหมด (cosine 1.0000) · ปล่อยว่างใน `utils/memory.py` = ปิด embedding_function ของ ChromaDB
+EMBED_FALLBACK_LMSTUDIO=true              # false = Ollama ล่มแล้วโยน error ไปเลย ไม่ลอง LM Studio
 
 # Home Assistant
 HA_URL=https://ha.pawinhome.com   # หรือ http://192.168.51.x:8123 ถ้าใช้ LAN เท่านั้น
@@ -759,10 +760,11 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > - ⚪ ถอด Google CSE ออกจาก chain (`utils/websearch.py:291`) ถ้าไม่คิดแก้ Cloud project
 >
 > ## 📋 งานเล็กที่ค้าง
-> 1. **ล้าง env ผีในเอกสาร** — ยืนยัน 09-01 ว่า `LMSTUDIO_EMBED_MODEL` /
->    `OLLAMA_EMBED_MODEL` **ไม่มีโค้ดอ่านเลย** เหลืออยู่แค่ `CLAUDE.md` +
->    `skills/env-variables-reference.md` (และยังชวนให้ `ollama pull nomic-embed-text`
->    = ตัวที่มีบั๊กไทย) · `CLAUDE.md:165` อธิบายทิศ fallback กลับหัวกลับหาง
+> 1. ✅ **ล้าง env ผี — ปิดแล้ว 2026-09-01** ถอด `LMSTUDIO_EMBED_MODEL` /
+>    `OLLAMA_EMBED_MODEL` (ไม่มีโค้ดอ่านเลย) + แก้ทิศ fallback ของ embeddings ที่
+>    เขียนกลับหัว · **กันซ้ำด้วย `tests/test_env_docs_ratchet.py`** — env ที่ประกาศ
+>    ในบล็อก env ของ `CLAUDE.md` / `skills/env-variables-reference.md` / `.env.example`
+>    แล้วไม่มีโค้ดอ่าน = เทสแดงทันที (mutation 5/5)
 > 2. `GEMINI_LIVE_MODEL` ไม่มีใน `.env` = ใช้ค่า hardcode `utils/voice.py` — จะยกขึ้น `.env` ไหม
 > 3. **AnythingLLM ตกรุ่น 4 ตัว** (v1.14.0 → 1.16.0) หรือปิดทิ้งถ้าไม่ได้ใช้ (image 3.34 GB)
 > 4. โมเดล local 5/8 ตัวไม่มี env อ้างถึง ~14 GB · `llama3` ที่ผูกไว้เป็น Q4_0 ทั้งที่มี

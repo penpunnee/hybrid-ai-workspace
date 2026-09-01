@@ -22,6 +22,8 @@ OLLAMA_REPEAT_PENALTY=1.1
 
 ### LM Studio — local provider ตัวจริง (ตั้งแต่ 2026-06-15)
 Ollama เป็น dormant fallback แล้ว งาน local ทั้งหมดวิ่งผ่าน LM Studio
+⚠️ **ยกเว้น embeddings ที่ทิศกลับกัน** — Ollama เป็นตัวหลัก, LM Studio เป็น fallback
+และคุมด้วย `EMBEDDING_MODEL` **ตัวเดียว** ทั้งสองฝั่ง (ไม่มี env แยกต่อ provider)
 
 ```env
 LMSTUDIO_BASE_URL=http://192.168.51.235:1234/v1   # ว่าง = ปิด LM Studio
@@ -29,7 +31,6 @@ LMSTUDIO_API_KEY=lmstudio         # ⚠️ รุ่นใหม่บังค�
 LMSTUDIO_CHAT_MODEL=qwen/qwen3.5-9b
 LMSTUDIO_REASON_MODEL=qwen/qwen3.5-9b
 LMSTUDIO_VISION_MODEL=qwen/qwen3.5-9b
-LMSTUDIO_EMBED_MODEL=text-embedding-nomic-embed-text-v1.5
 LMSTUDIO_TIMEOUT=180
 ```
 
