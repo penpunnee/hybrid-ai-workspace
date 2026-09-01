@@ -40,10 +40,10 @@ LMSTUDIO_TIMEOUT=180
 CHROMA_HOST=192.168.51.49
 CHROMA_PORT=8000
 
-DB_PATH=/app/chat_history.db     # SQLite path ใน container
+DB_PATH=/app/chat_history.db     # ⛔ docker-compose ทับ — ตั้งใน .env ไม่มีผลในคอนเทนเนอร์
 NAS_DATA_PATH=/volume1/docker/hybrid-ai
 
-OBSIDIAN_VAULT_PATH=/vault        # path ใน container (mount จาก NAS)
+OBSIDIAN_VAULT_PATH=/vault        # ⛔ docker-compose ทับ — ตั้งใน .env ไม่มีผลในคอนเทนเนอร์
 OBSIDIAN_VAULT_NAS_PATH=/volume1/obsidian
 ```
 

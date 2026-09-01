@@ -103,7 +103,7 @@ docker compose logs hybrid-ai -f
 ssh nas 'sudo -n /usr/local/bin/docker exec ai-backend-1 \
   sh -c "cd /app && python scripts/clean_skills_db.py --resync --apply"'
 ```
-`SKILLS_DB_PATH` = `<repo>/skills_db.json` → **รันบน Mac หรือบน NAS host จะไปสร้าง/แก้ไฟล์คนละตัวกับ
+`SKILLS_DB_PATH` (**ค่าคงที่คำนวณใน `core/config.py` ไม่ใช่ env ที่ตั้งได้**) = `<repo>/skills_db.json` → **รันบน Mac หรือบน NAS host จะไปสร้าง/แก้ไฟล์คนละตัวกับ
 ที่ prod ใช้ แล้วรายงานว่าสำเร็จ** (ตัวจริงคือ `data/skills_db.json` ที่ mount เป็น `/app/skills_db.json`
 — บนเครื่อง dev ไม่มีไฟล์นี้เลย). ก่อน 2026-08-03 คำสั่งนี้ยัง**รันในคอนเทนเนอร์ไม่ได้**ด้วยซ้ำ
 เพราะ `scripts/` เป็นโค้ดดิร์เดียวที่ไม่ได้ mount (เป็นสำเนาค้างจากตอน build ที่ไม่มีไฟล์นี้)
@@ -267,7 +267,7 @@ Response headers: `X-Request-Id`, `X-Provider-Used`, `X-Model-Used`
 - Phase 1 Light: pull 24h memories
 - Phase 2 REM: AI extracts themes (`Gemini` ถ้ามี, fallback Ollama)
 - Phase 2.5 Decay: lower confidence of stale memories
-- Phase 3 Deep: promote themes (count ≥ `PROMOTE_MIN_HITS`) → `skills_db.json` + `long_term_memory`
+- Phase 3 Deep: promote themes (count ≥ `DREAM_PROMOTE_MIN_HITS`, default 2) → `skills_db.json` + `long_term_memory`
 - Report: `dream_reports/dream_YYYYMMDD_HHMMSS.json`
 
 ### Caches (Phase E)
@@ -335,8 +335,8 @@ PC_IP=192.168.51.235
 PC_MAC=
 
 # Storage
-DB_PATH=/app/chat_history.db
-OBSIDIAN_VAULT_PATH=/vault
+DB_PATH=/app/chat_history.db  # ⛔ docker-compose `environment:` ทับ `env_file:` — ตั้งใน .env **ไม่มีผลในคอนเทนเนอร์** (มีผลเฉพาะรัน local ตรงๆ)
+OBSIDIAN_VAULT_PATH=/vault  # ⛔ docker-compose `environment:` ทับ `env_file:` — ตั้งใน .env **ไม่มีผลในคอนเทนเนอร์** (มีผลเฉพาะรัน local ตรงๆ)
 CHROMA_HOST=
 NAS_DATA_PATH=./data
 
@@ -365,7 +365,7 @@ FS_TOOLS_ROOTS=                       # colon-separated; default ~/Desktop/ui/sa
 # Phase F observability
 LOG_LEVEL=INFO
 LOG_FORMAT=plain                      # plain | json
-LOG_FILE=server.log
+LOG_FILE=/app/logs/server.log  # ⛔ docker-compose `environment:` ทับ `env_file:` — ตั้งใน .env **ไม่มีผลในคอนเทนเนอร์** (มีผลเฉพาะรัน local ตรงๆ)
 ```
 
 ### WebSocket: Voice Chat
@@ -760,11 +760,14 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > - ⚪ ถอด Google CSE ออกจาก chain (`utils/websearch.py:291`) ถ้าไม่คิดแก้ Cloud project
 >
 > ## 📋 งานเล็กที่ค้าง
-> 1. ✅ **ล้าง env ผี — ปิดแล้ว 2026-09-01** ถอด `LMSTUDIO_EMBED_MODEL` /
->    `OLLAMA_EMBED_MODEL` (ไม่มีโค้ดอ่านเลย) + แก้ทิศ fallback ของ embeddings ที่
->    เขียนกลับหัว · **กันซ้ำด้วย `tests/test_env_docs_ratchet.py`** — env ที่ประกาศ
->    ในบล็อก env ของ `CLAUDE.md` / `skills/env-variables-reference.md` / `.env.example`
->    แล้วไม่มีโค้ดอ่าน = เทสแดงทันที (mutation 5/5)
+> 1. ✅ **ล้าง env ผี — ปิดแล้ว 2026-09-01/02** ถอด `LMSTUDIO_EMBED_MODEL` /
+>    `OLLAMA_EMBED_MODEL` + แก้ทิศ fallback ของ embeddings ที่เขียนกลับหัว +
+>    มาร์ก 3 ตัวที่ **compose `environment:` ทับ `env_file:`** (`DB_PATH` ·
+>    `OBSIDIAN_VAULT_PATH` · `LOG_FILE`) ว่าตั้งใน `.env` ไม่มีผล
+>    · กัน 2 ชั้นด้วย `tests/test_env_docs_ratchet.py`
+>    ⚠️ **ขอบเขตที่ ratchet จับได้จริง = เฉพาะบรรทัดทรง `NAME=` ในบล็อก env**
+>    — **จับการกล่าวถึงในเนื้อความไม่ได้** (ลองขยายไป backtick แล้ว: 20 hit
+>    ~18 เป็น false alarm เพราะค่าคงที่ python ใช้ naming เดียวกัน) ⇒ อย่าเชื่อว่าปิดหมด
 > 2. `GEMINI_LIVE_MODEL` ไม่มีใน `.env` = ใช้ค่า hardcode `utils/voice.py` — จะยกขึ้น `.env` ไหม
 > 3. **AnythingLLM ตกรุ่น 4 ตัว** (v1.14.0 → 1.16.0) หรือปิดทิ้งถ้าไม่ได้ใช้ (image 3.34 GB)
 > 4. โมเดล local 5/8 ตัวไม่มี env อ้างถึง ~14 GB · `llama3` ที่ผูกไว้เป็น Q4_0 ทั้งที่มี
@@ -774,6 +777,12 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > 6. 🧪 **voice retry ยังไม่เคยถูกกระตุ้นจริงบน prod** — ยืนยันได้แค่ unit test
 > 7. user ยังไม่ได้กดลิงก์ `export_file` บนเครื่องจริง (ต้องรีเฟรช bundle ก่อน)
 > 8. 🎨 `enhanced.js` map สีตามตระกูลเฉด ยังไม่ได้ไล่ความหมายรายจุด
+> 9. ⚪ **config ไม่มี single source of truth** — `os.getenv` **195 จุดใน 40 ไฟล์**
+>    (`core/config.py` ถือแค่ 28 = 14% · `utils/llm.py` อ่านเอง 28 จุด) ⇒ `.env.example`
+>    / `CLAUDE.md` / `docker-compose.yml` ดริฟต์จากกันได้เงียบๆ · ทางมาตรฐาน (ตรวจ
+>    2026-09-02): Symfony นับ `Used` ตอน resolve จริง *ไม่ใช่* สแกนข้อความ ·
+>    IBM mcp-context-forge #3778 auto-gen `.env.example` จาก pydantic config
+>    ⇒ **งานก้อนใหญ่ ไม่ใช่งานเล็ก** — ยกมาที่นี่เพื่อไม่ให้หาย
 >
 > ## ✅ ปิดไปแล้ว — ลบออกจาก backlog (ตรวจจริง 2026-09-01)
 > - **`AI_PALETTE` ซาก `fa`/`khim`** — ถอดแล้ว คอมเมนต์ `app.tsx:58` เขียนไว้เองว่า
