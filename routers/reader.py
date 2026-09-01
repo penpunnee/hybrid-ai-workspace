@@ -20,6 +20,7 @@ import os
 
 from fastapi import APIRouter, HTTPException, Request
 
+from core.config import READER_DB_DEFAULT
 from utils.http_limits import MAX_BODY_BYTES, json_body_capped
 from utils.reader import BookmarkStore, BookStore, next_block
 from utils.thaipdf import (
@@ -33,7 +34,11 @@ router = APIRouter(prefix="/api/reader", tags=["reader"])
 logger = logging.getLogger(__name__)
 
 # แยกไฟล์จาก chat_history.db เพื่อให้ backup/ล้างแยกกันได้ (เล่มละหลายเมกะไบต์)
-_DB = os.getenv("READER_DB_PATH", os.path.join("data", "reader.db"))
+# 🔴 **ค่า default** อยู่ที่ core/config.py ที่เดียว — ห้ามเขียน "reader.db" ซ้ำที่นี่
+#    (เดิมประกาศ default เอง แล้ว utils/db_backup.py ไม่รู้จัก ⇒ ไม่เคยถูก backup เลย
+#     23 วัน) · ส่วน getenv ต้องอยู่ตรงนี้ ไม่งั้น reload ในเทสจะไม่เห็น env ใหม่
+#     แล้วเทสจะไปเขียนทับ DB ตัวจริง — มีเทสตรึงทั้งสองข้อ
+_DB = os.getenv("READER_DB_PATH", READER_DB_DEFAULT)
 os.makedirs(os.path.dirname(_DB) or ".", exist_ok=True)
 
 _books = BookStore(_DB)

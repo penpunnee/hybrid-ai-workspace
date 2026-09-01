@@ -22,7 +22,12 @@ import tempfile
 import time
 from datetime import datetime
 
-from core.config import DB_PATH, EMBED_CACHE_DB, RESPONSE_CACHE_DB
+from core.config import (
+    DB_PATH,
+    EMBED_CACHE_DB,
+    READER_DB_PATH,
+    RESPONSE_CACHE_DB,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +111,25 @@ def _verify_snapshot(work: str, critical_name: str) -> str | None:
     return None
 
 
+def _default_db_paths() -> list[str]:
+    """รายการ DB ที่ job รายคืนสำรอง — **ลำดับมีความหมาย: ตัวแรกคือใบชี้ขาด**
+
+    เรียงตาม "กู้คืนไม่ได้" ก่อน "สร้างใหม่ได้":
+      1. chat_history.db — sessions/messages/feedback 👍👎/pins/shares
+      2. reader.db       — เนื้อหาหนังสือ + ที่คั่นหน้า (prod 125 MB, gzip ~14 MB)
+      3-4. cache         — regenerate เอาใหม่ได้ เก็บไว้เพื่อให้กู้แล้วเร็ว ไม่ใช่ตัวชี้ขาด
+
+    🔴 อ่านค่าตอนเรียก ไม่ใช่ตอน import — conftest/monkeypatch override ค่าพวกนี้
+       ถ้าผูกเป็นค่าคงที่ระดับโมดูล เทสจะไปสำรองไฟล์คนละใบกับที่ตั้งใจโดยไม่มีใครรู้
+
+    🔴 reader.db หลุดจากรายการนี้มาตั้งแต่ 08-09 ถึง 09-01 เพราะ default เดิม
+       เขียนไว้ตอนที่ยังไม่มีไฟล์นี้ และ **เทส backup ทุกตัวส่ง db_paths= เองหมด**
+       ⇒ รายการ default ไม่เคยถูกเดินผ่าน · ตอนนี้ตรึงด้วย tests/test_db_backup_reader.py
+       ซึ่งมี ratchet ตรวจว่า DB ใบใหม่ใน core/config.py ต้องเข้ามาที่นี่ด้วย
+    """
+    return [DB_PATH, READER_DB_PATH, EMBED_CACHE_DB, RESPONSE_CACHE_DB]
+
+
 def run_db_backup(dest: str | None = None,
                   db_paths: list[str] | None = None,
                   retain_days: int | None = None) -> str | None:
@@ -116,8 +140,7 @@ def run_db_backup(dest: str | None = None,
     """
     dest = dest or DB_BACKUP_DEST
     retain = DB_BACKUP_RETAIN_DAYS if retain_days is None else retain_days
-    paths = db_paths if db_paths is not None else [
-        DB_PATH, EMBED_CACHE_DB, RESPONSE_CACHE_DB]
+    paths = db_paths if db_paths is not None else _default_db_paths()
 
     # ชื่อในซองคือ basename → ถ้าซ้ำกัน ตัวหลังทับตัวแรกเงียบๆ = ขอ 2 ใบได้กลับ 1 ใบ
     # และตัวตรวจอาจไปตรวจ "ใบที่ทับ" แล้วผ่าน ทั้งที่ใบที่ขอไม่ได้ถูกเก็บ
@@ -134,6 +157,17 @@ def run_db_backup(dest: str | None = None,
     if not existing:
         logger.warning("[db_backup] ไม่พบ database ให้สำรอง: %s", paths)
         return None
+
+    # ⚠️ "ขอ 4 ใบ ได้ 3 ใบ" เคยผ่านไปเงียบสนิท — เป็นอาการเดียวกับที่ทำให้ reader.db
+    # หายจากซองอยู่ 23 วันโดยไม่มีใครรู้ (2026-08-09 → 09-01) ต่างกันแค่ตอนนั้น
+    # ไม่มีใครใส่ไว้ในรายการเลย ส่วนนี่คือใส่แล้วแต่ไฟล์หายไปจาก mount
+    # ตัวตรวจ _verify_snapshot ดูแค่ paths[0] จึงจับเคสนี้ไม่ได้ — log จึงเป็นตาเดียวที่มี
+    # (จงใจไม่ raise: ซองที่ขาดใบรองยังกู้ระบบได้ ห้ามทำ "ขาดบางส่วน" ให้กลายเป็น
+    #  "ไม่มี backup เลย" ซึ่งเป็นการซ่อมที่ทำให้แย่ลง)
+    missing = [p for p in paths if p not in existing]
+    if missing:
+        logger.error("[db_backup] ขอสำรอง %d ใบ แต่หาไม่เจอ %d ใบ: %s",
+                     len(paths), len(missing), missing)
 
     os.makedirs(dest, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")

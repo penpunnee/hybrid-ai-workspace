@@ -57,6 +57,26 @@ NAS_DATA_PATH       = os.getenv("NAS_DATA_PATH", os.path.join(PROJECT_ROOT, "dat
 RESPONSE_CACHE_DB = os.path.join(NAS_DATA_PATH, "response_cache.db")
 EMBED_CACHE_DB = os.path.join(NAS_DATA_PATH, "embed_cache.db")
 
+# เนื้อหาหนังสือ + ที่คั่นหน้าของโหมดอ่านนิยาย (routers/reader.py)
+# แยกไฟล์จาก chat_history.db เพราะเล่มละหลายสิบเมกะไบต์ (ของจริงบน prod 125 MB)
+# 🔴 ประกาศที่นี่ที่เดียว — routers/reader.py กับ utils/db_backup.py ต้อง import ตัวนี้
+#    เดิม reader.py ประกาศ default ของตัวเอง ส่วน db_backup ไม่รู้จักไฟล์นี้เลย
+#    ⇒ ซอง backup เก็บ cache ที่สร้างใหม่ได้ฟรี แต่ไม่เก็บใบที่สร้างใหม่ไม่ได้ (2026-09-01)
+#    เป็นความล้มเหลวแบบเดียวกับ default 2 ที่ของ utils/voice.py
+# ⚠️ ค่าที่ resolve ได้ต้องเท่าของเดิม (`os.path.join("data", "reader.db")` แบบ relative)
+#    ไม่งั้น reader จะมองไม่เห็น DB เดิม: prod มี WORKDIR=/app, PROJECT_ROOT=/app และ
+#    env NAS_DATA_PATH **ไม่ได้ตั้งในคอนเทนเนอร์** (docker-compose.yml บรรทัด 35)
+#    ⇒ ทั้งสองสูตรได้ /app/data/reader.db ตัวเดียวกัน · ใช้ NAS_DATA_PATH เพราะย้ายตาม
+#    cache DB เป็นชุดเดียวกัน แทนที่จะผูกกับ cwd ซึ่งเปลี่ยนได้โดยไม่มีใครสังเกต
+# 🔴 แยกเป็น 2 ชื่อโดยตั้งใจ — "ห้าม default ซ้ำ" ไม่เท่ากับ "ห้ามอ่าน env ซ้ำ"
+#    ค่า default ซ้ำ = บั๊ก utils/voice.py (สองที่ดริฟต์กันเงียบๆ) ⇒ อยู่ที่นี่ที่เดียว
+#    ส่วนการ "อ่าน env" ต้องเกิดในโมดูลที่ใช้ เพราะ tests/test_reader_api.py แยก DB
+#    ด้วย monkeypatch.setenv + importlib.reload(routers.reader) — ถ้า reader รับค่า
+#    สำเร็จรูปจากที่นี่ reload จะไม่เห็น env ใหม่ (core.config ถูก import ไปแล้ว)
+#    แล้ว **เทสจะไปเขียนทับ reader.db ตัวจริง** โดยยังขึ้นเขียว (พลาดมาแล้ว 09-01)
+READER_DB_DEFAULT = os.path.join(NAS_DATA_PATH, "reader.db")
+READER_DB_PATH = os.getenv("READER_DB_PATH", READER_DB_DEFAULT)
+
 # ── LM Studio (Local LLM — OpenAI compatible) ────────────────────────────────
 # LM Studio เป็น opt-in: เปิดใช้เฉพาะเมื่อ set LMSTUDIO_BASE_URL ใน .env
 # (default ว่าง — local LLM หลักของระบบนี้คือ Ollama ดู OLLAMA_BASE_URL ด้านบน)

@@ -33,8 +33,13 @@ if [ -f "$UI_DIR/data/chat_history.db" ]; then
 else
   CHAT_DB="$UI_DIR/chat_history.db"
 fi
+# ⚠️ รายการนี้ต้องตรงกับ _default_db_paths() ใน utils/db_backup.py — backup มี 2 เส้น
+#    แก้เส้นเดียวคือปล่อยให้อีกเส้นโกหกต่อ (แบบเดียวกับ pipeline ค้นเว็บ 2 ชุด)
+#    reader.db = เนื้อหาหนังสือ + ที่คั่นหน้า 125 MB บน prod ซึ่ง **สร้างใหม่ไม่ได้**
+#    หลุดจากทั้งสองเส้นมาตั้งแต่ 08-09 ถึง 09-01
 DBS=(
   "$CHAT_DB"
+  "$UI_DIR/data/reader.db"
   "$UI_DIR/data/embed_cache.db"
   "$UI_DIR/data/response_cache.db"
 )
