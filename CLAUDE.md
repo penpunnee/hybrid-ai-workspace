@@ -746,9 +746,17 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > - **voice idle 1008-loop** — 1008 ที่ 151 วิเป๊ะนับจากต่อติด ไม่มี `go_away` มาก่อน
 >   ⇒ client เป็นตัว reconnect วน · ทางแก้ยังไม่เคาะ (keepalive frame เงียบ **หรือ**
 >   ปิดสายเสียงตอนโหมดอ่านทำงาน)
-> - **Gemini ตายเงียบกลางท่อน ไม่มี watchdog** — `server.py:721` ยังใช้
->   `asyncio.gather(recv_loop(), feed_loop())` = บั๊กโครงเดียวกับที่แก้ในสายเสียงแล้ว
->   ตัวแก้คือแพทเทิร์น `run_until_both_done()` ⛔ **ห้ามเอา `reader_pacing_wait` กลับ**
+> - ✅ **โหมดอ่าน: `asyncio.gather` → `run_until_both_done()` — ปิดแล้ว 2026-09-02**
+>   (`fed8b6e`) Live session ของ `/ws/reader` เคยค้างได้ถึง 45 วิหลังผู้ใช้ปิด
+>   (recv_loop จบก่อน · feed_loop ยังค้างใน `wait_for(rx.__anext__(), 45s)` · gather รอครบ)
+>   · เส้น go_away/regen เดินทางเดิม (recv_loop ตื่นทุก 1.0s < grace 1.5s = ไม่ถูก cancel
+>   — มีเทสตรึง) · deploy ด้วย `--force-recreate` + **inode host = container ตรง (250085)**
+>   ⚠️ **ชื่อเดิม "ไม่มี watchdog" ตกรุ่น** — watchdog กัน Gemini ตายเงียบกลางท่อนมีตั้งแต่
+>   `fe0279c` (08-23) และเอามาแบบไม่มี pacing ตามข้อห้ามแล้ว
+>   ⛔ **ห้ามเอา `reader_pacing_wait` กลับ** (ยังมีผล)
+> - 🔊 **`underruns` อ่านแล้ว (09-02): ไม่ใช่ต้นเหตุ "เสียงเบา"** — ทั้ง log
+>   `underruns=0` **8,533 ตัวอย่าง** · `=1` เพียง 76 (= เหตุการณ์เดียวที่ค้างค่าไว้)
+>   ⇒ ตามเกณฑ์ที่วางไว้เอง "0 ตลอด = ไม่ใช่ underrun" ต้องไปดู audio session ของ iOS แทน
 > - **citations เป็นแหล่งรอง** (ตกค้าง 08-31) — หน้า Steam เป็น age-check ดึงได้แต่
 >   หน้ายืนยันอายุ → คะแนนตกถูกตัด ⇒ ตัวเลขราคาอาจเป็นเซลรอบเก่า
 > - ⚪ ถอด Google CSE ออกจาก chain (`utils/websearch.py:291`) ถ้าไม่คิดแก้ Cloud project
