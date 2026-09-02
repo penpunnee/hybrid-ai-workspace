@@ -725,23 +725,16 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > · 🔑 บทเรียน voice.py คือ **"ห้าม default ซ้ำ" ไม่ใช่ "ห้ามอ่าน env ซ้ำ"** —
 > ตั้งเกณฑ์ห้ามผิดข้อ = เปลี่ยนบั๊กเป็นบั๊กที่แย่กว่า
 >
-> ## ⏳ ค้างไว้รอผลอย่างเดียว — เช็คก่อนเริ่มงานอื่น
-> **รอบ backup อัตโนมัติรอบแรกที่ใช้โค้ดใหม่ = 2026-09-02 03:30 น.** (20:30 UTC)
-> ที่ยืนยันไปแล้วคือ**รันมือ** ยังไม่เคยมีรอบ scheduled จริงเกิดขึ้น
-> ```bash
-> ssh nas-cf 'sudo -n /usr/local/bin/docker exec ai-backend-1 sh -c "
->   grep -a \"DB backup\" /app/logs/server.log | tail -3
->   ls -la /app/db_backups/*.tar.gz | tail -3"'
+> ## ✅ รอบ backup อัตโนมัติ — **ปิดคดีแล้ว 2026-09-02**
+> รอบ scheduled จริงรอบแรกที่ใช้โค้ดใหม่เดินผ่านแล้ว:
 > ```
-> | เห็นอะไร | แปลว่า |
-> |---|---|
-> | ซอง **~20 MB** + `สำรอง 4 db` | ✅ ปิดคดี ลบบล็อกนี้ทิ้งได้ |
-> | ซอง **~6 MB** + `สำรอง 3 db` | 🔴 มีอะไรที่ยังมองไม่เห็น ทั้งที่รันมือสำเร็จ |
-> | `ขอสำรอง 4 ใบ แต่หาไม่เจอ 1 ใบ` | ตัวเตือนใหม่ทำงาน — reader.db หายจาก mount |
-> | ไม่มี log `DB backup` เลย | scheduler ไม่ยิง (คนละปัญหา) |
-> 🔑 **ตัวชี้ขาดคือขนาดซอง ไม่ใช่ข้อความ "เสร็จ"** — archive 989 ไบต์ (07-12) ขึ้น log
-> สำเร็จเหมือนรอบปกติเป๊ะ
->
+> 2026-09-01 20:30:00 UTC = 2026-09-02 03:30 +07   ← cron ยิงตรงเวลา
+> [db_backup] สำรอง 4 db → db_backup_20260901_203000.tar.gz (19179.0 KB)
+> ในซอง: chat_history.db · embed_cache.db · reader.db · response_cache.db
+> ```
+> เทียบของเก่าเห็นชัด: **29–31 ส.ค. = 6.2 MB (3 ใบ) · 1 ก.ย. = 19.6 MB (4 ใบ)**
+> ⇒ `reader.db` เข้าซองในรอบอัตโนมัติจริงแล้ว ไม่ใช่แค่รันมือ
+
 > ## 🥇 งานเซสชันหน้า
 > - **agent mode ทิ้งรูปเงียบๆ** — วินิจฉัยจบ 08-28 ยังไม่แก้ · ยืนยันซ้ำ 09-01:
 >   `routers/chat.py:346` `run_agent(messages, provider=...)` **ไม่ส่ง `image_b64`**
@@ -777,7 +770,16 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > 6. 🧪 **voice retry ยังไม่เคยถูกกระตุ้นจริงบน prod** — ยืนยันได้แค่ unit test
 > 7. user ยังไม่ได้กดลิงก์ `export_file` บนเครื่องจริง (ต้องรีเฟรช bundle ก่อน)
 > 8. 🎨 `enhanced.js` map สีตามตระกูลเฉด ยังไม่ได้ไล่ความหมายรายจุด
-> 9. ⚪ **`CHROMA_PATH` เป็น dead config** — `core/config.py:33` อ่านจาก env แต่
+> 9. 🔴 **`get_memory_stats` เปลี่ยน "อ่านไม่ได้" เป็น `0`** (`utils/memory.py:467`)
+>    — `/api/health` รายงาน `documents: 0` ทั้งที่มี **1,740 chunk อยู่ครบ** และ
+>    `retrieve_chunks` ทำงานปกติ · เหตุ: wrapper `get_collection` ฉีด EF ollama แต่
+>    collection `documents` persist EF `default` ไว้ → Chroma ปฏิเสธ → `except` เขียน 0
+>    🔑 **หลอกได้จริง — เซสชันนี้ผมเองอ่านแล้วสรุปว่าข้อมูลหาย 1,740 รายการ**
+>    ตัวแก้: นับผ่าน client ดิบ (การนับไม่ต้องใช้ EF) + ถ้ายังล้มให้แยก `unreadable`
+>    ออกจาก `collections` ห้ามใส่ 0 · คลาสเดียวกับบั๊ก `_google_search` 403→"0 ผล"
+>    ℹ️ EF `default` ที่ persist ไว้ **ไม่ใช่ปัญหา** — `utils/documents.py` ฝัง vector เอง
+>      ด้วย `embed_texts()` ทั้งตอน insert และ query (ตรวจแล้ว คืนผลไทยได้ปกติ)
+> 10. ⚪ **`CHROMA_PATH` เป็น dead config** — `core/config.py:33` อ่านจาก env แต่
 >    ไม่มีผู้บริโภคสักที่ (ChromaDB เป็นคอนเทนเนอร์แยกที่มี volume ของตัวเอง)
 > 10. ⚪ **collection กำพร้าบน prod**: `memory_a` · `memory_logic` ·
 >     `memory_logic__keys` (ว่างทั้งหมด · slug จริงมีแค่ `kwan`)
