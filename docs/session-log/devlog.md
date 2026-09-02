@@ -36,6 +36,28 @@
   (กันปนเปื้อน episodic) → SSE เดิน `phase: agent` → `agent thinking` → `chunk: "แดง"`
   ⇒ โมเดลเห็นรูปจริง ไม่ใช่แค่ "ไม่ throw"
 
+### 🔎 scrutinize รอบหลัง deploy — เจอ 3 รูในแพตช์ตัวเอง (`2d9913f` · `9b095d5` ที่ appscript.ui)
+1. 🔴 **event `warning` ที่เพิ่งเพิ่ม ไม่เคยขึ้นจอ** — `agentStepView` (`utils/agentsteps.ts`)
+   `default: return null` แล้วถูกกรองทิ้งที่ `app.tsx:101` ⇒ คำเตือน "รูปถูกข้าม"
+   **หน้าตาเหมือนไม่มีอะไรเกิดขึ้น = บั๊กแบบเดียวกับที่แพตช์นั้นอ้างว่าแก้**
+   · แก้: เพิ่ม `case 'warning'` (⚠️) + แยก error เป็น ❌ · rebuild+sync → `index-E6S923HZ.js`
+   (**CSS hash `index-BXmYM1k7.css` ตรงของเดิมเป๊ะ** = toolchain reproduce ของเก่าได้ ⇒ sync ปลอดภัย)
+2. prompt ว่าง + มีรูป (เรียกตรงผ่าน API · UI กันไว้ที่ `app.tsx:1229`) เคยแนบ
+   `Part(text="")` / text part เปล่าเข้า API → ส่งเฉพาะรูปแทน ทั้งสอง provider
+3. 🔴 **เทส ollama patch ชื่อที่ไม่มีอยู่จริงด้วย `create=True` = ไม่ได้ patch อะไรเลย**
+   → เทส**ยิง HTTP ไป Ollama จริง** (ยืนยัน: ได้ `404 model 'llama3' not found` จาก .235)
+   แล้วยัง **ผ่าน** เพราะ assertion บังเอิญเป็นจริงจาก error event ที่เส้นจริง yield ออกมา
+   · แก้: patch `_run_agent_ollama` ตัวจริง + `assert hasattr()` กันชื่อเพี้ยนเงียบ
+
+🔑 **บทเรียนใหม่: `patch.object(..., create=True)` เป็นสวิตช์ปิดเสียงของ mock** —
+ชื่อผิด/ชื่อไม่มี = เทสรันโค้ดจริงแบบเงียบๆ · mutation ก็จับไม่ได้เพราะ assertion ยังจริง
+⇒ **patch แล้วต้อง assert ว่าเป้ามีอยู่จริง**
+🔑 **mutation 10/10 ไม่ได้แปลว่า "ไม่มีรู"** — มันวัดว่าเทสจับ*การถอยกลับ*ได้
+ไม่ได้วัดว่า**ปลายทางที่ผู้ใช้เห็นจริงทำงานไหม** (รูที่ 1 อยู่คนละรีโปกับที่ mutate)
+
+เทสรวม 11 (จาก 8) · mutation 10/10 · pytest 1801 · vitest 477 · verify prod ซ้ำหลัง deploy
+(PNG แดง + `tool_agent` → "แดง" · bundle md5 host = NAS ตรง)
+
 ### บทเรียน
 - **"อ่านไม่ได้" ต้องไม่มีหน้าตาเหมือน "ว่าง"** (ครั้งที่ 3 ในสัปดาห์เดียว ต่อจาก
   `_google_search` 403→"0 ผล" และ `get_memory_stats` EF conflict→`0`) ⇒ เส้น ollama
