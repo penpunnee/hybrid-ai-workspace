@@ -450,21 +450,30 @@ def delete_preference(doc_id: str) -> bool:
 
 
 def get_memory_stats() -> dict:
-    """ดูจำนวน entries ใน collections ทั้งหมด"""
+    """ดูจำนวน entries ใน collections ทั้งหมด
+
+    🔑 **นับผ่าน client ดิบ ไม่ฉีด embedding_function** — การนับไม่ต้องใช้ EF เลย
+    และการฉีดมันเข้าไปทำให้ collection ที่ persist EF คนละตัวอ่านไม่ได้
+    (ของจริง 2026-09-02: `documents` persist EF `default` เพราะ `utils/documents.py`
+    ฝัง vector เองด้วย `embed_texts()` → wrapper ฉีด ollama เข้าไป → Chroma ปฏิเสธ)
+
+    🔴 **ห้ามเปลี่ยน "อ่านไม่ได้" เป็น `0`** — ของเดิมทำแบบนั้น แล้ว `/api/health`
+    รายงาน `documents: 0` ทั้งที่มี 1,740 chunk อยู่ครบ อ่านแล้วเหมือนข้อมูลหายทั้งก้อน
+    · ตัวที่อ่านไม่ได้ไปอยู่ใน `unreadable` แทน เพื่อให้ "ไม่รู้" ไม่หน้าตาเหมือน "ว่าง"
+    """
     client = _get_client()
     if client is None:
         return {"available": False}
-    stats = {"available": True, "collections": {}}
+    stats = {"available": True, "collections": {}, "unreadable": {}}
     try:
         all_collections = client.list_collections()
         for col_info in all_collections:
             name = col_info.name if hasattr(col_info, "name") else str(col_info)
             try:
-                col = get_collection(client, name)
-                stats["collections"][name] = col.count()
+                stats["collections"][name] = client.get_collection(name).count()
             except Exception as e:
-                logger.warning(f"get_memory_stats: failed to get count for collection '{name}': {e}")
-                stats["collections"][name] = 0
+                logger.error(f"get_memory_stats: นับ collection '{name}' ไม่ได้: {e}")
+                stats["unreadable"][name] = str(e)
         stats["total"] = sum(stats["collections"].values())
         stats["long_term"] = stats["collections"].get("long_term_memory", 0)
         stats["lessons"] = stats["collections"].get("lessons", 0)

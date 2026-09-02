@@ -770,15 +770,10 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > 6. 🧪 **voice retry ยังไม่เคยถูกกระตุ้นจริงบน prod** — ยืนยันได้แค่ unit test
 > 7. user ยังไม่ได้กดลิงก์ `export_file` บนเครื่องจริง (ต้องรีเฟรช bundle ก่อน)
 > 8. 🎨 `enhanced.js` map สีตามตระกูลเฉด ยังไม่ได้ไล่ความหมายรายจุด
-> 9. 🔴 **`get_memory_stats` เปลี่ยน "อ่านไม่ได้" เป็น `0`** (`utils/memory.py:467`)
->    — `/api/health` รายงาน `documents: 0` ทั้งที่มี **1,740 chunk อยู่ครบ** และ
->    `retrieve_chunks` ทำงานปกติ · เหตุ: wrapper `get_collection` ฉีด EF ollama แต่
->    collection `documents` persist EF `default` ไว้ → Chroma ปฏิเสธ → `except` เขียน 0
->    🔑 **หลอกได้จริง — เซสชันนี้ผมเองอ่านแล้วสรุปว่าข้อมูลหาย 1,740 รายการ**
->    ตัวแก้: นับผ่าน client ดิบ (การนับไม่ต้องใช้ EF) + ถ้ายังล้มให้แยก `unreadable`
->    ออกจาก `collections` ห้ามใส่ 0 · คลาสเดียวกับบั๊ก `_google_search` 403→"0 ผล"
->    ℹ️ EF `default` ที่ persist ไว้ **ไม่ใช่ปัญหา** — `utils/documents.py` ฝัง vector เอง
->      ด้วย `embed_texts()` ทั้งตอน insert และ query (ตรวจแล้ว คืนผลไทยได้ปกติ)
+> 9. ✅ **`get_memory_stats` รายงาน 0 ทั้งที่อ่านไม่ได้ — แก้แล้ว 2026-09-02**
+>    `/api/health` เคยขึ้น `documents: 0` ทั้งที่มี 1,740 chunk ครบ · ตอนนี้นับผ่าน
+>    **client ดิบ ไม่ฉีด embedding_function** (การนับไม่ต้องใช้ EF) และของที่อ่านไม่ได้
+>    ไปอยู่ `unreadable` แทนการใส่ 0 · mutation 4/4
 > 10. ⚪ **`CHROMA_PATH` เป็น dead config** — `core/config.py:33` อ่านจาก env แต่
 >    ไม่มีผู้บริโภคสักที่ (ChromaDB เป็นคอนเทนเนอร์แยกที่มี volume ของตัวเอง)
 > 10. ⚪ **collection กำพร้าบน prod**: `memory_a` · `memory_logic` ·

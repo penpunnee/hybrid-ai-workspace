@@ -1,5 +1,48 @@
 ---
 
+## [2026-09-02 บ่าย] ปิดคดี backup + `get_memory_stats` โกหกว่าข้อมูลหาย 1,740 รายการ
+
+### ✅ รอบ backup อัตโนมัติ — ปิดคดี (ค้างมาตั้งแต่ 09-01)
+```
+2026-09-01 20:30:00 UTC = 2026-09-02 03:30 +07
+[db_backup] สำรอง 4 db → db_backup_20260901_203000.tar.gz (19179.0 KB)
+```
+เทียบของเก่า: **29–31 ส.ค. = 6.2 MB (3 ใบ) · 1 ก.ย. = 19.6 MB (4 ใบ)**
+⇒ `reader.db` เข้าซองในรอบ scheduled จริง ไม่ใช่แค่รันมือ · ตรงตารางที่วางไว้ทุกช่อง
+
+### 🔴 `/api/health` รายงาน `documents: 0` ทั้งที่มี 1,740 chunk อยู่ครบ
+**ผมเองอ่านตัวเลขนี้แล้วรายงาน user ว่า "documents หายทั้ง 1740 chunk"** ก่อนจะไป
+ไล่ log แล้วพบว่าเป็นตัววัดที่โกหก — เป็นหลักฐานตรงๆ ว่ามันหลอกคนได้จริง
+
+```
+WARNING utils.memory: failed to get count for collection 'documents':
+  Embedding function conflict: new: ollama vs persisted: default
+→ except: stats["collections"][name] = 0
+```
+- wrapper `get_collection()` ฉีด EF ของ ollama · `documents` persist EF `default` ไว้
+  เพราะ `utils/documents.py:_get_collection()` เรียก `client.get_or_create_collection`
+  **ดิบ** (ไม่ผ่าน wrapper) → Chroma ปฏิเสธตอน get
+- ผลพลอย: `total` เพี้ยน (199 แทน ~1,939)
+- ℹ️ **EF `default` ที่ค้างอยู่ไม่ใช่ปัญหา** — ตรวจแล้ว `documents` ฝัง vector เองด้วย
+  `embed_texts()` ทั้ง insert (`embeddings=vectors`) และ query ⇒ EF ของ collection
+  ไม่เคยถูกใช้ · ยิง `retrieve_chunks()` บน prod ได้ผลไทย 3 รายการปกติ
+  🔑 **ต้องแยกให้ขาดก่อนสรุป** ไม่งั้นจะไปไล่แก้ "บั๊กไทย" ที่ไม่มีอยู่
+
+**แก้ที่ต้นเหตุ:** นับผ่าน `client.get_collection(name)` ดิบ — **การนับไม่ต้องใช้ EF เลย**
+\+ ถ้ายังล้มด้วยเหตุอื่น ใส่ `unreadable[name] = reason` **ห้ามใส่ 0** และ log ERROR
+(เดิม WARNING — หายไปในกองบันทึก) · เทส 4 + กลุ่มควบคุม · mutation **4/4**
+
+### บทเรียน
+- 🔑 คลาสเดียวกับ `_google_search` อ่าน 403 เป็น "0 ผลลัพธ์" (`436f22b`) เป๊ะ —
+  **"อ่านไม่ได้" ต้องไม่มีหน้าตาเหมือน "ว่าง"** ที่ปลายทางไหนก็ตาม
+- 🔑 **wrapper ที่ "ถูก" สำหรับ collection ส่วนใหญ่ ไม่ได้ถูกกับทุก collection** —
+  `documents` จัดการ embedding เอง การบังคับฉีด EF เข้าไปจึงพังเฉพาะตัวมัน
+- ⚠️ ระหว่างทางไดรเวอร์ mutation แบบ shell เคยรายงาน "รอด" ครบทั้งที่ pytest ไม่ได้รัน
+  (`no tests ran` ไม่มีทั้ง `failed`/`error`) — รอบนี้ใช้ตัว python ที่มี baseline gate
+  \+ แยก `INVALID` ออกจาก `SURVIVED` ตั้งแต่แรก
+
+---
+
 ## [2026-09-02] ตรวจทั้งโปรเจกต์ + ปิดรอยต่อ dual-vector ที่ทำให้ของที่ลบไปแล้วโผล่กลับมา
 
 ตรวจ 10 ชั้นตามสายความสัมพันธ์ (ผลเต็มอยู่ในหัวข้อ ▶️ ของ `CLAUDE.md`) ·
