@@ -1,5 +1,51 @@
 ---
 
+## [2026-09-02 เย็น] agent mode ทิ้งรูปเงียบๆ — ปิดคดี (`6ffdfad`)
+
+### อาการ
+เปิด agent mode (`tool_agent: true`) แล้วแนบรูป → โมเดลไม่เคยเห็นรูปเลย
+ตอบเหมือนไม่มีรูปแนบมา **โดยไม่มีสัญญาณอะไรบอก** ⇒ "สรุปภาพ → export ไฟล์"
+ในเทิร์นเดียวทำไม่ได้ · วินิจฉัยจบตั้งแต่ 08-28 ยืนยันซ้ำ 09-01 แต่ยังไม่เคยแก้
+
+### ต้นเหตุ
+`routers/chat.py` อ่าน `image_b64`/`image_mime` จาก body (บรรทัด 118) และส่งให้
+`stream_response` ตามปกติ (บรรทัด 435) **แต่เส้น `tool_agent` เรียก
+`run_agent(messages, provider=agent_provider)` เฉยๆ** — และลึกกว่านั้น
+`run_agent()` **ไม่มีพารามิเตอร์รับรูปตั้งแต่แรก** ⇒ ไม่ใช่แค่ลืมส่งที่ call site
+แต่ทั้งเส้น agent ไม่เคยรองรับ vision เลย
+
+### ที่แก้
+| ชั้น | ทำอะไร |
+|---|---|
+| `run_agent()` | รับ `image_b64`/`image_mime` แล้ว forward ต่อ |
+| `_run_agent_gemini` | `_gemini_pending_with_image()` → pending เป็น `list[Part]` (text + `inline_data`) · **ไม่มีรูป = คืน `str` ตามเดิม** |
+| `_run_agent_lmstudio` | `_attach_image_openai()` ต่อ `image_url` เข้า user message ล่าสุด |
+| `_run_agent_ollama` | ReAct/llama3 ไม่มี vision → **yield `event: warning`** บอกว่ารูปถูกข้าม + แนะให้ใช้ gemini/lmstudio |
+| `routers/chat.py:346` | ส่ง `image_b64=`/`image_mime=` เข้า `run_agent` |
+
+ทั้ง gemini และ lmstudio เดินตามรูปแบบเดียวกับ `_stream_gemini` / `_stream_lmstudio`
+ใน `utils/llm.py` (ไม่คิดฟอร์แมตใหม่เอง)
+
+### verify
+- `tests/test_agent_vision.py` **8 ตัว** ตรึง 3 ชั้น: router ส่งต่อ · adapter ได้รูปจริง ·
+  provider ที่มองไม่เห็นต้อง**บอก** · + **กลุ่มควบคุม** "ไม่มีรูป = ของเดิมเป๊ะ" ทั้ง 2 provider
+- **mutation 8/8 ถูกฆ่า** (ถอดการ forward รายเส้น · ทิ้งรูป · ทิ้ง text part · ถอด warning)
+  driver แยก `INVALID` ออกจาก `SURVIVED` + baseline gate ตามกติกา
+- ชุดเต็ม **1798 passed / 16 skipped** · `ruff` ผ่าน
+- 🟢 **verify บน prod จริง** — PNG แดงล้วน 16×16 + `tool_agent:true`, header `X-Test-Request: 1`
+  (กันปนเปื้อน episodic) → SSE เดิน `phase: agent` → `agent thinking` → `chunk: "แดง"`
+  ⇒ โมเดลเห็นรูปจริง ไม่ใช่แค่ "ไม่ throw"
+
+### บทเรียน
+- **"อ่านไม่ได้" ต้องไม่มีหน้าตาเหมือน "ว่าง"** (ครั้งที่ 3 ในสัปดาห์เดียว ต่อจาก
+  `_google_search` 403→"0 ผล" และ `get_memory_stats` EF conflict→`0`) ⇒ เส้น ollama
+  จึงต้องส่ง event เตือน ไม่ใช่ข้ามเงียบ
+- **call site ที่ "ลืมส่งพารามิเตอร์" ต้องเช็คก่อนว่าฟังก์ชันปลายทางมีพารามิเตอร์นั้นไหม** —
+  บันทึกเดิมเขียนว่า "ไม่ส่ง `image_b64`" ซึ่งจริง แต่ทำให้ประเมินขนาดงานต่ำไป
+  (ของจริงต้องเดินรูปทะลุถึง adapter ของทุก provider)
+- **กลุ่มควบคุมสำคัญพอๆ กับเทสของฟีเจอร์** — เทส "ไม่มีรูปแล้ว pending ยังเป็น `str` เดิม"
+  คือตัวกันไม่ให้เส้นที่ใช้อยู่ทุกวันเปลี่ยนพฤติกรรมโดยไม่ตั้งใจ
+
 ## [2026-09-02 บ่าย] ปิดคดี backup + `get_memory_stats` โกหกว่าข้อมูลหาย 1,740 รายการ
 
 ### ✅ รอบ backup อัตโนมัติ — ปิดคดี (ค้างมาตั้งแต่ 09-01)

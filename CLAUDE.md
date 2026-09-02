@@ -734,10 +734,13 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > 🟡 ที่ยังเปิดอยู่ → ดู "งานเล็กที่ค้าง" ข้อ 9-12 ข้างล่าง
 
 > ## 🥇 งานเซสชันหน้า
-> - **agent mode ทิ้งรูปเงียบๆ** — วินิจฉัยจบ 08-28 ยังไม่แก้ · ยืนยันซ้ำ 09-01:
->   `routers/chat.py:346` `run_agent(messages, provider=...)` **ไม่ส่ง `image_b64`**
->   ทั้งที่ตัวแปรมีอยู่ (บรรทัด 118) และส่งให้ `stream_response` ปกติ (บรรทัด 435)
->   ⇒ "สรุปภาพ → export ไฟล์" เทิร์นเดียวยังทำไม่ได้
+> - ✅ **agent mode ทิ้งรูปเงียบๆ — ปิดแล้ว 2026-09-02** (`6ffdfad`) `run_agent()` รับ
+>   `image_b64`/`image_mime` แล้วส่งถึง adapter จริงทั้ง gemini (list[Part] + inline_data)
+>   และ lmstudio (content-parts `image_url`) · ollama ReAct ไม่มี vision → **yield event
+>   warning บอก user** ไม่ทิ้งเงียบ · `tests/test_agent_vision.py` (8) มีกลุ่มควบคุม
+>   "ไม่มีรูป = ของเดิมเป๊ะ" ทั้งสอง provider · mutation 8/8 · **verify บน prod จริง**
+>   (แนบ PNG แดง 16×16 + `tool_agent:true` → ตอบ "แดง")
+>   ⚠️ frontend ไม่ต้องแก้ — `app.tsx:1299` ส่ง `image_b64` มาพร้อม `tool_agent` อยู่แล้ว
 > - **เสียงเบา** — บล็อกที่ user: เกิดตอนไม่แตะจอเลยไหม + Low Power Mode/แบต/ความร้อน
 >   🔒 ห้ามแตะค่าเสียงก่อนมีตัวเลข
 > - **voice idle 1008-loop** — 1008 ที่ 151 วิเป๊ะนับจากต่อติด ไม่มี `go_away` มาก่อน
