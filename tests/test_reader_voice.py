@@ -261,11 +261,16 @@ class TestRereadCurrentBlock:
 
         assert reader_stream_action(stopped=False, paused=False) == "send"
 
-    def test_recv_loop_accepts_the_reread_command(self):
+    def test_the_command_parser_accepts_reread(self):
+        """เดิมเช็คใน recv_loop ตรงๆ — ตัวแปลคำสั่งย้ายมาอยู่ `apply_cmd` ตัวเดียว
+        (2026-09-02 ตอนเพิ่มตัวรอระหว่างพัก) · เจตนาเดิมไม่เปลี่ยน: ปุ่มต้องไม่เงียบ
+        · ส่วน "recv_loop ต้องใช้ apply_cmd จริง" ตรึงไว้ที่
+        TestPauseReleasesTheLiveSession::test_สองลูปตีความคำสั่งด้วยตัวเดียวกัน"""
         src = (REPO / "server.py").read_text(encoding="utf-8")
         ws = src[src.index('@app.websocket("/ws/reader")'):]
-        recv = ws[ws.index("async def recv_loop"): ws.index("async def feed_loop")]
-        assert '"reread"' in recv, "recv_loop ไม่รับคำสั่ง reread — ปุ่มจะกดแล้วเงียบ"
+        parser = ws[ws.index("def apply_cmd"): ws.index("async def wait_while_paused")]
+        assert '"reread"' in parser, "apply_cmd ไม่รับคำสั่ง reread — ปุ่มจะกดแล้วเงียบ"
+        assert "reread.set()" in parser, "รับคำสั่งแล้วแต่ไม่ตั้งธง"
 
     def test_stream_loop_consults_reread(self):
         """กัน "ฟังก์ชันถูกแต่ไม่มีใครเรียก" — ผูกกับลูปสตรีมจริง"""
@@ -470,3 +475,104 @@ class TestReaderDoesNotLeakLiveSession:
             f"recv_loop ตื่นทุก {max(timeouts)}s แต่ grace {LOOP_EXIT_GRACE_SEC}s "
             "⇒ เส้น go_away จะโดน cancel ทั้งที่มันทำงานถูกอยู่แล้ว"
         )
+
+
+# ── 🔴 พักแล้วต้อง "ปล่อย" Live session ไม่ใช่นอนกอดไว้ (2026-09-02) ──────────
+#
+# หลักฐานบน prod 2026-08-27 (log จริง ไม่ใช่การอนุมาน):
+#   17:31:05  พักกลางท่อน → หยุดส่งเสียงทันที
+#             ← **2 ชั่วโมง 33 นาที ไม่มี log สักบรรทัด**
+#   20:04:22  ปิด xianni.pdf#7b10 ที่คั่น 48001
+#
+# ต้นเหตุ: `next_read_action(paused=True) → "wait"` แล้ว feed_loop วน `sleep(0.3)`
+# **อยู่ข้างใน `async with live.connect(...)`** ⇒ session เปิดค้างทั้งที่ไม่มีใครฟัง
+# · ที่ไม่มี log เลยไม่ใช่ "ทุกอย่างปกติ" แต่แปลว่า **เราไม่ได้อ่านจาก session เลย**
+#   ⇒ ทั้ง watchdog และตัวจับ `go_away` อยู่ *ข้างใน* ลูปรับเสียง จึงไม่ทำงานตอนพัก
+# · ถ้า Gemini reap session ระหว่างพัก → กดอ่านต่อ → `send_client_content` โยน →
+#   `except Exception` ของ feed_loop สั่ง **`stop`** (ไม่ใช่ `regen`) = ปิดหนังสือทั้งเล่ม
+class TestPauseReleasesTheLiveSession:
+    @pytest.fixture()
+    def tree(self):
+        import ast
+        src = (REPO / "server.py").read_text(encoding="utf-8")
+        for n in ast.walk(ast.parse(src)):
+            if isinstance(n, ast.AsyncFunctionDef) and n.name == "reader_websocket":
+                return n
+        pytest.fail("ไม่เจอ reader_websocket")
+
+    def _fn(self, tree, ชื่อ):
+        import ast
+        for n in ast.walk(tree):
+            if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef)) and n.name == ชื่อ:
+                return n
+        return None
+
+    def _calls(self, node):
+        import ast
+        out = set()
+        for n in ast.walk(node):
+            if isinstance(n, ast.Call):
+                f = n.func
+                out.add(f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", ""))
+        return out
+
+    def test_feed_loop_ออกจาก_session_เมื่อพัก(self, tree):
+        """สาขา "wait" ต้อง **จบ feed_loop** เพื่อให้ `async with` ปิด session
+        ไม่ใช่วน sleep อยู่ข้างใน"""
+        import ast
+        feed = self._fn(tree, "feed_loop")
+        สาขา = [n for n in ast.walk(feed) if isinstance(n, ast.If)
+                and any(isinstance(c, ast.Constant) and c.value == "wait"
+                        for c in ast.walk(n.test))]
+        assert สาขา, "ไม่เจอสาขา act == 'wait' ใน feed_loop"
+        body = สาขา[0].body
+        มี_return = any(isinstance(x, ast.Return) for x in ast.walk(ast.Module(body=body, type_ignores=[])))
+        assert มี_return, "สาขา 'wait' ไม่ยอมจบ feed_loop ⇒ session ถูกกอดไว้ตลอดเวลาพัก"
+        นอนรอ = {c for x in body for c in self._calls(x)} & {"sleep"}
+        assert not นอนรอ, "ยังนอน sleep รอใน session อยู่"
+
+    def test_รอตอนพัก_อยู่นอก_async_with(self, tree):
+        """ตัวรอต้องถูกเรียก **ก่อน** เปิด session ในรอบเดียวกันของ outer loop"""
+        import ast
+        วน = [n for n in ast.walk(tree) if isinstance(n, ast.While)]
+        นอก = [w for w in วน if any(isinstance(x, ast.AsyncWith) for x in ast.walk(w))]
+        assert นอก, "ไม่เจอ outer loop ที่เปิด session"
+        body = นอก[0].body
+        i_with = next(i for i, x in enumerate(body) if isinstance(x, ast.AsyncWith))
+        ก่อนเปิด = {c for x in body[:i_with] for c in self._calls(x)}
+        assert "wait_while_paused" in ก่อนเปิด, (
+            "ไม่มีตัวรอตอนพักก่อนเปิด session — พักแล้วยังเปิด session ใหม่ทันที"
+        )
+
+    def test_ตัวรอตอนพักยังฟังคำสั่งจาก_client(self, tree):
+        """🔴 ข้อที่พลาดแล้วค้างถาวร: ถ้าตัวรอไม่อ่าน WS ต่อ กด "อ่านต่อ" จะไม่มีใครได้ยิน"""
+        w = self._fn(tree, "wait_while_paused")
+        assert w is not None, "ไม่มี wait_while_paused"
+        เรียก = self._calls(w)
+        assert "receive_json" in เรียก, "ตัวรอไม่อ่าน WS ⇒ กดอ่านต่อแล้วค้างถาวร"
+        assert "wait_for" in เรียก, "ต้องมี timeout ไม่งั้นเห็นธง stop ไม่ได้"
+
+    def test_สองลูปตีความคำสั่งด้วยตัวเดียวกัน(self, tree):
+        """recv_loop กับ wait_while_paused ต้องใช้ตัวแปลคำสั่งตัวเดียวกัน
+        — ก๊อป if-chain ไปอีกชุด = วันหนึ่งจะ drift กันเงียบๆ"""
+        import ast
+        for ชื่อ in ("recv_loop", "wait_while_paused"):
+            fn = self._fn(tree, ชื่อ)
+            assert "apply_cmd" in self._calls(fn), f"{ชื่อ} ไม่ได้ใช้ apply_cmd"
+            สตริง = {c.value for c in ast.walk(fn)
+                     if isinstance(c, ast.Constant) and isinstance(c.value, str)}
+            assert not ({"pause", "resume", "reread"} & สตริง), (
+                f"{ชื่อ} ยังตีความคำสั่งเอง — ต้องผ่าน apply_cmd ที่เดียว"
+            )
+
+    def test_ทิ้ง_resume_handle_เมื่อกลับจากพัก(self, tree):
+        """พักเป็นชั่วโมงแล้ว handle เดิมอาจหมดอายุ — ต่อ session ใหม่สดๆ ปลอดภัยกว่า
+        (โหมดอ่านป้อนท่อนเองทุกครั้ง ไม่ต้องการความต่อเนื่องของ session)"""
+        import ast
+        src = (REPO / "server.py").read_text(encoding="utf-8")
+        ws = src[src.index('@app.websocket("/ws/reader")'):]
+        หัว = ws[: ws.index("wait_while_paused()", ws.index("while not stop"))]
+        assert "resume_handle = None" in หัว[-400:], (
+            "ไม่ได้ทิ้ง resume_handle ก่อนรอ/ต่อใหม่หลังพัก"
+        )
+        assert isinstance(ast.parse(src), ast.Module)

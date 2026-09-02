@@ -633,8 +633,58 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
     def _progress(pos: int) -> dict:
         return {"pos": pos, "percent": 100 if pos >= len(text) else int(pos * 100 / len(text))}
 
+    def apply_cmd(t: str) -> None:
+        """คำสั่งจาก client → ธง — **ที่เดียว** เพราะมีสองลูปที่อ่าน WS
+        (ในระหว่างอ่าน กับระหว่างพัก) ก๊อป if-chain ไปอีกชุด = วันหนึ่งจะ drift กันเงียบๆ"""
+        if t == "pause":
+            paused.set()
+        elif t == "resume":
+            paused.clear()
+        elif t == "close":
+            stop.set()
+        elif t == "reread":
+            # 🔁 ฟังไม่ทัน — ตอนอ่านไมค์ปิด (user เคาะ 2026-08-17) สั่งด้วยเสียงไม่ได้
+            reread.set()
+
+    async def wait_while_paused() -> None:
+        """พัก = **ไม่มี Live session เปิดอยู่เลย** — รอคำสั่งจาก client อย่างเดียว
+
+        🔴 หลักฐานว่าทำไมต้องมี (prod 2026-08-27): กดพัก 17:31:05 แล้ว log เงียบสนิท
+        จนปิดตอน 20:04:22 = **2 ชม. 33 นาที** ที่ session เปิดค้างโดยไม่มีใครฟัง
+        · ที่ "ไม่มี log" ไม่ใช่ว่าปกติ — watchdog กับตัวจับ `go_away` อยู่ *ข้างใน*
+        ลูปรับเสียง ซึ่งตอนพักไม่มีใครเข้าไปเลย ⇒ session ตายไปแล้วก็ไม่มีใครรู้
+        ⚠️ **ต้องอ่าน WS ต่อระหว่างรอ** ไม่งั้นกด "อ่านต่อ" แล้วไม่มีใครได้ยิน = ค้างถาวร
+        """
+        logger.info(f"[Reader WS] พัก {session_tag} — ปิด Live session ระหว่างพัก")
+        t0 = time.monotonic()
+        try:
+            while paused.is_set() and not stop.is_set():
+                try:
+                    msg = await asyncio.wait_for(websocket.receive_json(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    continue
+                apply_cmd(msg.get("type", ""))
+        except WebSocketDisconnect:
+            stop.set()
+        except Exception as e:
+            logger.error(f"[Reader WS] wait_while_paused {type(e).__name__}: {e}")
+            stop.set()
+        logger.info(
+            f"[Reader WS] เลิกพัก {session_tag} หลัง {time.monotonic() - t0:.0f}s "
+            f"(stop={stop.is_set()})"
+        )
+
     try:
         while not stop.is_set():
+            if paused.is_set():
+                # 🔴 พัก = ปล่อย session ทิ้ง **ก่อน** จะเปิดอันใหม่ (ไม่ใช่นอนกอดไว้)
+                # ⚠️ ทิ้ง resume_handle ด้วย — พักเป็นชั่วโมงแล้ว handle เดิมอาจหมดอายุ
+                # และโหมดอ่าน "ป้อนท่อนเอง" ทุกครั้งอยู่แล้ว จึงไม่ต้องการความต่อเนื่อง
+                # ของ session เลย ⇒ ต่อใหม่สดๆ เสี่ยงน้อยกว่าเอา handle เก่าไปลุ้น
+                resume_handle = None
+                await wait_while_paused()
+                if stop.is_set():
+                    break
             regen = asyncio.Event()
             async with client.aio.live.connect(
                 model=GEMINI_LIVE_MODEL, config=build_reader_config(resume_handle)
@@ -653,17 +703,7 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                 msg = await asyncio.wait_for(websocket.receive_json(), timeout=1.0)
                             except asyncio.TimeoutError:
                                 continue
-                            t = msg.get("type", "")
-                            if t == "pause":
-                                paused.set()
-                            elif t == "resume":
-                                paused.clear()
-                            elif t == "close":
-                                stop.set()
-                            elif t == "reread":
-                                # 🔁 ฟังไม่ทัน — ตอนอ่านไมค์ปิด (user เคาะ 2026-08-17)
-                                # จึงสั่งด้วยเสียงไม่ได้ ต้องมาทางปุ่ม
-                                reread.set()
+                            apply_cmd(msg.get("type", ""))
                     except WebSocketDisconnect:
                         stop.set()
                     except Exception as e:
@@ -681,8 +721,11 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                 paused=paused.is_set(), block=block, at_end=(not block and new_pos >= len(text))
                             )
                             if act == "wait":
-                                await asyncio.sleep(0.3)
-                                continue
+                                # พักอยู่ → **ออกจาก feed_loop** ให้ `async with` ปิด
+                                # session · ตัวรอจริงอยู่นอก session (wait_while_paused)
+                                # · regen (ไม่ใช่ stop) เพราะกดอ่านต่อแล้วต้องไปต่อได้
+                                regen.set()
+                                return
                             if act == "finish":
                                 await websocket.send_json({"type": "done_book", **_progress(pos)})
                                 stop.set()
