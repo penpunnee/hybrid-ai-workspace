@@ -343,7 +343,8 @@ async def chat(request: Request):
                 yield f"data: {json.dumps({'citations': citations.to_list()}, ensure_ascii=False)}\n\n"
             try:
                 agent_provider = provider if provider in ("gemini", "lmstudio", "ollama") else "gemini"
-                for kind, payload in run_agent(messages, provider=agent_provider):
+                for kind, payload in run_agent(messages, provider=agent_provider,
+                                               image_b64=image_b64, image_mime=image_mime):
                     if kind == "event":
                         # SSE agent event → React parse เป็น AgentTimeline (utils/agentsteps.ts, 2026-06-16)
                         yield f"data: {json.dumps({'agent': payload}, ensure_ascii=False)}\n\n"

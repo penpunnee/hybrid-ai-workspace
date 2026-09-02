@@ -181,6 +181,8 @@ def run_agent(
     model: str = "",
     max_steps: int = 4,
     provider: str = "gemini",
+    image_b64: str = "",
+    image_mime: str = "",
 ) -> Generator[tuple[str, Any], None, None]:
     """รัน agent loop
 
@@ -188,13 +190,23 @@ def run_agent(
         messages: chat history (รวม system prompt)
         model: model id (ปล่อยว่าง = ใช้ default ของ provider)
         max_steps: max tool-calling rounds
-        provider: "gemini" | "lmstudio"
+        provider: "gemini" | "lmstudio" | "ollama"
+        image_b64/image_mime: รูปแนบ — ต่อเข้า user message ล่าสุดของ provider
+            ที่มองรูปได้ · provider ที่ไม่มี vision ต้อง **บอก** ไม่ใช่ทิ้งเงียบ
     """
     if provider == "gemini":
-        yield from _run_agent_gemini(messages, model or GEMINI_MODEL, max_steps)
+        yield from _run_agent_gemini(messages, model or GEMINI_MODEL, max_steps,
+                                     image_b64=image_b64, image_mime=image_mime)
     elif provider == "lmstudio":
-        yield from _run_agent_lmstudio(messages, model, max_steps)
+        yield from _run_agent_lmstudio(messages, model, max_steps,
+                                       image_b64=image_b64, image_mime=image_mime)
     elif provider == "ollama":
+        if image_b64:
+            # ReAct/llama3 ไม่มี vision — เงียบไปเฉยๆ = user ไม่รู้ว่ารูปไม่ถูกอ่าน
+            logger.warning("[Agent/Ollama] มีรูปแนบมาแต่ ReAct path ไม่รองรับ vision — ข้ามรูป")
+            yield ("event", {"type": "warning",
+                             "message": "โหมด agent บน Ollama อ่านรูปไม่ได้ — รูปที่แนบมาถูกข้าม "
+                                        "(ใช้ provider gemini หรือ lmstudio ถ้าต้องการให้ดูรูป)"})
         yield from _run_agent_ollama(messages, model or OLLAMA_MODEL, max_steps)
     else:
         yield ("event", {"type": "error", "message": f"ไม่รู้จัก agent provider: '{provider}'"})
@@ -367,6 +379,8 @@ def _run_agent_gemini(
     messages: list[dict],
     model: str,
     max_steps: int,
+    image_b64: str = "",
+    image_mime: str = "",
 ) -> Generator[tuple[str, Any], None, None]:
     if not GEMINI_API_KEY:
         yield ("event", {"type": "error", "message": "GEMINI_API_KEY ไม่ได้ตั้งค่า"})
@@ -399,8 +413,29 @@ def _run_agent_gemini(
         history=history,
     )
 
+    # รูปต้องไปกับ user message ล่าสุด (เส้นเดียวกับ _stream_gemini ใน utils/llm.py)
+    pending = _gemini_pending_with_image(last_user, image_b64, image_mime)
+
     # loop กลาง (item E) — streaming (A) + retry (F) + Content-fix อยู่ใน _GeminiAdapter
-    yield from _run_agent_fc(_GeminiAdapter(chat, last_user), max_steps)
+    yield from _run_agent_fc(_GeminiAdapter(chat, pending), max_steps)
+
+
+def _gemini_pending_with_image(last_user: str, image_b64: str, image_mime: str):
+    """ไม่มีรูป → คืน str ตามเดิม · มีรูป → คืน list[Part] (text + inline_data)"""
+    if not image_b64:
+        return last_user
+    import base64
+    from google.genai import types as genai_types
+    try:
+        img_bytes = base64.b64decode(image_b64)
+    except Exception as e:
+        logger.warning(f"[Agent/Gemini] decode รูปไม่ได้ ({e}) — ส่งเฉพาะข้อความ")
+        return last_user
+    return [
+        genai_types.Part.from_text(text=last_user or ""),
+        genai_types.Part(inline_data=genai_types.Blob(
+            data=img_bytes, mime_type=image_mime or "image/jpeg")),
+    ]
 
 
 def _split_messages_for_gemini(messages: list[dict]) -> tuple[str, list, str]:
@@ -435,6 +470,8 @@ def _run_agent_lmstudio(
     messages: list[dict],
     model: str,
     max_steps: int,
+    image_b64: str = "",
+    image_mime: str = "",
 ) -> Generator[tuple[str, Any], None, None]:
     if not LMSTUDIO_BASE_URL:
         yield ("event", {"type": "error", "message": "LMSTUDIO_BASE_URL ไม่ได้ตั้งค่า"})
@@ -460,10 +497,34 @@ def _run_agent_lmstudio(
     else:
         messages.insert(0, {"role": "system", "content": AGENT_SYSTEM_HINT.strip()})
 
+    messages = _attach_image_openai(messages, image_b64, image_mime)
+
     tools_schema = get_openai_tools()
 
     # loop กลาง (item E) — provider quirks (role:tool, MarkerFilter) อยู่ใน _LMStudioAdapter
     yield from _run_agent_fc(_LMStudioAdapter(client, model, messages, tools_schema), max_steps)
+
+
+def _attach_image_openai(messages: list[dict], image_b64: str, image_mime: str) -> list[dict]:
+    """ต่อรูปเข้า user message ล่าสุดแบบ OpenAI content-parts
+    (เส้นเดียวกับ _stream_lmstudio ใน utils/llm.py) — ไม่มีรูป = คืนของเดิม"""
+    if not image_b64:
+        return messages
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i]["role"] != "user":
+            continue
+        out = list(messages)
+        out[i] = {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": messages[i].get("content") or ""},
+                {"type": "image_url", "image_url": {
+                    "url": f"data:{image_mime or 'image/jpeg'};base64,{image_b64}"}},
+            ],
+        }
+        return out
+    logger.warning("[Agent/LMStudio] มีรูปแต่ไม่มี user message ให้แนบ — ข้ามรูป")
+    return messages
 
 
 # ── Ollama ReAct path ─────────────────────────────────────────────────────────
