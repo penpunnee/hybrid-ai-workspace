@@ -431,11 +431,13 @@ def _gemini_pending_with_image(last_user: str, image_b64: str, image_mime: str):
     except Exception as e:
         logger.warning(f"[Agent/Gemini] decode รูปไม่ได้ ({e}) — ส่งเฉพาะข้อความ")
         return last_user
-    return [
-        genai_types.Part.from_text(text=last_user or ""),
-        genai_types.Part(inline_data=genai_types.Blob(
-            data=img_bytes, mime_type=image_mime or "image/jpeg")),
-    ]
+    img_part = genai_types.Part(inline_data=genai_types.Blob(
+        data=img_bytes, mime_type=image_mime or "image/jpeg"))
+    # prompt ว่าง (เรียกตรงผ่าน API — UI กันไว้แล้วที่ app.tsx:1229) → ส่งแต่รูป
+    # ห้ามแนบ Part(text="") เปล่า: part ว่างเป็นของที่ API ปฏิเสธได้
+    if not last_user:
+        return [img_part]
+    return [genai_types.Part.from_text(text=last_user), img_part]
 
 
 def _split_messages_for_gemini(messages: list[dict]) -> tuple[str, list, str]:
@@ -514,14 +516,11 @@ def _attach_image_openai(messages: list[dict], image_b64: str, image_mime: str) 
         if messages[i]["role"] != "user":
             continue
         out = list(messages)
-        out[i] = {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": messages[i].get("content") or ""},
-                {"type": "image_url", "image_url": {
-                    "url": f"data:{image_mime or 'image/jpeg'};base64,{image_b64}"}},
-            ],
-        }
+        text = messages[i].get("content") or ""
+        parts = [{"type": "text", "text": text}] if text else []
+        parts.append({"type": "image_url", "image_url": {
+            "url": f"data:{image_mime or 'image/jpeg'};base64,{image_b64}"}})
+        out[i] = {"role": "user", "content": parts}
         return out
     logger.warning("[Agent/LMStudio] มีรูปแต่ไม่มี user message ให้แนบ — ข้ามรูป")
     return messages

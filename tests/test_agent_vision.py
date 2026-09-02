@@ -81,6 +81,17 @@ class TestGeminiAdapterCarriesImage:
         assert any(getattr(p, "inline_data", None) for p in pending), "ไม่มี inline_data part = รูปหาย"
         assert any(getattr(p, "text", None) for p in pending), "ข้อความของ user หายไปพร้อมรูป"
 
+    def test_empty_prompt_sends_image_only(self):
+        """prompt ว่าง (เรียกตรงผ่าน API) — ห้ามแนบ Part(text="") เปล่าเข้า API"""
+        from agents import orchestrator as orch
+        parts = orch._gemini_pending_with_image("", PNG_1X1, "image/png")
+        assert isinstance(parts, list) and len(parts) == 1
+        assert getattr(parts[0], "inline_data", None), "เหลือแต่ part ที่ไม่ใช่รูป"
+
+    def test_bad_base64_falls_back_to_text(self):
+        from agents import orchestrator as orch
+        assert orch._gemini_pending_with_image("ถาม", "ไม่ใช่ base64!!", "image/png") == "ถาม"
+
     def test_no_image_keeps_plain_text(self):
         """กลุ่มควบคุม — ไม่มีรูปต้องไม่เปลี่ยนพฤติกรรมเดิม (ส่ง str ตรงๆ)"""
         adapter = self._run("")
@@ -117,6 +128,12 @@ class TestLMStudioAdapterCarriesImage:
         url = next(p["image_url"]["url"] for p in last["content"] if p.get("type") == "image_url")
         assert url.startswith("data:image/png;base64,"), f"mime ไม่ตรง: {url[:40]}"
 
+    def test_empty_prompt_sends_image_only(self):
+        from agents import orchestrator as orch
+        msgs = orch._attach_image_openai([{"role": "user", "content": ""}], PNG_1X1, "image/png")
+        kinds = [p.get("type") for p in msgs[-1]["content"]]
+        assert kinds == ["image_url"], f"มี text part เปล่าติดไปด้วย: {kinds}"
+
     def test_no_image_keeps_plain_string(self):
         adapter = self._run("")
         assert adapter.messages[-1]["content"] == "ในรูปมีอะไร"
@@ -131,8 +148,10 @@ class TestOllamaSaysItCannotSeeImages:
         def fake_react(*a, **k):
             yield ("chunk", "answer")
 
-        with patch.object(orch, "_react_loop", fake_react, create=True), \
-             patch.object(orch, "_run_agent_ollama_impl", fake_react, create=True):
+        # ⚠️ ต้อง patch ชื่อที่ **มีอยู่จริง** — `create=True` กับชื่อที่ไม่มี
+        # = ไม่ได้ patch อะไรเลย แล้วเทสจะยิง HTTP ไป Ollama จริง (เจอตอน scrutinize)
+        assert hasattr(orch, "_run_agent_ollama")
+        with patch.object(orch, "_run_agent_ollama", fake_react):
             results = _collect(orch.run_agent(
                 [{"role": "user", "content": "ในรูปมีอะไร"}],
                 provider="ollama", image_b64=PNG_1X1, image_mime="image/png",
