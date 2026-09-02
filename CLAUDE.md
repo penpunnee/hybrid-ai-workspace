@@ -746,6 +746,15 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > - **voice idle 1008-loop** — 1008 ที่ 151 วิเป๊ะนับจากต่อติด ไม่มี `go_away` มาก่อน
 >   ⇒ client เป็นตัว reconnect วน · ทางแก้ยังไม่เคาะ (keepalive frame เงียบ **หรือ**
 >   ปิดสายเสียงตอนโหมดอ่านทำงาน)
+> - ✅ **โหมดอ่าน: พักแล้วปล่อย Live session — ปิดแล้ว 2026-09-02** (`df8656b`)
+>   เดิมกดพักแล้ว `feed_loop` วน `sleep(0.3)` **ข้างใน** `async with live.connect(...)`
+>   ⇒ session เปิดค้าง (วัดจาก log 08-27: **2 ชม. 33 นาที**) · ตอนนี้ "wait" =
+>   `regen.set(); return` แล้วรอ resume ที่ `wait_while_paused()` ซึ่งอยู่**นอก** session
+>   (ยังอ่าน WS ต่อ ไม่งั้นกดอ่านต่อแล้วค้างถาวร) · คำสั่งทั้งหมดผ่าน `apply_cmd()` ที่เดียว
+>   · ทิ้ง `resume_handle` ก่อนต่อใหม่หลังพัก (handle อาจหมดอายุ · โหมดอ่านป้อนท่อนเอง
+>   ไม่ต้องการความต่อเนื่อง) · เทสขับ handler ทั้งเส้นด้วย Live session ปลอม + mutation 5/5
+>   🟢 **verify บน prod จริง 12:55–12:56**: `พัก … — ปิด Live session ระหว่างพัก` ที่ +1 วิ
+>   · `เลิกพัก … หลัง 3s (stop=True)` = ตัวรอรับคำสั่ง close ได้จริง · **ที่คั่น 48001 ไม่ขยับ**
 > - ✅ **โหมดอ่าน: `asyncio.gather` → `run_until_both_done()` — ปิดแล้ว 2026-09-02**
 >   (`fed8b6e`) Live session ของ `/ws/reader` เคยค้างได้ถึง 45 วิหลังผู้ใช้ปิด
 >   (recv_loop จบก่อน · feed_loop ยังค้างใน `wait_for(rx.__anext__(), 45s)` · gather รอครบ)
