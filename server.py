@@ -600,7 +600,7 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
     from utils.reader import next_block
     from utils.voice import (
         READER_FEED_PREFIX, build_reader_config, live_control_signals, next_read_action,
-        READER_STALL_TIMEOUT,
+        READER_STALL_TIMEOUT, run_until_both_done,
         reader_feed_log_line, reader_stream_action, reader_turn_log_line,
     )
 
@@ -798,7 +798,21 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                         except Exception:
                             pass
 
-                await asyncio.gather(recv_loop(), feed_loop())
+                # 🔴 ห้ามกลับไปใช้ `asyncio.gather()` — บั๊กโครงเดียวกับสายเสียง
+                # (`utils/voice.py` + `tests/test_voice_session_cleanup.py`): มันรอครบ
+                # ทุกตัว ไม่ cancel ใคร ⇒ ตอน user กดปิด/ปิดแท็บพอดีกับที่ Gemini เงียบ
+                # `feed_loop` ยังค้างใน `wait_for(rx.__anext__(), READER_STALL_TIMEOUT)`
+                # ได้อีกถึง 45 วิ ⇒ `async with live.connect(...)` ไม่ออก
+                # ⇒ **Live session ของโหมดอ่านค้างกิน slot ทั้งที่ไม่มีใครฟังแล้ว**
+                # (ผีแบบเดียวกันบนสายเสียงคือที่มาของ `1011 quota` บน prod 08-17)
+                # ⚠️ ที่คั่นไม่เสียหายเมื่อถูก cancel — `_marks.set()` เป็น sync และอยู่
+                # นอกลูปสตรีม (ตรึงด้วย test_aborting_does_not_advance_the_bookmark)
+                cancelled = await run_until_both_done(recv_loop(), feed_loop())
+                if cancelled:
+                    logger.info(
+                        f"[Reader WS] ปิดสาย — cancel ลูปที่ค้าง {cancelled} ตัว "
+                        f"(stop={stop.is_set()} regen={regen.is_set()})"
+                    )
 
             if regen.is_set() and not stop.is_set():
                 # 🔴 ต่อ session ใหม่ = อ่านท่อนเดิม **ซ้ำตั้งแต่ต้น** (ตั้งใจ: ฟังซ้ำ

@@ -136,3 +136,32 @@ def test_voice_websocket_ไม่เรียก_gather_กับคู่ล�
     assert "gather" not in เรียก, (
         "voice_websocket ยังเรียก asyncio.gather กับคู่ลูป — ตัวที่ค้างจะไม่ถูก cancel"
     )
+
+
+# ── 🔴 mutation รอด 1 ตัว (2026-09-02): ถอด `await` หลัง cancel แล้วไม่มีเทสไหนแดง ──
+# docstring ของ `run_until_both_done` เตือนข้อนี้ไว้ตรงๆ ตั้งแต่แรก ("ต้อง await ตัวที่
+# cancel ให้เสร็จ **ก่อน**คืน ไม่งั้น caller จะออกจาก `async with ...connect(...)`
+# ไปปิด ws ทับตอนที่ยังยกเลิกไม่จบ") — แต่ **คำเตือนไม่ใช่เทส**
+def test_ต้องรอให้ตัวที่ถูก_cancel_เก็บกวาดเสร็จก่อนคืน():
+    เก็บกวาดแล้ว = []
+
+    async def _ค้างแล้วเก็บกวาดตอนโดน_cancel():
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            # จำลอง teardown ที่ต้องใช้ await (ปิด stream/ส่งเฟรมปิด) — ถ้า caller
+            # ไม่รอ บรรทัดล่างจะยังไม่ทันทำงานตอน run_until_both_done คืนค่า
+            await asyncio.sleep(0)
+            เก็บกวาดแล้ว.append(True)
+            raise
+
+    async def _run():
+        await asyncio.wait_for(
+            run_until_both_done(_จบทันที(), _ค้างแล้วเก็บกวาดตอนโดน_cancel(), grace=0.05),
+            timeout=2.0,
+        )
+        return เก็บกวาดแล้ว
+
+    assert asyncio.run(_run()) == [True], (
+        "คืนก่อนที่ลูปที่ถูก cancel จะเก็บกวาดเสร็จ — caller จะไปปิด session ทับ"
+    )

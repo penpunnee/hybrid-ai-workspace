@@ -401,3 +401,72 @@ class TestSilentDeathWatchdog:
         banned = {"reader_pacing_wait", "LIVE_AUDIO_BYTES_PER_SECOND",
                   "READER_MAX_LEAD_SECONDS", "tick_listening_clock", "listened_seconds"}
         assert not (banned & self._names(feed_fn)), "pacing กลับมาแล้ว"
+
+
+# ── 🔴 session ผีของโหมดอ่าน: `asyncio.gather` ไม่ cancel พี่น้อง ────────────
+#
+# บั๊กโครงเดียวกับที่ปิดไปแล้วในสายเสียง (`test_voice_session_cleanup.py`,
+# อุบัติเหตุ `1011 quota` บน prod 2026-08-17) แต่ `/ws/reader` ยังใช้ `gather` อยู่:
+#
+#   · `recv_loop`  ตื่นเองทุก 1.0 วิ (`wait_for(receive_json(), timeout=1.0)`)
+#     ⇒ เห็นธง `stop` แล้วจบเองเร็ว — เป็นตัวที่ "จบก่อน" ตอน user กดปิด/ปิดแท็บ
+#   · `feed_loop`  ค้างใน `wait_for(rx.__anext__(), timeout=READER_STALL_TIMEOUT)`
+#     ⇒ ถ้า Gemini เงียบพอดีตอนนั้น มันจะไม่เห็นธงเลยจนกว่าจะครบ **45 วินาที**
+#   · `gather` รอครบทุกตัว ⇒ `async with live.connect(...)` ไม่ออก
+#     ⇒ **Live session ของโหมดอ่านค้างเปิดกิน slot ได้นานถึง 45 วิหลังผู้ใช้ปิดไปแล้ว**
+#
+# ⚠️ watchdog กัน "Gemini ตายเงียบกลางท่อน" **มีแล้ว** ตั้งแต่ `fe0279c` (2026-08-23)
+# — คนละเรื่องกับข้อนี้ · ข้อนี้คือ "ปิดแล้วยังไม่ยอมปล่อย session"
+class TestReaderDoesNotLeakLiveSession:
+    @pytest.fixture()
+    def handler_fn(self):
+        import ast
+        src = (REPO / "server.py").read_text(encoding="utf-8")
+        for node in ast.walk(ast.parse(src)):
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "reader_websocket":
+                return node
+        pytest.fail("ไม่เจอ reader_websocket ใน server.py")
+
+    def _calls(self, node):
+        import ast
+        out = set()
+        for n in ast.walk(node):
+            if isinstance(n, ast.Call):
+                f = n.func
+                out.add(f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", ""))
+        return out
+
+    def test_uses_run_until_both_done(self, handler_fn):
+        assert "run_until_both_done" in self._calls(handler_fn), (
+            "/ws/reader ยังไม่ใช้ run_until_both_done — ลูปที่ค้างจะไม่ถูก cancel"
+        )
+
+    def test_no_gather_on_the_loop_pair(self, handler_fn):
+        assert "gather" not in self._calls(handler_fn), (
+            "/ws/reader ยังเรียก asyncio.gather กับคู่ลูป — Live session ค้างหลังปิด"
+        )
+
+    def test_grace_much_shorter_than_stall_timeout(self):
+        """ถ้า grace ≥ stall timeout ตัวแก้จะไม่ย่นเวลาผีเลย (cancel ทีหลัง watchdog)"""
+        from utils.voice import LOOP_EXIT_GRACE_SEC, READER_STALL_TIMEOUT
+        assert LOOP_EXIT_GRACE_SEC < READER_STALL_TIMEOUT, (
+            f"grace {LOOP_EXIT_GRACE_SEC}s ต้องสั้นกว่า watchdog {READER_STALL_TIMEOUT}s"
+        )
+
+    def test_recv_loop_wakes_up_within_grace(self, handler_fn):
+        """🔴 กันการถอยหลังของเส้น go_away/regen — กติกา grace ไม่สมมาตรโดยตั้งใจ:
+        ตัวที่ตื่นเองได้ต้องตื่น**ทัน** grace ไม่งั้นมันจะโดน cancel กลาง
+        `receive_json()` ทุกครั้งที่ต่อ session ใหม่ (ทุก ~9 นาทีจาก go_away)
+        """
+        import ast
+        from utils.voice import LOOP_EXIT_GRACE_SEC
+        recv = next(n for n in ast.walk(handler_fn)
+                    if isinstance(n, ast.AsyncFunctionDef) and n.name == "recv_loop")
+        timeouts = [kw.value.value for n in ast.walk(recv) if isinstance(n, ast.Call)
+                    for kw in n.keywords
+                    if kw.arg == "timeout" and isinstance(kw.value, ast.Constant)]
+        assert timeouts, "recv_loop ไม่มี timeout = ไม่มีจุดตื่นเอง"
+        assert max(timeouts) < LOOP_EXIT_GRACE_SEC, (
+            f"recv_loop ตื่นทุก {max(timeouts)}s แต่ grace {LOOP_EXIT_GRACE_SEC}s "
+            "⇒ เส้น go_away จะโดน cancel ทั้งที่มันทำงานถูกอยู่แล้ว"
+        )
