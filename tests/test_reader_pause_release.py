@@ -99,6 +99,12 @@ def เส้นอ่าน(monkeypatch):
     monkeypatch.setattr(rr._books, "text", lambda src: ข้อความ)
     monkeypatch.setattr(rr._marks, "get", lambda src: marks[src])
     monkeypatch.setattr(rr._marks, "set", lambda src, pos: marks.__setitem__(src, pos))
+    # fake ส่งเสียง 16 ไบต์/ท่อน = "ท่อนไม่ครบ" ตามเกณฑ์จริง (5.0 วิ/100 ตัว)
+    # · ตอนนี้เทสกดพักก่อนท่อนแรกจบ จึงยังไม่ถึงจุดตัดสิน (วัดแล้ว 09-18: ลำดับป้อน
+    #   เหมือนกันทั้งมี/ไม่มีบรรทัดนี้) · แต่ถ้าจังหวะเปลี่ยน เทสจะไหลไปทางลองซ้ำ/พักเอง
+    #   แทนทางอ่านปกติที่ตั้งใจวัด ⇒ ปิดเกณฑ์ไว้ · เกณฑ์เทสแยกที่ test_reader_incomplete.py
+    import utils.voice as uv
+    monkeypatch.setattr(uv, "READER_MIN_AUDIO_SEC_PER_100", 0.0)
 
     class _Clientปลอม:
         def __init__(self, **kw):

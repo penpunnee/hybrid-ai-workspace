@@ -739,6 +739,70 @@ def reader_turn_log_line(tag: str, pos: int, block_len: int, elapsed_s: float,
     )
 
 
+# ── ท่อนที่เสียงออกไม่ครบ → ไม่เลื่อนที่คั่น อ่านซ้ำ (user เคาะ 2026-09-18) ────────
+# 🔴 prod 09-03: 7 ท่อนติด `turn_complete` มาปกติแต่เสียง 0.0s ⇒ ที่คั่นวิ่ง
+# 28678→32760 · 08-27 xianni ได้เสียงแค่ 0.24–2.20 วิ/100 ตัว ⇒ ก็เลื่อนเหมือนกัน
+# · ไม่ได้เกิดใกล้ 1011 · ต้นเหตุยังไม่รู้ (python-genai #2117 อาการเดียวกัน ยังเปิด)
+# · ท่อนปกติ 61 ท่อนบน prod: 5.8–7.6 วิ/100 ตัว ค่ากลาง 6.42
+# ⚠️ ทุกค่าข้างล่าง user เคาะเอง — **ไม่ใช่ค่าที่จูนได้อิสระ** (เทสตรึงไว้ทุกตัว)
+READER_MIN_AUDIO_SEC_PER_100 = 5.0      # ต่ำกว่านี้ = ไม่ครบ (4.59/4.98 ถูกนับด้วย โดยตั้งใจ)
+READER_INCOMPLETE_BACKOFF = (1.0, 2.0, 4.0)   # หน่วงก่อนลองซ้ำครั้งที่ 1/2/3
+READER_INCOMPLETE_MAX_RETRY = 3
+
+
+def reader_block_incomplete(audio_bytes: int, block_len: int) -> bool:
+    """ท่อนนี้เสียงออกไม่ครบไหม — วัดจากไบต์ที่ส่งออกสายจริงเทียบกับความยาวท่อน"""
+    if block_len <= 0:
+        return False
+    sec_per_100 = audio_bytes / READER_AUDIO_BYTES_PER_SEC * 100 / block_len
+    return sec_per_100 < READER_MIN_AUDIO_SEC_PER_100
+
+
+def reader_incomplete_action(retries_done: int) -> tuple[str, float]:
+    """ท่อนไม่ครบแล้วทำอะไรต่อ — คืน (ชนิด, วินาทีที่หน่วงก่อนลอง)
+
+    · ครั้งแรก "resend" = ป้อนซ้ำใน session เดิม (user เลือก)
+    · ครั้งถัดไป "reconnect" = ต่อ session ใหม่ (หลักฐาน 09-03: session เดิมเปล่าต่อ
+      7 ท่อน · session ใหม่อ่านได้)
+    · ครบเพดาน "pause" = พักไว้ ที่คั่นค้างที่ท่อนนั้น (ไม่วนเผาโควตาจน 1011)
+    """
+    if retries_done >= READER_INCOMPLETE_MAX_RETRY:
+        return "pause", 0.0
+    kind = "resend" if retries_done == 0 else "reconnect"
+    return kind, READER_INCOMPLETE_BACKOFF[retries_done]
+
+
+def _field(obj, name: str):
+    v = getattr(obj, name, None) if obj is not None else None
+    return getattr(v, "value", v)     # enum → ชื่อค่า ไม่ใช่ "TurnCompleteReason.X"
+
+
+def reader_incomplete_log_line(tag: str, pos: int, block_len: int, elapsed_s: float,
+                               audio_bytes: int, attempt: int, response) -> str:
+    """บรรทัด log ของท่อนที่ไม่ครบ — พร้อมฟิลด์ที่อาจบอกเหตุผล (user เคาะ: log เฉพาะท่อนนี้)
+
+    ฟิลด์มาจากซอร์ส SDK: `LiveServerContent.turn_complete_reason` / `waiting_for_input`
+    / `interaction_status` + `LiveServerMessage.usage_metadata` · เอกสาร WebSocket
+    ไม่ระบุ `turn_complete_reason` ⇒ **ไม่รู้ว่าเซิร์ฟเวอร์ส่งค่าจริงไหม** — log ไว้ให้รู้
+    """
+    sc = getattr(response, "server_content", None)
+    um = getattr(response, "usage_metadata", None)
+    usage = (
+        f"prompt={_field(um, 'prompt_token_count')} "
+        f"response={_field(um, 'response_token_count')} "
+        f"total={_field(um, 'total_token_count')}"
+        if um is not None else "None"
+    )
+    return (
+        f"[Reader WS] ⚠️ ท่อนไม่ครบ {tag} @{pos} ({block_len} ตัว) "
+        f"· เสียง {audio_bytes / READER_AUDIO_BYTES_PER_SEC:.1f}s ใน {elapsed_s:.1f}s "
+        f"· ลองซ้ำไปแล้ว {attempt}/{READER_INCOMPLETE_MAX_RETRY} "
+        f"· turn_complete_reason={_field(sc, 'turn_complete_reason')} "
+        f"waiting_for_input={_field(sc, 'waiting_for_input')} "
+        f"interaction_status={_field(sc, 'interaction_status')} usage={usage}"
+    )
+
+
 # ── ปิด Gemini Live session ที่ค้าง เมื่อ browser หลุดตอนโมเดลเงียบ (2026-08-17) ──
 #
 # 🔴 **อุบัติเหตุจริงบน prod 13:10:56** — `1011 Resource has been exhausted (quota)`

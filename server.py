@@ -600,8 +600,9 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
     from utils.reader import next_block
     from utils.voice import (
         READER_FEED_PREFIX, build_reader_config, live_control_signals, next_read_action,
-        READER_STALL_TIMEOUT, run_until_both_done,
-        reader_feed_log_line, reader_stream_action, reader_turn_log_line,
+        READER_STALL_TIMEOUT, READER_INCOMPLETE_MAX_RETRY, run_until_both_done,
+        reader_block_incomplete, reader_feed_log_line, reader_incomplete_action,
+        reader_incomplete_log_line, reader_stream_action, reader_turn_log_line,
     )
 
     await websocket.accept()
@@ -622,6 +623,11 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
     reread = asyncio.Event()        # set = 🔁 ขออ่านท่อนปัจจุบันใหม่ตั้งแต่ต้น
     resume_handle: str | None = None
     announced = False
+    # ท่อนไม่ครบ (user เคาะ 2026-09-18) — ตัวนับต้องอยู่ **นอก** session เพราะการลองซ้ำ
+    # ครั้งที่ 2-3 คือการต่อ session ใหม่ · ผูกกับ pos ของท่อน ไม่ใช่กับ session
+    incomplete_pos: int | None = None
+    incomplete_retries = 0
+    reconnect_delay = 0.0
 
     # 🔑 ท่อนี้เคย **ไม่ log อะไรเลยนอกจากทางสายพัง** — 17 วันมี 3 บรรทัด ⇒ อาการ
     # "สองเสียง/ที่คั่นวิ่ง/พักไม่หยุด" ทุกอย่างพิสูจน์จาก log ไม่ได้เลยสักข้อ
@@ -712,7 +718,7 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
 
                 async def feed_loop():
                     """ป้อนท่อน → สตรีมเสียง → เลื่อนที่คั่น → ท่อนถัดไป"""
-                    nonlocal resume_handle
+                    nonlocal resume_handle, incomplete_pos, incomplete_retries, reconnect_delay
                     try:
                         while not stop.is_set() and not regen.is_set():
                             pos = _marks.get(source)
@@ -748,6 +754,7 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                 turn_complete=True,
                             )
                             turn_done = False
+                            last_msg = None
                             # watchdog: Gemini ตายเงียบได้จริง (2026-08-14 10:19:30 —
                             # ไม่มี error ไม่มี go_away แค่หยุดส่ง) ⇒ `async for` เปล่าๆ
                             # คือรอตลอดกาล · ต้องเดิน iterator เองถึงจะครอบ timeout ได้
@@ -814,6 +821,7 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                 sc = getattr(r, "server_content", None)
                                 if sc and getattr(sc, "turn_complete", False):
                                     turn_done = True
+                                    last_msg = r      # เก็บไว้ log เหตุผล ถ้าท่อนไม่ครบ
                                     break
                             if not turn_done and not stop.is_set() and not regen.is_set():
                                 # receive() จบเองโดยไม่มี turn_complete = session ตายเงียบ
@@ -824,6 +832,48 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                     "ต่อ session ใหม่ อ่านท่อนนี้ซ้ำ"
                                 )
                                 regen.set()
+                                return
+                            if turn_done and reader_block_incomplete(audio_bytes, len(block)):
+                                # 🔴 turn จบแต่เสียงออกไม่ครบ = **ห้ามเลื่อนที่คั่น**
+                                # (prod 09-03: 7 ท่อนเปล่าติด ที่คั่นวิ่ง 28678→32760)
+                                # user เคาะ 2026-09-18: ซ้ำใน session เดิม 1 ครั้ง → ต่อ
+                                # session ใหม่ · หน่วง 1/2/4 วิ · เพดาน 3 · เกินแล้วพัก
+                                # ท่อนใหม่ = เริ่มนับใหม่ (ไม่ต้องรีเซ็ตที่อื่น — pos คือกุญแจ)
+                                if incomplete_pos != pos:
+                                    incomplete_pos, incomplete_retries = pos, 0
+                                kind, delay = reader_incomplete_action(incomplete_retries)
+                                logger.warning(reader_incomplete_log_line(
+                                    session_tag, pos, len(block), time.monotonic() - t_block,
+                                    audio_bytes, incomplete_retries, last_msg,
+                                ))
+                                if kind == "pause":
+                                    logger.warning(
+                                        f"[Reader WS] ท่อน @{pos} ไม่ครบ "
+                                        f"{READER_INCOMPLETE_MAX_RETRY} ครั้งติด → พัก "
+                                        "(ที่คั่นค้างที่ท่อนนี้)"
+                                    )
+                                    incomplete_pos, incomplete_retries = None, 0
+                                    paused.set()
+                                    await websocket.send_json({
+                                        "type": "paused",
+                                        "message": f"⏸ อ่านท่อนนี้ไม่สำเร็จ "
+                                                   f"{READER_INCOMPLETE_MAX_RETRY} ครั้ง "
+                                                   "— กดอ่านต่อเพื่อลองใหม่",
+                                    })
+                                    regen.set()   # ออกจาก session → ตัวรอพักอยู่นอก session
+                                    return
+                                incomplete_retries += 1
+                                await websocket.send_json({
+                                    "type": "retry", "attempt": incomplete_retries,
+                                    "max": READER_INCOMPLETE_MAX_RETRY,
+                                })
+                                if kind == "resend":
+                                    # เสียงท่อนที่ไม่ครบอาจค้างใน jitter buffer — ล้างก่อน
+                                    await websocket.send_json({"type": "flush"})
+                                    await asyncio.sleep(delay)
+                                    continue      # pos ไม่ขยับ ⇒ ป้อนท่อนเดิมบน session เดิม
+                                reconnect_delay = delay
+                                regen.set()       # ต่อ session ใหม่ อ่านท่อนเดิม
                                 return
                             if turn_done:
                                 # โมเดลอ่านท่อนนี้จบจริง → ค่อยเลื่อนที่คั่นหน้า
@@ -864,6 +914,10 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                 # = "ประโยคเดิมซ้ำ" (user ยืนยันด้วยหู 2026-08-14)
                 # ⇒ สั่งล้างก่อนเสมอ · บทเรียนเดียวกับปุ่มพักใน bookreader.ts:101
                 await websocket.send_json({"type": "flush"})
+                if reconnect_delay:
+                    # หน่วงก่อนต่อ session ใหม่ (ลองซ้ำท่อนไม่ครบ) — ไม่ถี่จนเผาโควตา
+                    await asyncio.sleep(reconnect_delay)
+                    reconnect_delay = 0.0
                 continue
             break
     except WebSocketDisconnect:
