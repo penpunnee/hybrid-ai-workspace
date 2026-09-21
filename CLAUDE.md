@@ -705,6 +705,12 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-21 บ่าย**)
 
+> ## 🔊 09-21: อ่านนิยายเสียงเบาบน iPhone — แก้แล้ว รอ user ฟังยืนยัน (devlog [2026-09-21 ดึก])
+> ต้นเหตุ: Web Audio ล้วน (ไมค์ปิดตอนอ่าน) → Safari เลือก `ambient` · A/B บนเครื่อง user: `playback` ดังเท่า `<audio>`
+> แก้ `bookreader.ts` ตั้ง `navigator.audioSession.type` (`4263cf0` · bundle **`index-BpLfIzAR.js`**)
+> 🧪 ให้ user: รีเฟรช → อ่าน → **พัก แล้วอ่านต่อ** ดังเท่าตอนเริ่มไหม (เส้นนี้ยังไม่พิสูจน์) · ยืนยันแล้วลบ
+> `static/audio_ab.html` + `static/ab_sample.wav`
+
 > ## ✅ 09-18: turn เปล่า/เสียงไม่ครบ — แก้+deployed+ถอยที่คั่นแล้ว **อย่าทำซ้ำ** (devlog [2026-09-18])
 > `ab0bc8d` server · `85dbd22` bundle **`index-Bc6lGo2-.js`** · appscript.ui `7152f8d` · inode 253849 ตรง
 > · ท่อน < **5.0 วิ/100 ตัว** ไม่เลื่อนที่คั่น → ซ้ำสายเดิม 1 → session ใหม่ · หน่วง 1/2/4 · เพดาน 3 → พักเอง

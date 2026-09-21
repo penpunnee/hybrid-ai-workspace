@@ -11,6 +11,14 @@
 - สเปก W3C Audio Session: `auto` → ไมค์ = `play-and-record` · `<audio>` = `playback` · **Web Audio ล้วน = `ambient`**
   ⇒ โหมดอ่าน (ไมค์ปิด Web Audio ล้วน) ตกเป็น `ambient` · เพิ่มปุ่ม **E** = Web Audio + `navigator.audioSession.type='playback'`
   เพื่อพิสูจน์ก่อนแก้แอป · ⏳ รอผล user · ยังอธิบายไม่ได้ว่า "เบากว่าทุกรอบที่ผ่านมา" (โค้ดสองฝั่งเหมือน 09-18)
+- ✅ **ผลปุ่ม E: ดังเท่า D** ⇒ ยืนยัน: โหมดอ่านตกเป็น `ambient` แล้วเบา · ตั้ง `playback` แก้ได้
+- **แก้แล้ว `4263cf0` (appscript.ui) · bundle `index-BpLfIzAR.js` (`36800cc`)** — `setAudioSessionType()` ใน `bookreader.ts`:
+  `playback` ก่อน `new AudioContext` + ตอนอ่านต่อ · `auto` ตอนพัก / server พักเอง / จบเล่ม / ปิด (โหมดคุยได้ play-and-record ตามเดิม)
+  · เทส 5 (2 แดงก่อนแก้ · กลุ่มควบคุม "ไม่มี API ต่อได้") · mutation **5/5** · vitest 501 · tsc · CSS hash ตรงของเดิม
+  · md5 bundle host = ที่เสิร์ฟ `442ed6a7…` · prod `/` เสิร์ฟ `index-BpLfIzAR.js`
+- ⚠️ ที่ยังไม่พิสูจน์: เส้น **พัก → อ่านต่อ** ตั้ง `playback` *หลัง* AudioContext ถูกสร้างไปแล้ว (หน้าทดสอบพิสูจน์แค่ "ตั้งก่อนสร้าง")
+  · harness เทส: jsdom ไม่มี `URL.createObjectURL` + `localStorage` ใช้ไม่ได้ ต้อง stub เอง (ล้มรอบแรกเพราะ harness ไม่ใช่โค้ด)
+- ⏳ `static/audio_ab.html` + `ab_sample.wav` ยังอยู่ — ลบเมื่อ user ยืนยันว่าหาย
 
 ## [2026-09-21 ค่ำ] ฟังจริงรอบแรกหลัง `b295465` (xianni) — ท่อนเปล่าเกิดใน session สด · เสียงเบา = ปลายทาง
 log 03:35–03:37 UTC: เปิด xianni @42807 → 2 ท่อนปกติ (35.0 / 38.0 วิ) → **@43975 ได้ 0.0 วิ ใน 1.0 วิ ×2**
