@@ -565,14 +565,15 @@ class TestPauseReleasesTheLiveSession:
                 f"{ชื่อ} ยังตีความคำสั่งเอง — ต้องผ่าน apply_cmd ที่เดียว"
             )
 
-    def test_ทิ้ง_resume_handle_เมื่อกลับจากพัก(self, tree):
-        """พักเป็นชั่วโมงแล้ว handle เดิมอาจหมดอายุ — ต่อ session ใหม่สดๆ ปลอดภัยกว่า
-        (โหมดอ่านป้อนท่อนเองทุกครั้ง ไม่ต้องการความต่อเนื่องของ session)"""
+    def test_ไม่ใช้_resume_handle_เลยรวมถึงหลังพัก(self, tree):
+        """เดิม (09-02) ทิ้ง handle เฉพาะหลังพัก · ตั้งแต่ 09-21 โหมดอ่าน **ไม่ใช้ handle เลย**
+        เพราะทดสอบจริงพบว่าต่อด้วย handle แล้วโมเดลอ่านท่อนก่อนหน้าซ้ำ
+        พฤติกรรมจริงตรวจที่ tests/test_reader_no_resume.py (ดู config ตอน connect) —
+        ตัวนี้แค่กันไม่ให้ใครเอาตัวแปร handle กลับเข้ามาใน handler โหมดอ่าน"""
         import ast
         src = (REPO / "server.py").read_text(encoding="utf-8")
         ws = src[src.index('@app.websocket("/ws/reader")'):]
-        หัว = ws[: ws.index("wait_while_paused()", ws.index("while not stop"))]
-        assert "resume_handle = None" in หัว[-400:], (
-            "ไม่ได้ทิ้ง resume_handle ก่อนรอ/ต่อใหม่หลังพัก"
-        )
+        ws = ws[: ws.index("\n@app.", 1)] if "\n@app." in ws[1:] else ws
+        assert "build_reader_config(None)" in ws
+        assert "resume_handle =" not in ws, "handler โหมดอ่านกลับมาเก็บ resume_handle อีกแล้ว"
         assert isinstance(ast.parse(src), ast.Module)

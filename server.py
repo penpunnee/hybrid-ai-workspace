@@ -621,7 +621,11 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
     stop = asyncio.Event()
     paused = asyncio.Event()        # set = พักอยู่
     reread = asyncio.Event()        # set = 🔁 ขออ่านท่อนปัจจุบันใหม่ตั้งแต่ต้น
-    resume_handle: str | None = None
+    # 🔴 โหมดอ่าน **ไม่ใช้ resume_handle เลย** — ต่อ session ใหม่ทุกครั้ง (ลองซ้ำ/go_away/
+    # พัก/error) ต้องเปิดสด · ทดสอบจริงบน prod 2026-09-21: ต่อด้วย handle แล้วป้อนท่อนใหม่
+    # โมเดล **อ่านท่อนก่อนหน้าซ้ำ** (ถอดเสียงได้ท่อนเก่าทั้งท่อน) + บริบทสะสมถึง 57–58k token
+    # · เปิดสดอ่านท่อนที่ป้อนถูก 5/5 · โหมดอ่านป้อนข้อความเองทีละท่อน ไม่มีอะไรต้องต่อ
+    # (โหมดคุยยังใช้ handle — ไม่งั้นความจำหาย) · เทส: tests/test_reader_no_resume.py
     announced = False
     # ท่อนไม่ครบ (user เคาะ 2026-09-18) — ตัวนับต้องอยู่ **นอก** session เพราะการลองซ้ำ
     # ครั้งที่ 2-3 คือการต่อ session ใหม่ · ผูกกับ pos ของท่อน ไม่ใช่กับ session
@@ -684,16 +688,12 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
         while not stop.is_set():
             if paused.is_set():
                 # 🔴 พัก = ปล่อย session ทิ้ง **ก่อน** จะเปิดอันใหม่ (ไม่ใช่นอนกอดไว้)
-                # ⚠️ ทิ้ง resume_handle ด้วย — พักเป็นชั่วโมงแล้ว handle เดิมอาจหมดอายุ
-                # และโหมดอ่าน "ป้อนท่อนเอง" ทุกครั้งอยู่แล้ว จึงไม่ต้องการความต่อเนื่อง
-                # ของ session เลย ⇒ ต่อใหม่สดๆ เสี่ยงน้อยกว่าเอา handle เก่าไปลุ้น
-                resume_handle = None
                 await wait_while_paused()
                 if stop.is_set():
                     break
             regen = asyncio.Event()
             async with client.aio.live.connect(
-                model=GEMINI_LIVE_MODEL, config=build_reader_config(resume_handle)
+                model=GEMINI_LIVE_MODEL, config=build_reader_config(None)
             ) as session:
                 if not announced:
                     await websocket.send_json(
@@ -718,7 +718,7 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
 
                 async def feed_loop():
                     """ป้อนท่อน → สตรีมเสียง → เลื่อนที่คั่น → ท่อนถัดไป"""
-                    nonlocal resume_handle, incomplete_pos, incomplete_retries, reconnect_delay
+                    nonlocal incomplete_pos, incomplete_retries, reconnect_delay
                     try:
                         while not stop.is_set() and not regen.is_set():
                             pos = _marks.get(source)
@@ -803,9 +803,8 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                     )
                                     regen.set()
                                     return
-                                got_go_away, _secs, new_handle = live_control_signals(r)
-                                if new_handle:
-                                    resume_handle = new_handle
+                                # handle ทิ้งโดยตั้งใจ — ดูคอมเมนต์ที่ประกาศ `announced`
+                                got_go_away, _secs, _handle = live_control_signals(r)
                                 if got_go_away:
                                     # ยังไม่เลื่อนที่คั่น — reconnect แล้วอ่านท่อนนี้ใหม่ทั้งท่อน
                                     logger.info("[Reader WS] go_away → ต่อ session ใหม่")
