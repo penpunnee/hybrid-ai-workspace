@@ -11,6 +11,10 @@ log 03:35–03:37 UTC: เปิด xianni @42807 → 2 ท่อนปกติ
   = ระดับเดียวกับ baseline โหมดคุย (−15 ถึง −18) ⇒ **ต้นทางไม่เบา ปัญหาอยู่ปลายทาง** · server ไม่ได้แก้อะไรในเส้นเสียง
   · สายเสียงเปิด 03:35:34 (getUserMedia) แล้วปิด 03:35:46 ตอนเริ่มอ่าน — ผู้ต้องสงสัยตาม vault
     `ios-audio-interruption-recovery.md`: getUserMedia/VPIO ทำ playback **ลดเสียง** หรือ route ไป **earpiece** · ยังไม่ได้พิสูจน์
+  · user ตอบ: **iPhone · ลำโพงเครื่อง · แนบหูแล้วก็ยังเบา** ⇒ ❌ ตัด earpiece routing ออก ·
+    "เบากว่าทุกรอบที่ผ่านมา" · ✅ ตรวจแล้ว: bundle `index-Bc6lGo2-.js` **ตัวเดียวกับรอบฟัง 09-18** (ไม่มี commit ใน `static/`
+    ตั้งแต่ `85dbd22`) · `bookreader.ts` ไม่มี gain/volume node · ฝั่ง server แก้แค่ handle ไม่แตะเสียง
+    ⇒ โค้ดทั้งสองฝั่งเหมือนรอบก่อน + ต้นทางดังปกติ ⇒ ตัวแปรที่เหลือคือ **สภาพเครื่อง/audio session ของ iOS**
 
 ## [2026-09-21 เย็น] แก้+deploy: โหมดอ่านไม่ใช้ `resume_handle` เลย (`b295465`)
 - `server.py` `/ws/reader`: ถอดตัวแปร `resume_handle` ออกทั้งหมด · `build_reader_config(None)` ทุกครั้งที่ connect
