@@ -54,7 +54,7 @@ bundle `index-DD3rJ0CH.js`) — ยืนยันด้วย log prod ไม�
 feed_loop เห็น "wait" → regen.set(); return      → `async with` ปิด session
 outer loop เช็ค paused ก่อนเปิด session ใหม่      → await wait_while_paused()
 wait_while_paused อ่าน WS ต่อ (wait_for 1.0s)     → รับ resume/close ระหว่างพักได้
-resume → ทิ้ง resume_handle → ต่อ session ใหม่ → อ่านท่อนเดิมตั้งแต่ต้น
+resume → ต่อ session ใหม่ (ไม่มี handle — โหมดอ่านไม่ใช้ handle เลยตั้งแต่ 09-21 `b295465`) → อ่านท่อนเดิมตั้งแต่ต้น
 ```
 - ⚠️ **ตัวรอต้องอ่าน WS ต่อ** ไม่งั้นกด "อ่านต่อ" แล้วไม่มีใครได้ยิน = ค้างถาวร
 - คำสั่งทั้งหมด (`pause`/`resume`/`close`/`reread`) แปลที่ **`apply_cmd()` ที่เดียว** —

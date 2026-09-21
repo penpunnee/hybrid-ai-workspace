@@ -1,5 +1,18 @@
 ---
 
+## [2026-09-21 เย็น] แก้+deploy: โหมดอ่านไม่ใช้ `resume_handle` เลย (`b295465`)
+- `server.py` `/ws/reader`: ถอดตัวแปร `resume_handle` ออกทั้งหมด · `build_reader_config(None)` ทุกครั้งที่ connect
+  · handle ที่ Gemini ส่งมาถูกทิ้งโดยตั้งใจ (`_handle`) · โหมดคุย (`/ws/voice`) ไม่แตะ
+- เทสใหม่ `tests/test_reader_no_resume.py` (4): fake ส่ง handle มาทุกท่อน + **จด config ตอน connect** ·
+  แดงก่อนแก้ด้วยเหตุผลที่ถูก `[None, 'handle-จาก-session-1']` ทั้งเส้นลองซ้ำและ go_away ·
+  มีกลุ่มควบคุมว่า fake ส่ง handle ที่ `live_control_signals` อ่านได้จริง (ไม่งั้นผ่านฟรี)
+- `test_reader_voice.py::test_ทิ้ง_resume_handle_เมื่อกลับจากพัก` (สแกนซอร์สหา `resume_handle = None`)
+  ผูกกับดีไซน์เก่า → เปลี่ยนเป็น invariant ใหม่ `test_ไม่ใช้_resume_handle_เลยรวมถึงหลังพัก`
+- ชุดเต็ม 1830 passed/16 skipped · ruff · CI เขียว · deploy `--force-recreate` · inode host=container 255143
+  · ในคอนเทนเนอร์: `build_reader_config(None)` 1 จุด · `resume_handle = new_handle` เหลือ 1 (= โหมดคุย)
+- ⚠️ **ไม่ได้ยิง `/ws/reader` จริงหลัง deploy** — จะเลื่อนที่คั่นของ user (ห้าม) · หลักฐานว่าได้ผลมาจาก probe ตรงก่อนแก้
+- 🧪 รอ user ฟังจริง: ที่คั่น 49619 · ต้องเห็น prompt token หลัง go_away ตกกลับหลักพัน
+
 ## [2026-09-21 บ่าย] ทดสอบจริงว่า `resume_handle` ทำอะไรกับโหมดอ่าน (user สั่ง "อย่าเชื่อ log ที่เคยทดสอบ")
 
 ยิง Live API ตรงจากในคอนเทนเนอร์ด้วย `build_reader_config()` ตัวจริง + `live_control_signals()` ตัวจริง
