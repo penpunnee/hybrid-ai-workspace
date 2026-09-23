@@ -1,5 +1,49 @@
 ---
 
+## [2026-09-23 ต่อ 3] config ก้อน 4 ไฟล์แรก — `utils/llm.py` อ่าน env ผ่าน registry (`0f5844b`)
+ย้ายท่อล้วน · **28 จุด → 0 จุดอ่านดิบ** · ทำตามลำดับที่ user สั่ง (ไฟล์ที่อ่านเยอะสุดก่อน)
+- **13 ชื่อที่ `core/config.py` เป็นเจ้าของอยู่แล้ว** (`OLLAMA_*` 9 ตัว · `LMSTUDIO_BASE_URL/TIMEOUT` ·
+  `SHOW_THINKING` · `GEMINI_API_KEY`) → `llm.py` **import ค่ามาใช้** ไม่ลงทะเบียนซ้ำ
+- **13 ชื่อที่ `llm.py` เป็นเจ้าของ** → `env_str/env_int` พร้อม doc · Claude/Kimi 9 ชื่อ
+  **ไม่เคยอยู่ใน `.env.example` เลย** ตอนนี้ถูก generate แล้ว
+- `env_registry.MODULES` + `load_all()` — 🔴 REGISTRY ถูกเติมตอน import เท่านั้น ⇒
+  generator/เทสที่ import แค่ `core.config` **มองไม่เห็นชื่อของ `llm.py` แล้ว `.env.example`
+  ขาดไปเงียบๆ** · **ย้ายไฟล์ถัดไปต้องเติมชื่อโมดูลใน `MODULES`** (มีเทสบังคับว่าไฟล์ในลิสต์
+  ห้ามมี `os.getenv` ดิบเหลือ)
+- อ่าน `SHOW_THINKING`/`OLLAMA_TEMPERATURE`/`TOP_P`/`NUM_CTX`/`REPEAT_PENALTY`/`GEMINI_SEARCH_MODEL`
+  **ครั้งเดียวตอน import** แทนทุก request (prod ไม่เปลี่ยน env ระหว่างรัน) · เทส web search
+  เปลี่ยน setenv → setattr (precedence ที่ตรวจเหมือนเดิม)
+- `.env.example`: `GEMINI_MODEL=` แสดง **default ของโค้ด** (`3.5-flash`) ไม่ใช่ค่าของ prod
+  (`3.5-flash-lite` เขียนไว้ในคำอธิบาย)
+
+**ตัวกันใหม่**
+- `test_env_default_consistency` เห็น `env_*` แล้ว — 🔴 เดิมเห็นแค่ `os.getenv` ⇒ **ไฟล์ที่ย้าย
+  เข้า registry (= เจ้าของ default) หลุดจากการเทียบ** ยิ่งย้ายมาก ตัวกันยิ่งตาบอด ·
+  normalize `120 ≡ "120"`, `False ≡ "false"` (มีกลุ่มควบคุมด้านกลับ) · ขยายแล้ว **ไม่เจอ
+  ความขัดแย้งใหม่** ระหว่าง config กับไฟล์ที่ยังอ่านดิบ
+- `test_env_หนึ่งชื่อลงทะเบียนจากโมดูลเดียว` — ลงซ้ำด้วย default เดียวกัน registry ยอม
+  แต่ doc/group ทับกันตามลำดับ import ⇒ `.env.example` เปลี่ยนตามว่าใครถูก import ก่อน
+- เทสว่า `_stream_ollama`/`_stream_lmstudio` ส่ง sampling params จาก config **ถึง request จริง**
+
+**บทเรียน**
+- 🔴 **เทสรอบแรก `test_llm_ใช้ค่าจาก_config` เขียวทั้งที่ยังไม่แก้** — เทียบค่า 2 ที่ที่อ่าน env
+  ชุดเดียวกัน = เท่ากันโดยบังเอิญ · เปลี่ยนไปตรวจ *คุณสมบัติ* (เจ้าของเดียว) แทน
+- 🔴 **baseline gate ของ mutation จับบั๊กเทสเดิมได้**: `test_env_registry` ทิ้งชื่อปลอม
+  `TEST_*` ไว้ใน REGISTRY (global) ⇒ รันก่อน `test_env_example_generated` แล้วแดง ·
+  ชุดเต็มเขียวเพราะ**ลำดับชื่อไฟล์พอดี** (ยืนยันกับโค้ดก่อนแก้แล้ว) → fixture คืนค่า
+- 🔴 **fixture ที่แก้รอบแรกทำ REGISTRY ว่างทั้งโปรเซส** (เทสแรกที่ import config ลงชื่อจริง
+  → fixture ลบเพราะนับเป็น "ชื่อใหม่" → import ถูก cache ไม่มีใครเติมกลับ) แล้ว mutation
+  **รายงาน "killed" 10/10 ปลอม** (40 เทสแดงทุกรอบ ไม่ใช่เพราะ mutation) · จับได้เพราะดู
+  *จำนวน* ที่แดง ไม่ใช่แค่ว่าแดง ⇒ **mutation "killed" ต้องดูด้วยว่าแดงกี่ตัว**
+- mutation รอบจริง M10/M12 (hardcode temperature กลับ) **รอด** → เขียนเทสปิด ⇒ **12/12**
+
+✅ 1906 passed/17 skipped · ruff · ทั้งสองลำดับการรัน · import server · CI เขียว ·
+deploy (`core/`+`utils/` mount เป็นโฟลเดอร์ → restart พอ) · **ค่าที่ prod resolve ได้ 23 บรรทัด
+เทียบก่อน/หลัง deploy ตรงกันทุกตัว** · `gemini_ok: True`
+⚪ ตอน deploy PC `.235` ปิดอยู่ (ping ไม่ตอบ · TCP 1234/11434 ปิด) ⇒ `local_ok:false` +
+skills upsert timeout ไม่เกี่ยวกับงานนี้
+⏭️ ไฟล์ถัดไป: `agents/orchestrator.py` (11 จุด) — อย่าลืมเติม `MODULES`
+
 ## [2026-09-23 ปิดเซสชัน] สรุป + สิ่งที่ user สั่งไว้สำหรับเซสชันหน้า
 - **ทำเสร็จวันนี้:** ปิดคดีเสียงอ่านเบา (user ยืนยัน 09-22 13:08 + ลบหน้าทดสอบ A/B) ·
   config **ก้อน 1-3** (default ขัดกัน → registry → generate `.env.example`) ·

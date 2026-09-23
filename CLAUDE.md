@@ -705,16 +705,17 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-23**)
 
-> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 — เริ่มที่ `utils/llm.py` (user สั่งไว้ 09-23)**
-> ย้าย env ของ `utils/llm.py` (**28 จุด** = ไฟล์ที่เยอะสุด) เข้า `core/env_registry.py`
-> แล้วค่อยไล่ `agents/orchestrator.py` (11) → ที่เหลือ · **ทีละไฟล์ ทีละ commit**
-> วิธีทำ (พิสูจน์มาแล้ว 3 ก้อน): เทสแดงก่อน → ย้าย → `python scripts/gen_env_example.py --write`
-> → ชุดเต็ม + ruff + mutation → deploy + verify ในคอนเทนเนอร์
-> ⚠️ **`utils/llm.py` import `core.config` อยู่แล้ว** (ก้อน 1 ใส่ไว้) ไม่มี circular import
-> ⚠️ `GEMINI_MODEL_DEFAULT`/`RETIRED_GEMINI_MODELS` **ต้องอยู่ใน `utils/llm.py` ต่อไป** —
-> `tests/test_gemini_health.py` ตรึงทั้งชื่อค่าคงที่และ *รูปร่างบรรทัด* ที่อ่าน env ไว้
-> ⚠️ env ที่เป็น "ไม่ตั้ง ≠ ตั้งค่าว่าง" (เช่น `LMSTUDIO_API_KEY` ใน `reasoning/router.py`)
+> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อ — `agents/orchestrator.py` (11 จุด)**
+> ✅ `utils/llm.py` เสร็จแล้ว 09-23 (`0f5844b` · devlog [2026-09-23 ต่อ 3]) — **อย่าทำซ้ำ**
+> ไฟล์ต่อไปทีละไฟล์ ทีละ commit: `agents/orchestrator.py` (11) → ที่เหลือ
+> วิธีทำ: เทสแดงก่อน → ย้าย → **เติมชื่อโมดูลใน `core/env_registry.MODULES`** →
+> `python scripts/gen_env_example.py --write` → ชุดเต็ม + ruff + mutation → deploy + เทียบค่า
+> ที่ prod resolve ได้ก่อน/หลัง (probe ในคอนเทนเนอร์)
+> ⚠️ **ชื่อที่ไฟล์อื่นเป็นเจ้าของแล้ว ให้ import ค่า ห้ามลงทะเบียนซ้ำ** (มีเทสบังคับ)
+> ⚠️ **ไม่เติม `MODULES` = ชื่อไม่เข้า `.env.example` เงียบๆ** (REGISTRY เติมตอน import)
+> ⚠️ env ที่ "ไม่ตั้ง ≠ ตั้งค่าว่าง" (เช่น `LMSTUDIO_API_KEY` ใน `reasoning/router.py`)
 > **ห้ามยัดเข้า registry แบบมี default** — จะเปลี่ยนพฤติกรรมเงียบๆ
+> 🔑 mutation: ดูด้วยว่า **แดงกี่ตัว** — fixture พังทำให้ได้ "killed" ปลอม 10/10 มาแล้ว
 >
 > ## ✅ 09-23 ทำเสร็จ 3 ก้อน (devlog [2026-09-23] ×3 · **อย่าทำซ้ำ**)
 > | ก้อน | ได้อะไร |
