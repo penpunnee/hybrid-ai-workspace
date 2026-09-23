@@ -2,6 +2,7 @@ import os
 import re
 import hashlib
 import socket
+import threading
 import logging
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -106,8 +107,29 @@ def _is_conn_failure(e: Exception) -> bool:
     return "timed out" in msg or "failed to connect" in msg
 
 
+# ── กัน sync ซ้อนกัน (2026-09-23) ─────────────────────────────────────────────
+# log prod: 2 รอบซ้อนกันจริง (เริ่ม 04:30:45 และ 04:37:52) · ความเสียหาย: รอบแรกสแกน
+# รายชื่อไฟล์ตอนเริ่ม ⇒ prune ของมันลบโน้ตใหม่ที่รอบที่สองเพิ่ง sync (มีเทสจำลอง)
+# · uvicorn process เดียว (ตรวจ /proc) ⇒ threading.Lock พอ
+# · **รอคิว ไม่ปฏิเสธ** — ผู้เรียกทาง curl หลัง push vault ต้องได้การแก้ของตัวเองเข้า index
+# · เพดาน 180 วิ: รอบยาวสุดตอนนี้ ≈ breaker 2×60 วิ (embedder ต่อติดแต่ค้าง)
+_sync_lock = threading.Lock()
+_SYNC_WAIT_TIMEOUT = 180.0
+
+
 def sync_vault(vault_path: str = "") -> dict:
-    """Sync all .md files in vault into ChromaDB. Returns stats."""
+    """Sync all .md files in vault into ChromaDB. Returns stats. (ทีละรอบ — ดู _sync_lock)"""
+    if not _sync_lock.acquire(timeout=_SYNC_WAIT_TIMEOUT):
+        logger.warning(f"Vault sync: รอคิวเกิน {_SYNC_WAIT_TIMEOUT:.0f} วิ — มีอีกรอบกำลังทำงาน")
+        return {"ok": False, "busy": True,
+                "error": f"มีอีกรอบกำลัง sync อยู่ (รอเกิน {_SYNC_WAIT_TIMEOUT:.0f} วิ) — ลองใหม่ภายหลัง"}
+    try:
+        return _sync_vault_unlocked(vault_path)
+    finally:
+        _sync_lock.release()
+
+
+def _sync_vault_unlocked(vault_path: str = "") -> dict:
     vp = vault_path or VAULT_PATH
     if not vp or not os.path.isdir(vp):
         logger.error(f"Vault sync failed: Path not found: {vp}")
