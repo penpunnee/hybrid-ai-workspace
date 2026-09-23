@@ -1,5 +1,32 @@
 ---
 
+## [2026-09-23 ต่อ 2] config ก้อน 3 — generate `.env.example` จาก registry (ปิดทิศ โค้ด → เอกสาร)
+`render_env_example()` ใน `core/env_registry.py` + `scripts/gen_env_example.py`
+(`--write` / ไม่ใส่ = ตรวจอย่างเดียว exit 1) · เทสเทียบไฟล์ที่ commit กับที่ generate ได้
+⇒ **เพิ่ม env ใน `core/config.py` แล้วไม่ regenerate = CI แดง**
+- `.env.example` แบ่ง 2 ส่วนด้วย marker: **บน = generate 27 ชื่อ 6 กลุ่ม · ล่าง = เขียนมือ**
+  · ส่วนล่างเก็บของเดิมไว้ครบ (env ~95 ชื่อจากไฟล์อื่นยังไม่เข้า registry) —
+  **ลบทิ้งเพื่อให้ "generate ได้ทั้งไฟล์" = ทำเอกสารแย่ลงเพื่อให้เทสสวย** จึงไม่ทำ
+- ย้ายความรู้ยาวที่เคยอยู่ใน `.env.example` เข้า `doc=` ของ registry (host.docker.internal ·
+  ข้อห้าม hardcode IP · compose ทับค่า ฯลฯ) — `doc` หลายบรรทัด → คอมเมนต์หลายบรรทัด
+- 🔴 **กับดักที่เกือบทำ CI แดงถาวร: default ที่คำนวณจากตำแหน่งรีโป**
+  (`NAS_DATA_PATH`, `READER_DB_PATH`) เขียนดิบๆ จะได้ `/Users/pawin/...` บนเครื่อง dev
+  และ `/app/...` บน CI ⇒ **ไฟล์ที่ generate ไม่มีทางตรงกัน** และคนที่ก๊อปไปใช้ได้ path
+  ของเครื่องเรา · แก้เป็น `./data` + มีเทสจับ (`repo not in out`)
+- 🔴 **ผลข้างเคียงที่ต้องตามแก้อีกตัว: ratchet `compose-pin` บังคับว่าคำเตือนต้องอยู่
+  *บรรทัดเดียวกับ* `NAME=`** แต่ไฟล์ที่ generate วางคำอธิบายไว้**เหนือ**ค่า
+  ⇒ ขยายให้รับคอมเมนต์ที่ติดกันด้านบนด้วย (เจตนาเดิมคือ "เอกสารต้องบอกไว้"
+  ไม่ใช่ "ต้องอยู่บรรทัดเดียวกัน") · **เป็นตัวที่สองในวันเดียวที่ตัวกันผูกกับ
+  *รูปแบบการเขียน* แล้วพังตอนรูปแบบเปลี่ยน** (ตัวแรกคือ regex `getenv(` ของก้อน 2)
+- ⚠️ harness: heredoc ที่รันด้วย `python3` ของระบบ **ไม่มี `dotenv`** → สคริปต์ตายกลางคัน
+  แล้วขั้นถัดไปยัง "สำเร็จ" ต่อ ⇒ ผลลัพธ์ดูเหมือนทำงานแต่ไม่ได้ทำ · ต้องใช้ venv เสมอ
+- ✅ 1881 passed/17 skipped · ruff · **mutation 6/6** (เพิ่ม env ไม่ regenerate · แก้ default
+  ไม่ regenerate · bool เป็น `True/False` แบบ Python · ทิ้งส่วนเขียนมือ · เขียน path
+  เครื่องตัวเอง · ถอดหมายเหตุ compose) · deploy + `/api/config` 200 · CI เขียว
+- ⏭️ **เหลือก้อน 4:** ย้าย env ~95 ชื่อที่เหลือเข้า registry ทีละโดเมน
+  (`utils/llm.py` 28 จุด → `agents/orchestrator.py` 11 → ที่เหลือ) — ยังไม่เริ่ม
+
+
 ## [2026-09-23 ต่อ] config ก้อน 2 — `core/config.py` อ่าน env ผ่าน registry
 `core/env_registry.py` ใหม่: `env_str/env_int/env_float/env_bool` จด `EnvSpec`
 (name, default, kind, **doc**, group) ลง `REGISTRY` ขณะโหลด · **27 ชื่อ 6 กลุ่ม**

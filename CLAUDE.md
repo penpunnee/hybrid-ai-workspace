@@ -715,8 +715,12 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > ย้ายท่อล้วน ค่าไม่เปลี่ยน · ไฟล์อื่นไม่ต้องแก้ · mutation 7/7 · deployed
 > ⚠️ **`test_env_docs_ratchet` regex ต้องรู้จัก helper ด้วย** ไม่งั้น env ของ config
 > กลายเป็น "ไม่มีโค้ดอ่าน" แล้วเทสสั่งให้ลบเอกสารของ env ที่ยังใช้จริง (เติมแล้ว)
-> ⏭️ **ก้อน 3-4 รอ user เคาะ:** generate `.env.example` จาก registry (ปิดทิศ
-> **โค้ด → เอกสาร** ที่ยังเปิดอยู่ **38 ตัว**) → ย้าย env ที่เหลือ ~95 ชื่อทีละโดเมน
+> ✅ **ก้อน 3 เสร็จ 09-23:** `.env.example` ส่วนบน **generate จาก registry**
+> (`scripts/gen_env_example.py --write`) · เพิ่ม env แล้วไม่ regenerate = **CI แดง** ·
+> ส่วนล่างยังเขียนมือ (env ~95 ชื่อจากไฟล์อื่น) · mutation 6/6
+> 🔴 default ที่คำนวณจากตำแหน่งรีโปต้องเขียนเป็น `./data` ไม่งั้น dev/CI ได้คนละ path
+> ⏭️ **ก้อน 4 รอ user เคาะ:** ย้าย env ~95 ชื่อที่เหลือเข้า registry ทีละโดเมน
+> (`utils/llm.py` 28 จุด → `agents/orchestrator.py` 11 → ที่เหลือ)
 > ⛔ **ไม่เอา `pydantic-settings`** (มีใน lock แต่ไม่มีใน `requirements.txt` · ไม่มีใครใช้ ·
 > บังคับเปลี่ยนวิธี import ทุกไฟล์โดยไม่ได้อะไรเพิ่ม)
 > 📌 ช่องที่ยังเปิด: default ที่ *คำนวณ* เทียบไม่ได้ ⇒ `DB_PATH` relative-vs-absolute ยังหลุด
