@@ -716,6 +716,9 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > **ของที่ต้องรู้ก่อนแตะ `memory.py`:** `EMBEDDING_MODEL` เจ้าของคือ `core/config` แล้ว (default `""`)
 > — `memory.py:42` ยังอ่านดิบ default `""` ตรงกัน ⇒ ตอนย้ายให้ **import จาก config** ไม่ลงซ้ำ ·
 > `embed.py` ทำแบบนั้นแล้ว (`_CFG_EMBEDDING_MODEL or "paraphrase-multilingual"`)
+> 🔴 **doc ที่ลงทะเบียนห้ามมี path ในคอนเทนเนอร์ (`/app/...`)** — `test_ไม่มี_path_เฉพาะเครื่องหลุดเข้าไฟล์`
+> ใช้ repo root ของเครื่องที่รันเป็น needle และในอิมเมจ CI root = `/app` ⇒ **Mac เขียวแต่ CI แดง**
+> (เกิดจริง `cbd7b1a` → แก้ `a8dc550`) · ให้ชี้ `docker-compose.yml` แทน
 > 🔴 **เทส semantics ห้าม `importlib.reload` โมดูลที่มีคลาส exception** (`FSError` ตัวใหม่ ⇒
 > `pytest.raises` ของไฟล์เทสอื่นไม่จับ · รันเดี่ยวเขียว รันตามหลังแดง) — ใช้ `_fresh_module()` /
 > `_reload_with()` ใน `tests/test_env_registry.py` (exec เข้า namespace ใหม่ + สลับ `core.config`
