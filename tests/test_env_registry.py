@@ -341,3 +341,11 @@ def test_LMSTUDIO_API_KEY_เจ้าของคือ_config():
     ไม่ใช่ `utils/llm.py` (ไม่งั้นไฟล์อื่นต้อง import ตัวแปร private ของ llm)"""
     src = (REPO / "core" / "config.py").read_text()
     assert "LMSTUDIO_API_KEY" in _helper_names(src)
+
+
+# ── 7) ก้อน 4 ไฟล์ที่สาม: utils/summarize.py (2026-09-23) ──────────────────────
+
+def test_summarize_อยู่ใน_MODULES():
+    from core.env_registry import MODULES
+
+    assert "utils.summarize" in MODULES

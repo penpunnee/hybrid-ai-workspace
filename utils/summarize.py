@@ -6,21 +6,21 @@ Flow:
     → MAP: สรุปแต่ละ chunk ด้วย local model
     → REDUCE: รวม summaries เป็น final summary
 """
-import os
 import logging
 from openai import OpenAI
 
-from core.config import LMSTUDIO_API_KEY as _CFG_LMSTUDIO_API_KEY
+# env ทุกตัวของไฟล์นี้มีเจ้าของที่ core/config.py — import ค่า ห้ามอ่านซ้ำ
+# (ก้อน 4 · 2026-09-23 · ตัวกัน: tests/test_env_registry.py + test_summarize_config.py)
+# ชื่อ `_XXX` ระดับโมดูลคงไว้ให้เทส monkeypatch ได้
+from core.config import GEMINI_API_KEY as _GEMINI_API_KEY
+from core.config import LMSTUDIO_API_KEY as _LMSTUDIO_API_KEY  # ค่าว่างถอยไป placeholder ที่นั่น
+from core.config import LMSTUDIO_BASE_URL as _LMSTUDIO_BASE_URL
+from core.config import LMSTUDIO_REASON_MODEL as _LMSTUDIO_REASON_MODEL
+from core.config import LMSTUDIO_TIMEOUT as _LMSTUDIO_TIMEOUT
+from core.config import OLLAMA_BASE_URL as _OLLAMA_BASE_URL
+from core.config import OLLAMA_MODEL as _OLLAMA_MODEL
 
 logger = logging.getLogger(__name__)
-
-_LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "")
-_LMSTUDIO_API_KEY  = _CFG_LMSTUDIO_API_KEY  # ค่าว่างถอยไป placeholder ที่ core/config.py
-_LMSTUDIO_REASON_MODEL = os.getenv("LMSTUDIO_REASON_MODEL", "qwen/qwen3.5-9b")
-_LMSTUDIO_TIMEOUT  = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
-
-_OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-_OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL", "llama3")
 
 _CHUNK_SIZE = 3000   # chars ต่อ chunk
 _MAX_TOKENS = 1024   # tokens ต่อ summary
@@ -41,7 +41,7 @@ def _get_client() -> tuple[OpenAI, str]:
 
 def _call_gemini(system: str, user: str) -> str:
     """fallback — เรียก Gemini ถ้า local model ต่อไม่ได้"""
-    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    gemini_key = _GEMINI_API_KEY
     if not gemini_key:
         return ""
     try:
