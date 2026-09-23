@@ -15,7 +15,10 @@ load_dotenv()
 # ── Ollama (Local LLM) ───────────────────────────────────────────────────────
 _G = "Ollama"
 OLLAMA_BASE_URL    = env_str("OLLAMA_BASE_URL", "http://localhost:11434/v1", group=_G,
-                             doc="ที่อยู่ Ollama (OpenAI-compatible) — ตัวหลักของ embeddings")
+                             doc="ที่อยู่ Ollama (OpenAI-compatible) — ⚠️ พอร์ต 11434 ไม่ใช่ 1234\n"
+                                 "บน Docker: http://host.docker.internal:11434/v1\n"
+                                 "บน NAS ที่ Ollama รันบน PC แยกตัว: http://[PC-IP]:11434/v1\n"
+                                 "เป็นตัวหลักของ embeddings (ทิศตรงข้ามกับงานแชทที่ LM Studio เป็นหลัก)")
 OLLAMA_MODEL       = env_str("OLLAMA_MODEL", "llama3", group=_G,
                              doc="โมเดลแชทของ Ollama (บทบาท fallback ตั้งแต่ 2026-06-15)")
 OLLAMA_TIMEOUT     = env_int("OLLAMA_TIMEOUT", 120, group=_G, doc="วินาที")
@@ -30,7 +33,9 @@ OLLAMA_REPEAT_PENALTY = env_float("OLLAMA_REPEAT_PENALTY", 1.1, group=_G,
 # ── Gemini (Cloud LLM) ───────────────────────────────────────────────────────
 _G = "Gemini"
 GEMINI_API_KEY   = env_str("GEMINI_API_KEY", "", group=_G,
-                           doc="คีย์ Gemini — ว่าง = ปิดเส้นคลาวด์ทั้งหมด")
+                           doc="คีย์ Gemini (ขอฟรีที่ https://aistudio.google.com/)\n"
+                               "ว่าง = ปิดเส้นคลาวด์ทั้งหมด\n"
+                               "⚠️ GEMINI_MODEL ไม่ได้อยู่ใน registry — ที่เดียวคือ utils/llm.py")
 # GEMINI_MODEL ไม่ได้อยู่ที่นี่ — **ที่เดียวคือ `utils/llm.py`** (`GEMINI_MODEL_DEFAULT`
 # + `RETIRED_GEMINI_MODELS` + เทส `test_gemini_health.py` ที่ตรึงว่า default ต้องไม่ใช่รุ่นที่ปิดแล้ว)
 # เดิมบรรทัดนี้ประกาศ `gemini-2.0-flash` ค้างไว้โดยไม่มีใคร import ไปใช้เลยสักที่ (2026-09-23)
@@ -47,17 +52,26 @@ GEMINI_LIVE_MODEL = env_str("GEMINI_LIVE_MODEL", GEMINI_LIVE_MODEL_DEFAULT, grou
 # ── Database ─────────────────────────────────────────────────────────────────
 _G = "Database"
 DB_PATH      = env_str("DB_PATH", "./chat_history.db", group=_G,
-                       doc="SQLite หลัก (แชท/เซสชัน/feedback) — ⛔ compose environment: ทับค่านี้")
-CHROMA_HOST  = env_str("CHROMA_HOST", "", group=_G, doc="โฮสต์ ChromaDB — ว่าง = ให้โค้ดเดาเอง")
+                       doc="SQLite หลัก (แชท/เซสชัน/pins/shares/feedback 👍👎)\n"
+                           "⛔ docker-compose `environment:` ทับค่านี้ — ตั้งใน .env ไม่มีผลบน prod\n"
+                           "(มีผลเฉพาะตอนรัน local ตรงๆ)")
+CHROMA_HOST  = env_str("CHROMA_HOST", "", group=_G,
+                       doc="โฮสต์ ChromaDB (ความจำระยะยาว) — ว่าง = ให้โค้ดไล่เดาเอง\n"
+                           "บน Docker: ชื่อ service เช่น chromadb · บน NAS ที่รันแยก: IP ของ NAS")
 CHROMA_PORT  = env_int("CHROMA_PORT", 8000, group=_G, doc="พอร์ต ChromaDB")
 CHROMA_PATH  = env_str("CHROMA_PATH", "./data/chroma", group=_G,
                        doc="⚠️ dead config — ไม่มีผู้บริโภค (ChromaDB เป็นคอนเทนเนอร์แยก)")
 
 # ── App ──────────────────────────────────────────────────────────────────────
 _G = "App"
-UI_PASSWORD  = env_str("UI_PASSWORD", "", group=_G, doc="รหัสเข้าเว็บ — ว่าง = ไม่ต้องล็อกอิน")
-CORS_ORIGINS = env_str("CORS_ORIGINS", "", group=_G, doc="รายการ origin คั่นด้วย , — ว่าง = ใช้ค่าตั้งต้น")
-RELOAD       = env_bool("RELOAD", False, group=_G, doc="auto-reload ตอน dev")
+UI_PASSWORD  = env_str("UI_PASSWORD", "", group=_G,
+                       doc="รหัสผ่านเข้า UI — ว่าง = เปิดสาธารณะ (auth middleware ยังกัน endpoint\n"
+                           "ที่ไม่อยู่ใน _OPEN_PATHS อยู่ แต่ไม่มีรหัสให้ผ่านด่าน)")
+CORS_ORIGINS = env_str("CORS_ORIGINS", "", group=_G,
+                       doc="origin ที่อนุญาต คั่นด้วย , — ว่าง = ใช้ค่าตั้งต้นใน CORS_ORIGINS_LIST\n"
+                           "ตัวอย่าง: http://192.168.51.49:8080,https://ai.pawinhome.com")
+RELOAD       = env_bool("RELOAD", False, group=_G,
+                        doc="เปิด uvicorn auto-reload (สำหรับ dev เท่านั้น)")
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -74,9 +88,12 @@ SKILLS_DB_PATH = os.path.join(PROJECT_ROOT, "skills_db.json")
 
 _G = "Paths"
 OBSIDIAN_VAULT_PATH = env_str("OBSIDIAN_VAULT_PATH", "", group=_G,
-                              doc="โฟลเดอร์ Obsidian vault — ⛔ compose environment: ทับค่านี้")
+                              doc="path ของ Obsidian vault ที่มองเห็นจากในคอนเทนเนอร์ (Synology: /vault)\n"
+                                  "⛔ docker-compose `environment:` ทับค่านี้ — ตั้งใน .env ไม่มีผลบน prod")
 NAS_DATA_PATH       = env_str("NAS_DATA_PATH", os.path.join(PROJECT_ROOT, "data"), group=_G,
-                              doc="ที่เก็บข้อมูลถาวร (cache DB, reader.db, skills_db.json)")
+                              doc="โฟลเดอร์ข้อมูลถาวรสำหรับ docker-compose volume mount\n"
+                                  "(cache DB · reader.db · skills_db.json) — ตั้งเพื่อไม่ให้ข้อมูล\n"
+                                  "หายเวลา restart container · Synology: /volume1/docker/hybrid-ai")
 
 # Cache databases (under NAS_DATA_PATH for persistence)
 RESPONSE_CACHE_DB = os.path.join(NAS_DATA_PATH, "response_cache.db")
@@ -108,7 +125,10 @@ READER_DB_PATH = env_str("READER_DB_PATH", READER_DB_DEFAULT, group=_G,
 # (default ว่าง — local LLM หลักของระบบนี้คือ Ollama ดู OLLAMA_BASE_URL ด้านบน)
 _G = "LM Studio"
 LMSTUDIO_BASE_URL     = env_str("LMSTUDIO_BASE_URL", "", group=_G,
-                                doc="ที่อยู่ LM Studio — **ว่าง = ปิด** (opt-in)")
+                                doc="ที่อยู่ LM Studio — **ว่าง = ปิด** (opt-in)\n"
+                                    "ใส่ค่าเฉพาะเมื่อรัน LM Studio จริง เช่น http://192.168.51.235:1234/v1\n"
+                                    "⚠️ ห้ามใส่ IP เป็น default ในโค้ดไฟล์ใดๆ — เคยมี 4 ไฟล์ทำแบบนั้น\n"
+                                    "แล้วระบบยิงหา PC เงียบๆ ทั้งที่ควรปิด (แก้ 2026-09-23)")
 LMSTUDIO_CHAT_MODEL   = env_str("LMSTUDIO_CHAT_MODEL", "google/gemma-4-e4b", group=_G,
                                 doc="โมเดลแชทของ LM Studio")
 LMSTUDIO_REASON_MODEL = env_str("LMSTUDIO_REASON_MODEL", "qwen/qwen3.5-9b", group=_G,

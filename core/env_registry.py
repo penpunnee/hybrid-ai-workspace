@@ -23,7 +23,17 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-__all__ = ["REGISTRY", "EnvSpec", "env_bool", "env_float", "env_int", "env_str"]
+__all__ = [
+    "BEGIN_MARKER",
+    "END_MARKER",
+    "REGISTRY",
+    "EnvSpec",
+    "env_bool",
+    "env_float",
+    "env_int",
+    "env_str",
+    "render_env_example",
+]
 
 
 @dataclass(frozen=True)
@@ -78,3 +88,66 @@ def env_bool(name: str, default: bool, *, doc: str, group: str = "") -> bool:
     _register(EnvSpec(name, default, "bool", doc, group))
     value = os.environ.get(name)
     return default if value is None else value.lower() == "true"
+
+
+# ── สร้าง .env.example จาก registry ──────────────────────────────────────────
+# ปิดทิศ *โค้ด → เอกสาร*: เพิ่ม env ใน core/config.py แล้วไม่ regenerate = CI แดง
+# (ตัวกันเดิม test_env_docs_ratchet.py ตรวจได้แค่ทิศตรงข้าม)
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+BEGIN_MARKER = "# ══ ⬇️ ส่วนนี้สร้างอัตโนมัติจาก core/env_registry.py — ห้ามแก้ด้วยมือ ══"
+END_MARKER = "# ══ ⬆️ จบส่วนที่สร้างอัตโนมัติ · ข้างล่างนี้เขียนมือ (env ที่ยังไม่เข้า registry) ══"
+
+_HEADER = f"""{BEGIN_MARKER}
+# แก้คำอธิบาย/ค่าตั้งต้นที่ `core/config.py` แล้วรัน:
+#     python scripts/gen_env_example.py --write
+# มีเทสเทียบไฟล์นี้กับ registry ทุกครั้ง (tests/test_env_example_generated.py)
+"""
+
+
+def _format_value(spec: EnvSpec) -> str:
+    """เขียนค่าให้ `python-dotenv` อ่านกลับได้ตรงกติกาเดิมของโปรเจกต์
+
+    ⚠️ bool ต้องเป็น `true`/`false` ตัวเล็ก ไม่ใช่ `True`/`False` ของ Python —
+    กติกาคือ `lower() == "true"` ⇒ `False` ของ Python จะอ่านเป็นเท็จ "โดยบังเอิญ"
+    ซึ่งถูกด้วยเหตุผลผิด แล้ววันหนึ่งที่กติกาเปลี่ยนจะพังแบบหาไม่เจอ
+    """
+    if spec.kind == "bool":
+        return "true" if spec.default else "false"
+    value = str(spec.default)
+    # default ที่คำนวณจากตำแหน่งรีโป (NAS_DATA_PATH, READER_DB_PATH) → เขียนเป็น
+    # path สัมพัทธ์ ไม่งั้นได้ /Users/... บนเครื่อง dev และ /app/... บน CI
+    # ⇒ ไฟล์ที่ generate ไม่มีทางตรงกัน และคนที่ก๊อปไปใช้ได้ path ของเครื่องเรา
+    if value.startswith(_REPO_ROOT + os.sep):
+        value = "./" + value[len(_REPO_ROOT) + 1:]
+    return value
+
+
+def _render_entry(spec: EnvSpec) -> str:
+    lines = [f"# {line}" if line.strip() else "#" for line in spec.doc.splitlines()]
+    lines.append(f"{spec.name}={_format_value(spec)}")
+    return "\n".join(lines)
+
+
+def render_env_example(current: str = "") -> str:
+    """คืนเนื้อไฟล์ `.env.example` ฉบับเต็ม
+
+    `current` = เนื้อไฟล์ปัจจุบัน — ใช้เก็บ**ส่วนที่เขียนมือ**ใต้ `END_MARKER` ไว้ดิบๆ
+    (env ที่ยังไม่เข้า registry ~95 ชื่อ ยังต้องพึ่งคนเขียน — ลบทิ้งเพื่อให้
+    "generate ได้ทั้งไฟล์" = ทำเอกสารแย่ลงเพื่อให้เทสสวย)
+    """
+    groups: dict[str, list[EnvSpec]] = {}
+    for spec in REGISTRY.values():
+        groups.setdefault(spec.group or "อื่นๆ", []).append(spec)
+
+    parts = [_HEADER]
+    for group, specs in groups.items():
+        parts.append(f"\n# ── {group} " + "─" * max(0, 74 - len(group)))
+        parts += [_render_entry(s) for s in specs]
+    parts.append("\n" + END_MARKER)
+
+    manual = current.split(END_MARKER, 1)[1] if END_MARKER in current else (
+        "\n\n" + current.strip() + "\n" if current.strip() else "\n"
+    )
+    return "\n".join(parts) + manual

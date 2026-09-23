@@ -157,7 +157,10 @@ def test_env_ที่_compose_ทับ_ต้องบอกไว้ในเ
     ความสับสนนี้เกิดขึ้นแล้วจริง — `MEMORY.md` มีบรรทัดเตือนว่า prod อยู่ที่
     `/app/logs/server.log` "ไม่ใช่ `/app/server.log` ที่ว่างเปล่าและหลอกตา"
 
-    เกณฑ์: ถ้าเอกสารจะประกาศชื่อพวกนี้ ต้องมีคำว่า `docker-compose` ในบรรทัดเดียวกัน
+    เกณฑ์: ถ้าเอกสารจะประกาศชื่อพวกนี้ ต้องมีคำว่า `docker-compose` ในบรรทัดนั้น
+    **หรือในคอมเมนต์ที่ติดกันเหนือบรรทัดนั้น** — ขยายขอบเขตเมื่อ 2026-09-23 ตอนที่
+    `.env.example` ส่วนบนเปลี่ยนเป็น generate จาก registry ซึ่งวางคำอธิบายไว้เหนือค่า
+    (เจตนาของเกณฑ์คือ "เอกสารต้องบอกไว้" ไม่ใช่ "ต้องอยู่บรรทัดเดียวกัน")
     """
     pinned = _compose_pinned()
     assert pinned, "อ่าน environment: จาก docker-compose.yml ไม่ได้เลย — ตัวสแกนพัง"
@@ -166,16 +169,25 @@ def test_env_ที่_compose_ทับ_ต้องบอกไว้ในเ
     for rel in _DOC_FILES:
         path = _ROOT / rel
         in_block = path.name == ".env.example"
+        comment_block: list[str] = []  # คอมเมนต์ที่ติดกันเหนือบรรทัดปัจจุบัน
         for lineno, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             line = raw.lstrip(">").strip()
             if line.startswith("```"):
                 in_block = line.startswith("```env")
+                comment_block = []
                 continue
             if not in_block:
                 continue
+            if line.startswith("#"):
+                comment_block.append(line)
+                continue
             m = _ASSIGN.match(line)
-            if m and m.group(1) in pinned and _COMPOSE_MARKER not in line:
-                bad.append(f"  {m.group(1)}  ← {rel}:{lineno}")
+            if m and m.group(1) in pinned:
+                มีหมายเหตุ = _COMPOSE_MARKER in line or any(
+                    _COMPOSE_MARKER in c for c in comment_block)
+                if not มีหมายเหตุ:
+                    bad.append(f"  {m.group(1)}  ← {rel}:{lineno}")
+            comment_block = []
     assert not bad, (
         "env พวกนี้ถูก pin ใน `environment:` ของ docker-compose ⇒ ตั้งใน `.env` **ไม่มีผล** "
         "แต่เอกสารประกาศไว้เฉยๆ เหมือนตั้งได้:\n" + "\n".join(bad)
