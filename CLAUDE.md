@@ -718,9 +718,10 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > ⚠️ env ที่ "ไม่ตั้ง ≠ ตั้งค่าว่าง" (`LMSTUDIO_API_KEY` ใน `reasoning/router.py`)
 > **ห้ามยัดเข้า registry แบบมี default** — จะเปลี่ยนพฤติกรรมเงียบๆ
 > 🔑 mutation: ดูด้วยว่า **แดงกี่ตัว** — fixture พังทำให้ได้ "killed" ปลอม 10/10 มาแล้ว
-> 🐛 **บั๊กเดิมที่เจอ รอ user เคาะ:** (1) Ollama ReAct `_ACTION_RE` non-greedy ⇒ Action ที่มี
-> `args` ซ้อน parse พังทุกครั้ง (2) `LMSTUDIO_API_KEY=` ว่าง ⇒ แอปล้มตอนเริ่ม
-> (3) vault sync ล้มเงียบตอน PC ปิด ไม่มี retry — รายละเอียด devlog [2026-09-23 ต่อ 4]
+> 🐛 **บั๊กเดิม 3 ข้อ ตรวจด้วยหลักฐานแล้ว รอ user เคาะ** (devlog [2026-09-23 ต่อ 4]):
+> (1) Ollama ReAct: `_ACTION_RE` พังกับ args ซ้อน **+ ส่ง `Answer:` ที่โมเดลแต่งเอง (พร้อม
+> Observation ปลอม) ให้ user** (2) `LMSTUDIO_API_KEY=` ว่าง ⇒ แอปล้มตอนเริ่ม (ของเดิม)
+> (3) vault sync ล้มตอน PC ปิด → index ค้างเวอร์ชันเก่า + UI ขึ้น ✅ ทั้งที่ `errors:22`
 >
 > ## ✅ 09-23 ทำเสร็จ 3 ก้อน (devlog [2026-09-23] ×3 · **อย่าทำซ้ำ**)
 > | ก้อน | ได้อะไร |
