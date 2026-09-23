@@ -705,12 +705,16 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-23**)
 
-> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อ — ไฟล์ที่เหลือ (~104 จุด · ไฟล์ละ ≤6)**
+> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อที่ `utils/voice.py` (user สั่งไว้ 09-23)**
+> 🔑 **กติกา user: "เช็คข้อมูล ก่อนจะลงมือให้ชัวร์ก่อนทุกครั้ง"** — ทั้งสองฝั่งของสัญญา + log/คำสั่งจริง
 > ✅ เสร็จแล้ว 09-23 — **อย่าทำซ้ำ**: `utils/llm.py` (`0f5844b`) · `agents/orchestrator.py` (`cbddc04`)
-> · `utils/summarize.py` (`2dcd501`) · `utils/home_tools.py` (`28b038b`) · devlog [ต่อ 3/4/12/13]
-> ต่อไป (มากสุดก่อน): `voice`/`fs_tools`/`embed`/`code_sandbox` (6) → `websearch`/`response_cache`/`memory` (5)
-> → ที่เหลือ · ไฟล์เล็กรวบเป็นโดเมนได้
-> 🔑 `.env.example` เรียงตาม (ลำดับใน `MODULES`, บรรทัดในซอร์ส) แล้ว — **ไม่ขึ้นกับลำดับ import** ·
+> · `utils/summarize.py` (`2dcd501`) · `utils/home_tools.py` (`28b038b`) · เหลือ **104 จุด**
+> **voice.py ตรวจแล้ว (devlog [ปิดเซสชัน รอบบ่าย]):** 6 จุด · ⚠️ `GEMINI_LIVE_MODEL` เจ้าของคือ config
+> แต่ config import `GEMINI_LIVE_MODEL_DEFAULT` จาก voice ⇒ **circular import** ถ้า import กลับที่หัวไฟล์ ·
+> ⚠️ `VOICE_LEVEL_LOG` ตีความเอง (`off`/`0`/`false` = ปิด) **≠ `env_bool`** · เทสแตะ voice 10 ไฟล์ ·
+> 🔒 ห้ามแตะค่าเสียง — เทียบ `build_live_config()` ก่อน/หลัง
+> ถัดจาก voice: `fs_tools`/`embed`/`code_sandbox` (6) → `websearch`/`response_cache`/`memory` (5) → ที่เหลือ
+> 🔑 `.env.example` เรียงตาม (ลำดับใน `MODULES`, บรรทัดในซอร์ส) — **ไม่ขึ้นกับลำดับ import** ·
 > default ที่คำนวณจาก env อื่น → ลงทะเบียน `""` แล้วคำนวณเมื่อว่าง (ดู `ROUTER_IP`)
 > วิธีทำ: เทสแดงก่อน → ย้าย → **เติมชื่อโมดูลใน `core/env_registry.MODULES`** →
 > `python scripts/gen_env_example.py --write` → ชุดเต็ม + ruff + mutation → deploy + เทียบค่า

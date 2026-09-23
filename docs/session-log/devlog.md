@@ -1,5 +1,29 @@
 ---
 
+## [2026-09-23 ปิดเซสชัน (รอบบ่าย)] สรุป + สิ่งที่ user สั่งไว้สำหรับเซสชันหน้า
+**ทำเสร็จ 10 commit หลัก — deploy + verify บน prod + CI เขียวทุกตัว:**
+| commit | งาน |
+|---|---|
+| `0f5844b` `cbddc04` `2dcd501` `28b038b` | config ก้อน 4: llm (28) · orchestrator (11) · summarize (7) · home_tools (7 ชื่อใหม่) |
+| `47d94e5` | Ollama ReAct ไม่ส่งคำตอบที่โมเดลแต่งเอง (parser ตามตำแหน่ง + `stop` + ไม่สรุปเมื่อไม่มีข้อมูล) |
+| `3bb1803` | web_search ไม่ล้มทั้งก้อนเพราะหน้าเว็บช้า (`deadline` + ดัก `FuturesTimeout`) |
+| `1219cb3` | `LMSTUDIO_API_KEY=` ว่างไม่ทำแอปล้ม |
+| `0329561` `c51f86b` `f3a4e9d` | vault sync: PC ปิดจบ ~2 วิ · กันซ้อน (รอคิว) · catch-up อัตโนมัติทุก 5 นาที |
+- เหลืออ่าน env ดิบ **104 จุด** · ถอนข้อสรุปผิด 1 เรื่อง (UI vault sync — devlog [ต่อ 7])
+- 🔑 **user ย้ำเป็นกติกาถาวร: "เช็คข้อมูล ก่อนจะลงมือให้ชัวร์ก่อนทุกครั้ง"** — บันทึกใน memory
+  `feedback_evidence_before_proposing` ข้อ 10 (ลิงก์เข้าถังโปรเจกต์แล้ว)
+
+**🔜 user สั่งไว้: เซสชันหน้าทำก้อน 4 ต่อที่ `utils/voice.py`** — ข้อมูลที่ตรวจแล้ว (อ่านอย่างเดียว ยังไม่แตะโค้ด):
+- 6 จุด: `GEMINI_LIVE_MODEL` (63) · `VOICE_LEVEL_LOG` (301) · `VOICE_LEVEL_WINDOW_SEC` (302) ·
+  `VOICE_RECONNECT_SUSPECT_SEC` (420) · `READER_STALL_TIMEOUT` (706) · `VOICE_LOOP_EXIT_GRACE_SEC` (826)
+- ⚠️ `GEMINI_LIVE_MODEL` มีเจ้าของที่ `core/config.py` **แต่ config import `GEMINI_LIVE_MODEL_DEFAULT` จาก
+  voice.py** ⇒ voice.py import ค่ากลับจาก config ที่หัวไฟล์ = **circular import** — ต้องออกแบบก่อนแก้
+- ⚠️ `VOICE_LEVEL_LOG` ตีความเอง (`off`/`0`/`false` = ปิด · อื่น = เปิด · default `on`) **≠ `env_bool`**
+  (`lower()=="true"`) ⇒ ห้ามเปลี่ยนเป็น `env_bool` ตรงๆ
+- อีก 4 ชื่อมีแค่ voice.py อ่าน ⇒ voice.py เป็นเจ้าของ · มีเทสแตะ voice **10 ไฟล์**
+- 🔒 ข้อห้ามเดิมยังมีผล: ห้ามแตะค่าเสียง (`seed`/`temperature`/Aoede/`READER_PROMPT`) — ไม่มีตัวไหนมาจาก env
+  แต่ต้องเทียบ `build_live_config()` + ค่าที่ prod resolve ก่อน/หลัง deploy
+
 ## [2026-09-23 ต่อ 13] config ก้อน 4 ไฟล์ที่สี่ — `utils/home_tools.py` + บั๊กแฝงลำดับของ generator (`28b038b`)
 **home_tools** เป็นไฟล์เดียวที่อ่าน `NAS_IP/NAS_PORT/NAS_USER/NAS_PASS/PC_IP/PC_MAC/ROUTER_IP` ⇒ **เป็นเจ้าของ**
 ลงทะเบียน 7 ชื่อ (กลุ่ม Home Network) · default เดิมทุกตัว · `.env.example` ย้าย 6 ชื่อจากส่วนเขียนมือ
