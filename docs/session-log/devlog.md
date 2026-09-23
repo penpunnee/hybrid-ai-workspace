@@ -1,5 +1,16 @@
 ---
 
+## [2026-09-23 ต่อ 12] config ก้อน 4 ไฟล์ที่สาม — `utils/summarize.py` (`2dcd501`)
+7 จุด → 0 · ทุกชื่อมีเจ้าของที่ `core/config.py` แล้ว ⇒ import ค่าอย่างเดียว ไม่ลงทะเบียนใหม่ ·
+ชื่อ `_XXX` ระดับโมดูลคงเดิม · `GEMINI_API_KEY` อ่านครั้งเดียวตอน import · `MODULES += utils.summarize` ·
+`.env.example` ไม่เปลี่ยน
+- 🔑 mutation S1 (อ่าน `GEMINI_API_KEY` ดิบกลับ) เทสพฤติกรรมรอบแรก**จับไม่ได้** — assert แค่ค่าคืน ซึ่ง
+  `_call_gemini` กลืน exception แล้วคืน `""` ทั้งสองทาง ⇒ เปลี่ยนไปตรวจ**การสร้าง genai client** + กลุ่มควบคุม
+  ⇒ **6/6**
+- ✅ 1969 passed · ruff · CI เขียว · ค่าที่ prod resolve ก่อน/หลัง deploy ตรงกัน ·
+  `/api/documents/summarize` จริง → 200 `provider: lmstudio` `qwen/qwen3.5-9b` 30 วิ (รอบแรก 400 เพราะผม
+  ส่ง field `text` — endpoint ใช้ `content`)
+
 ## [2026-09-23 ต่อ 11] vault sync อัตโนมัติเมื่อ PC กลับมา (`f3a4e9d`)
 **หลักฐานก่อนออกแบบ:** error ของ vault sync ทั้งหมดใน log 3 ไฟล์ = **103 ครั้ง เป็นเรื่องต่อไม่ติดทั้งหมด**
 (`timed out in upsert.` 90 · `timed out in _forward_request` 6 · `Failed to connect to Ollama` 5 · `timed out` 2)

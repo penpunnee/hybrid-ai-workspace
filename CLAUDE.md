@@ -705,11 +705,11 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-23**)
 
-> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อ — ไฟล์ที่เหลือ (~121 จุด · ไฟล์ละ ≤7)**
+> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อ — ไฟล์ที่เหลือ (~111 จุด · ไฟล์ละ ≤7)**
 > ✅ เสร็จแล้ว 09-23 — **อย่าทำซ้ำ**: `utils/llm.py` (`0f5844b`) · `agents/orchestrator.py` (`cbddc04`)
-> · `LMSTUDIO_API_KEY` ย้ายเจ้าของไป `core/config.py` แล้ว · devlog [2026-09-23 ต่อ 3/4]
-> ต่อไป (มากสุดก่อน): `utils/summarize.py` · `utils/home_tools.py` · `utils/embed.py` (7) →
-> `utils/voice.py` · `fs_tools` · `code_sandbox` (6) → ที่เหลือ · ไฟล์เล็กจะรวบเป็นโดเมนก็ได้
+> · `utils/summarize.py` (`2dcd501`) · `LMSTUDIO_API_KEY` เจ้าของ = `core/config.py` · devlog [ต่อ 3/4/12]
+> ต่อไป (มากสุดก่อน): `utils/home_tools.py` (7) → `voice`/`fs_tools`/`embed`/`code_sandbox` (6) →
+> `websearch`/`response_cache`/`memory` (5) → ที่เหลือ · ไฟล์เล็กรวบเป็นโดเมนได้
 > วิธีทำ: เทสแดงก่อน → ย้าย → **เติมชื่อโมดูลใน `core/env_registry.MODULES`** →
 > `python scripts/gen_env_example.py --write` → ชุดเต็ม + ruff + mutation → deploy + เทียบค่า
 > ที่ prod resolve ได้ก่อน/หลัง (probe ในคอนเทนเนอร์)
