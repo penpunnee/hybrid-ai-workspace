@@ -1,5 +1,22 @@
 ---
 
+## [2026-09-23 ต่อ 8] `LMSTUDIO_API_KEY=` (ค่าว่าง) ไม่ทำให้แอปล้มอีก (`1219cb3`)
+**สำรวจก่อนแก้** — อ่านคีย์ดิบกระจาย 5 จุด แต่ละที่ตีความค่าว่างเอง:
+| จุด | สร้าง client | ค่าว่าง (ก่อนแก้) |
+|---|---|---|
+| `utils/llm.py` · `utils/embed.py` | ตอน import | 💥 server ไม่ขึ้น |
+| orchestrator · summarize · ocr · `memory/correction.py` | ตอนเรียก | 💥 ล้มทุกครั้งที่ใช้ |
+| `reasoning/router.py` | ไม่สร้าง (แค่ header) | `if key:` ⇒ ค่าว่าง = ไม่ตั้ง (ถูกอยู่แล้ว) |
+- เจอเพิ่ม: คำอธิบาย `.env.example` "ไม่ตั้ง ≠ ค่าว่าง" **ไม่ตรงกับโค้ด router** (router ถือว่าเท่ากัน)
+
+**แก้:** ค่าว่าง = ไม่ตั้ง → placeholder `"lmstudio"` ที่ `core/config.py` ที่เดียว · 4 ไฟล์ import ค่านี้ ·
+router ไม่แตะ (ยังไม่แนบ Authorization เมื่อว่าง — มีเทสกลุ่มควบคุม) · แก้คำอธิบาย `.env.example`
+
+**พิสูจน์:** เทส subprocess import จริงด้วย `""` (แดงด้วย `Missing credentials` ก่อนแก้) · กลุ่มควบคุม
+`sk-real-123` ต้องถูกใช้ตามเดิม · AST ห้ามอ่านคีย์ดิบนอก router · mutation **6/6** · 1938 passed · CI เขียว
+· บน prod: คีย์ที่ใช้อยู่ไม่เปลี่ยน (ยาว 8 ทุกจุด เป็นค่าเดียวกัน) · `env LMSTUDIO_API_KEY= python -c
+"import server"` ในคอนเทนเนอร์ **import ได้** (process แยก ไม่แตะ server ที่รันอยู่) · `lmstudio` health ✅
+
 ## [2026-09-23 ต่อ 7] ❌ ถอนข้อกล่าวหา "หน้าเว็บ vault sync ขึ้น ✅ ทั้งที่มี errors" — ไม่จริง ไม่แก้โค้ด
 user สั่งแก้ → ตรวจก่อนลงมือแล้วพบว่า**ข้อสรุปของผมใน [ต่อ 4] ผิด**
 - ผมอ่านแค่ `app.tsx:569` (เช็ค `res.ok`) แล้ว**เดา**ว่า backend ส่ง `ok:true` มาพร้อม `errors:22`
