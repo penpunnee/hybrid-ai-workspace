@@ -28,7 +28,9 @@ _DEFAULT_ROOT = os.path.expanduser("~/Desktop/ui/sandbox")
 # (แบบเดียวกับ ROUTER_IP) · ว่าง/ไม่ตั้ง = _DEFAULT_ROOT (เดิม: ตั้ง "" ได้ = ไม่มี root เลย)
 _ROOTS_ENV = env_str("FS_TOOLS_ROOTS", "", group=_G, doc=(
     "โฟลเดอร์ที่ agent อ่าน/เขียนได้ คั่นด้วย : (whitelist — นอกนี้ปฏิเสธทั้งหมด)\n"
-    "ว่าง = ~/Desktop/ui/sandbox · ในคอนเทนเนอร์ต้องตั้ง /app/sandbox ให้ตรง volume mount")) or _DEFAULT_ROOT
+    "ว่าง = ~/Desktop/ui/sandbox · ในคอนเทนเนอร์ต้องตั้งให้ตรง volume mount ของ sandbox\n"
+    "(ดูคู่กันใน docker-compose.yml — ห้ามเขียน path ในคอนเทนเนอร์ตรงนี้: CI ตรวจว่า repo root\n"
+    "ของเครื่องที่ generate ไม่หลุดเข้า .env.example และในอิมเมจ repo root คือ path นั้นพอดี)")) or _DEFAULT_ROOT
 _ROOTS = [Path(p).expanduser().resolve() for p in _ROOTS_ENV.split(":") if p.strip()]
 
 _MAX_READ = env_int("FS_TOOLS_MAX_READ", 1024 * 1024, group=_G, doc="ไบต์สูงสุดต่อการอ่านไฟล์ (1 MB)")
