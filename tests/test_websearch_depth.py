@@ -55,3 +55,59 @@ class TestFormatDepth:
         ctx = websearch.format_for_context(results, "ทดสอบ")
         kept = max(len(s) for s in ctx.splitlines())
         assert kept >= 450, f"snippet โดนตัดเหลือ ~{kept} ตัวอักษร"
+
+
+# ── หน้าเว็บช้าหน้าเดียวต้องไม่ทำ web_search ล้มทั้งก้อน (2026-09-23) ─────────────
+# ของจริง: "current gold price" → apmex.com ทยอยส่ง 36 วิ → as_completed(timeout=8)
+# โยน TimeoutError ที่ไม่มีใครดัก ⇒ tool web_search ล้ม ทิ้งผลค้น 6 ตัวที่ได้แล้ว
+# และ `with ThreadPoolExecutor` ยังรอเธรดที่ค้างตอนออก ⇒ ใช้เวลา 35.5 วิ
+
+import time  # noqa: E402
+
+
+class TestEnrichSlowPage:
+    def _fetch(self, url):
+        if "slow" in url:
+            time.sleep(3.0)
+            return "ไม่ควรได้"
+        return f"เนื้อหาจาก {url}"
+
+    def _results(self):
+        return [{"title": t, "body": "b", "href": f"https://{t}.example/a"}
+                for t in ("fast1", "slow", "fast2")]
+
+    def test_หน้าช้าไม่ทำให้ล้ม_และเก็บหน้าที่เสร็จแล้วไว้(self, monkeypatch):
+        monkeypatch.setattr(websearch, "_FETCH_TIMEOUT", 0.2)  # as_completed รอ 2.2 วิ
+        monkeypatch.setattr(websearch, "_fetch_url", self._fetch)
+        out = websearch._enrich_with_fetch(self._results())
+        by = {r["title"]: r.get("fetched_text") for r in out}
+        assert by["fast1"].startswith("เนื้อหาจาก") and by["fast2"].startswith("เนื้อหาจาก")
+        assert by["slow"] == ""
+
+    def test_ไม่รอเธรดที่ค้างตอนออก(self, monkeypatch):
+        monkeypatch.setattr(websearch, "_FETCH_TIMEOUT", 0.2)
+        monkeypatch.setattr(websearch, "_fetch_url", self._fetch)
+        t = time.monotonic()
+        websearch._enrich_with_fetch(self._results())
+        took = time.monotonic() - t
+        assert took < 2.9, f"ใช้ {took:.1f} วิ — ยังรอเธรดที่ค้าง (หน้าช้าใช้ 3 วิ)"
+
+    def test_บอกใน_log_ว่าหน้าไหนช้า(self, monkeypatch, caplog):
+        """หน้าช้าถูกทิ้ง ≠ หน้าว่าง — ต้องมีร่องรอยให้ตามได้"""
+        monkeypatch.setattr(websearch, "_FETCH_TIMEOUT", 0.2)
+        monkeypatch.setattr(websearch, "_fetch_url", self._fetch)
+        with caplog.at_level("WARNING", logger=websearch.logger.name):
+            websearch._enrich_with_fetch(self._results())
+        assert "slow.example" in caplog.text
+
+    def test_fetch_ส่งเพดานเวลารวมให้_fetch_url_safe(self, monkeypatch):
+        seen = {}
+
+        def fake_safe(url, **kw):
+            seen.update(kw)
+            raise RuntimeError("stop")
+
+        import utils.urlguard as ug
+        monkeypatch.setattr(ug, "fetch_url_safe", fake_safe)
+        websearch._fetch_url("https://x.example/")
+        assert seen.get("deadline") is not None and seen["deadline"] <= websearch._FETCH_TIMEOUT + 2

@@ -16,6 +16,7 @@ import ipaddress
 import logging
 import re
 import socket
+import time
 from typing import NamedTuple
 from urllib.parse import urljoin, urlsplit
 
@@ -116,16 +117,31 @@ def _decode(body: bytes, content_type: str) -> str:
     return body.decode("utf-8", errors="replace")
 
 
+_now = time.monotonic  # แยกไว้ให้เทสใส่นาฬิกาปลอมได้
+
+
 def fetch_url_safe(
     url: str,
     *,
     timeout: float = DEFAULT_TIMEOUT,
     max_bytes: int = DEFAULT_MAX_BYTES,
     max_redirects: int = DEFAULT_MAX_REDIRECTS,
+    deadline: float | None = None,
 ) -> FetchResult:
-    """GET url อย่างปลอดภัย — validate + pin IP ทุก hop, เดิน redirect เอง, cap ขนาด"""
+    """GET url อย่างปลอดภัย — validate + pin IP ทุก hop, เดิน redirect เอง, cap ขนาด
+
+    `timeout` = ต่อการต่อ/อ่านหนึ่งครั้ง · `deadline` = **เพดานเวลารวม** (วินาที, None = ไม่มี)
+    ⚠️ timeout อย่างเดียวไม่พอ: เว็บที่ทยอยส่งทีละนิด (apmex.com 364 KB ใช้ 36 วิ ·
+    วัด 2026-09-23) ทุก chunk มาถึงภายใน timeout จึงไม่มีวันหมดเวลา
+    เกินเพดานกลางการอ่าน → คืนเท่าที่ได้ + `truncated=True` (แบบเดียวกับ `max_bytes`)
+    · เกินก่อนเริ่ม hop ใหม่ → `URLFetchError`
+    ⚠️ chunk ที่กำลังรออยู่ยังรอได้อีกถึง `timeout` ⇒ เวลาจริงสูงสุด ≈ deadline + timeout
+    """
+    end = None if deadline is None else _now() + deadline
     current = url
     for _hop in range(max_redirects + 1):
+        if end is not None and _now() >= end:
+            raise URLFetchError(f"เกินเพดานเวลารวม {deadline} วิ (ก่อน hop ที่ {_hop + 1})")
         ips = resolve_and_validate(current)
         parts = urlsplit(current)
         hostname = parts.hostname
@@ -171,6 +187,11 @@ def fetch_url_safe(
                 if len(body) >= max_bytes:
                     body = body[:max_bytes]
                     truncated = True
+                    break
+                if end is not None and _now() >= end:
+                    truncated = True
+                    logger.info(f"[urlguard] เกินเพดานเวลารวม {deadline} วิ — คืน {len(body)}b "
+                                f"ที่ได้แล้ว: {current}")
                     break
             resp.release_conn()
             return FetchResult(

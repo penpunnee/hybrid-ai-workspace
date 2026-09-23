@@ -300,3 +300,51 @@ class TestWebsearchUsesGuard:
         from utils import websearch
         # ต้องคืน "" (best effort เดิม) ไม่ throw และไม่ยิงจริง
         assert websearch._fetch_url("http://192.168.51.1/") == ""
+
+
+# ── เพดานเวลารวม (2026-09-23) ─────────────────────────────────────────────────
+# ของจริง: apmex.com ส่ง 364 KB มาทีละนิดจนใช้ 36 วิ (วัดซ้ำ 2/2) — ทุก chunk มาถึงภายใน
+# read-timeout 6 วิ ⇒ timeout แบบ "ต่อการอ่าน" ไม่เคยทำงาน · ไม่มีเพดานรวม ⇒ web_search
+# ที่ fetch หน้านี้ล้มทั้งก้อน (as_completed timeout)
+
+class _TrickleResponse(_FakeResponse):
+    """ส่งทีละ chunk และเดินนาฬิกาปลอม 1 วิ/chunk — จำลองเว็บที่ทยอยส่ง"""
+    def __init__(self, clock, n_chunks=10, chunk=b"x" * 100, **kw):
+        super().__init__(body=chunk * n_chunks, **kw)
+        self._clock, self._n, self._chunk = clock, n_chunks, chunk
+
+    def stream(self, n):
+        for _ in range(self._n):
+            self._clock[0] += 1.0
+            yield self._chunk
+
+
+@pytest.fixture
+def fake_clock(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(urlguard, "_now", lambda: clock[0])
+    return clock
+
+
+class TestDeadline:
+    def test_เกินเพดานรวมกลางการอ่าน_คืนเท่าที่ได้_ติดธง_truncated(self, fake_pool, public_dns, fake_clock):
+        fake_pool.responses = [_TrickleResponse(fake_clock, n_chunks=10)]
+        res = fetch_url_safe("https://example.com/slow", deadline=3.0)
+        assert res.truncated is True
+        assert 0 < len(res.text) < 1000, f"ได้ {len(res.text)} ตัวอักษร — ควรหยุดกลางทาง"
+
+    def test_ไม่ใส่_deadline_พฤติกรรมเดิม_อ่านครบ(self, fake_pool, public_dns, fake_clock):
+        """กลุ่มควบคุม — ผู้เรียกเดิม (tool fetch_url) ต้องไม่เปลี่ยน"""
+        fake_pool.responses = [_TrickleResponse(fake_clock, n_chunks=10)]
+        res = fetch_url_safe("https://example.com/slow")
+        assert res.truncated is False and len(res.text) == 1000
+
+    def test_เกินเพดานก่อน_redirect_hop_ถัดไป_ต้องหยุด(self, fake_pool, public_dns, fake_clock,
+                                                     monkeypatch):
+        def slow_redirect(self, method, path, headers=None, **kw):
+            fake_clock[0] += 5.0  # แต่ละ hop ใช้ 5 วิ
+            return _FakeResponse(status=302, headers={"location": "https://example.com/next"})
+
+        monkeypatch.setattr(_FakePool, "urlopen", slow_redirect)
+        with pytest.raises(URLFetchError, match="เวลา"):
+            fetch_url_safe("https://example.com/start", deadline=3.0)

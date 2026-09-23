@@ -15,6 +15,7 @@ import time
 import html as html_lib
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeout
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,8 @@ def _fetch_url(url: str) -> str:
     """
     try:
         from utils.urlguard import fetch_url_safe
-        res = fetch_url_safe(url, timeout=_FETCH_TIMEOUT)
+        # deadline = เพดานเวลารวม · timeout อย่างเดียวไม่กันเว็บที่ทยอยส่ง (ดู fetch_url_safe)
+        res = fetch_url_safe(url, timeout=_FETCH_TIMEOUT, deadline=_FETCH_TIMEOUT)
         if "html" not in res.content_type and "text" not in res.content_type:
             return ""
         return _extract_text(res.text)
@@ -138,14 +140,27 @@ def _enrich_with_fetch(results: list[dict], top_n: int = _FETCH_TOP_N) -> list[d
     if not results:
         return results
     targets = results[:top_n]
-    with ThreadPoolExecutor(max_workers=top_n) as ex:
-        futures = {ex.submit(_fetch_url, r.get("href", "")): r for r in targets if r.get("href")}
+    # ไม่ใช้ `with` — ตอนออกมันรอเธรดที่ค้างจนเสร็จ (เคยรอ 35.5 วิ เพราะหน้าเดียว)
+    ex = ThreadPoolExecutor(max_workers=top_n)
+    futures = {ex.submit(_fetch_url, r.get("href", "")): r for r in targets if r.get("href")}
+    try:
         for fut in as_completed(futures, timeout=_FETCH_TIMEOUT + 2):
             r = futures[fut]
             try:
                 r["fetched_text"] = fut.result() or ""
             except Exception:
                 r["fetched_text"] = ""
+    except FuturesTimeout:
+        # 🔴 เดิมไม่ดัก ⇒ หน้าช้าหน้าเดียว = web_search ล้มทั้งก้อน ทิ้งผลค้นที่ได้แล้ว
+        # (2026-09-23 · "current gold price" → apmex.com) · หน้าช้า = ไม่มีเนื้อหา ใช้ snippet แทน
+        slow = [futures[f].get("href", "") for f in futures if not f.done()]
+        logger.warning(f"[WebSearch] fetch เกิน {_FETCH_TIMEOUT + 2} วิ ทิ้ง {len(slow)} หน้า "
+                       f"(ใช้ snippet แทน): {slow}")
+        for f in futures:
+            if not f.done():
+                futures[f]["fetched_text"] = ""
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
     return results
 
 
