@@ -534,8 +534,42 @@ def _attach_image_openai(messages: list[dict], image_b64: str, image_mime: str) 
 
 # ── Ollama ReAct path ─────────────────────────────────────────────────────────
 
-_ACTION_RE = re.compile(r"Action:\s*(\{.*?\})", re.DOTALL)
+_ACTION_RE = re.compile(r"Action:\s*")
 _ANSWER_RE = re.compile(r"Answer:\s*(.*)", re.DOTALL)
+# ให้ Ollama หยุดก่อนแต่งผล tool เอง — แนวทางมาตรฐานของ ReAct
+# (parser ข้างล่างยังกันได้เองเผื่อ stop ไม่ถูกเคารพ)
+_REACT_STOP = ["Observation:"]
+
+
+def _parse_react(content: str) -> tuple[str, Any]:
+    """แยกผลของโมเดล ReAct → ("action", (tool, args, ข้อความถึงท้าย Action))
+    | ("answer", ข้อความ) | ("bad_action", เหตุผล) | ("plain", ข้อความ)
+
+    🔑 **ตำแหน่งตัดสิน** (บั๊ก 2026-09-23 · probe llama3 จริงบน prod):
+    โมเดลเขียน `Action:` แล้ว**แต่ง `Observation:` + `Answer:` ต่อเองในข้อความเดียว**
+    โค้ดเดิมตรวจ `Answer` ก่อน ⇒ ส่ง "ดิสก์เหลือ 300 GB" (ของจริง 11,353 GB) ให้ user
+    ⇒ `Action` มาก่อน `Answer` = ทุกอย่างหลัง Action คือของแต่ง ทิ้ง
+
+    JSON อ่านด้วย `raw_decode` (นับวงเล็บ/สตริงถูกต้อง) — regex non-greedy เดิมหยุดที่ `}`
+    ตัวแรก ⇒ `{"tool": ..., "args": {...}}` ซึ่ง `_REACT_SYSTEM` สั่งเอง parse พังทุกครั้ง
+    """
+    action = _ACTION_RE.search(content)
+    answer = _ANSWER_RE.search(content)
+    if action and (not answer or action.start() < answer.start()):
+        start = content.find("{", action.end())
+        if start == -1:
+            return "bad_action", "ไม่พบ JSON หลัง Action:"
+        try:
+            obj, end = json.JSONDecoder().raw_decode(content, start)
+        except json.JSONDecodeError as e:
+            return "bad_action", f"JSON parse error: {e}"
+        if not isinstance(obj, dict):
+            return "bad_action", "Action ต้องเป็น JSON object"
+        args = obj.get("args") or {}
+        return "action", (obj.get("tool", ""), args, content[:end])
+    if answer:
+        return "answer", answer.group(1).strip()
+    return "plain", content
 
 
 def _build_react_system(tool_names: list[str]) -> str:
@@ -569,6 +603,11 @@ def _run_agent_ollama(
     else:
         messages.insert(0, {"role": "system", "content": react_system})
 
+    # นับ tool ที่ได้ข้อมูลจริง — `execute_tool` ขึ้นต้น "❌" เมื่อล้มเสมอ (ไม่รู้จัก tool /
+    # argument ผิด / exception) · ⚠️ tool ที่รายงาน error ของตัวเองโดยไม่มี ❌
+    # (เช่น "Memory error: ...") ตัวนับนี้มองไม่เห็น
+    ok_observations = 0
+
     for step in range(max_steps):
         yield ("event", {"type": "thinking", "step": step + 1})
         logger.info(f"[Agent/Ollama] step {step+1}/{max_steps}")
@@ -580,6 +619,7 @@ def _run_agent_ollama(
                 messages=messages,
                 temperature=0.3,
                 stream=False,
+                stop=_REACT_STOP,
                 extra_body={"options": {"num_ctx": OLLAMA_NUM_CTX}},
             )
         except Exception as e:
@@ -591,33 +631,25 @@ def _run_agent_ollama(
         content = (response.choices[0].message.content or "").strip()
         logger.debug(f"[Agent/Ollama] raw output: {content[:300]}")
 
-        # ตรวจ Answer ก่อน
-        answer_match = _ANSWER_RE.search(content)
-        if answer_match:
+        kind, parsed = _parse_react(content)
+        if kind in ("answer", "plain"):
+            # plain = โมเดลไม่ทำตาม format → ถือว่าเป็นคำตอบตรง (ไม่มี Action ให้แต่งต่อ)
             yield ("event", {"type": "answering"})
-            yield ("chunk", answer_match.group(1).strip())
+            yield ("chunk", parsed)
+            return
+        if kind == "bad_action":
+            # ⚠️ ห้าม yield `content` ดิบ — อาจมี Observation/Answer ที่โมเดลแต่งต่อท้ายอยู่
+            logger.warning(f"[Agent/Ollama] {parsed} — raw: {content[:300]}")
+            yield ("event", {"type": "error", "message": parsed})
+            yield ("chunk", "❌ อ่านคำสั่งเรียกเครื่องมือของโมเดลไม่ได้ — ลองถามใหม่ หรือใช้ Gemini/LM Studio agent")
             return
 
-        # ตรวจ Action
-        action_match = _ACTION_RE.search(content)
-        if not action_match:
-            # โมเดลไม่ทำตาม format → ถือว่าเป็นคำตอบตรง
-            yield ("event", {"type": "answering"})
-            yield ("chunk", content)
-            return
-
-        try:
-            action = json.loads(action_match.group(1))
-            tool_name = action.get("tool", "")
-            args = action.get("args", {})
-        except json.JSONDecodeError as e:
-            logger.warning(f"[Agent/Ollama] JSON parse error: {e} — raw: {action_match.group(1)}")
-            yield ("event", {"type": "error", "message": f"JSON parse error: {e}"})
-            yield ("chunk", content)
-            return
+        tool_name, args, action_text = parsed
 
         yield ("event", {"type": "tool_call", "name": tool_name, "args": args})
         result = execute_tool(tool_name, args)
+        if not result.startswith("❌"):
+            ok_observations += 1
         yield ("event", {
             "type": "tool_result",
             "name": tool_name,
@@ -625,12 +657,20 @@ def _run_agent_ollama(
             "length": len(result),
         })
 
-        # เพิ่ม turn นี้เข้า history เพื่อ loop ต่อ
-        messages.append({"role": "assistant", "content": content})
+        # เพิ่ม turn นี้เข้า history เพื่อ loop ต่อ — ตัดที่ท้าย Action
+        # (ไม่งั้น Observation ที่โมเดลแต่งจะถูกป้อนกลับปนกับของจริง)
+        messages.append({"role": "assistant", "content": action_text})
         messages.append({"role": "user", "content": f"Observation: {result}"})
 
     # ครบ max_steps → บังคับสรุป
     yield ("event", {"type": "max_steps_reached"})
+    if ok_observations == 0:
+        # 🔴 ไม่มีข้อมูลจริงสักชิ้น ⇒ ห้ามให้โมเดล "สรุป" — probe จริง 2026-09-23:
+        # web_search ล้ม 3 ครั้ง แล้ว llama3 ตอบ "ราคาทอง ~$1,825 (Source: Google Search)"
+        logger.warning("[Agent/Ollama] ครบ max_steps โดยไม่มี tool ไหนได้ข้อมูล — ไม่สรุป")
+        yield ("chunk", "❌ เครื่องมือไม่ได้ข้อมูลจริงเลยสักครั้ง จึงไม่ตอบจากการเดา — "
+                        "ลองถามใหม่ หรือใช้ Gemini/LM Studio agent")
+        return
     messages.append({
         "role": "user",
         "content": "ตอบจากข้อมูลที่ได้มาให้ครบถ้วน เก็บรายละเอียดและแหล่งที่มา เขียนแค่ Answer: ... เท่านั้น",
