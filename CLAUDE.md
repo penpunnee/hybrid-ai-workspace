@@ -705,7 +705,7 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-23**)
 
-> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อที่ `utils/reflection.py` + `utils/query_rewrite.py` + `utils/ocr.py` (4+4+4)**
+> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อที่ `utils/dream.py` (4) + `routers/dream.py` (1) + `utils/heartbeat.py` (4)**
 > 🔑 **กติกา user: "เช็คข้อมูล ก่อนจะลงมือให้ชัวร์ก่อนทุกครั้ง"** — ทั้งสองฝั่งของสัญญา + log/คำสั่งจริง
 > · **09-23 ค่ำ user เพิ่ม: "เช็คข้อมูลระบบจริงก่อน อย่าเชื่อ log ถ้าข้อมูลยังไม่ครอบคลุมให้ค้นเน็ตก่อน"**
 > ⇒ ก่อนย้ายไฟล์ไหน probe ในคอนเทนเนอร์ว่า env ตั้งจริงไหม + ค่าที่ resolve (ไม่ใช่อ่านจาก `.env.example`)
@@ -713,8 +713,14 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > ✅ เสร็จแล้ว 09-23 — **อย่าทำซ้ำ**: `utils/llm.py` (`0f5844b`) · `agents/orchestrator.py` (`cbddc04`)
 > · `utils/summarize.py` (`2dcd501`) · `utils/home_tools.py` (`28b038b`) · `utils/voice.py` (`16e0b83`)
 > · `fs_tools`/`embed`/`code_sandbox` (`cbd7b1a`) · `websearch`/`response_cache`/`memory` (`e8844bc`)
-> · **ชั้น core `ratelimit`/`observability`/`scheduler` (`641617d`)** — `LOG_*` เจ้าของ = config
-> · เหลือ **56 จุด** (นับด้วย AST ไม่รวม tests/scripts/legacy และ 4 จุดของ registry เอง)
+> · ชั้น core `ratelimit`/`observability`/`scheduler` (`641617d`) — `LOG_*` เจ้าของ = config
+> · **`reflection`/`query_rewrite`/`ocr` (`7ccd25a`)** — registry **ปฏิเสธชื่อที่ลงจากคนละโมดูลแล้ว**
+> (fail-loud ตอน import · แม้ default เท่ากัน) ⇒ ไฟล์ที่ย้ายต้อง import ค่าจากเจ้าของจริงๆ ไม่งั้นแอปไม่ขึ้น
+> · เหลือ **44 จุด** (นับด้วย AST ไม่รวม tests/scripts/legacy และ 4 จุดของ registry เอง)
+> 🔑 **default ซ้อน** (`os.getenv("X", os.getenv("Y", ...))`) ลงทะเบียนเป็นตัวเลขไม่ได้ → ลง `""` +
+> `or <ค่า Y จาก config>` (ทำแล้ว: `REFLECTION_MODEL` · `QUERY_REWRITE_MODEL`)
+> ⚠️ ก้อนถัดไปที่ต้องคิดก่อน: `utils/tts.py` มี `_positive_env` ที่ **ตั้งใจไม่ raise** (crashloop) —
+> ลงเป็น `env_str` + คง parser · `reasoning/router.py` ดูข้อเตือนล่าง
 > 🔴 **ทุกก้อนต้องเช็ค `grep -c /app` ในส่วน generate ของ `.env.example` = 0 ก่อน push** — เกือบชน
 > CI guard ซ้ำรอบที่ 2 ที่ doc ของ `LOG_FILE` (จับได้จากเช็คนี้เอง ไม่ใช่จาก CI)
 > 🔑 **env ที่อ่าน *ในฟังก์ชัน* (runtime read) → ย้ายเป็นระดับโมดูล** (ทำแล้ว 6 จุดใน `e8844bc`):

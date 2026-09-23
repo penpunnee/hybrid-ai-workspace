@@ -1,5 +1,26 @@
 ---
 
+## [2026-09-24 ต่อ 2] config ก้อน 4 ไฟล์ที่ 15-17 — `reflection` · `query_rewrite` · `ocr` + registry บังคับเจ้าของ (`7ccd25a`)
+**ตรวจ prod ก่อน:** `REFLECTION_*`/`QUERY_REWRITE_*` ไม่ได้ตั้ง · `LMSTUDIO_*`/`GEMINI_API_KEY` ตั้ง
+(เจ้าของ config) · baseline reflection `qwen/qwen3.5-9b 30 0.7` · query_rewrite `qwen/qwen3.5-9b 8 True` ·
+ocr `key=True PC:1234 qwen/qwen3.5-9b 180` · หลัง deploy **ตรงทุกค่า** · registry บน prod 94 ชื่อ ·
+`/api/config` 200 · 0 error
+- **default ซ้อน** — `REFLECTION_MODEL`/`QUERY_REWRITE_MODEL` เดิม default เป็น
+  `os.getenv("LMSTUDIO_REASON/CHAT_MODEL", ...)` อีกชั้น (ชื่อของ config) ⇒ ลงทะเบียนเป็นตัวเลขไม่ได้
+  → ลง `""` + `or <ค่าจาก config>` (แบบ `ROUTER_IP`/`EMBED_CACHE_DB`) · ว่าง/ไม่ตั้ง = โมเดลของ config
+  (เดิม: ตั้ง `""` ได้ = โมเดลชื่อว่าง เรียกไม่ได้)
+- `ocr` อ่าน 4 ชื่อของ config ซ้ำ (ค่าเท่ากัน) → import ทั้งหมด ไม่ลงทะเบียนอะไร
+- 🔴 **mutation M9 รอด → แก้ที่ตัว registry:** mutant ลงทะเบียน `LMSTUDIO_REASON_MODEL` ซ้ำใน reflection
+  ผ่าน `env_registry.env_str(...)` แบบ *attribute call* — `_helper_names` สแกนแค่ `ast.Name` จึงมองไม่เห็น
+  และ `_register` รับซ้ำเงียบเพราะ default เท่ากัน ⇒ **`_register` ปฏิเสธชื่อที่ลงจากคนละโมดูล**
+  (fail-loud ตอน import · โมดูลเดิม reload/exec ใหม่ได้) · เทสตรึงด้วย `exec` ใต้ `__name__` ปลอม
+  · 🔑 **ตัวกันที่ผูกกับ "รูปแบบการเขียน" (AST ของ bare call) พังเมื่อรูปแบบเปลี่ยน — บทเรียนเดิม
+  09-23 ซ้ำอีกรอบ ⇒ ย้ายไปบังคับที่ *พฤติกรรม* ของ registry แทน**
+- `.env.example`: 6 ชื่อเข้าส่วน generate (ไม่เคยถูกจดในไฟล์นี้มาก่อน) · `/app` ในส่วน generate = 0
+- เทสแดงก่อน 11 · กลุ่มควบคุม 181 เขียว · **2110 passed/17 skipped** (+18) · ruff · **mutation 10/10**
+  (M9 ฆ่าได้หลังแก้ registry)
+- เหลืออ่าน env ดิบ **44 จุด** · ถัดไป `utils/dream.py` (4) + `routers/dream.py` (1) + `utils/heartbeat.py` (4)
+
 ## [2026-09-24 ต่อ] config ก้อน 4 ชั้น core — `ratelimit` · `observability` · `scheduler` 9 จุด (`641617d`)
 **ตรวจ prod ก่อน:** ไม่มีชื่อไหนตั้งใน `.env` · `LOG_FILE=/app/logs/server.log` มาจาก compose
 `environment:` (ทับ `.env` — ชนิดเดียวกับ `DB_PATH`) · baseline ratelimit `True 120 8 300.0 50000` ·
