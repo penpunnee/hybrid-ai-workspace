@@ -11,7 +11,6 @@ Yields tuples:
 """
 import json
 import logging
-import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -116,17 +115,21 @@ class _MarkerFilter:
         out, self._buf = self._buf, ""
         return out if self._emitted else out.lstrip()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 from utils.llm import GEMINI_MODEL  # ที่เดียว (ดู utils/llm.py:GEMINI_MODEL_DEFAULT)
-# ⬇️ อ่านจาก core/config.py ที่เดียว — เดิมไฟล์นี้มี default ของตัวเองที่ไม่ตรงกับที่อื่น
-# (ตัวกัน: tests/test_env_default_consistency.py)
+# ⬇️ env ทุกตัวของไฟล์นี้มีเจ้าของอยู่ที่ core/config.py — import ค่า ห้ามอ่านซ้ำ
+# (ก้อน 4 · 2026-09-23 · ตัวกัน: tests/test_env_registry.py + test_orchestrator_config.py)
+# ชื่อระดับโมดูลคงไว้เหมือนเดิม — เทสใช้ patch("agents.orchestrator.GEMINI_API_KEY") ฯลฯ
+from core.config import (
+    GEMINI_API_KEY,
+    LMSTUDIO_API_KEY,
+    LMSTUDIO_BASE_URL,
+    LMSTUDIO_TIMEOUT,
+    OLLAMA_BASE_URL,
+    OLLAMA_MODEL,
+    OLLAMA_NUM_CTX,
+    OLLAMA_TIMEOUT,
+)
 from core.config import LMSTUDIO_CHAT_MODEL as _CFG_LMSTUDIO_CHAT_MODEL
-LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "")
-LMSTUDIO_API_KEY = os.getenv("LMSTUDIO_API_KEY", "lmstudio")
-LMSTUDIO_TIMEOUT = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
-OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 
 AGENT_SYSTEM_HINT = (
     "\n\n[Agent Mode] คุณมีเครื่องมือที่ใช้ได้:\n"
@@ -577,7 +580,7 @@ def _run_agent_ollama(
                 messages=messages,
                 temperature=0.3,
                 stream=False,
-                extra_body={"options": {"num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "4096"))}},
+                extra_body={"options": {"num_ctx": OLLAMA_NUM_CTX}},
             )
         except Exception as e:
             logger.exception("[Agent/Ollama] LLM call failed")
@@ -635,7 +638,7 @@ def _run_agent_ollama(
     try:
         final = client.chat.completions.create(
             model=model, messages=messages, temperature=0.3, stream=False,
-            extra_body={"options": {"num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "4096"))}},
+            extra_body={"options": {"num_ctx": OLLAMA_NUM_CTX}},
         )
         final_content = (final.choices[0].message.content or "").strip()
         answer_match = _ANSWER_RE.search(final_content)

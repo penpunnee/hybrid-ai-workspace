@@ -39,6 +39,7 @@ from core.config import (
     OLLAMA_TOP_P,
     SHOW_THINKING,
 )
+from core.config import LMSTUDIO_API_KEY as _LMSTUDIO_API_KEY
 from core.config import LMSTUDIO_BASE_URL as _LMSTUDIO_BASE_URL
 from core.config import LMSTUDIO_TIMEOUT as _LMSTUDIO_TIMEOUT
 # env ที่ไฟล์นี้เป็นเจ้าของ — อ่านผ่าน registry เพื่อให้ .env.example generate ได้
@@ -118,11 +119,7 @@ gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 # --- LM Studio (OpenAI-compatible local server) ---
 # opt-in: default ว่าง — ถ้าไม่ตั้ง LMSTUDIO_BASE_URL จะไม่ถูกใช้ (local หลักคือ Ollama)
-# _LMSTUDIO_BASE_URL / _LMSTUDIO_TIMEOUT มาจาก core/config.py
-# LM Studio รุ่นใหม่บังคับ API token — ตั้ง LMSTUDIO_API_KEY ให้ตรง (default dummy)
-_LMSTUDIO_API_KEY  = env_str("LMSTUDIO_API_KEY", "lmstudio", group="LM Studio", doc=(
-    "token ของ LM Studio รุ่นใหม่ (หรือปิด \"Require API key\" ในตัวโปรแกรม)\n"
-    "⚠️ ไม่ตั้ง ≠ ตั้งเป็นค่าว่าง: reasoning/router.py แนบ Authorization เฉพาะเมื่อตั้งเอง"))
+# _LMSTUDIO_BASE_URL / _LMSTUDIO_TIMEOUT / _LMSTUDIO_API_KEY มาจาก core/config.py
 
 # client สร้างไว้เสมอ แต่จะถูกเรียกเฉพาะเมื่อ provider="lmstudio" เท่านั้น
 # ถ้า base_url ว่าง ใช้ localhost (ถ้าเผลอเรียกจะ refuse แบบ clean ไม่ leak ไป api.openai.com)

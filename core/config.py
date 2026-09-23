@@ -135,6 +135,10 @@ LMSTUDIO_REASON_MODEL = env_str("LMSTUDIO_REASON_MODEL", "qwen/qwen3.5-9b", grou
 LMSTUDIO_VISION_MODEL = env_str("LMSTUDIO_VISION_MODEL", "llama-3.2-11b-vision-instruct",
                                 group=_G, doc="โมเดลอ่านรูปของ LM Studio")
 LMSTUDIO_TIMEOUT      = env_int("LMSTUDIO_TIMEOUT", 180, group=_G, doc="วินาที")
+# ⚠️ ไฟล์อื่นที่ยังอ่านดิบโดยไม่ใส่ default (reasoning/router.py) ตั้งใจแยก "ไม่ตั้ง" ออกจาก "ตั้ง"
+LMSTUDIO_API_KEY      = env_str("LMSTUDIO_API_KEY", "lmstudio", group=_G, doc=(
+    "token ของ LM Studio รุ่นใหม่ (หรือปิด \"Require API key\" ในตัวโปรแกรม)\n"
+    "⚠️ ไม่ตั้ง ≠ ตั้งเป็นค่าว่าง: reasoning/router.py แนบ Authorization เฉพาะเมื่อตั้งเอง"))
 SHOW_THINKING         = env_bool("SHOW_THINKING", False, group=_G,
                                  doc="โชว์ <think> ของโมเดลบน UI")
 

@@ -55,7 +55,7 @@ REGISTRY: dict[str, EnvSpec] = {}
 # (ก้อน 4 ย้ายทีละไฟล์) · มีเทสตรวจว่าไฟล์ในลิสต์ไม่มี `os.getenv` ดิบเหลือ
 # 🔴 REGISTRY ถูกเติมตอน *import* เท่านั้น ⇒ generator/เทสที่ import แค่ `core.config`
 #    จะไม่เห็นชื่อของ `utils/llm.py` เลย แล้ว `.env.example` ขาดไปเงียบๆ → ใช้ `load_all()`
-MODULES: tuple[str, ...] = ("core.config", "utils.llm")
+MODULES: tuple[str, ...] = ("core.config", "utils.llm", "agents.orchestrator")
 
 
 def load_all() -> dict[str, EnvSpec]:

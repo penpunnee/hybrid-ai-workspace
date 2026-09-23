@@ -325,3 +325,19 @@ def test_env_หนึ่งชื่อลงทะเบียนจากโ�
 
 def test_สแกน_helper_มีตาจริง():
     assert _helper_names('X = env_str("A", "", doc="d")\nY = env_int("B", 1, doc="d")\n') == {"A", "B"}
+
+
+# ── 6) ก้อน 4 ไฟล์ที่สอง: agents/orchestrator.py (2026-09-23) ──────────────────
+
+def test_orchestrator_อยู่ใน_MODULES():
+    """ไม่อยู่ในลิสต์ = `test_ไฟล์ที่ย้ายแล้วต้องไม่มีการอ่าน_env_ดิบเหลือ` ไม่ตรวจไฟล์นี้"""
+    from core.env_registry import MODULES
+
+    assert "agents.orchestrator" in MODULES
+
+
+def test_LMSTUDIO_API_KEY_เจ้าของคือ_config():
+    """ถูกใช้ 6 ไฟล์ (llm/orchestrator/embed/ocr/summarize/router) — เจ้าของต้องเป็นที่กลาง
+    ไม่ใช่ `utils/llm.py` (ไม่งั้นไฟล์อื่นต้อง import ตัวแปร private ของ llm)"""
+    src = (REPO / "core" / "config.py").read_text()
+    assert "LMSTUDIO_API_KEY" in _helper_names(src)
