@@ -1,5 +1,25 @@
 ---
 
+## [2026-09-23 ต่อ 13] config ก้อน 4 ไฟล์ที่สี่ — `utils/home_tools.py` + บั๊กแฝงลำดับของ generator (`28b038b`)
+**home_tools** เป็นไฟล์เดียวที่อ่าน `NAS_IP/NAS_PORT/NAS_USER/NAS_PASS/PC_IP/PC_MAC/ROUTER_IP` ⇒ **เป็นเจ้าของ**
+ลงทะเบียน 7 ชื่อ (กลุ่ม Home Network) · default เดิมทุกตัว · `.env.example` ย้าย 6 ชื่อจากส่วนเขียนมือ
+เข้าส่วน generate · **`ROUTER_IP` ถูกจดในเอกสารครั้งแรก**
+- `ROUTER_IP` ลงทะเบียน default `""` **ไม่ใช่ค่าที่คำนวณจาก NAS_IP** (ไม่งั้น `.env.example` เปลี่ยนตาม env
+  ของเครื่องที่ generate — กับดักเดียวกับ path ในก้อน 3) · ว่าง/ไม่ตั้ง = เดาจาก NAS_IP (เดิมตั้งว่างได้ `""`)
+  · prod ไม่ได้ตั้ง ⇒ ได้ `192.168.51.1` เหมือนเดิม
+
+**🔴 บั๊กแฝงของก้อน 3 — baseline gate ของ mutation จับได้**
+ลำดับกลุ่มใน `.env.example` มาจาก**ลำดับที่ชื่อถูกลงทะเบียน = ลำดับ import** · home_tools ไม่ import
+`core.config` ⇒ ถ้า `test_ping_network`/`test_home_tools_guard` import มันก่อน ไฟล์ที่ generate ไม่ตรงกับที่
+commit (ชุดเต็มเขียวเพราะลำดับชื่อไฟล์พอดี · ชุดย่อยแดง — **ตระกูลเดียวกับ `TEST_*` ค้าง registry เมื่อ [ต่อ 3]**)
+⇒ `EnvSpec` จำ `module` + `line` ที่ลงทะเบียน (จากเฟรมผู้เรียก) · render เรียง (ลำดับใน MODULES, บรรทัด) ·
+รอบแรกเรียงแค่ระดับโมดูลยังแดง (ภายในโมดูลยังใช้ลำดับ dict) → ใช้**เลขบรรทัดในซอร์ส** ·
+เทสกลับลำดับ dict แล้วผลต้องเหมือนเดิม · `.env.example` ที่ commit ไว้**ไม่เปลี่ยน**
+
+✅ 1983 passed · ruff · mutation **9/9** (H4 เป็นไดรเวอร์พิมพ์ผิด แทนที่ด้วยข้อความเดิม — ไม่นับ) · CI เขียว ·
+prod ค่าตรงกันก่อน/หลัง · tool จริง `ping_network` Router/NAS/PC 🟢 · `nas_disk` ได้ข้อมูลจริง
+⏭️ เหลืออ่าน env ดิบ 104 จุด
+
 ## [2026-09-23 ต่อ 12] config ก้อน 4 ไฟล์ที่สาม — `utils/summarize.py` (`2dcd501`)
 7 จุด → 0 · ทุกชื่อมีเจ้าของที่ `core/config.py` แล้ว ⇒ import ค่าอย่างเดียว ไม่ลงทะเบียนใหม่ ·
 ชื่อ `_XXX` ระดับโมดูลคงเดิม · `GEMINI_API_KEY` อ่านครั้งเดียวตอน import · `MODULES += utils.summarize` ·

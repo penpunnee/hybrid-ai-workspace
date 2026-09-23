@@ -705,11 +705,13 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-23**)
 
-> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อ — ไฟล์ที่เหลือ (~111 จุด · ไฟล์ละ ≤7)**
+> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อ — ไฟล์ที่เหลือ (~104 จุด · ไฟล์ละ ≤6)**
 > ✅ เสร็จแล้ว 09-23 — **อย่าทำซ้ำ**: `utils/llm.py` (`0f5844b`) · `agents/orchestrator.py` (`cbddc04`)
-> · `utils/summarize.py` (`2dcd501`) · `LMSTUDIO_API_KEY` เจ้าของ = `core/config.py` · devlog [ต่อ 3/4/12]
-> ต่อไป (มากสุดก่อน): `utils/home_tools.py` (7) → `voice`/`fs_tools`/`embed`/`code_sandbox` (6) →
-> `websearch`/`response_cache`/`memory` (5) → ที่เหลือ · ไฟล์เล็กรวบเป็นโดเมนได้
+> · `utils/summarize.py` (`2dcd501`) · `utils/home_tools.py` (`28b038b`) · devlog [ต่อ 3/4/12/13]
+> ต่อไป (มากสุดก่อน): `voice`/`fs_tools`/`embed`/`code_sandbox` (6) → `websearch`/`response_cache`/`memory` (5)
+> → ที่เหลือ · ไฟล์เล็กรวบเป็นโดเมนได้
+> 🔑 `.env.example` เรียงตาม (ลำดับใน `MODULES`, บรรทัดในซอร์ส) แล้ว — **ไม่ขึ้นกับลำดับ import** ·
+> default ที่คำนวณจาก env อื่น → ลงทะเบียน `""` แล้วคำนวณเมื่อว่าง (ดู `ROUTER_IP`)
 > วิธีทำ: เทสแดงก่อน → ย้าย → **เติมชื่อโมดูลใน `core/env_registry.MODULES`** →
 > `python scripts/gen_env_example.py --write` → ชุดเต็ม + ruff + mutation → deploy + เทียบค่า
 > ที่ prod resolve ได้ก่อน/หลัง (probe ในคอนเทนเนอร์)
