@@ -15,10 +15,14 @@ from dataclasses import dataclass, field, asdict
 from typing import Optional
 
 from openai import OpenAI
+# ⬇️ อ่านจาก core/config.py ที่เดียว — เดิมไฟล์นี้มี default ของตัวเองที่ไม่ตรงกับที่อื่น
+# (ตัวกัน: tests/test_env_default_consistency.py)
+
+from core.config import LMSTUDIO_BASE_URL as _CFG_LMSTUDIO_BASE_URL
 
 logger = logging.getLogger(__name__)
 
-_LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
+_LMSTUDIO_BASE_URL = _CFG_LMSTUDIO_BASE_URL
 _REFLECT_MODEL = os.getenv("REFLECTION_MODEL", os.getenv("LMSTUDIO_REASON_MODEL", "qwen/qwen3.5-9b"))
 _REFLECT_TIMEOUT = int(os.getenv("REFLECTION_TIMEOUT", "30"))
 _REFLECT_THRESHOLD = float(os.getenv("REFLECTION_THRESHOLD", "0.7"))

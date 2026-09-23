@@ -26,6 +26,9 @@ from typing import Optional
 # ต้องผ่าน `utils/skills.py` ที่เดียว (ถือ `_db_lock` + เขียน atomic) การมีค่าคงที่
 # ชี้ไฟล์เดียวกันสองที่ทำให้เทสที่ patch ได้แค่ตัวเดียว "เขียวโดยวัดผิดไฟล์"
 from core.config import SKILLS_DIR as _SKILLS_DIR
+# ⬇️ อ่านจาก core/config.py ที่เดียว — เดิมไฟล์นี้มี default ของตัวเองที่ไม่ตรงกับที่อื่น
+# (ตัวกัน: tests/test_env_default_consistency.py)
+from core.config import LMSTUDIO_BASE_URL as _CFG_LMSTUDIO_BASE_URL
 from utils.embed import embed_texts, cosine_similarity, embed_query
 from utils.history import _get_conn
 
@@ -141,7 +144,7 @@ def _summarize_cluster(prompts: list[str]) -> tuple[str, str]:
     try:
         from openai import OpenAI
         client = OpenAI(
-            base_url=os.getenv("LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1"),
+            base_url=_CFG_LMSTUDIO_BASE_URL,
             api_key="lmstudio",
             timeout=15,
         )

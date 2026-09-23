@@ -16,7 +16,9 @@ OLLAMA_REPEAT_PENALTY = float(os.getenv("OLLAMA_REPEAT_PENALTY", "1.1"))
 
 # ── Gemini (Cloud LLM) ───────────────────────────────────────────────────────
 GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL     = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+# GEMINI_MODEL ไม่ได้อยู่ที่นี่ — **ที่เดียวคือ `utils/llm.py`** (`GEMINI_MODEL_DEFAULT`
+# + `RETIRED_GEMINI_MODELS` + เทส `test_gemini_health.py` ที่ตรึงว่า default ต้องไม่ใช่รุ่นที่ปิดแล้ว)
+# เดิมบรรทัดนี้ประกาศ `gemini-2.0-flash` ค้างไว้โดยไม่มีใคร import ไปใช้เลยสักที่ (2026-09-23)
 # Live API (bidiGenerateContent) — ⚠️ ชื่อต้องเป๊ะ ไม่งั้น bidiGenerateContent → 1008 not found
 # **default ย้ายไปอยู่ที่ `utils/voice.py` แล้ว** (2026-08-04) เพราะเคยมี default 2 ที่ที่
 # ไม่ตรงกันเงียบๆ ตั้งแต่ `369f18e` (2026-06-19): ที่นี่เป็น 3.1-flash-live ส่วน

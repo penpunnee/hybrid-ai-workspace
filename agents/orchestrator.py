@@ -117,7 +117,10 @@ class _MarkerFilter:
         return out if self._emitted else out.lstrip()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+from utils.llm import GEMINI_MODEL  # ที่เดียว (ดู utils/llm.py:GEMINI_MODEL_DEFAULT)
+# ⬇️ อ่านจาก core/config.py ที่เดียว — เดิมไฟล์นี้มี default ของตัวเองที่ไม่ตรงกับที่อื่น
+# (ตัวกัน: tests/test_env_default_consistency.py)
+from core.config import LMSTUDIO_CHAT_MODEL as _CFG_LMSTUDIO_CHAT_MODEL
 LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "")
 LMSTUDIO_API_KEY = os.getenv("LMSTUDIO_API_KEY", "lmstudio")
 LMSTUDIO_TIMEOUT = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
@@ -492,7 +495,7 @@ def _run_agent_lmstudio(
         timeout=LMSTUDIO_TIMEOUT,
     )
     if not model:
-        model = os.getenv("LMSTUDIO_CHAT_MODEL", "meta-llama-3.1-8b-instruct")
+        model = _CFG_LMSTUDIO_CHAT_MODEL
 
     if messages and messages[0]["role"] == "system":
         messages[0]["content"] = messages[0]["content"] + AGENT_SYSTEM_HINT

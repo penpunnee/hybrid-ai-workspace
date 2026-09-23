@@ -21,6 +21,9 @@ from pathlib import Path
 
 from utils.memory import _get_client, get_collection, get_or_create_collection
 from utils.llm import stream_response
+# ⬇️ อ่านจาก core/config.py ที่เดียว — เดิมไฟล์นี้มี default ของตัวเองที่ไม่ตรงกับที่อื่น
+# (ตัวกัน: tests/test_env_default_consistency.py)
+from core.config import LMSTUDIO_REASON_MODEL as _CFG_LMSTUDIO_REASON_MODEL
 from utils.skills import save_skill
 
 _PROCEDURAL_KW = (
@@ -300,7 +303,7 @@ def rem_sleep(memories: list[dict], provider: str = "auto") -> dict:
     # DeepSeek R1 ผ่าน LMStudio ใช้ REASON model (เหมาะกับ analysis)
     model_override = ""
     if provider == "lmstudio":
-        model_override = os.getenv("LMSTUDIO_REASON_MODEL", "")
+        model_override = _CFG_LMSTUDIO_REASON_MODEL
 
     logger.info(f"Dream/REM: Analyzing {len(memories)} memories (provider={provider}, model={model_override or 'default'})")
 

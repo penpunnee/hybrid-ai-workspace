@@ -14,7 +14,7 @@ import io
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL    = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+from utils.llm import GEMINI_MODEL  # ที่เดียว — เดิมที่นี่ default เป็นรุ่นที่ปิดไปแล้ว
 
 _LMSTUDIO_BASE_URL    = os.getenv("LMSTUDIO_BASE_URL", "")
 _LMSTUDIO_API_KEY     = os.getenv("LMSTUDIO_API_KEY", "lmstudio")

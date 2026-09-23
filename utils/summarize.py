@@ -46,7 +46,8 @@ def _call_gemini(system: str, user: str) -> str:
         from google import genai
         from google.genai import types
         client = genai.Client(api_key=gemini_key)
-        model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        from utils.llm import GEMINI_MODEL  # ที่เดียว (ดู utils/llm.py:GEMINI_MODEL_DEFAULT)
+        model = GEMINI_MODEL
         resp = client.models.generate_content(
             model=model,
             contents=f"{system}\n\n{user}",

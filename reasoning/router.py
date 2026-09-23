@@ -20,7 +20,9 @@ def _lmstudio_headers() -> dict:
     """header สำหรับยิง LM Studio — แนบ Authorization ถ้าตั้ง LMSTUDIO_API_KEY
     (LM Studio รุ่นใหม่บังคับ token; ไม่งั้น probe 401 → auto-route หลบ lmstudio)"""
     headers = {"Content-Type": "application/json"}
-    key = os.getenv("LMSTUDIO_API_KEY", "")
+    # ไม่ใส่ default โดยตั้งใจ: แนบ Authorization เฉพาะเมื่อผู้ใช้ "ตั้งคีย์เอง"
+    # ("ไม่ตั้ง" ≠ "ตั้งเป็นค่าว่าง") — ไฟล์อื่นที่ต้องมีคีย์เสมอใช้ค่า "lmstudio"
+    key = os.environ.get("LMSTUDIO_API_KEY")
     if key:
         headers["Authorization"] = f"Bearer {key}"
     return headers

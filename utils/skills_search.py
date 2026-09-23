@@ -24,7 +24,7 @@ class SkillsSearch:
             chroma_host: ChromaDB host (default from env or localhost)
             chroma_port: ChromaDB port (default from env or 8000)
         """
-        self.chroma_host = chroma_host or os.getenv("CHROMA_HOST", "localhost")
+        self.chroma_host = chroma_host or (os.getenv("CHROMA_HOST") or "localhost")
         self.chroma_port = chroma_port or int(os.getenv("CHROMA_PORT", "8000"))
         
         # Initialize ChromaDB client

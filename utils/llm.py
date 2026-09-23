@@ -20,6 +20,10 @@ from openai import OpenAI
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+# ⬇️ อ่านจาก core/config.py ที่เดียว — เดิมไฟล์นี้มี default ของตัวเองที่ไม่ตรงกับที่อื่น
+# (ตัวกัน: tests/test_env_default_consistency.py)
+
+from core.config import LMSTUDIO_CHAT_MODEL as _CFG_LMSTUDIO_CHAT_MODEL
 
 load_dotenv()
 
@@ -276,7 +280,7 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
                      usage_sink: dict | None = None):
     """Stream จาก LM Studio (OpenAI-compatible API) รองรับ vision"""
     if not model:
-        model = os.getenv("LMSTUDIO_CHAT_MODEL", "meta-llama-3.2-11b-vision-instruct")
+        model = _CFG_LMSTUDIO_CHAT_MODEL
 
     # ถ้าใน system message มี grounded context → ลด temperature เพื่อให้ ground
     # (ป้องกัน hallucinate เพิ่มเติมจากความจำ model)

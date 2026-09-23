@@ -19,10 +19,14 @@ from functools import lru_cache
 from typing import Optional
 
 from openai import OpenAI
+# ⬇️ อ่านจาก core/config.py ที่เดียว — เดิมไฟล์นี้มี default ของตัวเองที่ไม่ตรงกับที่อื่น
+# (ตัวกัน: tests/test_env_default_consistency.py)
+
+from core.config import LMSTUDIO_BASE_URL as _CFG_LMSTUDIO_BASE_URL
 
 logger = logging.getLogger(__name__)
 
-_LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "http://192.168.51.235:1234/v1")
+_LMSTUDIO_BASE_URL = _CFG_LMSTUDIO_BASE_URL
 _REWRITE_MODEL = os.getenv("QUERY_REWRITE_MODEL", os.getenv("LMSTUDIO_CHAT_MODEL", "google/gemma-4-e4b"))
 _REWRITE_TIMEOUT = int(os.getenv("QUERY_REWRITE_TIMEOUT", "8"))
 _REWRITE_ENABLED = os.getenv("QUERY_REWRITE_ENABLED", "true").lower() == "true"
