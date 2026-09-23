@@ -705,6 +705,17 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-21 บ่าย**)
 
+> ## 🧩 09-23: config ก้อน 1 เสร็จ — env ชื่อเดียวกัน default ต้องตรงกัน (devlog [2026-09-23])
+> ตัวกันใหม่ `tests/test_env_default_consistency.py` (AST · ผูกกับคุณสมบัติ ไม่ใช่รายชื่อ · mutation 5/5)
+> ปิด 6 ชื่อ/27 จุด — ตัวหนัก: `LMSTUDIO_BASE_URL` 4 ไฟล์ default เป็น **IP เครื่อง PC** แทนที่จะเป็น
+> `""` (opt-in ปิด) · `GEMINI_MODEL` 3 ไฟล์ default เป็น `gemini-2.5-flash` ที่ **retired แล้ว (404)**
+> ✅ deploy+verify บน prod (IP ค้าง 0 จุด · `GEMINI_MODEL` ตรงกัน 3 จุด · `/api/config` 200)
+> ⏭️ **ก้อน 2-4 รอ user เคาะ:** registry ใน `core/config.py` → generate `.env.example` (ปิดทิศ
+> **โค้ด → เอกสาร** ที่ยังเปิดอยู่ **38 ตัว**) → ย้าย env ที่เหลือทีละโดเมน (122 ชื่อ/40 ไฟล์)
+> ⛔ **ไม่เอา `pydantic-settings`** (มีใน lock แต่ไม่มีใน `requirements.txt` · ไม่มีใครใช้ ·
+> บังคับเปลี่ยนวิธี import ทุกไฟล์โดยไม่ได้อะไรเพิ่ม)
+> 📌 ช่องที่ยังเปิด: default ที่ *คำนวณ* เทียบไม่ได้ ⇒ `DB_PATH` relative-vs-absolute ยังหลุด
+
 > ## ✅ 09-21/22: อ่านนิยายเสียงเบาบน iPhone — **ปิดคดีเส้นเริ่มอ่านแล้ว** (devlog [2026-09-21 ดึก])
 > ต้นเหตุ: Web Audio ล้วน (ไมค์ปิดตอนอ่าน) → Safari เลือก `ambient` · A/B บนเครื่อง user: `playback` ดังเท่า `<audio>`
 > แก้ `bookreader.ts` ตั้ง `navigator.audioSession.type` (`4263cf0` · bundle **`index-BpLfIzAR.js`**)
