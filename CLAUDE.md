@@ -710,8 +710,13 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > ปิด 6 ชื่อ/27 จุด — ตัวหนัก: `LMSTUDIO_BASE_URL` 4 ไฟล์ default เป็น **IP เครื่อง PC** แทนที่จะเป็น
 > `""` (opt-in ปิด) · `GEMINI_MODEL` 3 ไฟล์ default เป็น `gemini-2.5-flash` ที่ **retired แล้ว (404)**
 > ✅ deploy+verify บน prod (IP ค้าง 0 จุด · `GEMINI_MODEL` ตรงกัน 3 จุด · `/api/config` 200)
-> ⏭️ **ก้อน 2-4 รอ user เคาะ:** registry ใน `core/config.py` → generate `.env.example` (ปิดทิศ
-> **โค้ด → เอกสาร** ที่ยังเปิดอยู่ **38 ตัว**) → ย้าย env ที่เหลือทีละโดเมน (122 ชื่อ/40 ไฟล์)
+> ✅ **ก้อน 2 เสร็จ 09-23:** `core/env_registry.py` — `core/config.py` อ่าน env ผ่าน
+> `env_str/env_int/env_float/env_bool` แล้ว (**27 ชื่อ 6 กลุ่ม** · ทุกตัวมีคำอธิบายบังคับ) ·
+> ย้ายท่อล้วน ค่าไม่เปลี่ยน · ไฟล์อื่นไม่ต้องแก้ · mutation 7/7 · deployed
+> ⚠️ **`test_env_docs_ratchet` regex ต้องรู้จัก helper ด้วย** ไม่งั้น env ของ config
+> กลายเป็น "ไม่มีโค้ดอ่าน" แล้วเทสสั่งให้ลบเอกสารของ env ที่ยังใช้จริง (เติมแล้ว)
+> ⏭️ **ก้อน 3-4 รอ user เคาะ:** generate `.env.example` จาก registry (ปิดทิศ
+> **โค้ด → เอกสาร** ที่ยังเปิดอยู่ **38 ตัว**) → ย้าย env ที่เหลือ ~95 ชื่อทีละโดเมน
 > ⛔ **ไม่เอา `pydantic-settings`** (มีใน lock แต่ไม่มีใน `requirements.txt` · ไม่มีใครใช้ ·
 > บังคับเปลี่ยนวิธี import ทุกไฟล์โดยไม่ได้อะไรเพิ่ม)
 > 📌 ช่องที่ยังเปิด: default ที่ *คำนวณ* เทียบไม่ได้ ⇒ `DB_PATH` relative-vs-absolute ยังหลุด
