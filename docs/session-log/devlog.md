@@ -1,5 +1,40 @@
 ---
 
+## [2026-09-23 ต่อ 4] PC .235 เปิดแล้ว — verify เส้น local + vault sync ใหม่ + ก้อน 4 ไฟล์ที่สอง `agents/orchestrator.py` (`cbddc04`)
+**verify `utils/llm.py` (ก้อนก่อน) กับเส้น local ที่ตอน deploy ยังเช็คไม่ได้**
+- health `ollama`/`lmstudio`/`local_ok` ✅ · แชท `provider:ollama` ตอบถูก 48 วิ ·
+  `provider:lmstudio` ตอบถูก — chunk แรก **92 วิ** (รอบแรกได้ว่างเพราะ curl ผมรอแค่ 110 วิ)
+  · เทียบ log ย้อนหลัง 5 ครั้ง (08-28→08-31) = 16–105 วิ ⇒ **ไม่ใช่ regression** (Qwen คิดนาน)
+- 🔴 **vault sync ล้มเงียบตอน PC ปิด** (04:47–04:59 `timed out in upsert` ทีละไฟล์ — embed
+  วิ่งไป Ollama บน PC) · ไม่มีอะไร retry ⇒ โน้ตหายจาก index โดยไม่มีใครรู้ ·
+  สั่ง `POST /api/vault/sync` ใหม่: **131 ไฟล์ · synced 22 · errors 0** · ค้นโน้ตที่เคยล้มเจอครบ
+  ⏭️ ยังไม่ได้แก้ต้นเหตุ (ไม่มี retry/แจ้งเตือนเมื่อ embed ล้มระหว่าง sync)
+
+**ก้อน 4 ไฟล์ที่สอง: `agents/orchestrator.py` — 11 จุด → 0**
+- ทุกชื่อ**มีเจ้าของแล้ว** ⇒ ไม่ลงทะเบียนอะไรใหม่ แค่ import ค่า · ชื่อระดับโมดูลคงเดิม
+  (เทสใช้ `patch("agents.orchestrator.GEMINI_API_KEY")`)
+- `LMSTUDIO_API_KEY` **ย้ายเจ้าของ `utils/llm.py` → `core/config.py`** — ใช้ 6 ไฟล์
+  (llm/orchestrator/embed/ocr/summarize/router) ไม่งั้นต้อง import ตัวแปร private ของ llm
+- `MODULES += agents.orchestrator` · เทสใหม่ `tests/test_orchestrator_config.py` (ค่าถึง
+  constructor + body ของ request จริง ทั้ง ollama ในลูป / เส้นบังคับสรุป และ lmstudio)
+- mutation **9/9** — O4 (hardcode `num_ctx` เฉพาะเส้นบังคับสรุปตอนครบ `max_steps`) รอดรอบแรก
+  เพราะ fake ตอบ `Answer:` ก้าวแรก ไม่เคยเดินถึงเส้นนั้น
+- ✅ 1912 passed · ruff · สองลำดับการรัน · CI เขียว · ค่าที่ prod resolve ก่อน/หลัง deploy ตรงกัน
+- smoke agent จริง: gemini ✅ · lmstudio รอบแรกได้ `(agent ไม่มีคำตอบ)` → **A/B ในคอนเทนเนอร์
+  (โค้ดเก่า vs ใหม่ ข้อความเดียวกัน ×2)** ได้คำตอบถูกทั้ง 4 รอบ ⇒ โมเดลไม่แน่นอน ไม่ใช่ regression
+
+**🐛 บั๊กเดิมที่เจอ (ยังไม่แก้ — นอกขอบเขต รอ user เคาะ)**
+1. **Ollama ReAct agent เรียก tool ที่มี args ไม่ได้เลย** — `_ACTION_RE = r"Action:\s*(\{.*?\})"`
+   non-greedy หยุดที่ `}` ตัวแรก ⇒ `{"tool": "x", "args": {...}}` ซึ่ง **`_REACT_SYSTEM` สั่งให้ตอบ
+   รูปนี้เอง** (บรรทัด 168) parse พังทุกครั้ง · ยืนยันด้วยรูปจริง 3 แบบ (มี args ซ้อน = พัง 2/2)
+   · ผลกระทบต่ำ (ใช้เฉพาะ `provider:ollama` + `tool_agent`)
+2. **`LMSTUDIO_API_KEY=` (ตั้งเป็นค่าว่าง) ⇒ แอปล้มตอนเริ่ม** — `OpenAI(api_key="")` โยน
+   `OpenAIError` ตั้งแต่ import `utils/llm.py` (เจอจาก mutation O8 ที่ได้ 54 errors) ·
+   ขัดกับคำอธิบายใน `.env.example` ที่บอกแค่ว่า "ไม่ตั้ง ≠ ตั้งเป็นค่าว่าง"
+
+⏭️ เหลืออ่าน env ดิบ ~121 จุด กระจายไฟล์ละ ≤7 (`summarize`/`home_tools`/`embed` 7 ·
+`voice`/`fs_tools`/`code_sandbox` 6 · `websearch` 5 …)
+
 ## [2026-09-23 ต่อ 3] config ก้อน 4 ไฟล์แรก — `utils/llm.py` อ่าน env ผ่าน registry (`0f5844b`)
 ย้ายท่อล้วน · **28 จุด → 0 จุดอ่านดิบ** · ทำตามลำดับที่ user สั่ง (ไฟล์ที่อ่านเยอะสุดก่อน)
 - **13 ชื่อที่ `core/config.py` เป็นเจ้าของอยู่แล้ว** (`OLLAMA_*` 9 ตัว · `LMSTUDIO_BASE_URL/TIMEOUT` ·

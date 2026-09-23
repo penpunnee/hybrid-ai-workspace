@@ -705,17 +705,22 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-23**)
 
-> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อ — `agents/orchestrator.py` (11 จุด)**
-> ✅ `utils/llm.py` เสร็จแล้ว 09-23 (`0f5844b` · devlog [2026-09-23 ต่อ 3]) — **อย่าทำซ้ำ**
-> ไฟล์ต่อไปทีละไฟล์ ทีละ commit: `agents/orchestrator.py` (11) → ที่เหลือ
+> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อ — ไฟล์ที่เหลือ (~121 จุด · ไฟล์ละ ≤7)**
+> ✅ เสร็จแล้ว 09-23 — **อย่าทำซ้ำ**: `utils/llm.py` (`0f5844b`) · `agents/orchestrator.py` (`cbddc04`)
+> · `LMSTUDIO_API_KEY` ย้ายเจ้าของไป `core/config.py` แล้ว · devlog [2026-09-23 ต่อ 3/4]
+> ต่อไป (มากสุดก่อน): `utils/summarize.py` · `utils/home_tools.py` · `utils/embed.py` (7) →
+> `utils/voice.py` · `fs_tools` · `code_sandbox` (6) → ที่เหลือ · ไฟล์เล็กจะรวบเป็นโดเมนก็ได้
 > วิธีทำ: เทสแดงก่อน → ย้าย → **เติมชื่อโมดูลใน `core/env_registry.MODULES`** →
 > `python scripts/gen_env_example.py --write` → ชุดเต็ม + ruff + mutation → deploy + เทียบค่า
 > ที่ prod resolve ได้ก่อน/หลัง (probe ในคอนเทนเนอร์)
-> ⚠️ **ชื่อที่ไฟล์อื่นเป็นเจ้าของแล้ว ให้ import ค่า ห้ามลงทะเบียนซ้ำ** (มีเทสบังคับ)
+> ⚠️ **ชื่อที่มีเจ้าของแล้ว ให้ import ค่า ห้ามลงทะเบียนซ้ำ** (มีเทสบังคับ)
 > ⚠️ **ไม่เติม `MODULES` = ชื่อไม่เข้า `.env.example` เงียบๆ** (REGISTRY เติมตอน import)
-> ⚠️ env ที่ "ไม่ตั้ง ≠ ตั้งค่าว่าง" (เช่น `LMSTUDIO_API_KEY` ใน `reasoning/router.py`)
+> ⚠️ env ที่ "ไม่ตั้ง ≠ ตั้งค่าว่าง" (`LMSTUDIO_API_KEY` ใน `reasoning/router.py`)
 > **ห้ามยัดเข้า registry แบบมี default** — จะเปลี่ยนพฤติกรรมเงียบๆ
 > 🔑 mutation: ดูด้วยว่า **แดงกี่ตัว** — fixture พังทำให้ได้ "killed" ปลอม 10/10 มาแล้ว
+> 🐛 **บั๊กเดิมที่เจอ รอ user เคาะ:** (1) Ollama ReAct `_ACTION_RE` non-greedy ⇒ Action ที่มี
+> `args` ซ้อน parse พังทุกครั้ง (2) `LMSTUDIO_API_KEY=` ว่าง ⇒ แอปล้มตอนเริ่ม
+> (3) vault sync ล้มเงียบตอน PC ปิด ไม่มี retry — รายละเอียด devlog [2026-09-23 ต่อ 4]
 >
 > ## ✅ 09-23 ทำเสร็จ 3 ก้อน (devlog [2026-09-23] ×3 · **อย่าทำซ้ำ**)
 > | ก้อน | ได้อะไร |
