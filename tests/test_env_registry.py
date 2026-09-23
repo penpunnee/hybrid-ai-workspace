@@ -692,3 +692,102 @@ def test_memory_EMBEDDING_MODEL_ว่าง_ยังคือปิด_EF(monk
     """คนละความหมายกับ embed (ที่ถอยไป multilingual) — ที่นี่ว่างต้องคงว่าง"""
     m = _reload_with(monkeypatch, "utils.memory", {"EMBEDDING_MODEL": raw})
     assert m.EMBEDDING_MODEL == expected
+
+
+# ── 12) ก้อน 4 ชั้น core: core/ratelimit.py · core/observability.py · core/scheduler.py (2026-09-24) ──
+# 🔑 ตรวจบน prod ก่อนเขียน: ไม่มีชื่อไหนตั้งใน .env · LOG_FILE=/app/logs/server.log มาจาก compose
+#    `environment:` (ทับ .env) · observability/scheduler อ่าน env *ในฟังก์ชัน* → import ค่าจาก config
+#    (server.py import core.config ก่อน observability ⇒ load_dotenv วิ่งก่อนเสมอ)
+
+@pytest.mark.parametrize("mod", ["core.ratelimit", "core.observability", "core.scheduler"])
+def test_core_layer_อยู่ใน_MODULES(mod):
+    from core.env_registry import MODULES
+
+    assert mod in MODULES
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("RATE_LIMIT_ENABLED", True),
+    ("RATE_LIMIT_RPM", 120),
+    ("AUTH_FAIL_MAX", 8),
+    ("AUTH_FAIL_WINDOW", 300.0),
+    ("RATE_LIMIT_MAX_KEYS", 50000),
+    ("LOG_LEVEL", "INFO"),
+    ("LOG_FORMAT", "plain"),
+    ("LOG_FILE", "server.log"),
+])
+def test_default_ของ_core_layer_เท่าของเดิม(name, expected):
+    from core.env_registry import REGISTRY, load_all
+
+    load_all()
+    spec = REGISTRY[name]
+    assert spec.default == expected and type(spec.default) is type(expected), (
+        f"{name}: default เป็น {spec.default!r} ควรเป็น {expected!r}")
+    assert spec.doc.strip()
+
+
+def test_LOG_เจ้าของคือ_config_และ_observability_scheduler_ไม่ลงทะเบียนเอง():
+    """LOG_* เป็น config ระดับแอป (ประกาศคู่ DB_PATH ใน docs) — และ observability ถูก import หลัง
+    config เสมอ ⇒ import ค่าจาก config ปลอดภัยเรื่อง load_dotenv · scheduler ใช้ GEMINI_API_KEY ของ config"""
+    cfg = _helper_names((REPO / "core" / "config.py").read_text())
+    assert {"LOG_LEVEL", "LOG_FORMAT", "LOG_FILE"} <= cfg
+    assert _helper_names((REPO / "core" / "observability.py").read_text()) == set()
+    assert _helper_names((REPO / "core" / "scheduler.py").read_text()) == set()
+    assert {"RATE_LIMIT_ENABLED", "RATE_LIMIT_RPM", "AUTH_FAIL_MAX", "AUTH_FAIL_WINDOW",
+            "RATE_LIMIT_MAX_KEYS"} <= _helper_names((REPO / "core" / "ratelimit.py").read_text())
+
+
+@pytest.mark.parametrize("env,attr,expected", [
+    ({"RATE_LIMIT_ENABLED": "false"}, "_ENABLED", False),
+    ({"RATE_LIMIT_ENABLED": "true"}, "_ENABLED", True),
+    ({"RATE_LIMIT_ENABLED": None}, "_ENABLED", True),
+    ({"RATE_LIMIT_RPM": "5"}, "_RPM", 5),
+    ({"AUTH_FAIL_WINDOW": "30"}, "_AUTH_FAIL_WINDOW", 30.0),
+])
+def test_ratelimit_ค่าที่_resolve_จริง(monkeypatch, env, attr, expected):
+    rl = _reload_with(monkeypatch, "core.ratelimit", env)
+    assert getattr(rl, attr) == expected
+
+
+def test_install_logging_ใช้_LOG_env_จาก_config(monkeypatch, tmp_path):
+    """LOG_LEVEL/LOG_FORMAT/LOG_FILE เคยอ่านในฟังก์ชัน — ตรวจที่ *ผล* บน root logger ไม่ใช่ที่ค่าคงที่
+    ⚠️ install_logging แทนที่ handler ของ root ทั้งหมด ⇒ snapshot แล้วคืนสภาพเสมอ"""
+    import logging
+
+    root = logging.getLogger()
+    saved_handlers, saved_level = list(root.handlers), root.level
+    log_file = tmp_path / "x.log"
+    try:
+        obs = _reload_with(monkeypatch, "core.observability",
+                           {"LOG_LEVEL": "debug", "LOG_FORMAT": "json", "LOG_FILE": str(log_file)})
+        obs.install_logging()
+        assert root.level == logging.DEBUG
+        files = [h for h in root.handlers if getattr(h, "baseFilename", None)]
+        assert files and files[0].baseFilename == str(log_file)
+        assert type(files[0].formatter).__name__ == "_JsonFormatter"
+        # argument ชนะ env (สัญญาเดิม)
+        obs.install_logging(level="WARNING")
+        assert root.level == logging.WARNING
+    finally:
+        for h in list(root.handlers):
+            root.removeHandler(h)
+            try:
+                h.close()
+            except Exception:
+                pass
+        for h in saved_handlers:
+            root.addHandler(h)
+        root.setLevel(saved_level)
+
+
+@pytest.mark.parametrize("key,expected", [("", "ollama"), ("k", "gemini")])
+def test_scheduled_dream_เลือก_provider_จาก_GEMINI_API_KEY_ของ_config(monkeypatch, key, expected):
+    import utils.dream as dream
+    import utils.notify as notify
+
+    seen = {}
+    monkeypatch.setattr(dream, "run_dream_cycle", lambda **kw: seen.update(kw))
+    monkeypatch.setattr(notify, "send_line_notify", lambda *a, **k: None)
+    sched = _reload_with(monkeypatch, "core.scheduler", {"GEMINI_API_KEY": key})
+    sched._scheduled_dream()
+    assert seen.get("provider") == expected

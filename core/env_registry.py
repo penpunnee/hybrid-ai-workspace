@@ -61,7 +61,7 @@ REGISTRY: dict[str, EnvSpec] = {}
 MODULES: tuple[str, ...] = ("core.config", "utils.llm", "agents.orchestrator", "utils.summarize",
                            "utils.home_tools", "utils.voice", "utils.fs_tools", "utils.embed",
                            "utils.code_sandbox", "utils.websearch", "utils.response_cache",
-                           "utils.memory")
+                           "utils.memory", "core.ratelimit", "core.observability", "core.scheduler")
 
 
 def load_all() -> dict[str, EnvSpec]:

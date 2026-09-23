@@ -1,9 +1,11 @@
 import logging
-import os
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+
+# เจ้าของคือ core/config.py — เดิมอ่าน os.getenv ในฟังก์ชันตอน job ยิง (ก้อน 4 · 2026-09-24)
+from core.config import GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +15,7 @@ scheduler = BackgroundScheduler(timezone="Asia/Bangkok")
 def _scheduled_dream():
     from utils.dream import run_dream_cycle
     from utils.notify import send_line_notify
-    provider = "gemini" if os.getenv("GEMINI_API_KEY") else "ollama"
+    provider = "gemini" if GEMINI_API_KEY else "ollama"
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
     logger.info(f"[Scheduler] Dream Cycle ({ts}) provider={provider}")
     try:

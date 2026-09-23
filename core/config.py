@@ -83,6 +83,17 @@ CORS_ORIGINS = env_str("CORS_ORIGINS", "", group=_G,
 RELOAD       = env_bool("RELOAD", False, group=_G,
                         doc="เปิด uvicorn auto-reload (สำหรับ dev เท่านั้น)")
 
+# ── Observability (Phase F) ──────────────────────────────────────────────────
+# เจ้าของอยู่ที่นี่ไม่ใช่ core/observability.py — server.py import core.config *ก่อน* observability
+# เสมอ ⇒ load_dotenv วิ่งก่อนอ่าน · observability เคยอ่านในฟังก์ชัน install_logging (ก้อน 4 · 2026-09-24)
+_G = "Observability"
+LOG_LEVEL  = env_str("LOG_LEVEL", "INFO", group=_G, doc="DEBUG | INFO | WARNING | ERROR (ไม่สนตัวพิมพ์)")
+LOG_FORMAT = env_str("LOG_FORMAT", "plain", group=_G, doc="plain | json (json = 1 บรรทัด/record สำหรับ log shipper)")
+LOG_FILE   = env_str("LOG_FILE", "server.log", group=_G,
+                     doc="ไฟล์ log (RotatingFileHandler 10 MB × 5) — prod ตั้งเป็น logs/server.log ในคอนเทนเนอร์ผ่าน compose\n"
+                         "⛔ docker-compose `environment:` ทับค่านี้ — ตั้งใน .env ไม่มีผลบน prod\n"
+                         "(มีผลเฉพาะตอนรัน local ตรงๆ · รัน pytest บนเครื่องให้ตั้ง LOG_FILE=/tmp/... กันทับ log จริง)")
+
 # ── Paths ────────────────────────────────────────────────────────────────────
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILLS_DIR = os.path.join(PROJECT_ROOT, "skills")

@@ -7,7 +7,6 @@
 LAN/loopback bypass (ใช้ core.auth.is_local_request). ปิดได้ด้วย RATE_LIMIT_ENABLED=false
 client key: cf-connecting-ip (ถ้าผ่าน Cloudflare) → ไม่งั้น TCP peer IP
 """
-import os
 import threading
 import time
 from collections import defaultdict, deque
@@ -16,13 +15,20 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from core.auth import LOGIN_PATH, is_local_request
+from core.env_registry import env_bool, env_float, env_int
 
-_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
-_RPM = int(os.getenv("RATE_LIMIT_RPM", "120"))                  # req/นาที/IP
+# env ของ rate limit — ไฟล์นี้เป็นเจ้าของ 5 ชื่อ (ก้อน 4 · 2026-09-24 · ตัวกัน: tests/test_env_registry.py)
+# conftest ตั้ง RATE_LIMIT_ENABLED=false ก่อน import ⇒ อ่านระดับโมดูลได้ (test_ratelimit เปิดเองผ่าน monkeypatch)
+_G = "Rate Limiting"
+_ENABLED = env_bool("RATE_LIMIT_ENABLED", True, group=_G,
+                    doc="false = ปิดทั้ง rate limit และ brute-force lockout (LAN/loopback bypass อยู่แล้ว)")
+_RPM = env_int("RATE_LIMIT_RPM", 120, group=_G, doc="คำขอ/นาที/IP (เกิน = 429)")
 _WINDOW = 60.0
-_AUTH_FAIL_MAX = int(os.getenv("AUTH_FAIL_MAX", "8"))           # 401 กี่ครั้งก่อน lock
-_AUTH_FAIL_WINDOW = float(os.getenv("AUTH_FAIL_WINDOW", "300")) # 5 นาที
-_MAX_KEYS = int(os.getenv("RATE_LIMIT_MAX_KEYS", "50000"))      # cap จำนวน IP ที่ track (กัน memory DoS)
+_AUTH_FAIL_MAX = env_int("AUTH_FAIL_MAX", 8, group=_G,
+                         doc="401 กี่ครั้งใน AUTH_FAIL_WINDOW ก่อน lock IP (นับเฉพาะที่ส่ง x-auth-token ผิด หรือ /api/auth/login)")
+_AUTH_FAIL_WINDOW = env_float("AUTH_FAIL_WINDOW", 300.0, group=_G, doc="วินาทีของหน้าต่างนับ 401")
+_MAX_KEYS = env_int("RATE_LIMIT_MAX_KEYS", 50000, group=_G,
+                    doc="จำนวน IP สูงสุดที่ track พร้อมกัน (กัน memory DoS จาก IP สุ่ม)")
 
 
 class SlidingWindowLimiter:

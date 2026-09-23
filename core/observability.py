@@ -17,11 +17,14 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
-import os
 import time
 import uuid
 from contextlib import contextmanager
 from typing import Optional
+
+# LOG_* เจ้าของคือ core/config.py (server.py import config ก่อนไฟล์นี้เสมอ ⇒ .env ถูกโหลดแล้ว)
+# เดิมอ่านในฟังก์ชัน install_logging ทุกครั้งที่เรียก — env ใน prod นิ่ง (ก้อน 4 · 2026-09-24)
+from core.config import LOG_FILE, LOG_FORMAT, LOG_LEVEL
 
 # context-bound request id — ปลอดภัยสำหรับ async/threading
 _request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="")
@@ -103,9 +106,9 @@ def install_logging(level: Optional[str] = None) -> None:
     Args:
         level: 'DEBUG'|'INFO'|'WARNING'|'ERROR' (default จาก env LOG_LEVEL หรือ INFO)
     """
-    lvl_name = (level or os.getenv("LOG_LEVEL", "INFO")).upper()
+    lvl_name = (level or LOG_LEVEL).upper()
     lvl = getattr(logging, lvl_name, logging.INFO)
-    fmt_kind = os.getenv("LOG_FORMAT", "plain").lower()
+    fmt_kind = LOG_FORMAT.lower()
 
     if fmt_kind == "json":
         formatter: logging.Formatter = _JsonFormatter()
@@ -118,7 +121,7 @@ def install_logging(level: Optional[str] = None) -> None:
     rid_filter = RequestIdFilter()
 
     # file handler (rotate ขนาด)
-    log_path = os.getenv("LOG_FILE", "server.log")
+    log_path = LOG_FILE
     try:
         from logging.handlers import RotatingFileHandler
         file_handler: logging.Handler = RotatingFileHandler(
