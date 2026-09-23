@@ -1,5 +1,34 @@
 ---
 
+## [2026-09-23 ค่ำ ต่อ] config ก้อน 4 ไฟล์ที่ 6-8 — `fs_tools` · `embed` · `code_sandbox` 18 จุด (`cbd7b1a`)
+**ตรวจ prod ก่อน (กติกา user):** ตั้งจริงแค่ `EMBEDDING_MODEL=paraphrase-multilingual` +
+`FS_TOOLS_ROOTS=/app/sandbox` · อีก 16 ชื่อ default · baseline 18 ค่า probe ในคอนเทนเนอร์ → หลัง deploy
+**ตรงทุกตัว** (รวม `'256m'`/`'0.5'` ยังเป็น str) · inode 4 ไฟล์ตรง · `/api/config` 200 · 0 error
+- **`embed.py` อ่าน `OLLAMA_BASE_URL` ซ้ำกับ config** (ค่าเท่ากัน) → import จาก config ไม่ลงซ้ำ ·
+  **`EMBEDDING_MODEL` มี 2 ผู้อ่านคนละความหมายกับค่าว่าง** (`memory.py` ว่าง = ปิด EF ของ ChromaDB ·
+  `embed` ว่าง = `or "paraphrase-multilingual"`) ⇒ เจ้าของ = `core/config` default `""` แล้วสองไฟล์
+  ตีความเองต่อเหมือนเดิม (conftest ตั้ง `""` เพื่อปิด EF — embed ยังได้ multilingual มีเทสตรึง)
+- **default ที่คำนวณ 2 ตัวใช้แบบ `ROUTER_IP`:** `FS_TOOLS_ROOTS` (จาก `~`) และ `EMBED_CACHE_DB`
+  (จาก `NAS_DATA_PATH`) ลงทะเบียน `""` + `or default` — ⚠️ เดิม `FS_TOOLS_ROOTS=""` = ไม่มี root
+  เลย (ปฏิเสธทุก path) ตอนนี้ว่าง = default root · prod ตั้ง `/app/sandbox` ไม่กระทบ · จดไว้ในเทส
+- `CODE_SANDBOX_MEM`/`CPU` **คงเป็น str** — ต่อเข้า argv ของ docker (`"256m"` แปลงไม่ได้ · `"1"` ต้อง
+  ไม่กลายเป็น `"1.0"`) · มีเทสตรึงชนิด
+- `.env.example`: 18 ชื่อเข้าส่วน generate · **16 ชื่อถูกจดครั้งแรก** · ย้าย doc ของ `EMBEDDING_MODEL`
+  (รวม ⛔ nomic) จากส่วนเขียนมือ · ตัวแทนส่วนเขียนมือในเทส → `BRAVE_SEARCH_API_KEY`
+- 🔴 **บั๊กของเทสที่เจอระหว่างทาง (2 ชั้น):** (1) `importlib.reload(utils.fs_tools)` ในเทส semantics
+  สร้างคลาส `FSError` ใหม่ ⇒ `test_fs_tools` ที่ผูกตัวเก่าตั้งแต่ collect `pytest.raises` ไม่จับ —
+  **รันเดี่ยว 25/25 · รันหลังไฟล์ registry แดง 4** (ลำดับไฟล์ซ่อนบั๊กได้ทั้งสองทาง) ⇒ เปลี่ยนเป็น
+  exec ไฟล์เข้า namespace ใหม่ (`spec_from_file_location` ไม่แตะ `sys.modules`) + สลับ `core.config`
+  ใน `sys.modules` ชั่วคราวด้วย `monkeypatch.setitem` = ยังรันโค้ดจริงทั้งไฟล์ ไม่ใช่ helper แยก
+  (2) `import core.config as cfg` ในเทส **คืนตัวเก่า** ผ่าน attribute ของแพ็กเกจ `core` ส่วน
+  `from core.config import X` ใน embed มองเห็นตัวใน `sys.modules` ⇒ เทสเทียบผิดตัวแล้วแดงทั้งที่
+  โค้ดถูก — ต้องอ่าน `sys.modules["core.config"]`
+- เทสแดงก่อน 23 · **2036 passed/17 skipped** (+33) · ruff · **mutation 12/12** (รวม "ว่างไม่ถอย
+  default" ×2 · ลงทะเบียนซ้ำ · CPU กลายเป็น float · ถอดจาก MODULES)
+- เหลืออ่าน env ดิบ **80 จุด** · ถัดไป `websearch`/`response_cache`/`memory`
+- 🔑 **บทเรียน: reload โมดูลที่มีคลาส exception ในเทส = ระเบิดเวลาที่ขึ้นกับลำดับไฟล์** —
+  ต้องรันคู่กับไฟล์เทสของโมดูลนั้นก่อนเชื่อว่าเขียว
+
 ## [2026-09-23 ค่ำ] config ก้อน 4 ไฟล์ที่ห้า — `utils/voice.py` ลบ 1 (dead) + ย้าย 5 (`16e0b83`)
 **เริ่มด้วย `/scrutinize` แผนก่อนลงมือ แล้ว user สั่ง "เช็คข้อมูลระบบจริงก่อน อย่าเชื่อ log"** —
 ผล scrutinize เปลี่ยนแผนจาก "ย้าย 6 จุด" เป็น **"ลบ 1 + ย้าย 5"**:

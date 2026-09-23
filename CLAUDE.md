@@ -705,13 +705,21 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-23**)
 
-> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อที่ `fs_tools`/`embed`/`code_sandbox` (6 จุด)**
+> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อที่ `websearch`/`response_cache`/`memory`**
 > 🔑 **กติกา user: "เช็คข้อมูล ก่อนจะลงมือให้ชัวร์ก่อนทุกครั้ง"** — ทั้งสองฝั่งของสัญญา + log/คำสั่งจริง
 > · **09-23 ค่ำ user เพิ่ม: "เช็คข้อมูลระบบจริงก่อน อย่าเชื่อ log ถ้าข้อมูลยังไม่ครอบคลุมให้ค้นเน็ตก่อน"**
 > ⇒ ก่อนย้ายไฟล์ไหน probe ในคอนเทนเนอร์ว่า env ตั้งจริงไหม + ค่าที่ resolve (ไม่ใช่อ่านจาก `.env.example`)
+> · 🔒 **เสียงถือว่าใช้ได้แล้ว (user ยืนยัน 09-23) — ห้ามปรับ/ห้ามเสนอปรับ** (ดู memory)
 > ✅ เสร็จแล้ว 09-23 — **อย่าทำซ้ำ**: `utils/llm.py` (`0f5844b`) · `agents/orchestrator.py` (`cbddc04`)
-> · `utils/summarize.py` (`2dcd501`) · `utils/home_tools.py` (`28b038b`) · **`utils/voice.py` (`16e0b83`)**
-> · เหลือ **98 จุด**
+> · `utils/summarize.py` (`2dcd501`) · `utils/home_tools.py` (`28b038b`) · `utils/voice.py` (`16e0b83`)
+> · **`fs_tools`/`embed`/`code_sandbox` (`cbd7b1a`)** · เหลือ **80 จุด**
+> **ของที่ต้องรู้ก่อนแตะ `memory.py`:** `EMBEDDING_MODEL` เจ้าของคือ `core/config` แล้ว (default `""`)
+> — `memory.py:42` ยังอ่านดิบ default `""` ตรงกัน ⇒ ตอนย้ายให้ **import จาก config** ไม่ลงซ้ำ ·
+> `embed.py` ทำแบบนั้นแล้ว (`_CFG_EMBEDDING_MODEL or "paraphrase-multilingual"`)
+> 🔴 **เทส semantics ห้าม `importlib.reload` โมดูลที่มีคลาส exception** (`FSError` ตัวใหม่ ⇒
+> `pytest.raises` ของไฟล์เทสอื่นไม่จับ · รันเดี่ยวเขียว รันตามหลังแดง) — ใช้ `_fresh_module()` /
+> `_reload_with()` ใน `tests/test_env_registry.py` (exec เข้า namespace ใหม่ + สลับ `core.config`
+> ใน `sys.modules` ชั่วคราว) · และอ่าน config ที่ `sys.modules["core.config"]` ไม่ใช่ `import core.config as`
 > **voice.py ปิดแล้ว (devlog [09-23 ค่ำ]):** เป็น "ลบ 1 + ย้าย 5" ไม่ใช่ย้าย 6 — `GEMINI_LIVE_MODEL` ใน
 > voice เป็น dead code (server import จาก config) ⇒ ~~circular import~~ ไม่มีตั้งแต่แรก ·
 > `VOICE_LEVEL_LOG` = `env_str("on")` + parser เดิม **ห้ามเปลี่ยนเป็น `env_bool`** (on/1 จะดับ meter) ·
