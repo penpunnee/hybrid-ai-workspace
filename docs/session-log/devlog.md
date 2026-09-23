@@ -1,5 +1,35 @@
 ---
 
+## [2026-09-23 ต่อ 5] แก้บั๊กข้อ 1 — Ollama ReAct agent ส่งคำตอบที่โมเดลแต่งเองให้ user (`47d94e5`)
+user สั่ง "ตรวจสอบ หาข้อมูลประกอบก่อน อย่าเดา" → ตรวจครบก่อนแก้ (devlog ต่อ 4) แล้วเคาะแก้ข้อ 1
+
+**แก้ 3 ชั้น — แต่ละชั้นกันได้เองแม้อีกชั้นพัง**
+1. `_parse_react()` **ตำแหน่งตัดสิน**: `Action` มาก่อน `Answer` ⇒ ที่ตามหลังคือของแต่ง ทิ้ง ·
+   JSON ด้วย `json.JSONDecoder().raw_decode` (args ซ้อน/`}` ในสตริงได้) · history เก็บแค่ถึง
+   ท้าย Action (Observation ปลอมไม่ถูกป้อนกลับ) · Action พัง → บอก error **ไม่ปล่อยข้อความดิบ**
+2. `stop=["Observation:"]` — **พิสูจน์กับ Ollama จริงก่อนใส่:** ข้อความเดียวกัน ไม่มี stop =
+   แต่ง Observation+Answer · มี stop = หยุดหลัง Action (`finish=stop`)
+3. ครบ `max_steps` โดยไม่มี tool ไหนได้ข้อมูล (`execute_tool` ขึ้นต้น `❌`) → **ไม่เรียก LLM สรุป**
+   — ช่องนี้เจอระหว่าง probe หลังแก้ชั้น 1-2: web_search ล้ม 3 ครั้ง → "ราคาทอง ~$1,825 (Source: Google)"
+
+**พิสูจน์**
+- `tests/test_react_parse.py` 15 ตัว ใช้**ข้อความดิบจริง**จาก probe · กลุ่มควบคุม (Answer ล้วน ·
+  Answer มาก่อน Action · ข้อความธรรมดา · มี tool สำเร็จแล้วสรุปได้) · mutation **8/8**
+- probe llama3 จริง **ก่อน deploy** (โหลดไฟล์ใหม่เป็นโมดูลแยกในคอนเทนเนอร์) และ `/api/chat`
+  จริงหลัง deploy: ping = tool จริง/ผลจริง · ดิสก์/ราคาทอง/ping-args-ผิด = บอกตรงๆ ว่าไม่ได้ข้อมูล
+  · **ไม่มีตัวเลขกุสักคำตอบ** · 1925 passed · ruff · CI เขียว
+
+**ข้อจำกัดที่ยังอยู่ (ไม่ได้แก้ — เป็นคุณภาพโมเดล ไม่ใช่ parser)**
+- llama3 เลือก tool/argument ผิดบ่อย (ดิสก์ → `fs_list` · `ping_network` ส่ง arg ผิด 3 ครั้ง)
+- tool ที่รายงาน error เองโดยไม่มี `❌` (`Memory error:` ฯลฯ) ตัวนับชั้น 3 มองไม่เห็น
+- มีข้อมูลจริงแล้ว โมเดลยังเสริมแต่งตอนสรุปได้ (เพดานเดียวกับ agent ตัวอื่น)
+
+**🐛 เจอระหว่างทาง (ยังไม่แก้ — กระทบทุก provider ไม่ใช่แค่ Ollama)**
+- `utils/websearch.py:143` `as_completed(futures, timeout=_FETCH_TIMEOUT + 2)` **ไม่ดัก
+  `TimeoutError`** ⇒ หน้าเว็บช้าหน้าเดียว = web_search ทั้งก้อนล้ม ทิ้งผลค้นที่ได้แล้ว ·
+  `with ThreadPoolExecutor` ยังรอเธรดค้างตอนออก ⇒ 35.5 วิ · ยืนยันด้วยการเรียกตรง:
+  "ราคาทองวันนี้" ✅ 6.2 วิ · "current gold price" ❌ `1 (of 3) futures unfinished` 35.5 วิ
+
 ## [2026-09-23 ต่อ 4] PC .235 เปิดแล้ว — verify เส้น local + vault sync ใหม่ + ก้อน 4 ไฟล์ที่สอง `agents/orchestrator.py` (`cbddc04`)
 **verify `utils/llm.py` (ก้อนก่อน) กับเส้น local ที่ตอน deploy ยังเช็คไม่ได้**
 - health `ollama`/`lmstudio`/`local_ok` ✅ · แชท `provider:ollama` ตอบถูก 48 วิ ·
