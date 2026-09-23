@@ -349,3 +349,51 @@ def test_summarize_อยู่ใน_MODULES():
     from core.env_registry import MODULES
 
     assert "utils.summarize" in MODULES
+
+
+# ── 8) ก้อน 4 ไฟล์ที่สี่: utils/home_tools.py (2026-09-23) — เจ้าของชื่อใหม่ 7 ตัว ──────
+
+def test_home_tools_อยู่ใน_MODULES():
+    from core.env_registry import MODULES
+
+    assert "utils.home_tools" in MODULES
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("NAS_IP", "192.168.51.49"),
+    ("NAS_PORT", 5000),
+    ("NAS_USER", ""),
+    ("NAS_PASS", ""),
+    ("PC_IP", "192.168.51.235"),
+    ("PC_MAC", ""),
+    # 🔑 ไม่ใช่ค่าที่คำนวณจาก NAS_IP — ไม่งั้น .env.example เปลี่ยนตาม env ของเครื่องที่ generate
+    ("ROUTER_IP", ""),
+])
+def test_default_ของ_home_tools_เท่าของเดิม(name, expected):
+    from core.env_registry import REGISTRY, load_all
+
+    load_all()
+    spec = REGISTRY[name]
+    assert spec.default == expected and type(spec.default) is type(expected), (
+        f"{name}: default เป็น {spec.default!r} ควรเป็น {expected!r}")
+    assert spec.doc.strip()
+
+
+@pytest.mark.parametrize("env,expected", [
+    ({"NAS_IP": "10.0.0.5"}, "10.0.0.1"),                          # ไม่ตั้ง = เดาจาก NAS_IP (เดิม)
+    ({"NAS_IP": "10.0.0.5", "ROUTER_IP": "10.9.9.9"}, "10.9.9.9"),  # ตั้งไว้ = ใช้ตามนั้น (เดิม)
+    ({"NAS_IP": "10.0.0.5", "ROUTER_IP": ""}, "10.0.0.1"),          # ว่าง = เดา (เดิมได้ "" แล้ว ping ไม่ได้)
+])
+def test_ROUTER_IP_ยังเดาจาก_NAS_IP_เมื่อไม่ตั้ง(monkeypatch, env, expected):
+    import importlib
+
+    import utils.home_tools as ht
+
+    monkeypatch.delenv("ROUTER_IP", raising=False)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    try:
+        assert importlib.reload(ht).ROUTER_IP == expected
+    finally:
+        monkeypatch.undo()
+        importlib.reload(ht)

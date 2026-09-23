@@ -1,17 +1,27 @@
 """
 Home Network Tools — NAS Synology API + Wake-on-LAN + Ping
 """
-import os, socket, subprocess, logging, json
+import socket, subprocess, logging, json
 import urllib.request, urllib.parse
+
+from core.env_registry import env_int, env_str
 
 logger = logging.getLogger(__name__)
 
-NAS_IP   = os.getenv("NAS_IP",   "192.168.51.49")
-NAS_PORT = int(os.getenv("NAS_PORT", "5000"))
-NAS_USER = os.getenv("NAS_USER", "")
-NAS_PASS = os.getenv("NAS_PASS", "")
-PC_IP    = os.getenv("PC_IP",    "192.168.51.235")
-PC_MAC   = os.getenv("PC_MAC",   "")   # xx:xx:xx:xx:xx:xx
+# env ของเครื่องในบ้าน — ไฟล์นี้เป็นเจ้าของ (ไม่มีไฟล์อื่นอ่าน) · ลงทะเบียนเพื่อให้
+# .env.example generate ได้ (ก้อน 4 · 2026-09-23 · ตัวกัน: tests/test_env_registry.py)
+_G = "Home Network"
+NAS_IP   = env_str("NAS_IP", "192.168.51.49", group=_G, doc="IP ของ NAS Synology (DSM API + ping)")
+NAS_PORT = env_int("NAS_PORT", 5000, group=_G, doc="พอร์ต DSM (http)")
+NAS_USER = env_str("NAS_USER", "", group=_G, doc=(
+    "ผู้ใช้ DSM สำหรับอ่าน disk/docker\n"
+    "ว่าง = tool nas_disk/nas_docker ตอบว่ายังไม่ตั้งค่า"))
+NAS_PASS = env_str("NAS_PASS", "", group=_G, doc="รหัสผ่าน DSM (⚠️ อย่า commit ค่าจริง)")
+PC_IP    = env_str("PC_IP", "192.168.51.235", group=_G,
+                   doc="IP เครื่อง PC (LM Studio/Ollama) สำหรับ ping_pc / ping_network")
+PC_MAC   = env_str("PC_MAC", "", group=_G, doc=(
+    "MAC ของ PC สำหรับ Wake-on-LAN (xx:xx:xx:xx:xx:xx)\n"
+    "ดูด้วย: ipconfig /all (Windows) หรือ ip link show (Linux) · ว่าง = WoL ใช้ไม่ได้"))
 
 
 def _default_gateway(ip: str) -> str:
@@ -22,7 +32,11 @@ def _default_gateway(ip: str) -> str:
     return ip
 
 
-ROUTER_IP = os.getenv("ROUTER_IP", _default_gateway(NAS_IP))
+# default ที่ลงทะเบียน = "" (ไม่ใช่ค่าที่คำนวณ) — ไม่งั้น .env.example เปลี่ยนตาม NAS_IP ของเครื่อง
+# ที่ generate · ว่าง/ไม่ตั้ง = เดาจาก NAS_IP (เดิม: ตั้งเป็นค่าว่างได้ "" แล้ว ping ไม่ได้)
+ROUTER_IP = env_str("ROUTER_IP", "", group=_G, doc=(
+    "IP router สำหรับ ping_network\n"
+    "ว่าง = เดาจาก NAS_IP (x.y.z.1 ของ subnet เดียวกัน)")) or _default_gateway(NAS_IP)
 
 
 # ── Synology DSM Session ──────────────────────────────────────────────────────

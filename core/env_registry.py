@@ -21,6 +21,7 @@ helper พวกนี้อ่าน env **แล้วจดไว้** — �
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 
 __all__ = [
@@ -47,6 +48,8 @@ class EnvSpec:
     kind: str  # "str" | "int" | "float" | "bool"
     doc: str
     group: str = ""
+    module: str = ""  # โมดูลที่ลงทะเบียน — ใช้เรียงใน .env.example ตาม MODULES
+    line: int = 0     # บรรทัดที่ลงทะเบียน — ลำดับภายในโมดูล (ไม่ขึ้นกับลำดับ import)
 
 
 REGISTRY: dict[str, EnvSpec] = {}
@@ -55,7 +58,8 @@ REGISTRY: dict[str, EnvSpec] = {}
 # (ก้อน 4 ย้ายทีละไฟล์) · มีเทสตรวจว่าไฟล์ในลิสต์ไม่มี `os.getenv` ดิบเหลือ
 # 🔴 REGISTRY ถูกเติมตอน *import* เท่านั้น ⇒ generator/เทสที่ import แค่ `core.config`
 #    จะไม่เห็นชื่อของ `utils/llm.py` เลย แล้ว `.env.example` ขาดไปเงียบๆ → ใช้ `load_all()`
-MODULES: tuple[str, ...] = ("core.config", "utils.llm", "agents.orchestrator", "utils.summarize")
+MODULES: tuple[str, ...] = ("core.config", "utils.llm", "agents.orchestrator", "utils.summarize",
+                           "utils.home_tools")
 
 
 def load_all() -> dict[str, EnvSpec]:
@@ -82,27 +86,33 @@ def _register(spec: EnvSpec) -> None:
     REGISTRY[spec.name] = spec
 
 
+def _caller() -> tuple[str, int]:
+    """(ชื่อโมดูล, บรรทัด) ของผู้เรียก env_* (เฟรม: 0=ตัวนี้ · 1=env_* · 2=ผู้เรียก)"""
+    f = sys._getframe(2)
+    return f.f_globals.get("__name__", ""), f.f_lineno
+
+
 def env_str(name: str, default: str, *, doc: str, group: str = "") -> str:
-    _register(EnvSpec(name, default, "str", doc, group))
+    _register(EnvSpec(name, default, "str", doc, group, *_caller()))
     value = os.environ.get(name)
     return default if value is None else value
 
 
 def env_int(name: str, default: int, *, doc: str, group: str = "") -> int:
-    _register(EnvSpec(name, default, "int", doc, group))
+    _register(EnvSpec(name, default, "int", doc, group, *_caller()))
     value = os.environ.get(name)
     return default if value is None else int(value)
 
 
 def env_float(name: str, default: float, *, doc: str, group: str = "") -> float:
-    _register(EnvSpec(name, default, "float", doc, group))
+    _register(EnvSpec(name, default, "float", doc, group, *_caller()))
     value = os.environ.get(name)
     return default if value is None else float(value)
 
 
 def env_bool(name: str, default: bool, *, doc: str, group: str = "") -> bool:
     """กติกาเดิมของโปรเจกต์: `"true"` (ไม่สนตัวพิมพ์) = จริง · อย่างอื่นทั้งหมด = เท็จ"""
-    _register(EnvSpec(name, default, "bool", doc, group))
+    _register(EnvSpec(name, default, "bool", doc, group, *_caller()))
     value = os.environ.get(name)
     return default if value is None else value.lower() == "true"
 
@@ -154,8 +164,13 @@ def render_env_example(current: str = "") -> str:
     (env ที่ยังไม่เข้า registry ~95 ชื่อ ยังต้องพึ่งคนเขียน — ลบทิ้งเพื่อให้
     "generate ได้ทั้งไฟล์" = ทำเอกสารแย่ลงเพื่อให้เทสสวย)
     """
+    # 🔴 เรียงตาม MODULES ไม่ใช่ลำดับ dict — ลำดับ dict = ลำดับ import ซึ่งเปลี่ยนตามว่าใคร
+    # import ใครก่อน (บั๊กแฝง เจอ 2026-09-23 ตอนเพิ่ม utils/home_tools ที่ไม่ import core.config)
+    rank = {m: i for i, m in enumerate(MODULES)}
+    ordered = sorted(REGISTRY.values(),
+                     key=lambda s: (rank.get(s.module, len(rank)), s.line, s.name))
     groups: dict[str, list[EnvSpec]] = {}
-    for spec in REGISTRY.values():
+    for spec in ordered:
         groups.setdefault(spec.group or "อื่นๆ", []).append(spec)
 
     parts = [_HEADER]

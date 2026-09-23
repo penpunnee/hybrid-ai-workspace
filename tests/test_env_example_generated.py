@@ -71,7 +71,7 @@ def test_ส่วนเขียนมือไม่ถูกกลืนห�
     from core.env_registry import REGISTRY, render_env_example
 
     out = render_env_example(ENV_EXAMPLE.read_text())
-    for name in ("GOOGLE_SEARCH_CX", "HEARTBEAT_URL", "NAS_IP", "EMBEDDING_MODEL"):
+    for name in ("GOOGLE_SEARCH_CX", "HEARTBEAT_URL", "LINE_NOTIFY_TOKEN", "EMBEDDING_MODEL"):
         assert name not in REGISTRY, f"{name} เข้า registry แล้ว — แก้เทสนี้ให้ใช้ตัวอื่น"
         assert f"{name}=" in out, f"{name} หายไปตอน generate"
 
@@ -130,3 +130,23 @@ def test_ไม่มี_path_เฉพาะเครื่องหลุด�
     assert repo not in out, f"path ของเครื่องนี้ ({repo}) หลุดเข้า .env.example"
     assert "NAS_DATA_PATH=./data" in out
     assert "READER_DB_PATH=./data/reader.db" in out
+
+
+def test_ผลที่_generate_ไม่ขึ้นกับลำดับการ_import(monkeypatch):
+    """🔴 บั๊กแฝงของก้อน 3 เจอ 2026-09-23: ลำดับกลุ่มมาจากลำดับที่ชื่อถูกลงทะเบียน (= ลำดับ import)
+    · `utils/home_tools.py` ไม่ import core.config ⇒ ถ้าเทสอื่น import มันก่อน กลุ่ม Home Network
+    ขึ้นบนสุด แล้วไฟล์ไม่ตรงกับที่ commit (ชุดเต็มเขียวเพราะลำดับชื่อไฟล์พอดี · ชุดย่อยแดง)
+    ⇒ ต้องเรียงตาม `MODULES` ไม่ใช่ตามลำดับ dict"""
+    import core.env_registry as er
+
+    normal = er.render_env_example(ENV_EXAMPLE.read_text())
+    reversed_reg = dict(reversed(list(er.REGISTRY.items())))
+    monkeypatch.setattr(er, "REGISTRY", reversed_reg)
+    assert er.render_env_example(ENV_EXAMPLE.read_text()) == normal
+
+
+def test_ทุกรายการรู้ว่ามาจากโมดูลไหน():
+    from core.env_registry import MODULES, REGISTRY
+
+    unknown = {n: s.module for n, s in REGISTRY.items() if s.module not in MODULES}
+    assert unknown == {}, f"ชื่อพวกนี้ไม่รู้ว่ามาจากโมดูลใน MODULES: {unknown}"
