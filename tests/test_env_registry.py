@@ -461,3 +461,134 @@ def test_voice_ไม่นิยาม_GEMINI_LIVE_MODEL_ซ้ำกับ_con
                 for t in node.targets if isinstance(t, ast.Name)}
     assert "GEMINI_LIVE_MODEL_DEFAULT" in assigned, "ค่าคงที่ที่ config import ต้องยังอยู่"
     assert "GEMINI_LIVE_MODEL" not in assigned, "voice.py ยังอ่าน GEMINI_LIVE_MODEL เอง (dead code ซ้ำกับ config)"
+
+
+# ── 10) ก้อน 4 ไฟล์ที่ 6-8: utils/fs_tools.py · utils/embed.py · utils/code_sandbox.py (2026-09-23) ──
+# 🔑 ตรวจบน prod ก่อนเขียน: ตั้งจริงแค่ EMBEDDING_MODEL=paraphrase-multilingual + FS_TOOLS_ROOTS=/app/sandbox
+#    ที่เหลือ default ล้วน · embed อ่าน OLLAMA_BASE_URL ซ้ำกับ config (ค่าเท่ากัน) · EMBEDDING_MODEL
+#    มี 2 ผู้อ่าน (embed: `or "paraphrase-multilingual"` · memory.py: default "") ⇒ เจ้าของ = config
+
+@pytest.mark.parametrize("mod", ["utils.fs_tools", "utils.embed", "utils.code_sandbox"])
+def test_fs_embed_sandbox_อยู่ใน_MODULES(mod):
+    from core.env_registry import MODULES
+
+    assert mod in MODULES
+
+
+@pytest.mark.parametrize("name,expected", [
+    # fs_tools — 🔑 FS_TOOLS_ROOTS ลงทะเบียน "" ไม่ใช่ ~/Desktop/ui/sandbox ที่คำนวณจาก home ของเครื่อง
+    #   ที่ generate (แบบเดียวกับ ROUTER_IP) · ว่าง/ไม่ตั้ง = default เดิม
+    ("FS_TOOLS_ROOTS", ""),
+    ("FS_TOOLS_MAX_READ", 1024 * 1024),
+    ("FS_TOOLS_MAX_WRITE", 256 * 1024),
+    ("FS_TOOLS_MAX_LIST", 500),
+    ("FS_TOOLS_MAX_PATTERN", 200),
+    ("FS_TOOLS_SEARCH_DEADLINE", 5.0),
+    # embed
+    ("LMSTUDIO_EMBED_TIMEOUT", 30),
+    ("EMBEDDING_MODEL", ""),                 # เจ้าของ config · "" = memory.py ปิด EF · embed ถอยไป multilingual
+    ("EMBED_FALLBACK_LMSTUDIO", True),
+    ("EMBED_CACHE_DB", ""),                  # ว่าง = <NAS_DATA_PATH>/embed_cache.db (คำนวณ ห้ามลงเป็น default)
+    ("EMBED_CACHE_ENABLED", True),
+    # code_sandbox — MEM/CPU เป็น str เพราะส่งต่อให้ docker CLI ตรงๆ
+    ("CODE_SANDBOX_IMAGE", "python:3.11-slim"),
+    ("CODE_SANDBOX_TIMEOUT", 10),
+    ("CODE_SANDBOX_MAX_TIMEOUT", 60),
+    ("CODE_SANDBOX_MEM", "256m"),
+    ("CODE_SANDBOX_CPU", "0.5"),
+    ("CODE_SANDBOX_ALLOW_LOCAL", False),
+])
+def test_default_ของ_fs_embed_sandbox_เท่าของเดิม(name, expected):
+    from core.env_registry import REGISTRY, load_all
+
+    load_all()
+    spec = REGISTRY[name]
+    assert spec.default == expected and type(spec.default) is type(expected), (
+        f"{name}: default เป็น {spec.default!r} ควรเป็น {expected!r}")
+    assert spec.doc.strip()
+
+
+def test_embed_ไม่ลงทะเบียนชื่อที่_config_เป็นเจ้าของ():
+    """OLLAMA_BASE_URL / EMBEDDING_MODEL ต้อง import จาก core.config — ไม่ใช่ env_str ซ้ำใน embed"""
+    embed_names = _helper_names((REPO / "utils" / "embed.py").read_text())
+    config_names = _helper_names((REPO / "core" / "config.py").read_text())
+    assert not embed_names & {"OLLAMA_BASE_URL", "EMBEDDING_MODEL"}, embed_names
+    assert "EMBEDDING_MODEL" in config_names
+
+
+def _fresh_module(modname: str):
+    """รันไฟล์ของโมดูลทั้งไฟล์เข้า namespace ใหม่ **โดยไม่แตะ `sys.modules`**
+
+    🔴 ห้าม `importlib.reload` โมดูลที่มีคลาส exception — reload สร้าง `FSError` ตัวใหม่ ส่วน
+    `tests/test_fs_tools.py` ผูกตัวเก่าไว้ตั้งแต่ collect ⇒ `pytest.raises(FSError)` ไม่จับ
+    (เจอจริง 2026-09-23: รันเดี่ยว 25/25 · รันหลังไฟล์นี้แดง 4) · exec ใหม่ยังเป็น "โค้ดจริงทั้งไฟล์"
+    ไม่ใช่ helper แยกที่ไม่มีใครเรียก
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(modname, REPO / (modname.replace(".", "/") + ".py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _reload_with(monkeypatch, modname, env: dict[str, str | None]):
+    """ประเมิน `modname` ใหม่ภายใต้ env ที่กำหนด — `core.config` ถูกประเมินใหม่ด้วย (สลับใน
+    `sys.modules` ชั่วคราว) เพราะโมดูลเป้าหมาย import ค่าจาก config ตอน import"""
+    import sys
+
+    for k, v in env.items():
+        (monkeypatch.delenv(k, raising=False) if v is None else monkeypatch.setenv(k, v))
+    monkeypatch.setitem(sys.modules, "core.config", _fresh_module("core.config"))
+    return _fresh_module(modname)
+
+
+@pytest.mark.parametrize("raw,expected", [
+    (None, "paraphrase-multilingual"),   # ไม่ตั้ง = ตัวหลัก (เดิม `or`)
+    ("", "paraphrase-multilingual"),     # ว่าง (conftest ตั้งแบบนี้เพื่อปิด EF ของ ChromaDB) = ยังเป็นตัวหลัก
+    ("nomic-embed-text", "nomic-embed-text"),
+])
+def test_EMBEDDING_MODEL_ของ_embed_ยังถอยไป_multilingual_เมื่อว่าง(monkeypatch, raw, expected):
+    e = _reload_with(monkeypatch, "utils.embed", {"EMBEDDING_MODEL": raw})
+    assert e._EMBED_MODEL == expected
+
+
+def test_embed_ใช้_OLLAMA_BASE_URL_ตัวเดียวกับ_config(monkeypatch):
+    import sys
+
+    e = _reload_with(monkeypatch, "utils.embed", {"OLLAMA_BASE_URL": "http://10.1.1.1:11434/v1"})
+    # 🔴 `import core.config as cfg` คืนตัว *เก่า* ผ่าน attribute ของแพ็กเกจ `core` — ต้องดูที่
+    #    sys.modules ซึ่งเป็นตัวที่ `from core.config import ...` ใน embed มองเห็นจริง
+    cfg = sys.modules["core.config"]
+    assert e._OLLAMA_BASE_URL == cfg.OLLAMA_BASE_URL == "http://10.1.1.1:11434/v1"
+
+
+@pytest.mark.parametrize("raw,use_default", [(None, True), ("", True), ("/tmp/x.db", False)])
+def test_EMBED_CACHE_DB_ว่างหรือไม่ตั้ง_ใช้_path_ใต้_NAS_DATA_PATH(monkeypatch, raw, use_default):
+    import sys
+
+    e = _reload_with(monkeypatch, "utils.embed", {"EMBED_CACHE_DB": raw})
+    cfg = sys.modules["core.config"]  # ตัวที่ประเมินใหม่ (ดูเทส OLLAMA_BASE_URL)
+    assert e._CACHE_DB == (cfg.EMBED_CACHE_DB if use_default else raw)
+
+
+@pytest.mark.parametrize("raw,expected_roots", [
+    (None, ["~/Desktop/ui/sandbox"]),
+    ("", ["~/Desktop/ui/sandbox"]),      # ⚠️ เดิม "" = ไม่มี root เลย (ปฏิเสธทุก path) — เปลี่ยนตาม ROUTER_IP
+    ("/tmp/a:/tmp/b", ["/tmp/a", "/tmp/b"]),
+    ("/tmp/a::  :", ["/tmp/a"]),          # ช่องว่าง/ว่างระหว่าง : ถูกทิ้ง (เดิม)
+])
+def test_FS_TOOLS_ROOTS_แยกด้วย_colon_และว่างถอยไป_default(monkeypatch, raw, expected_roots):
+    from pathlib import Path
+
+    f = _reload_with(monkeypatch, "utils.fs_tools", {"FS_TOOLS_ROOTS": raw})
+    assert f._ROOTS == [Path(p).expanduser().resolve() for p in expected_roots]
+
+
+def test_code_sandbox_ค่า_docker_ยังเป็น_str():
+    """`--memory 256m` / `--cpus 0.5` ต่อเข้า argv ของ docker — float("0.5") จะกลายเป็น "0.5" ก็จริง
+    แต่ "1" จะกลายเป็น "1.0" และ "256m" แปลงไม่ได้เลย ⇒ ห้ามแปลงชนิด"""
+    import utils.code_sandbox as c
+
+    assert isinstance(c._MEM_LIMIT, str) and isinstance(c._CPU_LIMIT, str)
+    assert isinstance(c._DEFAULT_TIMEOUT, int) and isinstance(c._MAX_TIMEOUT, int)

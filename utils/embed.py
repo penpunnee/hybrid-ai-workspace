@@ -27,27 +27,39 @@ from openai import OpenAI
 
 from core.config import EMBED_CACHE_DB as _DEFAULT_CACHE_DB
 # ⬇️ อ่านจาก core/config.py ที่เดียว — เดิมไฟล์นี้มี default ของตัวเองที่ไม่ตรงกับที่อื่น
-# (ตัวกัน: tests/test_env_default_consistency.py)
+# (ตัวกัน: tests/test_env_default_consistency.py) · OLLAMA_BASE_URL/EMBEDDING_MODEL ก็เจ้าของ
+# เดียวกัน — ห้าม env_str ซ้ำที่นี่ (ตัวกัน: tests/test_env_registry.py)
+from core.config import EMBEDDING_MODEL as _CFG_EMBEDDING_MODEL
 from core.config import LMSTUDIO_API_KEY as _CFG_LMSTUDIO_API_KEY
 from core.config import LMSTUDIO_BASE_URL as _CFG_LMSTUDIO_BASE_URL
+from core.config import OLLAMA_BASE_URL as _CFG_OLLAMA_BASE_URL
+from core.env_registry import env_bool, env_int, env_str
 
 logger = logging.getLogger(__name__)
 
+# env ที่ไฟล์นี้เป็นเจ้าของ 4 ชื่อ (ก้อน 4 · 2026-09-23)
+_G = "Embeddings"
 _LMSTUDIO_BASE_URL = _CFG_LMSTUDIO_BASE_URL
 # LM Studio รุ่นใหม่บังคับ API token — ค่ามาจาก core/config.py (ค่าว่างถอยไป placeholder
 # ที่นั่น · client ข้างล่างสร้างตอน import ⇒ ค่าว่างเคยทำ server ไม่ขึ้น)
 _LMSTUDIO_API_KEY = _CFG_LMSTUDIO_API_KEY
-_EMBED_TIMEOUT = int(os.getenv("LMSTUDIO_EMBED_TIMEOUT", "30"))
-_OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+_EMBED_TIMEOUT = env_int("LMSTUDIO_EMBED_TIMEOUT", 30, group=_G,
+                         doc="วินาที timeout ต่อคำขอ embedding (ทั้ง Ollama ตัวหลักและ LM Studio fallback)")
+_OLLAMA_BASE_URL = _CFG_OLLAMA_BASE_URL
 # ตัวหลัก = multilingual model บน Ollama (ตัวเดียวกับที่ ChromaDB memory ใช้ผ่าน
 # EMBEDDING_MODEL ตั้งแต่ 2026-07-09) — single source of truth ว่า "ตัวไหนอ่านไทยได้"
-_EMBED_MODEL = os.getenv("EMBEDDING_MODEL") or "paraphrase-multilingual"
+# ค่าว่าง (conftest ตั้งเพื่อปิด EF ของ ChromaDB) = ยังถอยไปตัวหลักเหมือนเดิม
+_EMBED_MODEL = _CFG_EMBEDDING_MODEL or "paraphrase-multilingual"
 # fallback = โมเดล**ชื่อเดียวกัน**บน LM Studio เท่านั้น ห้าม fallback ข้ามโมเดล:
 # vector คนละโมเดล = คนละ space ถึงมิติเท่ากันก็ตาม → cosine เพี้ยนแบบเงียบๆ
 # (ถ้า LM Studio ไม่มีโมเดลนี้จะ raise → caller จัดการเอง ดีกว่าคืนค่ามั่ว)
-_EMBED_FALLBACK_ENABLED = os.getenv("EMBED_FALLBACK_LMSTUDIO", "true").lower() == "true"
-_CACHE_DB = os.getenv("EMBED_CACHE_DB", _DEFAULT_CACHE_DB)
-_CACHE_ENABLED = os.getenv("EMBED_CACHE_ENABLED", "true").lower() == "true"
+_EMBED_FALLBACK_ENABLED = env_bool("EMBED_FALLBACK_LMSTUDIO", True, group=_G,
+                                   doc="false = Ollama ล่มแล้วโยน error ไปเลย ไม่ลอง LM Studio (โมเดลชื่อเดียวกันเท่านั้น)")
+# ลงทะเบียน "" — default จริงคำนวณจาก NAS_DATA_PATH (ห้ามลงค่าที่คำนวณ ไม่งั้น .env.example
+# เปลี่ยนตามเครื่องที่ generate) · ว่าง/ไม่ตั้ง = <NAS_DATA_PATH>/embed_cache.db
+_CACHE_DB = env_str("EMBED_CACHE_DB", "", group=_G, doc=(
+    "SQLite เก็บ embedding ที่เคยคำนวณ (Phase E) — ว่าง = <NAS_DATA_PATH>/embed_cache.db")) or _DEFAULT_CACHE_DB
+_CACHE_ENABLED = env_bool("EMBED_CACHE_ENABLED", True, group=_G, doc="false = คำนวณ embedding ใหม่ทุกครั้ง")
 
 _client = OpenAI(base_url=_LMSTUDIO_BASE_URL or "http://localhost:1234/v1",
                  api_key=_LMSTUDIO_API_KEY, timeout=_EMBED_TIMEOUT)

@@ -17,17 +17,26 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from core.env_registry import env_float, env_int, env_str
+
 logger = logging.getLogger(__name__)
 
+# env ของ FS tools — ไฟล์นี้เป็นเจ้าของ 6 ชื่อ (ก้อน 4 · 2026-09-23 · ตัวกัน: tests/test_env_registry.py)
+_G = "FS Tools (agent)"
 _DEFAULT_ROOT = os.path.expanduser("~/Desktop/ui/sandbox")
-_ROOTS_ENV = os.getenv("FS_TOOLS_ROOTS", _DEFAULT_ROOT)
+# ลงทะเบียน "" ไม่ใช่ _DEFAULT_ROOT — default นั้นคำนวณจาก home ของเครื่องที่ generate .env.example
+# (แบบเดียวกับ ROUTER_IP) · ว่าง/ไม่ตั้ง = _DEFAULT_ROOT (เดิม: ตั้ง "" ได้ = ไม่มี root เลย)
+_ROOTS_ENV = env_str("FS_TOOLS_ROOTS", "", group=_G, doc=(
+    "โฟลเดอร์ที่ agent อ่าน/เขียนได้ คั่นด้วย : (whitelist — นอกนี้ปฏิเสธทั้งหมด)\n"
+    "ว่าง = ~/Desktop/ui/sandbox · ในคอนเทนเนอร์ต้องตั้ง /app/sandbox ให้ตรง volume mount")) or _DEFAULT_ROOT
 _ROOTS = [Path(p).expanduser().resolve() for p in _ROOTS_ENV.split(":") if p.strip()]
 
-_MAX_READ = int(os.getenv("FS_TOOLS_MAX_READ", str(1024 * 1024)))      # 1MB
-_MAX_WRITE = int(os.getenv("FS_TOOLS_MAX_WRITE", str(256 * 1024)))     # 256KB
-_MAX_LIST = int(os.getenv("FS_TOOLS_MAX_LIST", "500"))                  # entries
-_MAX_PATTERN = int(os.getenv("FS_TOOLS_MAX_PATTERN", "200"))            # chars
-_SEARCH_DEADLINE = float(os.getenv("FS_TOOLS_SEARCH_DEADLINE", "5"))    # วินาที
+_MAX_READ = env_int("FS_TOOLS_MAX_READ", 1024 * 1024, group=_G, doc="ไบต์สูงสุดต่อการอ่านไฟล์ (1 MB)")
+_MAX_WRITE = env_int("FS_TOOLS_MAX_WRITE", 256 * 1024, group=_G, doc="ไบต์สูงสุดต่อการเขียนไฟล์ (256 KB)")
+_MAX_LIST = env_int("FS_TOOLS_MAX_LIST", 500, group=_G, doc="จำนวนรายการสูงสุดต่อการ list โฟลเดอร์")
+_MAX_PATTERN = env_int("FS_TOOLS_MAX_PATTERN", 200, group=_G, doc="ความยาว regex สูงสุดของ search_files (ตัวอักษร)")
+_SEARCH_DEADLINE = env_float("FS_TOOLS_SEARCH_DEADLINE", 5.0, group=_G,
+                             doc="วินาทีสูงสุดของ search_files ทั้งก้อน (กัน regex/โฟลเดอร์ใหญ่กินเวลา)")
 
 # quantifier ซ้อน quantifier — คลาสคลาสสิกของ catastrophic backtracking
 # ((a+)+ / (a*)* / (a+){3,}) · `re` ของ CPython ไม่มี timeout และ **หยุดกลางคันไม่ได้**

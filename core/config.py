@@ -29,6 +29,17 @@ OLLAMA_TOP_P       = env_float("OLLAMA_TOP_P", 0.85, group=_G, doc="nucleus samp
 OLLAMA_NUM_CTX     = env_int("OLLAMA_NUM_CTX", 4096, group=_G, doc="ขนาด context window")
 OLLAMA_REPEAT_PENALTY = env_float("OLLAMA_REPEAT_PENALTY", 1.1, group=_G,
                                   doc="โทษการพูดซ้ำ")
+# มี 2 ผู้อ่านคนละความหมายกับค่าว่าง (utils/memory.py: ว่าง = ปิด embedding_function ของ ChromaDB
+# · utils/embed.py: ว่าง = ถอยไป paraphrase-multilingual) ⇒ เจ้าของอยู่ที่นี่ default "" ทั้งสองไฟล์
+# ตีความค่าว่างเองต่อ (ก้อน 4 · 2026-09-23)
+EMBEDDING_MODEL    = env_str("EMBEDDING_MODEL", "", group=_G,
+                             doc="Embedding function ของ ChromaDB — ปล่อยว่าง (default) = MiniLM เดิม (ใช้กับ\n"
+                                 "ภาษาไทยไม่ได้เลย ทุกประโยคได้ vector เดียวกัน semantic recall เป็น noise ล้วน\n"
+                                 "ดู wiki concepts/thai-embedding-chromadb.md). ตั้งเป็น paraphrase-multilingual\n"
+                                 "เพื่อเปิดใช้จริง — ⚠️ ต้องรัน scripts/migrate_thai_embeddings.py ก่อน/หลังตั้งค่านี้\n"
+                                 "(เปลี่ยน embedder = dimension เปลี่ยน ของเก่า query ไม่ได้ ต้อง re-embed ทุก collection)\n"
+                                 "และต้อง `ollama pull paraphrase-multilingual` บน Ollama ที่ OLLAMA_BASE_URL ชี้ไปด้วย\n"
+                                 "⛔ ห้ามใช้ nomic-embed-text เป็นตัวหลัก (พิสูจน์บน prod 2026-08-02: ไทยทุกประโยค cosine 1.0)")
 
 # ── Gemini (Cloud LLM) ───────────────────────────────────────────────────────
 _G = "Gemini"

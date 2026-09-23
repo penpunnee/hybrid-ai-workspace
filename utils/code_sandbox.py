@@ -17,14 +17,21 @@ import uuid
 from dataclasses import dataclass, asdict
 from typing import Optional
 
+from core.env_registry import env_bool, env_int, env_str
+
 logger = logging.getLogger(__name__)
 
-_DOCKER_IMAGE = os.getenv("CODE_SANDBOX_IMAGE", "python:3.11-slim")
-_DEFAULT_TIMEOUT = int(os.getenv("CODE_SANDBOX_TIMEOUT", "10"))
-_MAX_TIMEOUT = int(os.getenv("CODE_SANDBOX_MAX_TIMEOUT", "60"))
-_MEM_LIMIT = os.getenv("CODE_SANDBOX_MEM", "256m")
-_CPU_LIMIT = os.getenv("CODE_SANDBOX_CPU", "0.5")
-_ALLOW_LOCAL = os.getenv("CODE_SANDBOX_ALLOW_LOCAL", "false").lower() == "true"
+# env ของ sandbox — ไฟล์นี้เป็นเจ้าของ 6 ชื่อ (ก้อน 4 · 2026-09-23 · ตัวกัน: tests/test_env_registry.py)
+# MEM/CPU คงเป็น str — ต่อเข้า argv ของ docker ตรงๆ ("256m" แปลงชนิดไม่ได้ · "1" ต้องไม่กลายเป็น "1.0")
+_G = "Code Sandbox (agent)"
+_DOCKER_IMAGE = env_str("CODE_SANDBOX_IMAGE", "python:3.11-slim", group=_G,
+                        doc="อิมเมจที่ใช้รัน run_python (ต้องมีบนเครื่องที่รัน docker)")
+_DEFAULT_TIMEOUT = env_int("CODE_SANDBOX_TIMEOUT", 10, group=_G, doc="วินาที default ต่อการรันโค้ด")
+_MAX_TIMEOUT = env_int("CODE_SANDBOX_MAX_TIMEOUT", 60, group=_G, doc="เพดานวินาทีที่ caller ขอได้")
+_MEM_LIMIT = env_str("CODE_SANDBOX_MEM", "256m", group=_G, doc="docker --memory")
+_CPU_LIMIT = env_str("CODE_SANDBOX_CPU", "0.5", group=_G, doc="docker --cpus")
+_ALLOW_LOCAL = env_bool("CODE_SANDBOX_ALLOW_LOCAL", False, group=_G,
+                        doc="⚠️ true = รันบน host ตรงๆ โดยไม่มี Docker (ไม่มี isolation) — ใช้เฉพาะ dev")
 _MAX_CODE_BYTES = 100 * 1024  # 100 KB
 
 
