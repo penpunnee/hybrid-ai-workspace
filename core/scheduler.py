@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,14 @@ def _scheduled_db_backup():
         logger.error(f"[Scheduler] DB backup error: {e}")
 
 
+def _scheduled_vault_catchup():
+    from utils.obsidian_sync import catchup_sync_if_pending
+    try:
+        catchup_sync_if_pending()
+    except Exception as e:
+        logger.error(f"[Scheduler] vault catch-up error: {e}")
+
+
 def start_scheduler():
     # ⚠️ CronTrigger ต้องส่ง timezone ตรงๆ — BackgroundScheduler(timezone=...) ไม่ inject
     # เข้า CronTrigger ที่สร้างแยกไว้ก่อน add_job() เอง มันเลย fallback เป็น OS-local
@@ -67,5 +76,17 @@ def start_scheduler():
         id="db_backup_nightly",
         replace_existing=True,
     )
+    # vault sync อัตโนมัติเมื่อ PC (embedder) กลับมา — ทำงานจริงเฉพาะตอน sync ล่าสุดค้าง
+    # (ดู utils/obsidian_sync.catchup_sync_if_pending) · ช่วงห่างไม่ขึ้นกับ timezone
+    from utils.obsidian_sync import _CATCHUP_INTERVAL_MIN
+    scheduler.add_job(
+        _scheduled_vault_catchup,
+        IntervalTrigger(minutes=_CATCHUP_INTERVAL_MIN, timezone="Asia/Bangkok"),
+        id="vault_catchup",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.start()
-    logger.info("[Scheduler] ตั้ง Dream ตี 2 + DB backup 03:30 แล้ว (Asia/Bangkok)")
+    logger.info("[Scheduler] ตั้ง Dream ตี 2 + DB backup 03:30 + vault catch-up ทุก "
+                f"{_CATCHUP_INTERVAL_MIN} นาที แล้ว (Asia/Bangkok)")

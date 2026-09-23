@@ -116,17 +116,68 @@ def _is_conn_failure(e: Exception) -> bool:
 _sync_lock = threading.Lock()
 _SYNC_WAIT_TIMEOUT = 180.0
 
+# "ค้าง" = sync ล่าสุดถูกหยุด/มี errors ⇒ job อัตโนมัติจะลองใหม่เมื่อ embedder กลับมา
+# เริ่มเป็น True ทุกครั้งที่แอปเริ่ม — จับของที่เปลี่ยนตอนแอปดับ/ถูก restart ระหว่าง PC ปิด
+_catchup_pending = True
 
-def sync_vault(vault_path: str = "") -> dict:
-    """Sync all .md files in vault into ChromaDB. Returns stats. (ทีละรอบ — ดู _sync_lock)"""
-    if not _sync_lock.acquire(timeout=_SYNC_WAIT_TIMEOUT):
-        logger.warning(f"Vault sync: รอคิวเกิน {_SYNC_WAIT_TIMEOUT:.0f} วิ — มีอีกรอบกำลังทำงาน")
+
+def sync_vault(vault_path: str = "", wait_timeout: float | None = None) -> dict:
+    """Sync all .md files in vault into ChromaDB. Returns stats. (ทีละรอบ — ดู _sync_lock)
+
+    `wait_timeout` = รอคิวได้นานเท่าไร (None = `_SYNC_WAIT_TIMEOUT` · 0 = ไม่รอ)
+    """
+    global _catchup_pending
+    wait = _SYNC_WAIT_TIMEOUT if wait_timeout is None else wait_timeout
+    acquired = (_sync_lock.acquire(timeout=wait) if wait > 0
+                else _sync_lock.acquire(blocking=False))
+    if not acquired:
+        # รอจริงแล้วไม่ได้ = ผิดปกติ (WARNING) · ไม่รอ (job อัตโนมัติ) = ข้ามตามปกติ (INFO)
+        (logger.warning if wait > 0 else logger.info)(
+            f"Vault sync: มีอีกรอบกำลังทำงาน (รอ {wait:.0f} วิ แล้วไม่ว่าง)")
         return {"ok": False, "busy": True,
-                "error": f"มีอีกรอบกำลัง sync อยู่ (รอเกิน {_SYNC_WAIT_TIMEOUT:.0f} วิ) — ลองใหม่ภายหลัง"}
+                "error": f"มีอีกรอบกำลัง sync อยู่ (รอเกิน {wait:.0f} วิ) — ลองใหม่ภายหลัง"}
     try:
-        return _sync_vault_unlocked(vault_path)
+        res = _sync_vault_unlocked(vault_path)
     finally:
         _sync_lock.release()
+    _catchup_pending = bool(res.get("halted") or res.get("errors"))
+    return res
+
+
+_CATCHUP_INTERVAL_MIN = 5
+
+
+def catchup_sync_if_pending() -> dict | None:
+    """job ของ scheduler — sync ใหม่เมื่อรอบล่าสุดค้าง และ embedder ต่อได้แล้ว
+
+    ไม่รอคิว (มีรอบอื่นรันอยู่ = ข้าม) · PC ยังปิด = ข้าม**เงียบ** (DEBUG) เพราะ job ยิงทุก
+    5 นาทีทั้งคืน · embedder ต่อได้แล้วแต่ยังมี error = **เลิกลองอัตโนมัติ** กันวนไม่จบ
+    (ของจริง 103 errors ที่เคยเกิดเป็นเรื่องต่อไม่ติดทั้งหมด แต่ไฟล์ล้มถาวรเป็นไปได้)
+    """
+    global _catchup_pending
+    if not _catchup_pending:
+        return None
+    col = _get_collection()
+    if col is None:
+        logger.debug("Vault catch-up: ChromaDB ไม่พร้อม — ข้าม")
+        return None
+    ep = _embedder_endpoint(col)
+    if ep and not _tcp_reachable(ep[0], ep[1], _PREFLIGHT_TIMEOUT):
+        logger.debug(f"Vault catch-up: embedder {ep[0]}:{ep[1]} ยังต่อไม่ได้ — รอรอบหน้า")
+        return None
+    res = sync_vault(wait_timeout=0)
+    if res.get("busy"):
+        return res
+    if res.get("halted"):
+        logger.info(f"Vault catch-up: embedder หลุดอีกระหว่าง sync — ลองรอบหน้า ({res['halted']})")
+    elif res.get("errors"):
+        _catchup_pending = False
+        logger.warning(f"Vault catch-up: embedder ต่อได้แต่ยังมี error {res['errors']} ไฟล์ — "
+                       "เลิกลองอัตโนมัติ ให้กด sync เองหลังตรวจ log")
+    else:
+        logger.info(f"Vault catch-up: sync สำเร็จ (synced={res.get('synced')}, "
+                    f"skipped={res.get('skipped')})")
+    return res
 
 
 def _sync_vault_unlocked(vault_path: str = "") -> dict:
