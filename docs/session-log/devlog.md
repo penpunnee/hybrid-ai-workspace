@@ -1,5 +1,26 @@
 ---
 
+## [2026-09-24 ต่อ] config ก้อน 4 ชั้น core — `ratelimit` · `observability` · `scheduler` 9 จุด (`641617d`)
+**ตรวจ prod ก่อน:** ไม่มีชื่อไหนตั้งใน `.env` · `LOG_FILE=/app/logs/server.log` มาจาก compose
+`environment:` (ทับ `.env` — ชนิดเดียวกับ `DB_PATH`) · baseline ratelimit `True 120 8 300.0 50000` ·
+scheduler เลือก `gemini` · หลัง deploy **ตรงทุกค่า** · **พิสูจน์ผลจริงของ logging** (root logger ของ
+process อ่านจาก probe ไม่ได้): หลัง restart server เขียน `/app/logs/server.log` ต่อ 71 บรรทัด
+รูปแบบ INFO/plain เดิม · `/api/config` 200 · 0 error
+- **เจ้าของ `LOG_LEVEL/LOG_FORMAT/LOG_FILE` = `core/config`** ไม่ใช่ observability — เพราะ 3 ตัวนี้เคย
+  อ่าน *ในฟังก์ชัน* `install_logging` (หลัง `load_dotenv`) · ถ้าย้ายเป็นระดับโมดูลใน observability
+  ต้องแน่ใจว่า `.env` ถูกโหลดก่อน → ตรวจ `server.py`: import `core.config` (บรรทัด 12) ก่อน
+  `core.observability` (17) เสมอ ⇒ import ค่าจาก config ปิดเรื่องลำดับไปเลย
+- `scheduler._scheduled_dream` เคยอ่าน `GEMINI_API_KEY` ตอน job ยิง → import จาก config
+- `.env.example`: **8 ชื่อไม่เคยถูกจดในไฟล์นี้มาก่อนเลย** (RATE_LIMIT_* · AUTH_FAIL_* · LOG_*) ทั้งที่
+  CLAUDE.md อธิบายไว้ — ตอนนี้ generate จากโค้ด
+- 🔴 **เกือบชน CI guard `/app` ซ้ำเป็นครั้งที่ 2** — doc ของ `LOG_FILE` เขียน "prod = /app/logs/server.log"
+  · จับได้จากเช็ค `grep -c /app` ในส่วน generate ที่ใส่ไว้ในขั้นตอน (ได้ 1) ก่อน push ⇒ reword ·
+  **เช็คนี้ต้องอยู่ในทุกก้อนจนกว่าจะไม่มีไฟล์ให้ย้าย**
+- เทสแดงก่อน 12 · กลุ่มควบคุม 163 เขียว (รวม `install_logging` ที่ตรวจ *ผล* บน root logger — level/
+  formatter/baseFilename — พร้อม snapshot+คืนสภาพ handler · `_scheduled_dream` จับ `provider` ที่ส่ง
+  ให้ `run_dream_cycle`) · **2092 passed/17 skipped** (+20) · ruff · **mutation 10/10**
+- เหลืออ่าน env ดิบ **56 จุด** · ถัดไป `utils/reflection.py` + `utils/query_rewrite.py` + `utils/ocr.py` (4+4+4)
+
 ## [2026-09-24] config ก้อน 4 ไฟล์ที่ 9-11 — `websearch` · `response_cache` · `memory` 16 จุด (`e8844bc`)
 **ตรวจ prod ก่อน:** ตั้งจริง BRAVE/GOOGLE key+cx · `BRAVE_MIN_INTERVAL=1.1` · `CHROMA_HOST/PORT` ·
 `EMBEDDING_MODEL` — ที่เหลือ default · baseline probe ในคอนเทนเนอร์ → หลัง deploy **ตรงทุกค่า**
