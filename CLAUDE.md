@@ -705,17 +705,23 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-23**)
 
-> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อที่ `websearch`/`response_cache`/`memory`**
+> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อที่ชั้น core: `ratelimit` (5) + `observability` (3) + `scheduler` (1)**
 > 🔑 **กติกา user: "เช็คข้อมูล ก่อนจะลงมือให้ชัวร์ก่อนทุกครั้ง"** — ทั้งสองฝั่งของสัญญา + log/คำสั่งจริง
 > · **09-23 ค่ำ user เพิ่ม: "เช็คข้อมูลระบบจริงก่อน อย่าเชื่อ log ถ้าข้อมูลยังไม่ครอบคลุมให้ค้นเน็ตก่อน"**
 > ⇒ ก่อนย้ายไฟล์ไหน probe ในคอนเทนเนอร์ว่า env ตั้งจริงไหม + ค่าที่ resolve (ไม่ใช่อ่านจาก `.env.example`)
 > · 🔒 **เสียงถือว่าใช้ได้แล้ว (user ยืนยัน 09-23) — ห้ามปรับ/ห้ามเสนอปรับ** (ดู memory)
 > ✅ เสร็จแล้ว 09-23 — **อย่าทำซ้ำ**: `utils/llm.py` (`0f5844b`) · `agents/orchestrator.py` (`cbddc04`)
 > · `utils/summarize.py` (`2dcd501`) · `utils/home_tools.py` (`28b038b`) · `utils/voice.py` (`16e0b83`)
-> · **`fs_tools`/`embed`/`code_sandbox` (`cbd7b1a`)** · เหลือ **80 จุด**
-> **ของที่ต้องรู้ก่อนแตะ `memory.py`:** `EMBEDDING_MODEL` เจ้าของคือ `core/config` แล้ว (default `""`)
-> — `memory.py:42` ยังอ่านดิบ default `""` ตรงกัน ⇒ ตอนย้ายให้ **import จาก config** ไม่ลงซ้ำ ·
-> `embed.py` ทำแบบนั้นแล้ว (`_CFG_EMBEDDING_MODEL or "paraphrase-multilingual"`)
+> · `fs_tools`/`embed`/`code_sandbox` (`cbd7b1a`) · **`websearch`/`response_cache`/`memory` (`e8844bc`)**
+> · เหลือ **65 จุด** (นับด้วย AST ไม่รวม tests/scripts/legacy และ 4 จุดของ registry เอง)
+> 🔑 **env ที่อ่าน *ในฟังก์ชัน* (runtime read) → ย้ายเป็นระดับโมดูล** (ทำแล้ว 6 จุดใน `e8844bc`):
+> env ใน prod นิ่ง · ที่พึ่ง runtime read มีแต่เทสที่ `setenv` → เปลี่ยนเป็น `monkeypatch.setattr`
+> ค่าในโมดูล · **ก่อนย้ายต้อง grep ว่าไม่มีโค้ด prod เขียน `os.environ[...]` ชื่อนั้น** ·
+> registry ไม่มี helper อ่านตอนเรียกโดยตั้งใจ (ลงทะเบียนในฟังก์ชัน = ไม่เข้า `.env.example`)
+> 🔑 **ค่าที่มี parser/guard เดิม (`off` · ค่าไม่บวก → default+warning) ลงเป็น `env_str` แล้วคง parser**
+> — `env_float`/`env_int` จะ raise ตอน import แทน (ทำแล้ว: `VOICE_LEVEL_LOG` · `WEB_SEARCH_MIN_SCORE` ·
+> `BRAVE_MIN_INTERVAL`) · ⚠️ `reasoning/router.py` อ่าน `LMSTUDIO_API_KEY` โดยไม่มี default **โดยตั้งใจ**
+> (ดูข้อเตือนล่าง) — ไฟล์นั้นต้องคิดก่อนย้าย
 > 🔴 **doc ที่ลงทะเบียนห้ามมี path ในคอนเทนเนอร์ (`/app/...`)** — `test_ไม่มี_path_เฉพาะเครื่องหลุดเข้าไฟล์`
 > ใช้ repo root ของเครื่องที่รันเป็น needle และในอิมเมจ CI root = `/app` ⇒ **Mac เขียวแต่ CI แดง**
 > (เกิดจริง `cbd7b1a` → แก้ `a8dc550`) · ให้ชี้ `docker-compose.yml` แทน

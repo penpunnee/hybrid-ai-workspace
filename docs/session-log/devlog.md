@@ -1,5 +1,31 @@
 ---
 
+## [2026-09-24] config ก้อน 4 ไฟล์ที่ 9-11 — `websearch` · `response_cache` · `memory` 16 จุด (`e8844bc`)
+**ตรวจ prod ก่อน:** ตั้งจริง BRAVE/GOOGLE key+cx · `BRAVE_MIN_INTERVAL=1.1` · `CHROMA_HOST/PORT` ·
+`EMBEDDING_MODEL` — ที่เหลือ default · baseline probe ในคอนเทนเนอร์ → หลัง deploy **ตรงทุกค่า**
+(MIN_SCORE 0.35 · interval 1.1 · cache `/app/data/response_cache.db True 0.92 30 1000` · RECALL 0.55 ·
+chroma `192.168.51.49:8000` · native url ตัด `/v1` ถูก) · inode 3 ไฟล์ตรง · `/api/config` 200 · 0 error
+- 🔑 **ครั้งแรกที่เจอ env อ่าน *ในฟังก์ชัน* (runtime read) 6 จุด:** key ×3 + `BRAVE_MIN_INTERVAL` ใน
+  websearch · `CHROMA_HOST` ใน `_detect_chroma_host` · `OLLAMA_BASE_URL` ใน `_ollama_native_url` ·
+  ตัดสินใจ **ย้ายเป็นระดับโมดูลทั้งหมด** — env ใน prod นิ่ง (ตั้งจาก `.env` ตอน start) จึงเท่าเดิม
+  · ที่พึ่ง runtime read มีแต่เทส (`setenv` แล้วเรียก) ⇒ แก้ 3 ไฟล์เทสให้ `monkeypatch.setattr`
+  ค่าในโมดูลแทน (brave · google_errors · embedding_function) · ไม่มีโค้ด prod ตัวไหนเขียน
+  `os.environ[...]` ของชื่อพวกนี้ (grep ยืนยัน) · **registry ไม่มี helper สำหรับอ่านตอนเรียก
+  โดยตั้งใจ** — ชื่อที่ลงทะเบียนในฟังก์ชันจะไม่เข้า `.env.example` เพราะ REGISTRY เติมตอน import
+- `WEB_SEARCH_MIN_SCORE` / `BRAVE_MIN_INTERVAL` ลงเป็น **str** + parser เดิม (`off` · ค่าไม่บวก/
+  พิมพ์ผิด → default + warning) — แบบเดียวกับ `VOICE_LEVEL_LOG` · ห้าม `env_float` (จะ raise ตอน
+  import แทน warning · กติกา registry "ไม่กลืน error" ใช้กับค่าที่*ไม่มี* guard เดิม)
+- `memory.py`: `CHROMA_HOST/PORT` import เป็น alias `_CFG_` เพราะโมดูล **rebind ชื่อเดิม**ด้วยค่า
+  หลัง detect (`CHROMA_HOST, CHROMA_PORT = _detect_chroma_host()`) — ruff F811 จับได้ ·
+  `EMBEDDING_MODEL` import จาก config (ว่าง = ปิด EF ต่างจาก embed ที่ถอย multilingual — มีเทสทั้งคู่)
+- `.env.example`: 11 ชื่อเข้าส่วน generate (`RESPONSE_CACHE_*` 5 + `RECALL_MIN_SCORE` **ถูกจดครั้งแรก**)
+  · ถอดบล็อก Web Search เขียนมือ · ตัวแทนส่วนเขียนมือในเทส → `HEARTBEAT_ATTEMPTS`/`HEARTBEAT_RETRY_WAIT`
+- เทสแดงก่อน 16 · กลุ่มควบคุม 139 เขียว · **2072 passed/17 skipped** (+36) · ruff · **mutation 10/10**
+  (รวม ถอด guard `<=0` · key ว่างยังยิง · ว่างไม่ถอย default · ไม่ strip `/v1` · ลง EMBEDDING ซ้ำ)
+- เหลืออ่าน env ดิบ **65 จุด** (69 − 4 ของ registry เอง) · ไฟล์ใหญ่สุด: `core/ratelimit.py` 5 ·
+  `reflection`/`dream`/`query_rewrite`/`ocr`/`heartbeat`/`reasoning/router` 4 · ถัดไป **ชั้น core**
+  (`ratelimit` + `observability` + `scheduler` = 9)
+
 ## [2026-09-23 ค่ำ ต่อ] config ก้อน 4 ไฟล์ที่ 6-8 — `fs_tools` · `embed` · `code_sandbox` 18 จุด (`cbd7b1a`)
 **ตรวจ prod ก่อน (กติกา user):** ตั้งจริงแค่ `EMBEDDING_MODEL=paraphrase-multilingual` +
 `FS_TOOLS_ROOTS=/app/sandbox` · อีก 16 ชื่อ default · baseline 18 ค่า probe ในคอนเทนเนอร์ → หลัง deploy
