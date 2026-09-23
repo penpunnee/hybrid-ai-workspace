@@ -15,7 +15,7 @@ Configuration:
 - OLLAMA_MAX_RETRIES: Number of retries (default: 2)
 - OLLAMA_RETRY_DELAY: Initial retry delay in seconds (default: 2)
 """
-import os, base64, time, logging
+import base64, time, logging
 from openai import OpenAI
 from google import genai
 from google.genai import types
@@ -24,6 +24,25 @@ from dotenv import load_dotenv
 # (ตัวกัน: tests/test_env_default_consistency.py)
 
 from core.config import LMSTUDIO_CHAT_MODEL as _CFG_LMSTUDIO_CHAT_MODEL
+# env ที่ core/config.py เป็นเจ้าของ — ใช้ค่าจากที่นั่น ห้ามอ่านซ้ำ
+# (ตัวกัน: tests/test_env_registry.py::test_env_หนึ่งชื่อลงทะเบียนจากโมดูลเดียว)
+from core.config import (
+    GEMINI_API_KEY,
+    OLLAMA_BASE_URL,
+    OLLAMA_MAX_RETRIES,
+    OLLAMA_MODEL,
+    OLLAMA_NUM_CTX,
+    OLLAMA_REPEAT_PENALTY,
+    OLLAMA_RETRY_DELAY,
+    OLLAMA_TEMPERATURE,
+    OLLAMA_TIMEOUT,
+    OLLAMA_TOP_P,
+    SHOW_THINKING,
+)
+from core.config import LMSTUDIO_BASE_URL as _LMSTUDIO_BASE_URL
+from core.config import LMSTUDIO_TIMEOUT as _LMSTUDIO_TIMEOUT
+# env ที่ไฟล์นี้เป็นเจ้าของ — อ่านผ่าน registry เพื่อให้ .env.example generate ได้
+from core.env_registry import env_int, env_str
 
 load_dotenv()
 
@@ -59,21 +78,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- Ollama (Local LLM) ---
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
-OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))  # วินาที
-OLLAMA_MAX_RETRIES = int(os.getenv("OLLAMA_MAX_RETRIES", "2"))  # จำนวนครั้งที่ retry
-OLLAMA_RETRY_DELAY = int(os.getenv("OLLAMA_RETRY_DELAY", "2"))  # วินาที (initial delay)
-
+# --- Ollama (Local LLM) --- ค่าทั้งหมดมาจาก core/config.py (import ข้างบน)
 ollama_client = OpenAI(
     base_url=OLLAMA_BASE_URL,
     api_key="ollama",
     timeout=OLLAMA_TIMEOUT,
 )
 
-# --- Gemini (Cloud LLM) ---
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+# --- Gemini (Cloud LLM) --- GEMINI_API_KEY มาจาก core/config.py
+_G = "Gemini"
 
 # 🔴 **รุ่นที่ Google ปิดไปแล้ว — ห้ามเป็น default เด็ดขาด**
 # ของเดิม default คือ `gemini-2.0-flash` ซึ่งถูกปิด **1 มิ.ย. 2026** ⇒ วันไหน `.env`
@@ -86,20 +99,30 @@ RETIRED_GEMINI_MODELS = frozenset({
 # ⏳ ประกาศวันปิดแล้วแต่ยังใช้ได้ — ใช้เตือนล่วงหน้าใน health check
 GEMINI_MODEL_SUNSET = {"gemini-2.5-flash": "2026-10-16"}
 GEMINI_MODEL_DEFAULT = "gemini-3.5-flash"
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", GEMINI_MODEL_DEFAULT)
+GEMINI_MODEL = env_str("GEMINI_MODEL", GEMINI_MODEL_DEFAULT, group=_G, doc=(
+    "โมเดลแชท Gemini (ค่าตั้งต้นอยู่ที่ utils/llm.py:GEMINI_MODEL_DEFAULT)\n"
+    "⚠️ ห้ามใช้รุ่นที่ Google ปิดแล้ว — ดู RETIRED_GEMINI_MODELS / GEMINI_MODEL_SUNSET\n"
+    "prod ใช้ gemini-3.5-flash-lite (โควตาเป็นรายโมเดล ไม่ใช่รายโปรเจกต์)"))
 # โมเดล Gemini สำรองเมื่อตัวที่ขอ transient-fail (เช่น preview 3.1-flash-lite 503)
 # default ว่าง = ไม่สลับโมเดล (retry-then-local) — กันเผา quota ตัวอื่นโดยไม่ตั้งใจ
 # ตั้งเป็นตัว quota เยอะ (เช่น gemini-3.1-flash-lite) ถ้าอยากอยู่กับ Gemini ก่อนถอย local
-GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "").strip()
+GEMINI_FALLBACK_MODEL = env_str("GEMINI_FALLBACK_MODEL", "", group=_G, doc=(
+    "โมเดลสำรองเมื่อตัวหลัก transient-fail\n"
+    "ว่าง = ไม่สลับโมเดล (retry แล้วถอยไป local) — กันเผาโควตาตัวอื่นโดยไม่ตั้งใจ")).strip()
+# โมเดลเฉพาะ gemini_web_search() — precedence: arg > env นี้ > GEMINI_MODEL
+GEMINI_SEARCH_MODEL = env_str("GEMINI_SEARCH_MODEL", "", group=_G, doc=(
+    "โมเดลเฉพาะ gemini_web_search() (grounding ให้ local/Claude/Kimi)\n"
+    "ว่าง = ใช้ GEMINI_MODEL · ⚠️ free tier ไม่เปิด google_search grounding (429 limit: 0)"))
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 # --- LM Studio (OpenAI-compatible local server) ---
 # opt-in: default ว่าง — ถ้าไม่ตั้ง LMSTUDIO_BASE_URL จะไม่ถูกใช้ (local หลักคือ Ollama)
-_LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "")
-_LMSTUDIO_TIMEOUT  = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
+# _LMSTUDIO_BASE_URL / _LMSTUDIO_TIMEOUT มาจาก core/config.py
 # LM Studio รุ่นใหม่บังคับ API token — ตั้ง LMSTUDIO_API_KEY ให้ตรง (default dummy)
-_LMSTUDIO_API_KEY  = os.getenv("LMSTUDIO_API_KEY", "lmstudio")
+_LMSTUDIO_API_KEY  = env_str("LMSTUDIO_API_KEY", "lmstudio", group="LM Studio", doc=(
+    "token ของ LM Studio รุ่นใหม่ (หรือปิด \"Require API key\" ในตัวโปรแกรม)\n"
+    "⚠️ ไม่ตั้ง ≠ ตั้งเป็นค่าว่าง: reasoning/router.py แนบ Authorization เฉพาะเมื่อตั้งเอง"))
 
 # client สร้างไว้เสมอ แต่จะถูกเรียกเฉพาะเมื่อ provider="lmstudio" เท่านั้น
 # ถ้า base_url ว่าง ใช้ localhost (ถ้าเผลอเรียกจะ refuse แบบ clean ไม่ leak ไป api.openai.com)
@@ -116,12 +139,18 @@ try:
 except ImportError:          # ยังไม่ได้ pip install — provider claude จะแจ้ง error ชัดเจน
     anthropic = None
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-CLAUDE_MODEL      = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")   # คุ้มกว่า opus; เปลี่ยนเป็น claude-opus-4-8 ถ้าอยากฉลาดสุด
-CLAUDE_MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "4096"))      # เพดานความยาวคำตอบ = คุม cost
+_G = "Claude (Anthropic)"
+ANTHROPIC_API_KEY = env_str("ANTHROPIC_API_KEY", "", group=_G,
+                            doc="คีย์ Anthropic — ว่าง = ปิด provider claude")
+CLAUDE_MODEL      = env_str("CLAUDE_MODEL", "claude-sonnet-4-6", group=_G,   # คุ้มกว่า opus
+                            doc="โมเดล Claude — claude-opus-4-8 = ฉลาดสุด/แพงสุด · claude-haiku-4-5 = ถูกสุด")
+CLAUDE_MAX_TOKENS = env_int("CLAUDE_MAX_TOKENS", 4096, group=_G,
+                            doc="เพดานความยาวคำตอบ = คุม cost")
 # adaptive thinking: ปิดเป็น default เพื่อความเร็วของแชต — ตั้ง CLAUDE_THINKING=adaptive ถ้าอยากให้คิดลึก
-CLAUDE_THINKING   = os.getenv("CLAUDE_THINKING", "off").lower()
-CLAUDE_EFFORT     = os.getenv("CLAUDE_EFFORT", "high").lower()   # low|medium|high|xhigh|max (ใช้คู่ adaptive)
+CLAUDE_THINKING   = env_str("CLAUDE_THINKING", "off", group=_G,
+                            doc="off | adaptive (คิดลึกขึ้นแต่ช้าลง)").lower()
+CLAUDE_EFFORT     = env_str("CLAUDE_EFFORT", "high", group=_G,
+                            doc="low|medium|high|xhigh|max (ใช้คู่ adaptive)").lower()
 
 anthropic_client = (
     anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -130,10 +159,13 @@ anthropic_client = (
 
 # --- Kimi (Moonshot Cloud LLM — OpenAI compatible) ---
 # opt-in: ตั้ง MOONSHOT_API_KEY ใน .env ถึงจะใช้ได้ (provider="kimi")
-MOONSHOT_API_KEY = os.getenv("MOONSHOT_API_KEY", "")
-KIMI_BASE_URL    = os.getenv("KIMI_BASE_URL", "https://api.moonshot.ai/v1")
-KIMI_MODEL       = os.getenv("KIMI_MODEL", "kimi-k2.6")
-KIMI_TIMEOUT     = int(os.getenv("KIMI_TIMEOUT", "180"))
+_G = "Kimi (Moonshot)"
+MOONSHOT_API_KEY = env_str("MOONSHOT_API_KEY", "", group=_G,
+                           doc="คีย์ Moonshot — ว่าง = ปิด (โชว์ใน Model picker แบบ disabled)")
+KIMI_BASE_URL    = env_str("KIMI_BASE_URL", "https://api.moonshot.ai/v1", group=_G,
+                           doc="endpoint — ใช้ .cn สำหรับ endpoint จีน")
+KIMI_MODEL       = env_str("KIMI_MODEL", "kimi-k2.6", group=_G, doc="โมเดล Kimi")
+KIMI_TIMEOUT     = env_int("KIMI_TIMEOUT", 180, group=_G, doc="วินาที")
 
 kimi_client = (
     OpenAI(base_url=KIMI_BASE_URL, api_key=MOONSHOT_API_KEY, timeout=KIMI_TIMEOUT)
@@ -218,7 +250,7 @@ def stream_response(messages: list[dict], provider: str = "auto",
                 use_agent = agent_mode or decision.provider == "gemini_agent"
                 yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=use_agent)
             elif decision.provider == "lmstudio":
-                show = os.getenv("SHOW_THINKING", "false").lower() == "true"
+                show = SHOW_THINKING
                 try:
                     raw_chunks = _stream_lmstudio(messages, model=decision.model,
                                                   image_b64=image_b64, image_mime=image_mime)
@@ -291,7 +323,7 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
         temperature = 0.2
         logger.info("[LMStudio] grounded context detected → temp=0.2")
     else:
-        temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.7"))
+        temperature = OLLAMA_TEMPERATURE
 
     # ถ้ามีรูป → แทรก image content เข้าไปใน user message ล่าสุด
     if image_b64:
@@ -636,12 +668,12 @@ def _stream_ollama(messages: list[dict], model: str = "", usage_sink: dict | Non
                     "messages": messages,
                     "stream": True,
                     "timeout": OLLAMA_TIMEOUT,
-                    "temperature": float(os.getenv("OLLAMA_TEMPERATURE", "0.7")),
-                    "top_p": float(os.getenv("OLLAMA_TOP_P", "0.85")),
+                    "temperature": OLLAMA_TEMPERATURE,
+                    "top_p": OLLAMA_TOP_P,
                     "extra_body": {
                         "options": {
-                            "num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "4096")),
-                            "repeat_penalty": float(os.getenv("OLLAMA_REPEAT_PENALTY", "1.1")),
+                            "num_ctx": OLLAMA_NUM_CTX,
+                            "repeat_penalty": OLLAMA_REPEAT_PENALTY,
                         }
                     },
                 },
@@ -742,7 +774,7 @@ def gemini_web_search(query: str, model: str = "") -> tuple[str, list[dict]]:
             "ข้อมูลจริง ห้ามแต่ง ถ้าไม่พบให้บอกว่าไม่พบ"
         )
         cfg = types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())])
-        search_model = model or os.getenv("GEMINI_SEARCH_MODEL", "") or GEMINI_MODEL
+        search_model = model or GEMINI_SEARCH_MODEL or GEMINI_MODEL
         resp = gemini_client.models.generate_content(model=search_model, contents=prompt, config=cfg)
         text = (getattr(resp, "text", "") or "").strip()
         cands = getattr(resp, "candidates", None) or []

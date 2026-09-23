@@ -57,10 +57,9 @@ def _call_with(monkeypatch, env_val, arg=""):
     sink = {}
     monkeypatch.setattr(llm, "gemini_client", _RecClient(sink))
     monkeypatch.setattr(llm, "GEMINI_MODEL", "chat-default")
-    if env_val is None:
-        monkeypatch.delenv("GEMINI_SEARCH_MODEL", raising=False)
-    else:
-        monkeypatch.setenv("GEMINI_SEARCH_MODEL", env_val)
+    # อ่าน env ครั้งเดียวตอน import (ผ่าน registry ตั้งแต่ก้อน 4) ⇒ ตั้งค่าที่ค่าคงที่
+    # ของโมดูล ไม่ใช่ setenv — สิ่งที่ตรวจยังเป็น precedence เดิม arg > env > GEMINI_MODEL
+    monkeypatch.setattr(llm, "GEMINI_SEARCH_MODEL", env_val or "")
     text, results = llm.gemini_web_search("ราคาทอง", model=arg)
     assert text == "ok"
     return sink["model"]

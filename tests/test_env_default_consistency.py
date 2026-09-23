@@ -67,7 +67,26 @@ def _module_constants(tree: ast.Module) -> dict[str, object]:
     return out
 
 
+_HELPERS = {"env_str", "env_int", "env_float", "env_bool"}
+
+
+def _is_helper(call: ast.Call) -> bool:
+    """`env_str(...)` ฯลฯ ของ `core/env_registry.py` — ไฟล์ที่ย้ายเข้า registry แล้ว
+    คือ *เจ้าของ* default ถ้ามองไม่เห็นมัน การเทียบจะเหลือแค่ไฟล์ที่ยังอ่านดิบกันเอง"""
+    return isinstance(call.func, ast.Name) and call.func.id in _HELPERS
+
+
+def _as_env_text(value: object) -> str:
+    """รูปที่ค่านี้จะเป็นถ้าเขียนลง `.env` — helper เก็บ `120`/`False` แต่ `os.getenv`
+    เก็บ `"120"`/`"false"` ⇒ ต้องเทียบในรูปเดียวกัน (กติกา bool เดียวกับ registry)"""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
 def _is_env_read(call: ast.Call) -> bool:
+    if _is_helper(call):
+        return True
     func = call.func
     if not isinstance(func, ast.Attribute):
         return False
@@ -114,7 +133,7 @@ def scan_env_defaults(files: list[pathlib.Path] | None = None,
                 value = consts[default.id]
             else:
                 continue  # default ที่คำนวณ — เทียบไม่ได้
-            found[name].add((repr(value), f"{label}:{node.lineno}"))
+            found[name].add((repr(_as_env_text(value)), f"{label}:{node.lineno}"))
     return found
 
 
@@ -185,3 +204,30 @@ def test_ข้อยกเว้นต้องยังจำเป็นอ�
     assert len({d for d, _ in sites}) > 1, (
         f"{name} ไม่ได้ขัดกันแล้ว — ถอดออกจาก _ALLOWED_MISMATCH ได้"
     )
+
+
+def test_สแกนเนอร์เห็น_helper_ของ_registry_ด้วย():
+    """ตั้งแต่ก้อน 2/4 (2026-09-23) `core/config.py` และ `utils/llm.py` อ่าน env ผ่าน
+    `env_str/env_int/...` ⇒ ถ้าสแกนเนอร์เห็นแค่ `os.getenv` ไฟล์ที่ย้ายแล้วจะ **หลุดจาก
+    การตรวจ** ทั้งที่มันคือ "เจ้าของ" default — ไฟล์อื่นที่ยังอ่านดิบด้วยค่าต่างกันจะผ่านฉลุย"""
+    sources = {
+        "fake_cfg.py": 'X = env_str("FAKE_H", "หนึ่ง", doc="d")\n',
+        "fake_other.py": 'import os\nY = os.getenv("FAKE_H", "สอง")\n',
+    }
+    assert "FAKE_H" in _conflicts(scan_env_defaults(sources=sources))
+
+
+@pytest.mark.parametrize("helper_call,raw_default", [
+    ('env_int("FAKE_N", 120, doc="d")', '"120"'),
+    ('env_float("FAKE_N", 0.7, doc="d")', '"0.7"'),
+    ('env_bool("FAKE_N", False, doc="d")', '"false"'),
+    ('env_str("FAKE_N", "", doc="d")', '""'),
+])
+def test_ค่าเดียวกันคนละชนิดต้องไม่ถูกนับว่าขัดกัน(helper_call, raw_default):
+    """กลุ่มควบคุมด้านกลับ: helper เก็บ default เป็นชนิดจริง (`120`) ส่วน `os.getenv`
+    เก็บเป็นสตริง (`"120"`) — ต้องเทียบในรูปที่ env จริงจะได้ ไม่งั้นแดงมั่วทั้งกระดาน"""
+    sources = {
+        "fake_cfg.py": f"X = {helper_call}\n",
+        "fake_other.py": f'import os\nY = os.getenv("FAKE_N", {raw_default})\n',
+    }
+    assert _conflicts(scan_env_defaults(sources=sources)) == {}

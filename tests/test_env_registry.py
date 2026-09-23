@@ -23,6 +23,24 @@ import pytest
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
 
+@pytest.fixture(autouse=True)
+def _คืน_registry_หลังเทส():
+    """เทส helper ลงทะเบียนชื่อปลอม (`TEST_STR` ฯลฯ) ลง REGISTRY ซึ่งเป็น global
+    ⇒ ถ้าไม่คืนค่า `test_env_example_generated.py` ที่รันทีหลังในโปรเซสเดียวกันจะแดง
+    (ชุดเต็มเขียวได้เพราะชื่อไฟล์เรียงให้ไฟล์นั้นรันก่อน — เจอ 2026-09-23 ตอนรันชุดย่อย
+    เป็น baseline ของ mutation)"""
+    from core.env_registry import REGISTRY, load_all
+
+    # 🔴 เติมชื่อจริงก่อน snapshot — ไม่งั้นเทสแรกที่ import core.config จะลงทะเบียน
+    #    ชื่อจริงระหว่างเทส แล้ว fixture ลบทิ้งเพราะนับเป็น "ชื่อใหม่" (import ถูก cache
+    #    ⇒ ไม่มีใครเติมกลับ = REGISTRY ว่างทั้งโปรเซส · พลาดมาแล้วรอบแรก)
+    load_all()
+    before = dict(REGISTRY)
+    yield
+    for name in set(REGISTRY) - set(before):
+        del REGISTRY[name]
+
+
 # ── 1) core/config.py ต้องอ่าน env ผ่าน helper เท่านั้น ────────────────────────
 
 def _raw_env_reads(path: pathlib.Path) -> list[str]:
@@ -207,3 +225,103 @@ def test_ค่าที่คำนวณเองยังทำงานเ�
     assert cfg.SKILLS_DB_PATH.endswith("skills_db.json")
     assert cfg.READER_DB_DEFAULT.endswith("reader.db")
     assert cfg.EMBED_CACHE_DB.endswith("embed_cache.db")
+
+
+# ── 5) ก้อน 4: โมดูลอื่นที่ย้ายเข้า registry แล้ว (เริ่มที่ utils/llm.py 2026-09-23) ──
+# 🔑 ทุกเทสข้างล่างเรียก `load_all()` ไม่ใช่ `import core.config` — ชื่อที่ลงทะเบียน
+#    ใน `utils/llm.py` จะไม่อยู่ใน REGISTRY ถ้าไม่มีใคร import โมดูลนั้น
+#    (บทเรียน mutation N2 เดิม: registry ว่าง = เทสผ่านฟรี)
+
+def test_ไฟล์ที่ย้ายแล้วต้องไม่มีการอ่าน_env_ดิบเหลือ():
+    from core.env_registry import MODULES
+
+    assert "utils.llm" in MODULES
+    for mod in MODULES:
+        path = REPO / (mod.replace(".", "/") + ".py")
+        leftovers = _raw_env_reads(path)
+        assert leftovers == [], f"{path.relative_to(REPO)} ยังอ่าน env ดิบอยู่: {leftovers}"
+
+
+def test_load_all_เติมชื่อของ_llm_เข้า_registry():
+    from core.env_registry import REGISTRY, load_all
+
+    load_all()
+    for name in ("GEMINI_MODEL", "GEMINI_FALLBACK_MODEL", "GEMINI_SEARCH_MODEL",
+                 "LMSTUDIO_API_KEY", "ANTHROPIC_API_KEY", "CLAUDE_MODEL",
+                 "CLAUDE_MAX_TOKENS", "CLAUDE_THINKING", "CLAUDE_EFFORT",
+                 "MOONSHOT_API_KEY", "KIMI_BASE_URL", "KIMI_MODEL", "KIMI_TIMEOUT"):
+        assert name in REGISTRY, f"{name} หายไปจาก registry"
+        assert REGISTRY[name].doc.strip(), f"{name} ไม่มีคำอธิบาย"
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("GEMINI_FALLBACK_MODEL", ""),
+    ("GEMINI_SEARCH_MODEL", ""),
+    ("LMSTUDIO_API_KEY", "lmstudio"),
+    ("ANTHROPIC_API_KEY", ""),
+    ("CLAUDE_MODEL", "claude-sonnet-4-6"),
+    ("CLAUDE_MAX_TOKENS", 4096),
+    ("CLAUDE_THINKING", "off"),
+    ("CLAUDE_EFFORT", "high"),
+    ("MOONSHOT_API_KEY", ""),
+    ("KIMI_BASE_URL", "https://api.moonshot.ai/v1"),
+    ("KIMI_MODEL", "kimi-k2.6"),
+    ("KIMI_TIMEOUT", 180),
+])
+def test_default_ของ_llm_เท่าของเดิมทุกตัว(name, expected):
+    """ย้ายท่อล้วน — ค่าที่เคยอยู่ใน `os.getenv(...)` ของ `utils/llm.py` ห้ามเปลี่ยน"""
+    from core.env_registry import REGISTRY, load_all
+
+    load_all()
+    spec = REGISTRY[name]
+    assert spec.default == expected and type(spec.default) is type(expected), (
+        f"{name}: default เป็น {spec.default!r} ควรเป็น {expected!r}"
+    )
+
+
+def test_GEMINI_MODEL_default_มาจากค่าคงที่ของ_llm():
+    """default ต้องเป็น `GEMINI_MODEL_DEFAULT` ตัวเดียวกับที่ `test_gemini_health.py` ตรวจ
+    ว่าไม่ใช่รุ่นที่ Google ปิดแล้ว — ไม่ใช่สตริงก๊อปมาอีกชุด"""
+    from core.env_registry import REGISTRY, load_all
+
+    load_all()
+    import utils.llm as llm
+
+    assert REGISTRY["GEMINI_MODEL"].default == llm.GEMINI_MODEL_DEFAULT
+
+
+_HELPERS = {"env_str", "env_int", "env_float", "env_bool"}
+
+
+def _helper_names(src: str) -> set[str]:
+    """ชื่อ env ที่ไฟล์นี้ลงทะเบียนผ่าน helper"""
+    names = set()
+    for node in ast.walk(ast.parse(src)):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id in _HELPERS and node.args
+                and isinstance(node.args[0], ast.Constant)):
+            names.add(node.args[0].value)
+    return names
+
+
+def test_env_หนึ่งชื่อลงทะเบียนจากโมดูลเดียว():
+    """ชื่อที่ `core/config.py` ลงทะเบียนไว้แล้ว โมดูลอื่นต้อง *import ค่า* ไม่ใช่ลงซ้ำ
+
+    ลงซ้ำด้วย default เดียวกัน registry ยอม (reload ทำแบบนั้น) แต่ doc/group ของตัวหลัง
+    จะทับตัวแรกตามลำดับ import ⇒ `.env.example` เปลี่ยนตามว่าใคร import ก่อน
+    และ default สองที่ก็คือของที่ก้อน 1 เพิ่งไล่ปิดไป
+    """
+    from core.env_registry import MODULES
+
+    owners: dict[str, list[str]] = {}
+    for mod in MODULES:
+        src = (REPO / (mod.replace(".", "/") + ".py")).read_text()
+        for name in _helper_names(src):
+            owners.setdefault(name, []).append(mod)
+    assert owners, "สแกนไม่เจอ helper สักตัว — เครื่องมือวัดตาบอด"
+    ซ้ำ = {n: m for n, m in owners.items() if len(m) > 1}
+    assert ซ้ำ == {}, f"ลงทะเบียนซ้ำหลายโมดูล (ให้ import จากเจ้าของแทน): {ซ้ำ}"
+
+
+def test_สแกน_helper_มีตาจริง():
+    assert _helper_names('X = env_str("A", "", doc="d")\nY = env_int("B", 1, doc="d")\n') == {"A", "B"}

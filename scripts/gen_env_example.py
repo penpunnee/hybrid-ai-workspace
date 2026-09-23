@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""สร้าง/ตรวจ `.env.example` จาก registry ใน `core/config.py`
+"""สร้าง/ตรวจ `.env.example` จาก registry (ทุกโมดูลใน `core.env_registry.MODULES`)
 
     python scripts/gen_env_example.py            # ตรวจอย่างเดียว (exit 1 ถ้าไม่ตรง)
     python scripts/gen_env_example.py --write    # เขียนทับ
@@ -12,13 +12,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import core.config  # noqa: E402,F401  — import เพื่อเติม registry
-from core.env_registry import render_env_example  # noqa: E402
+from core.env_registry import load_all, render_env_example  # noqa: E402
 
 TARGET = Path(__file__).resolve().parent.parent / ".env.example"
 
 
 def main() -> int:
+    load_all()  # ⚠️ import แค่ core.config = ไม่เห็นชื่อของ utils/llm.py
     current = TARGET.read_text() if TARGET.exists() else ""
     rendered = render_env_example(current)
     if "--write" in sys.argv:

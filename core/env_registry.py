@@ -28,10 +28,12 @@ __all__ = [
     "END_MARKER",
     "REGISTRY",
     "EnvSpec",
+    "MODULES",
     "env_bool",
     "env_float",
     "env_int",
     "env_str",
+    "load_all",
     "render_env_example",
 ]
 
@@ -48,6 +50,21 @@ class EnvSpec:
 
 
 REGISTRY: dict[str, EnvSpec] = {}
+
+# โมดูลที่อ่าน env ผ่าน registry แล้ว — **ย้ายไฟล์ไหนเข้ามา ต้องเติมชื่อที่นี่**
+# (ก้อน 4 ย้ายทีละไฟล์) · มีเทสตรวจว่าไฟล์ในลิสต์ไม่มี `os.getenv` ดิบเหลือ
+# 🔴 REGISTRY ถูกเติมตอน *import* เท่านั้น ⇒ generator/เทสที่ import แค่ `core.config`
+#    จะไม่เห็นชื่อของ `utils/llm.py` เลย แล้ว `.env.example` ขาดไปเงียบๆ → ใช้ `load_all()`
+MODULES: tuple[str, ...] = ("core.config", "utils.llm")
+
+
+def load_all() -> dict[str, EnvSpec]:
+    """import ทุกโมดูลใน `MODULES` ให้ REGISTRY ครบ แล้วคืน REGISTRY"""
+    import importlib
+
+    for mod in MODULES:
+        importlib.import_module(mod)
+    return REGISTRY
 
 
 def _register(spec: EnvSpec) -> None:

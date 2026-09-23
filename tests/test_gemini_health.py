@@ -62,7 +62,9 @@ class TestGeminiModelDefault:
         # ตรงนี้กันไม่ให้มีใครประกาศค่าคงที่ไว้เฉย ๆ แล้ว hardcode ค่าอื่นในบรรทัดจริง
         import re
         src = open(os.path.join(os.path.dirname(__file__), "..", "utils", "llm.py")).read()
-        m = re.search(r'GEMINI_MODEL\s*=\s*os\.getenv\("GEMINI_MODEL",\s*([A-Za-z_]+)\)', src)
+        # ตั้งแต่ก้อน 4 (2026-09-23) อ่านผ่าน `env_str` ของ registry — รับทั้งสองรูป
+        # เพราะสิ่งที่ตรวจคือ "default ในบรรทัดจริงคือค่าคงที่ตัวนั้น" ไม่ใช่ชื่อฟังก์ชัน
+        m = re.search(r'GEMINI_MODEL\s*=\s*(?:os\.getenv|env_str)\("GEMINI_MODEL",\s*([A-Za-z_]+)[,)]', src)
         assert m, "ไม่เจอบรรทัดที่อ่าน env GEMINI_MODEL"
         assert m.group(1) == "GEMINI_MODEL_DEFAULT"
 

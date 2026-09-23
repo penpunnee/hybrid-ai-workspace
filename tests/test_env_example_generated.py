@@ -5,8 +5,8 @@
 (วัด 2026-09-23: **38 ตัว** ที่โค้ดอ่านแต่ไม่มีในเอกสารไหนเลย)
 
 **ขอบเขตจริงของเทสนี้ — อย่าเข้าใจผิดว่าปิดครบ:** คุมเฉพาะชื่อที่อยู่ใน `REGISTRY`
-(ตอนนี้ = เฉพาะที่ `core/config.py` อ่าน) · env อีก ~95 ชื่อที่ยังกระจายอยู่ในไฟล์อื่น
-**ยังไม่ถูกคุม** จนกว่าจะย้ายเข้า registry (ก้อน 4)
+(= โมดูลใน `core.env_registry.MODULES`) · env ที่ยังกระจายอยู่ในไฟล์อื่น
+**ยังไม่ถูกคุม** จนกว่าจะย้ายเข้า registry (ก้อน 4 ทำทีละไฟล์)
 
 **ทำไมต้องมีส่วน "เขียนมือ" ต่อท้าย** — ลบชื่อที่ยังไม่เข้า registry ออกจาก
 `.env.example` เพื่อให้ "generate ได้ทั้งไฟล์" = ทำเอกสารแย่ลงเพื่อให้เทสสวย
@@ -23,12 +23,20 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 ENV_EXAMPLE = REPO / ".env.example"
 
 
+@pytest.fixture(autouse=True)
+def _เติม_registry_ครบทุกโมดูล():
+    """🔴 import แค่ `core.config` = ไม่เห็นชื่อที่ `utils/llm.py` ลงทะเบียน
+    แล้วทุกเทสในไฟล์นี้จะตรวจ registry ครึ่งเดียวแบบเงียบๆ"""
+    from core.env_registry import load_all
+
+    load_all()
+
+
 def test_env_example_ตรงกับที่_generate_ได้():
     """รันคำสั่ง generate แล้วผลต้องเท่ากับไฟล์ที่ commit ไว้ — ไม่งั้น CI แดง
 
     วิธีแก้เมื่อแดง: `python scripts/gen_env_example.py --write` แล้ว commit
     """
-    import core.config  # noqa: F401  — เติม registry
     from core.env_registry import render_env_example
 
     expected = render_env_example(ENV_EXAMPLE.read_text())
@@ -40,7 +48,6 @@ def test_env_example_ตรงกับที่_generate_ได้():
 
 
 def test_ทุกชื่อใน_registry_ต้องอยู่ในไฟล์():
-    import core.config  # noqa: F401
     from core.env_registry import REGISTRY
 
     text = ENV_EXAMPLE.read_text()
@@ -50,7 +57,6 @@ def test_ทุกชื่อใน_registry_ต้องอยู่ในไ�
 
 def test_ชื่อใน_registry_ต้องไม่ซ้ำในส่วนที่เขียนมือ():
     """กันไฟล์บอกสองอย่างเรื่องเดียวกัน (บนบอกค่าหนึ่ง ล่างบอกอีกค่า)"""
-    import core.config  # noqa: F401
     from core.env_registry import END_MARKER, REGISTRY
 
     text = ENV_EXAMPLE.read_text()
@@ -62,7 +68,6 @@ def test_ชื่อใน_registry_ต้องไม่ซ้ำในส่�
 
 def test_ส่วนเขียนมือไม่ถูกกลืนหาย():
     """generator ต้องคงของที่ยังไม่เข้า registry ไว้ครบ — ไม่ใช่ลบทิ้งให้ไฟล์สวย"""
-    import core.config  # noqa: F401
     from core.env_registry import REGISTRY, render_env_example
 
     out = render_env_example(ENV_EXAMPLE.read_text())
@@ -74,7 +79,6 @@ def test_ส่วนเขียนมือไม่ถูกกลืนห�
 def test_เครื่องมือวัดมีตาจริง():
     """กลุ่มควบคุม: แก้คำอธิบายใน registry แล้วผลที่ generate ต้อง *ไม่* ตรงกับไฟล์เดิม
     — ถ้าเหมือนเดิมแปลว่า generator ไม่ได้ใช้ registry จริง แล้วเทสข้างบนเขียวฟรี"""
-    import core.config  # noqa: F401
     from core.env_registry import REGISTRY, EnvSpec, render_env_example
 
     เดิม = REGISTRY["OLLAMA_MODEL"]
@@ -119,7 +123,6 @@ def test_ไม่มี_path_เฉพาะเครื่องหลุด�
     ⇒ ถ้าเขียนดิบๆ จะได้ `/Users/pawin/...` บนเครื่อง dev และ `/app/...` บน CI
     = ไฟล์ที่ generate ไม่มีทางตรงกัน (CI แดงตลอดโดยไม่ได้แปลว่ามีอะไรผิด)
     และคนอื่นที่ก๊อปไฟล์ไปใช้ก็ได้ path ของเครื่องเรา"""
-    import core.config  # noqa: F401
     from core.env_registry import render_env_example
 
     out = render_env_example(ENV_EXAMPLE.read_text())

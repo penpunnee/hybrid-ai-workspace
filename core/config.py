@@ -34,8 +34,7 @@ OLLAMA_REPEAT_PENALTY = env_float("OLLAMA_REPEAT_PENALTY", 1.1, group=_G,
 _G = "Gemini"
 GEMINI_API_KEY   = env_str("GEMINI_API_KEY", "", group=_G,
                            doc="คีย์ Gemini (ขอฟรีที่ https://aistudio.google.com/)\n"
-                               "ว่าง = ปิดเส้นคลาวด์ทั้งหมด\n"
-                               "⚠️ GEMINI_MODEL ไม่ได้อยู่ใน registry — ที่เดียวคือ utils/llm.py")
+                               "ว่าง = ปิดเส้นคลาวด์ทั้งหมด")
 # GEMINI_MODEL ไม่ได้อยู่ที่นี่ — **ที่เดียวคือ `utils/llm.py`** (`GEMINI_MODEL_DEFAULT`
 # + `RETIRED_GEMINI_MODELS` + เทส `test_gemini_health.py` ที่ตรึงว่า default ต้องไม่ใช่รุ่นที่ปิดแล้ว)
 # เดิมบรรทัดนี้ประกาศ `gemini-2.0-flash` ค้างไว้โดยไม่มีใคร import ไปใช้เลยสักที่ (2026-09-23)

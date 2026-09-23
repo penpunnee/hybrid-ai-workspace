@@ -73,6 +73,52 @@ def test_ollama_connection_all_retries_fail(monkeypatch):
     assert "ollama serve" in out
 
 
+def test_ollama_ส่ง_sampling_params_จาก_config(monkeypatch):
+    """ตั้งแต่ก้อน 4 (2026-09-23) ค่าพวกนี้มาจาก `core/config.py` (import ครั้งเดียว)
+    แทน `os.getenv` ในลูป — ต้องยืนยันว่าถึง request จริง ไม่ใช่แค่อยู่ในโมดูล
+    (mutation M10: hardcode 0.7/0.85 กลับเข้าไปแล้วเทสทั้งชุดยังเขียว)
+    ใช้ค่าที่ต่างจาก default ทุกตัว ⇒ hardcode default กลับมาจะแดงทันที"""
+    seen = {}
+
+    class _Rec(_FakeCompletions):
+        def create(self, **kwargs):
+            seen.update(kwargs)
+            return super().create(**kwargs)
+
+    monkeypatch.setattr(llm.ollama_client, "chat",
+                        SimpleNamespace(completions=_Rec([["ok"]])))
+    monkeypatch.setattr(llm, "OLLAMA_TEMPERATURE", 0.31)
+    monkeypatch.setattr(llm, "OLLAMA_TOP_P", 0.42)
+    monkeypatch.setattr(llm, "OLLAMA_NUM_CTX", 1234)
+    monkeypatch.setattr(llm, "OLLAMA_REPEAT_PENALTY", 1.37)
+
+    assert "".join(llm._stream_ollama([{"role": "user", "content": "hi"}])) == "ok"
+    assert seen["temperature"] == 0.31
+    assert seen["top_p"] == 0.42
+    assert seen["extra_body"]["options"] == {"num_ctx": 1234, "repeat_penalty": 1.37}
+
+
+@pytest.mark.parametrize("system,expected", [
+    ("ผู้ช่วยทั่วไป", 0.31),                       # ไม่ grounded → ค่าจาก config
+    ("INTERNET CONTEXT: ข่าววันนี้", 0.2),          # กลุ่มควบคุม: grounded ต้องกด 0.2 เสมอ
+])
+def test_lmstudio_temperature_จาก_config(monkeypatch, system, expected):
+    """เส้น LM Studio ใช้ `OLLAMA_TEMPERATURE` ตอนไม่มี grounding (mutation M12 รอดมาก่อน)"""
+    seen = {}
+
+    class _Rec(_FakeCompletions):
+        def create(self, **kwargs):
+            seen.update(kwargs)
+            return super().create(**kwargs)
+
+    monkeypatch.setattr(llm.lmstudio_client, "chat",
+                        SimpleNamespace(completions=_Rec([["ok"]])))
+    monkeypatch.setattr(llm, "OLLAMA_TEMPERATURE", 0.31)
+    msgs = [{"role": "system", "content": system}, {"role": "user", "content": "hi"}]
+    assert "".join(llm._stream_lmstudio(msgs, model="m")) == "ok"
+    assert seen["temperature"] == expected
+
+
 # ── _stream_gemini error mapping ──────────────────────────────────────────────
 class _FakeModels:
     def __init__(self, exc):
