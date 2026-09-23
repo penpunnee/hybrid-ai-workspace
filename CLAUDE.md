@@ -721,8 +721,8 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > 🐛 **บั๊กที่ยังเปิด (ตรวจด้วยหลักฐานแล้ว · devlog [2026-09-23 ต่อ 4/5]):**
 > ✅ ~~(1) Ollama ReAct ส่งคำตอบกุ~~ แก้แล้ว `47d94e5` · (2) `LMSTUDIO_API_KEY=` ว่าง ⇒ แอปล้มตอนเริ่ม
 > (3) vault sync ล้มตอน PC ปิด → index ค้างเวอร์ชันเก่า + UI ขึ้น ✅ ทั้งที่ `errors:22`
-> (4) 🆕 `utils/websearch.py:143` ไม่ดัก `TimeoutError` ของ `as_completed` ⇒ หน้าเว็บช้าหน้าเดียว
-> = web_search ล้มทั้งก้อน (กระทบทุก provider · "current gold price" ล้มจริง 35.5 วิ)
+> ✅ ~~(4) web_search ล้มทั้งก้อนเพราะหน้าเว็บช้า~~ แก้แล้ว `3bb1803` (`fetch_url_safe(deadline=)`
+> \+ ดัก `FuturesTimeout`) · devlog [2026-09-23 ต่อ 6]
 >
 > ## ✅ 09-23 ทำเสร็จ 3 ก้อน (devlog [2026-09-23] ×3 · **อย่าทำซ้ำ**)
 > | ก้อน | ได้อะไร |

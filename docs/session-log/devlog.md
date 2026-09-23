@@ -1,5 +1,28 @@
 ---
 
+## [2026-09-23 ต่อ 6] แก้ web_search ล้มทั้งก้อนเพราะหน้าเว็บช้าหน้าเดียว (`3bb1803`)
+**ไล่ต้นเหตุด้วยการวัด (ไม่เดา)**
+- จับเวลาทีละ URL ในคอนเทนเนอร์ (ซ้ำ 2/2): `apmex.com/gold-price` ทยอยส่ง 364 KB ใช้ **36 วิ**
+  — ทุก chunk มาถึงภายใน read-timeout 6 วิ ⇒ **timeout แบบต่อการอ่านไม่เคยทำงาน** และ
+  `fetch_url_safe` ไม่มีเพดานรวม · เว็บอื่นในชุดเดียวกัน 0.2–0.8 วิ
+- ชั้นที่สอง: `_enrich_with_fetch` ไม่ดัก `TimeoutError` ของ `as_completed(timeout=8)` ⇒ ทิ้งผล
+  ค้นที่ได้แล้วทั้งหมด + `with ThreadPoolExecutor` รอเธรดค้างตอนออก ⇒ 35.5 วิแล้วล้ม
+- **ผลกระทบจริง: log prod ย้อนถึงปลาย ก.ค. = 0 ครั้ง** (ทั้งเส้นแชทที่ไม่มี try และเส้นเสียงที่ log
+  `ค้นล้ม`) — ผู้ใช้ถามไทย เว็บไทยตอบเร็ว · เจอเพราะ probe ของผมถามอังกฤษ ⇒ บั๊กแฝง ไม่ใช่เหตุการณ์
+
+**แก้ 2 ชั้น**
+- `fetch_url_safe(deadline=)` — default `None` ⇒ tool `fetch_url` เดิมไม่เปลี่ยน · เกินกลางการอ่าน
+  = คืนเท่าที่ได้ + `truncated` · เกินก่อน hop ใหม่ = `URLFetchError` · ⚠️ เวลาจริงสูงสุด ≈
+  deadline + timeout (chunk ที่กำลังรอยังรอได้อีกหนึ่ง timeout)
+- `_enrich_with_fetch` ดัก `FuturesTimeout` → เก็บหน้าที่เสร็จ · หน้าช้าใช้ snippet · log WARNING
+  พร้อม URL (ทิ้ง ≠ ว่าง) · `shutdown(wait=False, cancel_futures=True)`
+
+**พิสูจน์:** ก่อน deploy โหลดโมดูลใหม่ใน process ทดสอบบน prod → "current gold price"
+❌ 35.5 วิ → ✅ 10.1/7.9 วิ · หลัง deploy (import ปกติ) ✅ 8.1 วิ 3,905 ตัวอักษร · ไทย 1.4 วิ ·
+เส้นแชท 15.8 วิ 3 แหล่ง · เทสใหม่ 7 ตัว (นาฬิกาปลอมใน urlguard · fetch หน่วงจริงใน enrich) ·
+1932 passed · mutation **8/8** · CI เขียว
+⚪ ไม่ได้แตะ: DNS resolve ใน `resolve_and_validate` ไม่มี timeout (ไม่เคยเห็นเป็นปัญหา)
+
 ## [2026-09-23 ต่อ 5] แก้บั๊กข้อ 1 — Ollama ReAct agent ส่งคำตอบที่โมเดลแต่งเองให้ user (`47d94e5`)
 user สั่ง "ตรวจสอบ หาข้อมูลประกอบก่อน อย่าเดา" → ตรวจครบก่อนแก้ (devlog ต่อ 4) แล้วเคาะแก้ข้อ 1
 
