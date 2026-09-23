@@ -59,7 +59,7 @@ REGISTRY: dict[str, EnvSpec] = {}
 # 🔴 REGISTRY ถูกเติมตอน *import* เท่านั้น ⇒ generator/เทสที่ import แค่ `core.config`
 #    จะไม่เห็นชื่อของ `utils/llm.py` เลย แล้ว `.env.example` ขาดไปเงียบๆ → ใช้ `load_all()`
 MODULES: tuple[str, ...] = ("core.config", "utils.llm", "agents.orchestrator", "utils.summarize",
-                           "utils.home_tools")
+                           "utils.home_tools", "utils.voice")
 
 
 def load_all() -> dict[str, EnvSpec]:

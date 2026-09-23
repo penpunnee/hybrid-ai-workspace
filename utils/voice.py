@@ -1,8 +1,14 @@
 import asyncio
 import math
-import os
 import struct
 import time
+
+from core.env_registry import env_float, env_str
+
+# env ของสายเสียง — ไฟล์นี้เป็นเจ้าของ 5 ชื่อข้างล่าง (ก้อน 4 · 2026-09-23 · ตัวกัน:
+# tests/test_env_registry.py) · `GEMINI_LIVE_MODEL` เจ้าของคือ core/config.py — ที่นี่เหลือ
+# แค่ค่าคงที่ `GEMINI_LIVE_MODEL_DEFAULT` ให้ config import (ห้ามอ่าน env ชื่อนั้นซ้ำที่นี่)
+_G = "Voice"
 
 # ── เสียงของระบบ — **ที่นิยามที่เดียว** ────────────────────────────────────────
 # เดิมตารางนี้ถูกก๊อปไว้ 2 ที่ (ที่นี่ + `utils/tts.py`) และตัวที่ `server.py` ใช้จริง
@@ -60,7 +66,8 @@ VOICE_TEMPERATURE = 0.6          # ต่ำกว่า default (~1.0) = คว
 # ⚠️ ไบต์เท่ากัน = หลักฐานว่า *การสุ่มถูกตรึง* เท่านั้น **ไม่ใช่หลักฐานว่าหูคนได้ยินเหมือนกัน**
 #    ตัวชี้ขาดคือ user คุยข้ามนาทีที่ 10 (จุดที่ go_away ตัด session) แล้วบอกว่ายังสลับคนไหม
 GEMINI_LIVE_MODEL_DEFAULT = "gemini-3.1-flash-live-preview"
-GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", GEMINI_LIVE_MODEL_DEFAULT)
+# (เดิมมี `GEMINI_LIVE_MODEL = os.getenv(...)` ซ้ำอีกบรรทัดตรงนี้ — ไม่มีใครใช้ ตรวจแล้วทั้ง
+#  รีโปและในคอนเทนเนอร์ prod 2026-09-23 · server.py import จาก core.config ⇒ ถอดออก)
 
 
 # ── ค้นเว็บในโหมดเสียง (เพิ่ม 2026-08-09) ──────────────────────────────────────
@@ -298,8 +305,15 @@ def build_live_config(slug: str, system_instruction: str, resume_handle: str | N
 #
 # ⚠️ พิสูจน์ได้แค่ว่า "สิ่งที่เราได้รับ" ดังเท่าไหร่ — ตัวเลขแบนราบ **ไม่ได้แปลว่าไม่มีปัญหา**
 # แปลว่า "ปัญหาไม่ได้อยู่ก่อนจุดนี้" เท่านั้น
-VOICE_LEVEL_LOG = os.getenv("VOICE_LEVEL_LOG", "on").strip().lower() not in ("off", "0", "false")
-VOICE_LEVEL_WINDOW_SEC = float(os.getenv("VOICE_LEVEL_WINDOW_SEC", "10"))
+# 🔴 ลงทะเบียนเป็น str ไม่ใช่ env_bool — สัญญาเดิมคือ off/0/false = ปิด อย่างอื่นทั้งหมด = เปิด
+#    (CLAUDE.md สอนให้ปิดด้วย `=off`) ส่วน env_bool รับแค่ "true" ⇒ ใครตั้ง =on/=1 จะถูกปิดเงียบ
+#    `on`/`off` เป็นค่ามาตรฐาน (distutils.strtobool / pydantic รับทั้งคู่) ไม่ใช่ของแปลกเฉพาะที่นี่
+VOICE_LEVEL_LOG = env_str("VOICE_LEVEL_LOG", "on", group=_G, doc=(
+    "log ระดับเสียงที่ Gemini ส่งมา ([VoiceLevel] ทุก VOICE_LEVEL_WINDOW_SEC วินาทีของเสียง)\n"
+    "off/0/false = ปิด · อย่างอื่น = เปิด — เครื่องมือชี้ขาดคดี \"เสียงเบา\" (ดู AudioLevelMeter)"
+)).strip().lower() not in ("off", "0", "false")
+VOICE_LEVEL_WINDOW_SEC = env_float("VOICE_LEVEL_WINDOW_SEC", 10.0, group=_G,
+                                   doc="วินาทีของเสียงต่อ 1 บรรทัด [VoiceLevel]")
 
 
 class AudioLevelMeter:
@@ -417,7 +431,9 @@ class VoiceOpenTracker:
 #
 # 30s: retry ของ client หมดโควตาใน ~7s (`voiceretry.ts` 1+2+4) เผื่อ timer ที่ถูก
 # throttle ตอนหน้าเว็บ background ไว้อีกเท่าตัว
-VOICE_RECONNECT_SUSPECT_SEC = float(os.getenv("VOICE_RECONNECT_SUSPECT_SEC", "30"))
+VOICE_RECONNECT_SUSPECT_SEC = env_float("VOICE_RECONNECT_SUSPECT_SEC", 30.0, group=_G, doc=(
+    "เปิดสายเสียงซ้ำภายในกี่วินาทีถึงติดธง ⚠️ ว่าเป็น reconnect วน (ไม่ใช่เปิดใหม่ตั้งใจ)\n"
+    "30 = retry ของ client หมดโควตาใน ~7s (1+2+4) เผื่อ timer ถูก throttle ตอน background"))
 
 
 def voice_open_log_line(session_id: str, slug: str, nth: int,
@@ -703,7 +719,9 @@ def interrupt_log_line(silence_s: float | None, search_count: int,
 # + พิสูจน์แล้วว่าที่คั่นวิ่งเกิดจากตัวอ่านซ้อน ไม่ใช่ป้อนเร็ว: 13.8 ตัว/วิ vs 185.9)
 #
 # 45s มาจากของเดิม: chunk ปกติห่างกัน <5s ⇒ เกิน 45s = ตายเงียบแน่นอน ไม่ใช่ช้า
-READER_STALL_TIMEOUT = float(os.getenv("READER_STALL_TIMEOUT", "45"))
+READER_STALL_TIMEOUT = env_float("READER_STALL_TIMEOUT", 45.0, group=_G, doc=(
+    "watchdog โหมดอ่านนิยาย: Gemini เงียบเกินกี่วินาทีกลางท่อน = ตายเงียบ → ต่อ session ใหม่\n"
+    "45 = chunk ปกติห่างกัน <5s ⇒ เกินนี้คือตาย ไม่ใช่ช้า · ต้องมากกว่า VOICE_LOOP_EXIT_GRACE_SEC"))
 
 # PCM 16-bit mono 24kHz = ฟอร์แมตเสียงขาออกของ Live API (ดู AudioLevelMeter.rate)
 READER_AUDIO_BYTES_PER_SEC = 24000 * 2
@@ -823,7 +841,9 @@ def reader_incomplete_log_line(tag: str, pos: int, block_len: int, elapsed_s: fl
 # ⇒ `except Exception` ใน `send_loop` **ไม่กลืนมัน** จึงไม่มี log error ปลอมตอนปิดปกติ
 # (ต่างจากทางเลือก `session.close()` ซึ่งจะทำให้ `recv()` โยน `APIError` เข้า except นั้น
 #  แล้วพิมพ์ ERROR ทุกครั้งที่ปิดหน้าเว็บ = ไปปนกับสัญญาณ 1008/1011 ที่เราใช้ตามบั๊กอยู่)
-LOOP_EXIT_GRACE_SEC = float(os.getenv("VOICE_LOOP_EXIT_GRACE_SEC", "1.5"))
+LOOP_EXIT_GRACE_SEC = env_float("VOICE_LOOP_EXIT_GRACE_SEC", 1.5, group=_G, doc=(
+    "หลังลูปหนึ่งของสายเสียงจบ รออีกฝั่งกี่วินาทีก่อน cancel (run_until_both_done)\n"
+    "ต้อง >1.0 (recv_loop ตื่นทุก 1s) และ < READER_STALL_TIMEOUT"))
 
 
 async def run_until_both_done(*coros, grace: float = LOOP_EXIT_GRACE_SEC) -> int:

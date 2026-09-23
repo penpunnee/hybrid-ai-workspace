@@ -397,3 +397,67 @@ def test_ROUTER_IP_ยังเดาจาก_NAS_IP_เมื่อไม่�
     finally:
         monkeypatch.undo()
         importlib.reload(ht)
+
+
+# ── 9) ก้อน 4 ไฟล์ที่ห้า: utils/voice.py (2026-09-23) — ลบ 1 (dead) + ย้าย 5 ──────────
+# 🔑 ตรวจบน prod ก่อนเขียน: 6 ชื่อไม่ได้ตั้งสักตัวใน .env/compose/container env ⇒ default ล้วน
+#    · `voice.GEMINI_LIVE_MODEL` ไม่มีใครใช้ (grep ทั้ง /app ในคอนเทนเนอร์ = none) — server.py
+#    import จาก core.config · 5 ชื่อที่เหลือไม่เคยถูกจดที่ไหนเลย
+
+def test_voice_อยู่ใน_MODULES():
+    from core.env_registry import MODULES
+
+    assert "utils.voice" in MODULES
+
+
+@pytest.mark.parametrize("name,expected", [
+    # 🔴 เป็น str "on" ไม่ใช่ bool — parser เดิมรับ off/0/false = ปิด (CLAUDE.md สอนให้ปิดด้วย =off)
+    #    ส่วน env_bool รับแค่ "true" ⇒ ใครตั้ง =on/=1 เพื่อ "เปิดชัดๆ" จะถูกปิดเงียบ
+    ("VOICE_LEVEL_LOG", "on"),
+    ("VOICE_LEVEL_WINDOW_SEC", 10.0),
+    ("VOICE_RECONNECT_SUSPECT_SEC", 30.0),
+    ("READER_STALL_TIMEOUT", 45.0),
+    ("VOICE_LOOP_EXIT_GRACE_SEC", 1.5),   # ชื่อ env ≠ ชื่อตัวแปร (LOOP_EXIT_GRACE_SEC)
+])
+def test_default_ของ_voice_เท่าของเดิม(name, expected):
+    from core.env_registry import REGISTRY, load_all
+
+    load_all()
+    spec = REGISTRY[name]
+    assert spec.default == expected and type(spec.default) is type(expected), (
+        f"{name}: default เป็น {spec.default!r} ควรเป็น {expected!r}")
+    assert spec.doc.strip()
+
+
+@pytest.mark.parametrize("raw,expected", [
+    (None, True),          # ไม่ตั้ง = เปิด (prod วันนี้)
+    ("on", True), ("ON", True), ("1", True), ("yes", True), ("", True), (" true ", True),
+    ("off", False), ("OFF", False), (" off ", False), ("0", False), ("false", False), ("False", False),
+])
+def test_VOICE_LEVEL_LOG_ยังตีความแบบเดิม(monkeypatch, raw, expected):
+    """kill switch ของ AudioLevelMeter (คดีเสียงเบา) — ห้ามเปลี่ยนสัญญาตอนย้ายท่อ
+    ตรวจที่ *ค่าที่โมดูล resolve จริง* ไม่ใช่ helper แยก (helper ถูกแต่ไม่มีใครเรียก = ผ่านฟรี)"""
+    import importlib
+
+    import utils.voice as v
+
+    if raw is None:
+        monkeypatch.delenv("VOICE_LEVEL_LOG", raising=False)
+    else:
+        monkeypatch.setenv("VOICE_LEVEL_LOG", raw)
+    try:
+        assert importlib.reload(v).VOICE_LEVEL_LOG is expected
+    finally:
+        monkeypatch.undo()
+        importlib.reload(v)
+
+
+def test_voice_ไม่นิยาม_GEMINI_LIVE_MODEL_ซ้ำกับ_config():
+    """`utils/voice.py:63` เคยอ่าน GEMINI_LIVE_MODEL เองอีกชุด — ไม่มีใครใช้ (server.py import จาก
+    core.config) · เจ้าของชื่อนี้คือ config ⇒ voice ต้องเหลือแค่ค่าคงที่ GEMINI_LIVE_MODEL_DEFAULT
+    เดินด้วย ast ไม่ใช่ `in src` — ไม่งั้นคอมเมนต์ที่เล่าเรื่องนี้ทำให้เทสแดงเอง"""
+    tree = ast.parse((REPO / "utils" / "voice.py").read_text())
+    assigned = {t.id for node in ast.walk(tree) if isinstance(node, ast.Assign)
+                for t in node.targets if isinstance(t, ast.Name)}
+    assert "GEMINI_LIVE_MODEL_DEFAULT" in assigned, "ค่าคงที่ที่ config import ต้องยังอยู่"
+    assert "GEMINI_LIVE_MODEL" not in assigned, "voice.py ยังอ่าน GEMINI_LIVE_MODEL เอง (dead code ซ้ำกับ config)"
