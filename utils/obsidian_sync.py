@@ -1,8 +1,10 @@
 import os
 import re
 import hashlib
+import socket
 import logging
 from pathlib import Path
+from urllib.parse import urlsplit
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -62,6 +64,48 @@ def _doc_id(path: Path) -> str:
     return hashlib.md5(str(path).encode()).hexdigest()
 
 
+# ── embedder ต่อไม่ได้ต้องจบเร็ว (2026-09-23) ──────────────────────────────────
+# log prod: error ห่าง ~60 วิเป๊ะต่อไฟล์ ⇒ 22 ไฟล์ = 22 นาที · ต้นเหตุ: OllamaEmbeddingFunction
+# ของ chromadb ตั้ง timeout=60 และ PC ที่เพิ่งปิด ARP ยังค้าง ⇒ SYN หายเงียบจนครบ timeout
+# ⚠️ ไม่ลด timeout ของ EF ทั้งระบบ — EF ตัวนี้ใช้ร่วมทุก collection
+_PREFLIGHT_TIMEOUT = 2.0
+_MAX_CONSECUTIVE_CONN_FAILS = 2   # ครั้งเดียวแล้วหาย = ไปต่อ (tests/test_vault_sync_errors.py)
+
+
+def _tcp_reachable(host: str, port: int, timeout: float) -> bool:
+    try:
+        socket.create_connection((host, port), timeout=timeout).close()
+        return True
+    except OSError:
+        return False
+
+
+def _embedder_endpoint(col) -> tuple[str, int] | None:
+    """host/port ของ embedder ที่ collection นี้ใช้จริง — ไม่รู้ = None (ไม่บล็อก)"""
+    url = getattr(getattr(col, "_embedding_function", None), "url", None)
+    if not isinstance(url, str) or not url:
+        return None
+    parts = urlsplit(url)
+    if not parts.hostname:
+        return None
+    return parts.hostname, parts.port or (443 if parts.scheme == "https" else 80)
+
+
+def _is_conn_failure(e: Exception) -> bool:
+    """ต่อ embedder ไม่ได้ (ไม่ใช่ไฟล์เสียเป็นรายไฟล์) — ของจริงคือ httpx.ConnectTimeout
+    ที่ chromadb เติมข้อความเป็น "timed out in upsert." · ollama client โยน ConnectionError"""
+    if isinstance(e, (TimeoutError, ConnectionError)):
+        return True
+    try:
+        import httpx
+        if isinstance(e, (httpx.TimeoutException, httpx.NetworkError)):
+            return True
+    except ImportError:
+        pass
+    msg = str(e).lower()
+    return "timed out" in msg or "failed to connect" in msg
+
+
 def sync_vault(vault_path: str = "") -> dict:
     """Sync all .md files in vault into ChromaDB. Returns stats."""
     vp = vault_path or VAULT_PATH
@@ -82,6 +126,11 @@ def sync_vault(vault_path: str = "") -> dict:
     # เก็บทุกไฟล์ที่สแกนเจอ **รวมตัวที่ error ด้วย** เพราะไฟล์ยังอยู่ แค่ embed ไม่ผ่าน
     # (ลบตัวที่ embed ล้ม = Ollama ดับหนึ่งรอบแล้ว index หายทั้ง vault)
     seen: set[str] = set()
+    # หยุด upsert แล้ว (embedder ต่อไม่ได้) — ยังเดินลูปต่อแบบอ่านอย่างเดียว เพื่อให้
+    # `errors` = ไฟล์ที่ต้อง sync แต่ไม่สำเร็จ และ `seen` ครบ (prune ไม่ลบของที่ยังไม่ได้ตรวจ)
+    halted = ""
+    preflight_done = False
+    conn_fails = 0
 
     for fp in md_files:
         if any(part.startswith(".") for part in fp.parts):
@@ -97,6 +146,18 @@ def sync_vault(vault_path: str = "") -> dict:
                 skipped += 1
                 continue
 
+            if halted:
+                errors += 1
+                continue
+            if not preflight_done:
+                preflight_done = True
+                ep = _embedder_endpoint(col)
+                if ep and not _tcp_reachable(ep[0], ep[1], _PREFLIGHT_TIMEOUT):
+                    halted = f"ต่อ embedder ไม่ได้ ({ep[0]}:{ep[1]})"
+                    logger.error(f"Vault sync: {halted} — ไม่ upsert รอบนี้")
+                    errors += 1
+                    continue
+
             combined = f"# {info['title']}\n\n{info['body']}"
             col.upsert(
                 ids=[doc_id],
@@ -110,11 +171,19 @@ def sync_vault(vault_path: str = "") -> dict:
                 }],
             )
             added += 1
+            conn_fails = 0
         except Exception as e:
             # error ≠ skip: 2026-08-12 upsert ที่ timeout (Ollama ตาย) เคยถูกนับเป็น skip
             # ทำให้รายงาน ok:true ทั้งที่ sync ล้มทั้งหมด — ผู้เรียกต้องแยกสองอย่างนี้ออกได้
             logger.error(f"Vault sync error for {fp}: {str(e)}")
             errors += 1
+            if _is_conn_failure(e):
+                conn_fails += 1
+                if conn_fails >= _MAX_CONSECUTIVE_CONN_FAILS and not halted:
+                    halted = f"ต่อ embedder ไม่ได้ {conn_fails} ครั้งติด ({e})"
+                    logger.error(f"Vault sync: {halted} — หยุด upsert ไฟล์ที่เหลือ")
+            else:
+                conn_fails = 0
 
     # ── prune: ลบเอกสารของไฟล์ที่หายไปจาก vault ────────────────────────────
     # 🔴 บั๊กจริง 2026-08-23: เดิม sync เป็น add/update อย่างเดียว ⇒ ลบหน้าใน vault แล้ว
@@ -153,7 +222,10 @@ def sync_vault(vault_path: str = "") -> dict:
            "skipped": skipped, "removed": removed, "errors": errors}
     if prune_error:
         out["prune_error"] = prune_error
-    if errors:
+    if halted:
+        out["halted"] = halted
+        out["error"] = f"หยุด sync: {halted} — ไม่สำเร็จ {errors}/{len(md_files)} ไฟล์ (เปิด PC แล้วกด sync ใหม่)"
+    elif errors:
         out["error"] = f"sync ไม่สำเร็จ {errors}/{len(md_files)} ไฟล์ (ดู log)"
     return out
 
