@@ -1,21 +1,36 @@
+"""ค่าคอนฟิกของระบบ — อ่าน env ผ่าน `core/env_registry.py` เท่านั้น
+
+ห้ามเรียก `os.getenv` ตรงๆ ในไฟล์นี้ (มีเทสตรึง `tests/test_env_registry.py`)
+เพราะค่าที่ registry มองไม่เห็น = ค่าที่ `.env.example` ที่ generate จากโค้ดไม่มีทางรู้จัก
+"""
+
 import os
+
 from dotenv import load_dotenv
+
+from core.env_registry import env_bool, env_float, env_int, env_str
 
 load_dotenv()
 
 # ── Ollama (Local LLM) ───────────────────────────────────────────────────────
-OLLAMA_BASE_URL    = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-OLLAMA_MODEL       = os.getenv("OLLAMA_MODEL", "llama3")
-OLLAMA_TIMEOUT     = int(os.getenv("OLLAMA_TIMEOUT", "120"))
-OLLAMA_MAX_RETRIES = int(os.getenv("OLLAMA_MAX_RETRIES", "2"))
-OLLAMA_RETRY_DELAY = int(os.getenv("OLLAMA_RETRY_DELAY", "2"))
-OLLAMA_TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0.7"))
-OLLAMA_TOP_P       = float(os.getenv("OLLAMA_TOP_P", "0.85"))
-OLLAMA_NUM_CTX     = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
-OLLAMA_REPEAT_PENALTY = float(os.getenv("OLLAMA_REPEAT_PENALTY", "1.1"))
+_G = "Ollama"
+OLLAMA_BASE_URL    = env_str("OLLAMA_BASE_URL", "http://localhost:11434/v1", group=_G,
+                             doc="ที่อยู่ Ollama (OpenAI-compatible) — ตัวหลักของ embeddings")
+OLLAMA_MODEL       = env_str("OLLAMA_MODEL", "llama3", group=_G,
+                             doc="โมเดลแชทของ Ollama (บทบาท fallback ตั้งแต่ 2026-06-15)")
+OLLAMA_TIMEOUT     = env_int("OLLAMA_TIMEOUT", 120, group=_G, doc="วินาที")
+OLLAMA_MAX_RETRIES = env_int("OLLAMA_MAX_RETRIES", 2, group=_G, doc="จำนวนครั้งที่ลองซ้ำ")
+OLLAMA_RETRY_DELAY = env_int("OLLAMA_RETRY_DELAY", 2, group=_G, doc="วินาทีระหว่างการลองซ้ำ")
+OLLAMA_TEMPERATURE = env_float("OLLAMA_TEMPERATURE", 0.7, group=_G, doc="ความสร้างสรรค์ 0-1")
+OLLAMA_TOP_P       = env_float("OLLAMA_TOP_P", 0.85, group=_G, doc="nucleus sampling")
+OLLAMA_NUM_CTX     = env_int("OLLAMA_NUM_CTX", 4096, group=_G, doc="ขนาด context window")
+OLLAMA_REPEAT_PENALTY = env_float("OLLAMA_REPEAT_PENALTY", 1.1, group=_G,
+                                  doc="โทษการพูดซ้ำ")
 
 # ── Gemini (Cloud LLM) ───────────────────────────────────────────────────────
-GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY", "")
+_G = "Gemini"
+GEMINI_API_KEY   = env_str("GEMINI_API_KEY", "", group=_G,
+                           doc="คีย์ Gemini — ว่าง = ปิดเส้นคลาวด์ทั้งหมด")
 # GEMINI_MODEL ไม่ได้อยู่ที่นี่ — **ที่เดียวคือ `utils/llm.py`** (`GEMINI_MODEL_DEFAULT`
 # + `RETIRED_GEMINI_MODELS` + เทส `test_gemini_health.py` ที่ตรึงว่า default ต้องไม่ใช่รุ่นที่ปิดแล้ว)
 # เดิมบรรทัดนี้ประกาศ `gemini-2.0-flash` ค้างไว้โดยไม่มีใคร import ไปใช้เลยสักที่ (2026-09-23)
@@ -24,20 +39,25 @@ GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY", "")
 # ไม่ตรงกันเงียบๆ ตั้งแต่ `369f18e` (2026-06-19): ที่นี่เป็น 3.1-flash-live ส่วน
 # `utils/voice.py` ค้างที่ 2.5-native-audio-latest พร้อมคอมเมนต์ที่เขียนว่า "ตรงกับ
 # core/config.py" — คอมเมนต์บอกเจตนา ไม่ได้บอกพฤติกรรม
-from utils.voice import GEMINI_LIVE_MODEL_DEFAULT
+from utils.voice import GEMINI_LIVE_MODEL_DEFAULT  # noqa: E402
 
-GEMINI_LIVE_MODEL = os.getenv("GEMINI_LIVE_MODEL", GEMINI_LIVE_MODEL_DEFAULT)
+GEMINI_LIVE_MODEL = env_str("GEMINI_LIVE_MODEL", GEMINI_LIVE_MODEL_DEFAULT, group=_G,
+                            doc="โมเดลสายเสียงสด — ต้องเป็นสาย *-live/native-audio เท่านั้น")
 
 # ── Database ─────────────────────────────────────────────────────────────────
-DB_PATH      = os.getenv("DB_PATH", "./chat_history.db")
-CHROMA_HOST  = os.getenv("CHROMA_HOST", "")
-CHROMA_PORT  = int(os.getenv("CHROMA_PORT", "8000"))
-CHROMA_PATH  = os.getenv("CHROMA_PATH", "./data/chroma")
+_G = "Database"
+DB_PATH      = env_str("DB_PATH", "./chat_history.db", group=_G,
+                       doc="SQLite หลัก (แชท/เซสชัน/feedback) — ⛔ compose environment: ทับค่านี้")
+CHROMA_HOST  = env_str("CHROMA_HOST", "", group=_G, doc="โฮสต์ ChromaDB — ว่าง = ให้โค้ดเดาเอง")
+CHROMA_PORT  = env_int("CHROMA_PORT", 8000, group=_G, doc="พอร์ต ChromaDB")
+CHROMA_PATH  = env_str("CHROMA_PATH", "./data/chroma", group=_G,
+                       doc="⚠️ dead config — ไม่มีผู้บริโภค (ChromaDB เป็นคอนเทนเนอร์แยก)")
 
 # ── App ──────────────────────────────────────────────────────────────────────
-UI_PASSWORD  = os.getenv("UI_PASSWORD", "")
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "")
-RELOAD       = os.getenv("RELOAD", "false").lower() == "true"
+_G = "App"
+UI_PASSWORD  = env_str("UI_PASSWORD", "", group=_G, doc="รหัสเข้าเว็บ — ว่าง = ไม่ต้องล็อกอิน")
+CORS_ORIGINS = env_str("CORS_ORIGINS", "", group=_G, doc="รายการ origin คั่นด้วย , — ว่าง = ใช้ค่าตั้งต้น")
+RELOAD       = env_bool("RELOAD", False, group=_G, doc="auto-reload ตอน dev")
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -52,8 +72,11 @@ SKILLS_DIR = os.path.join(PROJECT_ROOT, "skills")
 # ผ่าน load_skills_relevant) — ถ้าอยากเทส semantic search บน dev ให้ copy ตัวจริงมา
 SKILLS_DB_PATH = os.path.join(PROJECT_ROOT, "skills_db.json")
 
-OBSIDIAN_VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH", "")
-NAS_DATA_PATH       = os.getenv("NAS_DATA_PATH", os.path.join(PROJECT_ROOT, "data"))
+_G = "Paths"
+OBSIDIAN_VAULT_PATH = env_str("OBSIDIAN_VAULT_PATH", "", group=_G,
+                              doc="โฟลเดอร์ Obsidian vault — ⛔ compose environment: ทับค่านี้")
+NAS_DATA_PATH       = env_str("NAS_DATA_PATH", os.path.join(PROJECT_ROOT, "data"), group=_G,
+                              doc="ที่เก็บข้อมูลถาวร (cache DB, reader.db, skills_db.json)")
 
 # Cache databases (under NAS_DATA_PATH for persistence)
 RESPONSE_CACHE_DB = os.path.join(NAS_DATA_PATH, "response_cache.db")
@@ -77,17 +100,24 @@ EMBED_CACHE_DB = os.path.join(NAS_DATA_PATH, "embed_cache.db")
 #    สำเร็จรูปจากที่นี่ reload จะไม่เห็น env ใหม่ (core.config ถูก import ไปแล้ว)
 #    แล้ว **เทสจะไปเขียนทับ reader.db ตัวจริง** โดยยังขึ้นเขียว (พลาดมาแล้ว 09-01)
 READER_DB_DEFAULT = os.path.join(NAS_DATA_PATH, "reader.db")
-READER_DB_PATH = os.getenv("READER_DB_PATH", READER_DB_DEFAULT)
+READER_DB_PATH = env_str("READER_DB_PATH", READER_DB_DEFAULT, group=_G,
+                         doc="ไฟล์เนื้อหาหนังสือ + ที่คั่นของโหมดอ่าน (แยกจาก chat_history.db)")
 
 # ── LM Studio (Local LLM — OpenAI compatible) ────────────────────────────────
 # LM Studio เป็น opt-in: เปิดใช้เฉพาะเมื่อ set LMSTUDIO_BASE_URL ใน .env
 # (default ว่าง — local LLM หลักของระบบนี้คือ Ollama ดู OLLAMA_BASE_URL ด้านบน)
-LMSTUDIO_BASE_URL     = os.getenv("LMSTUDIO_BASE_URL", "")
-LMSTUDIO_CHAT_MODEL   = os.getenv("LMSTUDIO_CHAT_MODEL", "google/gemma-4-e4b")
-LMSTUDIO_REASON_MODEL = os.getenv("LMSTUDIO_REASON_MODEL", "qwen/qwen3.5-9b")
-LMSTUDIO_VISION_MODEL = os.getenv("LMSTUDIO_VISION_MODEL", "llama-3.2-11b-vision-instruct")
-LMSTUDIO_TIMEOUT      = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
-SHOW_THINKING         = os.getenv("SHOW_THINKING", "false").lower() == "true"
+_G = "LM Studio"
+LMSTUDIO_BASE_URL     = env_str("LMSTUDIO_BASE_URL", "", group=_G,
+                                doc="ที่อยู่ LM Studio — **ว่าง = ปิด** (opt-in)")
+LMSTUDIO_CHAT_MODEL   = env_str("LMSTUDIO_CHAT_MODEL", "google/gemma-4-e4b", group=_G,
+                                doc="โมเดลแชทของ LM Studio")
+LMSTUDIO_REASON_MODEL = env_str("LMSTUDIO_REASON_MODEL", "qwen/qwen3.5-9b", group=_G,
+                                doc="โมเดลสำหรับงานวิเคราะห์ (สรุป/สะท้อน/dream)")
+LMSTUDIO_VISION_MODEL = env_str("LMSTUDIO_VISION_MODEL", "llama-3.2-11b-vision-instruct",
+                                group=_G, doc="โมเดลอ่านรูปของ LM Studio")
+LMSTUDIO_TIMEOUT      = env_int("LMSTUDIO_TIMEOUT", 180, group=_G, doc="วินาที")
+SHOW_THINKING         = env_bool("SHOW_THINKING", False, group=_G,
+                                 doc="โชว์ <think> ของโมเดลบน UI")
 
 # ── CORS list ────────────────────────────────────────────────────────────────
 CORS_ORIGINS_LIST = (

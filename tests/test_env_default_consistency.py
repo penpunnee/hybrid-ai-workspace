@@ -146,10 +146,13 @@ def test_เครื่องมือวัดมีตาจริง():
     """
     found = scan_env_defaults()
     assert len(found) > 40, f"สแกนเนอร์อ่าน env ได้แค่ {len(found)} ชื่อ — น่าจะพัง"
-    # ต้องเห็นไฟล์ที่รู้แน่ว่ามี env อยู่
+    # ต้องเห็นไฟล์ที่รู้แน่ว่ายังอ่าน env ดิบอยู่
+    # (ไม่ใช้ `core/config.py` เป็นตัวอ้าง — ตั้งแต่ 2026-09-23 มันอ่านผ่าน
+    #  `core/env_registry.py` แล้ว จึงไม่มี `os.getenv` ให้สแกนเนอร์ตัวนี้เห็นอีก
+    #  ซึ่งถูกต้องตามดีไซน์ ไม่ใช่อาการพัง)
     files_seen = {loc.split(":")[0] for sites in found.values() for _, loc in sites}
-    assert "core/config.py" in files_seen
     assert "utils/llm.py" in files_seen
+    assert "utils/embed.py" in files_seen
 
 
 def test_สแกนเนอร์จับความขัดแย้งที่ปลูกไว้ได้():

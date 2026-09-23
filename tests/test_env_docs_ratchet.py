@@ -46,7 +46,14 @@ _ALLOWED_UNREAD: dict[str, str] = {
 }
 
 _ASSIGN = re.compile(r"^([A-Z][A-Z0-9_]{2,})=")
-_READ = re.compile(r"""(?:getenv\(|environ\.get\(|environ\[)\s*["']([A-Z0-9_]+)""")
+# รวม helper ของ `core/env_registry.py` ด้วย — ตั้งแต่ 2026-09-23 `core/config.py`
+# อ่าน env ผ่าน `env_str/env_int/env_float/env_bool` ไม่ใช่ `os.getenv` แล้ว
+# ⚠️ ถ้าลืมบรรทัดนี้ ชื่อ env ทั้งชุดของ config จะกลายเป็น "ไม่มีโค้ดอ่าน" ทันที
+#    แล้วเทสนี้จะสั่งให้ไป *ลบเอกสาร* ของ env ที่ยังใช้งานอยู่จริง
+_READ = re.compile(
+    r"""(?:getenv\(|environ\.get\(|environ\[|env_str\(|env_int\(|env_float\(|env_bool\()"""
+    r"""\s*["']([A-Z0-9_]+)"""
+)
 _COMPOSE_VAR = re.compile(r"\$\{([A-Z0-9_]+)")
 
 
