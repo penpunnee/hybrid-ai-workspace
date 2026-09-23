@@ -1,5 +1,38 @@
 ---
 
+## [2026-09-23 ค่ำ] config ก้อน 4 ไฟล์ที่ห้า — `utils/voice.py` ลบ 1 (dead) + ย้าย 5 (`16e0b83`)
+**เริ่มด้วย `/scrutinize` แผนก่อนลงมือ แล้ว user สั่ง "เช็คข้อมูลระบบจริงก่อน อย่าเชื่อ log"** —
+ผล scrutinize เปลี่ยนแผนจาก "ย้าย 6 จุด" เป็น **"ลบ 1 + ย้าย 5"**:
+- **`voice.py:63` `GEMINI_LIVE_MODEL = os.getenv(...)` เป็น dead code** — grep ทั้งรีโป *และ* ใน
+  คอนเทนเนอร์ prod (`grep -rn` ใน `/app` ยกเว้น tests) = ไม่มีใครใช้ · `server.py:12` import จาก
+  `core.config` ⇒ **ข้อกังวล "circular import" ที่จดไว้ใน ▶️ ตั้งอยู่บนสมมติฐานว่าต้อง import
+  กลับ ซึ่งไม่ต้อง** — แค่ลบ เหลือค่าคงที่ `GEMINI_LIVE_MODEL_DEFAULT` ให้ config import เหมือนเดิม
+- **`VOICE_LEVEL_LOG` ห้ามใช้ `env_bool`** — parser เดิม `not in (off,0,false)` (CLAUDE.md สอนให้ปิด
+  ด้วย `=off`) ส่วน `env_bool` รับแค่ `"true"` ⇒ ใครตั้ง `=on`/`=1` เพื่อ "เปิดชัดๆ" meter คดีเสียงเบา
+  จะดับเงียบ · ค้นเน็ตยืนยัน: `on`/`off` เป็นค่ามาตรฐาน (`distutils.strtobool` true = y/yes/t/true/on/1 ·
+  pydantic รับชุดเดียวกัน) ⇒ ลงทะเบียน `env_str("VOICE_LEVEL_LOG", "on")` + คง parser · `.env.example`
+  โชว์ `=on` ตรงกับที่เอกสารสอน
+- **ตรวจ prod ก่อนเขียนโค้ด:** 6 ชื่อ**ไม่ได้ตั้งสักตัว**ใน `.env` / `docker-compose.yml` /
+  `docker inspect` env ⇒ prod รัน default ล้วน (ข้อ B จึงไม่กระทบ prod วันนี้ แต่ยังเป็นปัญหาเชิงสัญญา)
+  · inode voice/server/config host=container ตรง · meter ทำงานจริง (`[VoiceLevel]` 12 + 530 บรรทัด
+  ล่าสุด 09-22) · watchdog `เงียบเกิน 45s` ยิง 0 ครั้งตั้งแต่ 09-07
+- **baseline เสียงก่อนแตะ** (probe ในคอนเทนเนอร์): `build_live_config("kwan","SYS",None)` sha
+  `dbff1a358e00ef03` (1647) · `build_reader_config(None)` sha `8c5dbf9603eb3630` (1386) —
+  หลัง deploy **ตรงเป๊ะทั้งคู่** (6 ชื่อไม่เข้าสองฟังก์ชันนี้เลย = ปลอดภัยโดยโครงสร้าง แต่พิสูจน์ด้วยตัวเลข)
+- ย้าย 5 ชื่อกลุ่ม `Voice`: `VOICE_LEVEL_LOG` · `VOICE_LEVEL_WINDOW_SEC` · `VOICE_RECONNECT_SUSPECT_SEC`
+  · `READER_STALL_TIMEOUT` · `VOICE_LOOP_EXIT_GRACE_SEC` (⚠️ ชื่อ env ≠ ชื่อตัวแปร `LOOP_EXIT_GRACE_SEC`)
+  — **ไม่เคยถูกจดที่ไหนเลย**ก่อนหน้านี้ · `.env.example` จดครั้งแรก · `MODULES += utils.voice`
+- เทสแดงก่อน 7 ตัว (MODULES · default+type ×5 · dead-code) · กลุ่มควบคุม `VOICE_LEVEL_LOG` 13 เคส
+  เขียวบนโค้ดเดิม = เครื่องมือวัดมีตา · dead-code ตรวจด้วย `ast.Assign` ไม่ใช่ `in src`
+- **2003 passed / 17 skipped** (+20) · ruff · **mutation 9/9** — 🔑 M1 (สลับเป็น `env_bool` ทั้งที่ยังมี
+  `.strip()`) ตายด้วย *import error* ไม่ใช่เทส ⇒ **ไม่นับ** ยิง M1b ถอด parser ทั้งท่อน → ตายเชิงความหมาย
+  7 เคส (ทุก truthy + type) · **kill ด้วย error ≠ kill ด้วยเทส — ดูว่าอะไรฆ่ามัน**
+- deploy `git reset` + `docker restart` (dir mount · inode ใหม่ 260997/260999 ตรง) · healthy 18s ·
+  ค่าที่ resolve หลัง = ก่อนทุกตัว · `voice.GEMINI_LIVE_MODEL` หายแล้ว · `/api/config` 200 · 0 error
+- เหลืออ่าน env ดิบ **98 จุด** · ถัดไป `fs_tools`/`embed`/`code_sandbox`
+- 🔑 **บทเรียน: "ต้องระวัง X" ที่จดไว้ล่วงหน้า ต้องกลับไปเช็คว่าสมมติฐานของมันยังจริง** — circular
+  import ถูกจดเป็นกับดัก แต่ของที่ทำให้เกิดกับดักนั้นเป็น dead code อยู่แล้ว
+
 ## [2026-09-23 ปิดเซสชัน (รอบบ่าย)] สรุป + สิ่งที่ user สั่งไว้สำหรับเซสชันหน้า
 **ทำเสร็จ 10 commit หลัก — deploy + verify บน prod + CI เขียวทุกตัว:**
 | commit | งาน |
