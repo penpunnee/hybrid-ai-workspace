@@ -17,6 +17,7 @@ import time
 from typing import Optional
 
 from core.config import RESPONSE_CACHE_DB as _DEFAULT_DB
+from core.env_registry import env_bool, env_float, env_int, env_str
 from utils.embed import embed_query, cosine_similarity
 
 logger = logging.getLogger(__name__)
@@ -54,11 +55,17 @@ def is_realtime_query(prompt: str) -> bool:
         return False
 
 
-_DB_PATH = os.getenv("RESPONSE_CACHE_DB", _DEFAULT_DB)
-_ENABLED = os.getenv("RESPONSE_CACHE_ENABLED", "true").lower() == "true"
-_SIM_THRESHOLD = float(os.getenv("RESPONSE_CACHE_THRESHOLD", "0.92"))
-_TTL_DAYS = int(os.getenv("RESPONSE_CACHE_TTL_DAYS", "30"))
-_MAX_ENTRIES = int(os.getenv("RESPONSE_CACHE_MAX", "1000"))
+# env ของ response cache — ไฟล์นี้เป็นเจ้าของ 5 ชื่อ (ก้อน 4 · 2026-09-24 · ตัวกัน: tests/test_env_registry.py)
+_G = "Response Cache (Phase E)"
+# DB ลงทะเบียน "" — default จริงคำนวณจาก NAS_DATA_PATH (ห้ามลงค่าที่คำนวณ) · ว่าง/ไม่ตั้ง = <NAS_DATA_PATH>/response_cache.db
+_DB_PATH = env_str("RESPONSE_CACHE_DB", "", group=_G, doc=(
+    "SQLite เก็บคำตอบที่เคย 👍 สำหรับ semantic cache — ว่าง = <NAS_DATA_PATH>/response_cache.db")) or _DEFAULT_DB
+_ENABLED = env_bool("RESPONSE_CACHE_ENABLED", True, group=_G,
+                    doc="false = ไม่ short-circuit ด้วยคำตอบเดิม (คำถาม real-time bypass อยู่แล้ว)")
+_SIM_THRESHOLD = env_float("RESPONSE_CACHE_THRESHOLD", 0.92, group=_G,
+                           doc="cosine ขั้นต่ำที่ถือว่า prompt ใกล้พอจะคืนคำตอบเดิม")
+_TTL_DAYS = env_int("RESPONSE_CACHE_TTL_DAYS", 30, group=_G, doc="อายุรายการ (วัน)")
+_MAX_ENTRIES = env_int("RESPONSE_CACHE_MAX", 1000, group=_G, doc="จำนวนรายการสูงสุด (เก่าสุดถูกไล่ออก)")
 
 _lock = threading.Lock()
 _conn: sqlite3.Connection | None = None

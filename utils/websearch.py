@@ -8,7 +8,6 @@ Flow:
   → local model อ่านข้อมูลจริงแล้วตอบ
 """
 import logging
-import os
 import re
 import threading
 import time
@@ -16,6 +15,8 @@ import html as html_lib
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FuturesTimeout
+
+from core.env_registry import env_str
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,21 @@ def _parse_min_score(raw: str) -> float | None:
         return 0.35
 
 
-WEB_SEARCH_MIN_SCORE = _parse_min_score(os.getenv("WEB_SEARCH_MIN_SCORE", "0.35"))
+# env ของค้นเว็บ — ไฟล์นี้เป็นเจ้าของ 5 ชื่อ (ก้อน 4 · 2026-09-24 · ตัวกัน: tests/test_env_registry.py)
+# MIN_SCORE/MIN_INTERVAL ลงเป็น str เพราะมี parser เดิม ("off" · ค่าไม่ถูกต้อง → default + warning) ห้ามใช้ env_float
+# key ×3 เคยอ่านในฟังก์ชันทุกครั้งที่เรียก — ย้ายเป็นระดับโมดูล (env ใน prod นิ่ง) · เทส patch ค่าในโมดูลแทน setenv
+_G = "Web Search"
+WEB_SEARCH_MIN_SCORE = _parse_min_score(env_str("WEB_SEARCH_MIN_SCORE", "0.35", group=_G, doc=(
+    "พื้นคะแนนสัมบูรณ์ของผลค้นเว็บ (rerank × credibility) — ต่ำกว่านี้ไม่ฉีด/ไม่ cite\n"
+    "วัดบน prod: ผลถูกต้อง 0.60-0.82 · ขยะ 0.10-0.24 ⇒ 0.35 อยู่กลางที่ราบ · ปิดด้วย =off")))
+BRAVE_SEARCH_API_KEY = env_str("BRAVE_SEARCH_API_KEY", "", group=_G,
+                               doc="ตัวหลัก (ไม่ผูกกับ Google Cloud project) · ว่าง = ปิด ไม่ยิงเน็ตเลย ไม่บ่น")
+BRAVE_MIN_INTERVAL = env_str("BRAVE_MIN_INTERVAL", "1.1", group=_G, doc=(
+    "วินาทีหน่วงระหว่างคำขอ Brave · free tier = 1 คำขอ/วิ (sub-query ยิงติดกันในลูปเดียว)\n"
+    "ค่า <=0 หรือพิมพ์ผิด ถอยไป 1.1 พร้อม warning — ไม่หน่วง = ตัวที่ 2 ได้ 429 ทุกครั้ง"))
+GOOGLE_SEARCH_API_KEY = env_str("GOOGLE_SEARCH_API_KEY", "", group=_G,
+                                doc="ชั้นสอง — คีย์ต้องอยู่ project ที่เปิด Custom Search JSON API · ว่าง = ข้าม")
+GOOGLE_SEARCH_CX = env_str("GOOGLE_SEARCH_CX", "", group=_G, doc="Programmable Search Engine ID คู่กับคีย์ข้างบน")
 
 _UNSET = object()
 
@@ -181,7 +196,7 @@ _brave_lock = threading.Lock()
 def _brave_min_interval() -> float:
     """ค่าบวกเท่านั้น — 0/ติดลบ ทำให้ตัวหน่วงหายไปเงียบๆ (บทเรียน TTS_MAX_CHARS=0)"""
     try:
-        v = float(os.getenv("BRAVE_MIN_INTERVAL", "1.1"))
+        v = float(BRAVE_MIN_INTERVAL)
     except ValueError:
         v = 0.0
     if v <= 0:
@@ -193,7 +208,7 @@ def _brave_min_interval() -> float:
 def _brave_search(query: str, max_results: int = 5) -> list[dict]:
     """ค้นผ่าน Brave Search API — ปล่อย BRAVE_SEARCH_API_KEY ว่าง = ปิด"""
     import requests
-    token = os.getenv("BRAVE_SEARCH_API_KEY", "")
+    token = BRAVE_SEARCH_API_KEY
     if not token:
         return []
 
@@ -238,9 +253,9 @@ def _brave_search(query: str, max_results: int = 5) -> list[dict]:
 
 def _google_search(query: str, max_results: int = 5) -> list[dict]:
     """ค้นผ่าน Google Custom Search API"""
-    import os, requests
-    api_key = os.getenv("GOOGLE_SEARCH_API_KEY", "")
-    cx = os.getenv("GOOGLE_SEARCH_CX", "")
+    import requests
+    api_key = GOOGLE_SEARCH_API_KEY
+    cx = GOOGLE_SEARCH_CX
     if not api_key or not cx:
         return []
     try:

@@ -1,10 +1,17 @@
-import os
 import re
 import socket
 import logging
 import threading
 from datetime import datetime
 from dotenv import load_dotenv
+
+# ชื่อที่ config เป็นเจ้าของ — import ค่า ห้ามอ่าน env ซ้ำที่นี่ (ก้อน 4 · 2026-09-24 · ตัวกัน: tests/test_env_registry.py)
+# CHROMA_HOST/OLLAMA_BASE_URL เคยอ่านในฟังก์ชันทุกครั้งที่เรียก — env ใน prod นิ่ง จึงเป็นระดับโมดูลได้
+# CHROMA_* import เป็น alias — ชื่อ CHROMA_HOST/CHROMA_PORT ของโมดูลนี้คือค่า *หลัง detect* (บรรทัดล่าง)
+from core.config import CHROMA_HOST as _CFG_CHROMA_HOST
+from core.config import CHROMA_PORT as _CFG_CHROMA_PORT
+from core.config import EMBEDDING_MODEL, OLLAMA_BASE_URL
+from core.env_registry import env_float
 
 load_dotenv()
 
@@ -13,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 def _detect_chroma_host() -> tuple:
     """Auto-detect CHROMA_HOST and PORT"""
-    if os.getenv("CHROMA_HOST"):
-        return os.getenv("CHROMA_HOST"), int(os.getenv("CHROMA_PORT", "8000"))
+    if _CFG_CHROMA_HOST:
+        return _CFG_CHROMA_HOST, _CFG_CHROMA_PORT
     candidates = [
         ("chromadb", 8000),
         ("192.168.51.49", 8000),
@@ -39,7 +46,7 @@ CHROMA_HOST, CHROMA_PORT = _detect_chroma_host()
 # model ผ่าน EMBEDDING_MODEL — ปล่อยว่าง (default) = ปิด/ใช้ default MiniLM เดิม
 # (ตาม convention ของโปรเจกต์นี้ที่ฟีเจอร์ optional เป็น opt-in ด้วย env ว่าง — ตั้งเป็น
 # "paraphrase-multilingual" ใน .env เพื่อเปิดใช้จริง หลัง migrate ข้อมูลเก่าแล้วเท่านั้น)
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "")
+# `EMBEDDING_MODEL` import จาก core.config (default "" — ที่นี่ว่างคือ *ปิด* ต่างจาก utils/embed.py ที่ถอยไป multilingual)
 
 # พื้นความเกี่ยวข้องขั้นต่ำของ recall (cosine similarity) — **ไม่ใช่เลขที่เดา**
 # มาจาก ground truth 50 คู่ที่คนมาร์ค จากคำถามจริงบน prod 25 ข้อ (backlog ข้อ 12,
@@ -52,7 +59,9 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "")
 # ผู้ใช้รู้สึกแย่กว่ามี context เกินมาชิ้นหนึ่ง · ทนทานต่อการมาร์คผิด: พลิก label
 # ที่ไม่มั่นใจครบ 64 กรณีแล้ว เกณฑ์ที่ดีที่สุดอยู่ในช่วง 0.525-0.65 เสมอ
 # ⚠️ อย่าเอาเลขนี้ไปใช้กับ `user_facts` — คนละลักษณะข้อความ (ประโยคสั้น) ดู backlog ข้อ 16
-RECALL_MIN_SCORE = float(os.getenv("RECALL_MIN_SCORE", "0.55"))
+RECALL_MIN_SCORE = env_float("RECALL_MIN_SCORE", 0.55, group="Memory", doc=(
+    "cosine ขั้นต่ำของ episodic recall — จาก ground truth 50 คู่ที่คนมาร์ค (ช่วงที่รองรับ 0.525-0.65)\n"
+    "⚠️ อย่าใช้เลขนี้กับ user_facts (คนละลักษณะข้อความ)"))
 
 _client = None
 _collections = {}
@@ -65,7 +74,7 @@ _ef_lock = threading.Lock()
 def _ollama_native_url() -> str:
     """OLLAMA_BASE_URL ของโปรเจกต์นี้เป็น OpenAI-compat endpoint (ลงท้าย /v1) —
     chromadb OllamaEmbeddingFunction ต้องการ native Ollama API base แทน"""
-    base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    base = OLLAMA_BASE_URL
     return base[:-len("/v1")] if base.endswith("/v1") else base
 
 

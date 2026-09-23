@@ -71,7 +71,7 @@ def test_ส่วนเขียนมือไม่ถูกกลืนห�
     from core.env_registry import REGISTRY, render_env_example
 
     out = render_env_example(ENV_EXAMPLE.read_text())
-    for name in ("GOOGLE_SEARCH_CX", "HEARTBEAT_URL", "LINE_NOTIFY_TOKEN", "BRAVE_SEARCH_API_KEY"):
+    for name in ("HEARTBEAT_ATTEMPTS", "HEARTBEAT_URL", "LINE_NOTIFY_TOKEN", "HEARTBEAT_RETRY_WAIT"):
         assert name not in REGISTRY, f"{name} เข้า registry แล้ว — แก้เทสนี้ให้ใช้ตัวอื่น"
         assert f"{name}=" in out, f"{name} หายไปตอน generate"
 

@@ -40,7 +40,8 @@ _OK = {"web": {"results": [
 
 @pytest.fixture()
 def brave_key(monkeypatch):
-    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "bk")
+    # คีย์เป็นค่าระดับโมดูลแล้ว (registry) — patch ที่โมดูล ไม่ใช่ env
+    monkeypatch.setattr(websearch, "BRAVE_SEARCH_API_KEY", "bk")
     # ตัวหน่วงต้องไม่ทำให้ชุดเทสช้า — และการที่มันถูก "ปิดได้" ก็ต้องเทสด้วย
     monkeypatch.setattr(websearch, "_brave_last_call", 0.0, raising=False)
 
@@ -110,7 +111,7 @@ def test_http_error_ต้องเป็น_error_ไม่ใช่ผลว�
 
 def test_ไม่มีคีย์_ต้องไม่ยิงเน็ตเลย(monkeypatch, caplog):
     """ปล่อยว่าง = ปิด — ต้องเงียบสนิท ไม่ใช่ยิงแล้วได้ 401 แล้วบ่นทุกครั้ง"""
-    monkeypatch.delenv("BRAVE_SEARCH_API_KEY", raising=False)
+    monkeypatch.setattr(websearch, "BRAVE_SEARCH_API_KEY", "")
     calls = []
     _patch_get(monkeypatch, _Resp(200, _OK), sink=calls)
 

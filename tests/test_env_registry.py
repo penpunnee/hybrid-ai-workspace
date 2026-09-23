@@ -592,3 +592,103 @@ def test_code_sandbox_ค่า_docker_ยังเป็น_str():
 
     assert isinstance(c._MEM_LIMIT, str) and isinstance(c._CPU_LIMIT, str)
     assert isinstance(c._DEFAULT_TIMEOUT, int) and isinstance(c._MAX_TIMEOUT, int)
+
+
+# ── 11) ก้อน 4 ไฟล์ที่ 9-11: utils/websearch.py · utils/response_cache.py · utils/memory.py (2026-09-24) ──
+# 🔑 ตรวจบน prod ก่อนเขียน: ตั้งจริง BRAVE/GOOGLE key+cx · BRAVE_MIN_INTERVAL=1.1 · CHROMA_HOST/PORT ·
+#    EMBEDDING_MODEL — ที่เหลือ default · 4 จุดเคยอ่าน env *ในฟังก์ชัน* (key ×3 · CHROMA · OLLAMA ใน memory)
+#    ⇒ ย้ายเป็นระดับโมดูล (env ใน prod นิ่ง = พฤติกรรมเท่าเดิม) · เทสที่เคย setenv ตอนรัน → patch ค่าในโมดูล
+
+@pytest.mark.parametrize("mod", ["utils.websearch", "utils.response_cache", "utils.memory"])
+def test_websearch_cache_memory_อยู่ใน_MODULES(mod):
+    from core.env_registry import MODULES
+
+    assert mod in MODULES
+
+
+@pytest.mark.parametrize("name,expected", [
+    # websearch — MIN_SCORE/MIN_INTERVAL เป็น str เพราะมี parser เดิม ("off"/ค่าไม่ถูกต้อง → default + warning)
+    ("WEB_SEARCH_MIN_SCORE", "0.35"),
+    ("BRAVE_MIN_INTERVAL", "1.1"),
+    ("BRAVE_SEARCH_API_KEY", ""),
+    ("GOOGLE_SEARCH_API_KEY", ""),
+    ("GOOGLE_SEARCH_CX", ""),
+    # response_cache — DB ลง "" (default จริงคำนวณจาก NAS_DATA_PATH)
+    ("RESPONSE_CACHE_DB", ""),
+    ("RESPONSE_CACHE_ENABLED", True),
+    ("RESPONSE_CACHE_THRESHOLD", 0.92),
+    ("RESPONSE_CACHE_TTL_DAYS", 30),
+    ("RESPONSE_CACHE_MAX", 1000),
+    # memory
+    ("RECALL_MIN_SCORE", 0.55),
+])
+def test_default_ของ_websearch_cache_memory_เท่าของเดิม(name, expected):
+    from core.env_registry import REGISTRY, load_all
+
+    load_all()
+    spec = REGISTRY[name]
+    assert spec.default == expected and type(spec.default) is type(expected), (
+        f"{name}: default เป็น {spec.default!r} ควรเป็น {expected!r}")
+    assert spec.doc.strip()
+
+
+def test_memory_ไม่ลงทะเบียนชื่อที่_config_เป็นเจ้าของ():
+    """CHROMA_HOST/CHROMA_PORT/EMBEDDING_MODEL/OLLAMA_BASE_URL ต้อง import จาก core.config"""
+    names = _helper_names((REPO / "utils" / "memory.py").read_text())
+    assert not names & {"CHROMA_HOST", "CHROMA_PORT", "EMBEDDING_MODEL", "OLLAMA_BASE_URL"}, names
+    assert "RECALL_MIN_SCORE" in names
+
+
+@pytest.mark.parametrize("raw,expected", [
+    (None, 0.35), ("0.5", 0.5), ("off", None), ("", None), ("0", None), ("abc", 0.35),
+])
+def test_WEB_SEARCH_MIN_SCORE_ยัง_parse_แบบเดิม(monkeypatch, raw, expected):
+    w = _reload_with(monkeypatch, "utils.websearch", {"WEB_SEARCH_MIN_SCORE": raw})
+    assert w.WEB_SEARCH_MIN_SCORE == expected
+
+
+@pytest.mark.parametrize("raw,expected", [
+    (None, 1.1), ("2.5", 2.5), ("0", 1.1), ("-1", 1.1), ("abc", 1.1),
+])
+def test_BRAVE_MIN_INTERVAL_ยังกันค่าไม่บวกแบบเดิม(monkeypatch, raw, expected):
+    """0/ติดลบ/พิมพ์ผิด → 1.1 พร้อม warning (บทเรียน TTS_MAX_CHARS=0 — ตัวหน่วงหายเงียบ = 429 ทุกตัวที่ 2)"""
+    w = _reload_with(monkeypatch, "utils.websearch", {"BRAVE_MIN_INTERVAL": raw})
+    assert w._brave_min_interval() == expected
+
+
+def test_BRAVE_key_ว่าง_ไม่ยิงเน็ต(monkeypatch):
+    import requests
+
+    calls = []
+    monkeypatch.setattr(requests, "get", lambda *a, **k: calls.append(a) or (_ for _ in ()).throw(AssertionError("ต้องไม่ถูกเรียก")))
+    w = _reload_with(monkeypatch, "utils.websearch", {"BRAVE_SEARCH_API_KEY": ""})
+    assert w._brave_search("x") == [] and calls == []
+
+
+@pytest.mark.parametrize("raw,use_default", [(None, True), ("", True), ("/tmp/r.db", False)])
+def test_RESPONSE_CACHE_DB_ว่างหรือไม่ตั้ง_ใช้_path_ใต้_NAS_DATA_PATH(monkeypatch, raw, use_default):
+    import sys
+
+    rc = _reload_with(monkeypatch, "utils.response_cache", {"RESPONSE_CACHE_DB": raw})
+    cfg = sys.modules["core.config"]
+    assert rc._DB_PATH == (cfg.RESPONSE_CACHE_DB if use_default else raw)
+
+
+def test_memory_detect_chroma_ใช้ค่าจาก_config(monkeypatch):
+    m = _reload_with(monkeypatch, "utils.memory", {"CHROMA_HOST": "10.0.0.9", "CHROMA_PORT": "9001"})
+    assert m._detect_chroma_host() == ("10.0.0.9", 9001)
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("http://x:11434/v1", "http://x:11434"), ("http://x:11434", "http://x:11434"),
+])
+def test_memory_ollama_native_url_ใช้ค่าจาก_config(monkeypatch, raw, expected):
+    m = _reload_with(monkeypatch, "utils.memory", {"OLLAMA_BASE_URL": raw})
+    assert m._ollama_native_url() == expected
+
+
+@pytest.mark.parametrize("raw,expected", [(None, ""), ("", ""), ("paraphrase-multilingual", "paraphrase-multilingual")])
+def test_memory_EMBEDDING_MODEL_ว่าง_ยังคือปิด_EF(monkeypatch, raw, expected):
+    """คนละความหมายกับ embed (ที่ถอยไป multilingual) — ที่นี่ว่างต้องคงว่าง"""
+    m = _reload_with(monkeypatch, "utils.memory", {"EMBEDDING_MODEL": raw})
+    assert m.EMBEDDING_MODEL == expected

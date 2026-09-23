@@ -60,7 +60,8 @@ REGISTRY: dict[str, EnvSpec] = {}
 #    จะไม่เห็นชื่อของ `utils/llm.py` เลย แล้ว `.env.example` ขาดไปเงียบๆ → ใช้ `load_all()`
 MODULES: tuple[str, ...] = ("core.config", "utils.llm", "agents.orchestrator", "utils.summarize",
                            "utils.home_tools", "utils.voice", "utils.fs_tools", "utils.embed",
-                           "utils.code_sandbox")
+                           "utils.code_sandbox", "utils.websearch", "utils.response_cache",
+                           "utils.memory")
 
 
 def load_all() -> dict[str, EnvSpec]:

@@ -31,8 +31,9 @@ class _Resp:
 
 @pytest.fixture(autouse=True)
 def _keys(monkeypatch):
-    monkeypatch.setenv("GOOGLE_SEARCH_API_KEY", "k")
-    monkeypatch.setenv("GOOGLE_SEARCH_CX", "cx")
+    # คีย์เป็นค่าระดับโมดูลแล้ว (registry) — patch ที่โมดูล ไม่ใช่ env
+    monkeypatch.setattr(websearch, "GOOGLE_SEARCH_API_KEY", "k")
+    monkeypatch.setattr(websearch, "GOOGLE_SEARCH_CX", "cx")
 
 
 def _patch(monkeypatch, resp):

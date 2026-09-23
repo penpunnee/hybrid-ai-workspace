@@ -29,7 +29,7 @@ def test_disabled_by_default_returns_none(monkeypatch):
 
 def test_enabled_returns_ollama_embedding_function(monkeypatch):
     _reset_ef_singleton(monkeypatch, "paraphrase-multilingual")
-    monkeypatch.setenv("OLLAMA_BASE_URL", "http://192.168.51.235:11434/v1")
+    monkeypatch.setattr(memory_mod, "OLLAMA_BASE_URL", "http://192.168.51.235:11434/v1")  # ค่าระดับโมดูล (import จาก config)
 
     calls = {}
 
@@ -80,10 +80,10 @@ def test_singleton_only_constructs_once(monkeypatch):
 
 
 def test_native_url_strips_v1_suffix(monkeypatch):
-    monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.setattr(memory_mod, "OLLAMA_BASE_URL", "http://localhost:11434/v1")
     assert memory_mod._ollama_native_url() == "http://localhost:11434"
 
-    monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    monkeypatch.setattr(memory_mod, "OLLAMA_BASE_URL", "http://localhost:11434")
     assert memory_mod._ollama_native_url() == "http://localhost:11434"
 
 
