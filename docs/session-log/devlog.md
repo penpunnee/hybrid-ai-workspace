@@ -1,5 +1,48 @@
 ---
 
+## [2026-09-23] config ก้อน 1 — env ชื่อเดียวกัน default ต้องตรงกัน (`ปิด 6 ชื่อ 27 จุด`)
+user เลือก "ก้อน 1 ก่อนแล้วค่อยดูกัน" จากแผน 4 ก้อน (ดูท้ายหัวข้อ) · สำรวจก่อนด้วย subagent:
+**`os.getenv` 193 จุด/40 ไฟล์ · ชื่อไม่ซ้ำ 122 · `core/config.py` ถือแค่ 38 = 31%** ·
+`.env` prod มี **36 คีย์** · เอกสาร 4 แหล่งดริฟต์กัน (โค้ดอ่านแต่ไม่มีในเอกสารไหนเลย **38 ตัว**)
+- 🔴 **ตัวกันเดิม `test_env_docs_ratchet.py` ตรวจทิศ *เอกสาร → โค้ด* ทางเดียว และจับแค่ชื่อ ไม่เคยแตะค่า**
+  ⇒ env เดียวกัน default คนละค่าได้โดยไม่มีอะไรร้อง (ช่องนี้เปิดอยู่ตลอด)
+- **ของอันตรายจริง 2 ตัว:**
+  · `LMSTUDIO_BASE_URL` 10 จุด — 6 จุดเป็น `""` (opt-in ปิด ตามที่เอกสารโฆษณา) แต่
+    `embed`/`reflection`/`query_rewrite`/`skill_discovery` default เป็น **IP เครื่อง PC
+    `192.168.51.235:1234` ตรงๆ** ⇒ `.env` หายเมื่อไร 4 ไฟล์นี้ยิงหา PC เงียบๆ แทนที่จะปิดตัวเอง
+  · `GEMINI_MODEL` 5 จุด/3 ค่า — `ocr`/`summarize`/`orchestrator` default = **`gemini-2.5-flash`
+    ซึ่งอยู่ใน `RETIRED_GEMINI_MODELS` ของ `utils/llm.py` เอง** (404 บนโปรเจกต์ปัจจุบัน)
+    รอดมาได้เพราะ prod เซ็ต `.env` ทับ = กับระเบิดรอวัน `.env` หาย
+  · อีก 4: `LMSTUDIO_CHAT_MODEL` (3 ค่า) · `LMSTUDIO_REASON_MODEL` · `LMSTUDIO_API_KEY` · `CHROMA_HOST`
+- **เทสก่อนแก้** `tests/test_env_default_consistency.py` — เดิน **AST** ไม่ใช่ regex ·
+  **คลี่ default ที่เขียนเป็นชื่อค่าคงที่ระดับโมดูล** (ไม่งั้นจุดที่ถูกที่สุดคือ `GEMINI_MODEL_DEFAULT`
+  จะถูกมองข้าม) · เกณฑ์ผูกกับ **คุณสมบัติ ไม่ใช่รายชื่อ** ⇒ env ใหม่ถูกคุมทันที
+  · กลุ่มควบคุม 3 ตัว: สแกนเนอร์มีตา · จับความขัดแย้งที่ปลูกไว้ได้ · **ของที่ตรงกันต้องไม่ถูกรายงาน**
+    (กันเทสที่แดงตลอดซึ่งก็ไร้ประโยชน์พอกัน)
+- **แก้:** 4 ไฟล์อ่าน `LMSTUDIO_BASE_URL` จาก `core/config.py` · `ocr`/`summarize`/`orchestrator`
+  อ่าน `GEMINI_MODEL` จาก `utils/llm.py` ที่เดียว · `dream`/`llm`/`orchestrator` ใช้ค่า LM Studio จาก config
+  · `router.py` **เลิกใส่ default ว่าง** ใช้ `os.environ.get()` เปล่า เพราะเจตนาคือ "แนบ Authorization
+  เฉพาะเมื่อผู้ใช้ตั้งคีย์เอง" — **"ไม่ตั้ง" ≠ "ตั้งเป็นค่าว่าง"** (ช่องนี้จงใจเปิดไว้ในเกณฑ์)
+  · `skills_search` ย้าย fallback `localhost` มาไว้ที่จุดใช้งาน · **ถอด `core.config.GEMINI_MODEL`
+  ที่ไม่มีใคร import เลยสักที่** (ค่าค้าง `gemini-2.0-flash`)
+- ✅ 1834 passed/17 skipped · ruff · `import server` ผ่าน (ไม่มี circular import แม้ `utils/llm`
+  จะ import `core.config` แล้ว — `core.config` import แค่ `utils.voice` ที่ไม่มี local import)
+  · **mutation 5/5 ถูกฆ่า** (เอา IP กลับ · เอา 2.5-flash กลับ · ปิดการคลี่ค่าคงที่ · เกณฑ์ >1→>2 ·
+  ให้ scanner นับแต่ชื่อ)
+- 🟢 **deploy + verify บน prod:** `grep -c 192.168.51.235` ในคอนเทนเนอร์ = **0 ทั้ง 4 ไฟล์** ·
+  `GEMINI_MODEL` ทั้ง 3 จุด = `gemini-3.5-flash-lite` ตรงกัน · `/api/config` 200 · `gemini_ok=true`
+  · **prod เซ็ต 5/6 ชื่อนี้ไว้ใน `.env` อยู่แล้ว ⇒ พฤติกรรมไม่เปลี่ยน**
+  · ⚠️ `local_ok=false` เพราะ **PC `.235` ปิดอยู่** (LM Studio ล่มตั้งแต่ 09-22 20:11 ก่อน deploy) ไม่เกี่ยวกัน
+- ⏭️ **ก้อน 2-4 ยังไม่ทำ (user ยังไม่เคาะ):** 2) helper `env_str/env_int/env_bool` ที่จด registry
+  ขณะโหลด (ไฟล์อื่นไม่ต้องแก้) 3) generate `.env.example` จาก registry + เทสเทียบ = ปิดทิศ
+  **โค้ด → เอกสาร** ที่ยังเปิดอยู่ (38 ตัว) 4) ย้าย env ที่เหลือเข้า registry ทีละโดเมน
+  · **ไม่เอา `pydantic-settings`** (มีใน lock แต่ไม่มีใน `requirements.txt` และไม่มีใครใช้) —
+  บังคับเปลี่ยนวิธี import ทุกไฟล์โดยไม่ได้อะไรเพิ่มจาก registry เล็กๆ
+- 📌 **ช่องที่ยังเปิดอยู่ เขียนไว้ใน docstring ของเทสแล้ว:** default ที่ *คำนวณ* เทียบไม่ได้
+  ⇒ `DB_PATH` (`core/config.py` relative vs `utils/history.py` absolute — resolve คนละไฟล์
+  ถ้า cwd ≠ repo) **ยังหลุดอยู่โดยตั้งใจ**
+
+
 ## [2026-09-21 ดึก] เสียงอ่านนิยายเบา — หน้าทดสอบ A/B ชี้ว่าเป็นที่ Web Audio ไม่ใช่ไมค์
 - user: คุยปกติ · อ่านนิยายเบา · iPhone ลำโพงเครื่อง สุดเสียง แนบหูก็เบา · ปิด-เปิด Safari / อัป iOS ไม่หาย
 - ⚠️ ผมเคยอ้างว่า "09-18 ไมค์เปิดระหว่างอ่าน" จากการที่ไม่มีบรรทัด `ปิดสาย` → **ผิด** heartbeat ช่วงอ่าน 09-18 = 0 เท่าวันนี้
