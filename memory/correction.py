@@ -151,7 +151,8 @@ def llm_extractor(correction: str, wrong_answer: str) -> Optional[str]:
     # timeout กว้างได้เพราะผู้เรียกอยู่ในเธรดเบื้องหลัง (ดู routers/chat.py) —
     # ผู้ใช้ไม่ได้รอผลนี้ · โมเดล reasoning ใช้เวลาจริง ~40-60 วิ
     timeout = float(os.getenv("CORRECTION_EXTRACT_TIMEOUT", "60"))
-    client = OpenAI(base_url=base_url, api_key=os.getenv("LMSTUDIO_API_KEY", "lmstudio"), timeout=timeout)
+    from core.config import LMSTUDIO_API_KEY  # ค่าว่างถอยไป placeholder ที่นั่น
+    client = OpenAI(base_url=base_url, api_key=LMSTUDIO_API_KEY, timeout=timeout)
     resp = client.chat.completions.create(
         model=model,
         messages=[

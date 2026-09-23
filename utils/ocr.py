@@ -14,10 +14,11 @@ import io
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
+from core.config import LMSTUDIO_API_KEY as _CFG_LMSTUDIO_API_KEY
 from utils.llm import GEMINI_MODEL  # ที่เดียว — เดิมที่นี่ default เป็นรุ่นที่ปิดไปแล้ว
 
 _LMSTUDIO_BASE_URL    = os.getenv("LMSTUDIO_BASE_URL", "")
-_LMSTUDIO_API_KEY     = os.getenv("LMSTUDIO_API_KEY", "lmstudio")
+_LMSTUDIO_API_KEY     = _CFG_LMSTUDIO_API_KEY  # ค่าว่างถอยไป placeholder ที่ core/config.py
 _LMSTUDIO_VISION_MODEL = os.getenv("LMSTUDIO_VISION_MODEL", "llama-3.2-11b-vision-instruct")
 _LMSTUDIO_TIMEOUT     = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
 

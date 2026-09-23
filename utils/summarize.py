@@ -10,10 +10,12 @@ import os
 import logging
 from openai import OpenAI
 
+from core.config import LMSTUDIO_API_KEY as _CFG_LMSTUDIO_API_KEY
+
 logger = logging.getLogger(__name__)
 
 _LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "")
-_LMSTUDIO_API_KEY  = os.getenv("LMSTUDIO_API_KEY", "lmstudio")
+_LMSTUDIO_API_KEY  = _CFG_LMSTUDIO_API_KEY  # ค่าว่างถอยไป placeholder ที่ core/config.py
 _LMSTUDIO_REASON_MODEL = os.getenv("LMSTUDIO_REASON_MODEL", "qwen/qwen3.5-9b")
 _LMSTUDIO_TIMEOUT  = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
 

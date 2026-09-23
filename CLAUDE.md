@@ -715,11 +715,12 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > ที่ prod resolve ได้ก่อน/หลัง (probe ในคอนเทนเนอร์)
 > ⚠️ **ชื่อที่มีเจ้าของแล้ว ให้ import ค่า ห้ามลงทะเบียนซ้ำ** (มีเทสบังคับ)
 > ⚠️ **ไม่เติม `MODULES` = ชื่อไม่เข้า `.env.example` เงียบๆ** (REGISTRY เติมตอน import)
-> ⚠️ env ที่ "ไม่ตั้ง ≠ ตั้งค่าว่าง" (`LMSTUDIO_API_KEY` ใน `reasoning/router.py`)
-> **ห้ามยัดเข้า registry แบบมี default** — จะเปลี่ยนพฤติกรรมเงียบๆ
+> ⚠️ `reasoning/router.py` อ่าน `LMSTUDIO_API_KEY` เอง**โดยไม่มี default** โดยตั้งใจ (ไม่ตั้ง/ว่าง =
+> ไม่แนบ Authorization) — **อย่าย้ายไปใช้ค่าจาก config** (ค่านั้นถอยไป placeholder เสมอ)
 > 🔑 mutation: ดูด้วยว่า **แดงกี่ตัว** — fixture พังทำให้ได้ "killed" ปลอม 10/10 มาแล้ว
 > 🐛 **บั๊กที่ยังเปิด (ตรวจด้วยหลักฐานแล้ว · devlog [2026-09-23 ต่อ 4/5]):**
-> ✅ ~~(1) Ollama ReAct ส่งคำตอบกุ~~ แก้แล้ว `47d94e5` · (2) `LMSTUDIO_API_KEY=` ว่าง ⇒ แอปล้มตอนเริ่ม
+> ✅ ~~(1) Ollama ReAct ส่งคำตอบกุ~~ แก้แล้ว `47d94e5` · ✅ ~~(2) `LMSTUDIO_API_KEY=` ว่าง ⇒ แอปล้ม~~
+> แก้แล้ว (ค่าว่าง = ไม่ตั้ง → placeholder ที่ `core/config.py` ที่เดียว · devlog [ต่อ 8])
 > (3) vault sync ตอน PC ปิด → index ค้างเวอร์ชันเก่า · ไม่มี retry อัตโนมัติ · แต่ละรอบช้าถึง 22 นาที
 > (❌ ~~"UI ขึ้น ✅ ทั้งที่มี errors"~~ **ผิด ถอนแล้ว** — UI ขึ้น ❌ ถูกต้องมาตั้งแต่ `df8e018` · devlog [ต่อ 7])
 > ✅ ~~(4) web_search ล้มทั้งก้อนเพราะหน้าเว็บช้า~~ แก้แล้ว `3bb1803` (`fetch_url_safe(deadline=)`
