@@ -1,5 +1,19 @@
 ---
 
+## [2026-09-23 ต่อ 11] vault sync อัตโนมัติเมื่อ PC กลับมา (`f3a4e9d`)
+**หลักฐานก่อนออกแบบ:** error ของ vault sync ทั้งหมดใน log 3 ไฟล์ = **103 ครั้ง เป็นเรื่องต่อไม่ติดทั้งหมด**
+(`timed out in upsert.` 90 · `timed out in _forward_request` 6 · `Failed to connect to Ollama` 5 · `timed out` 2)
+ไม่เคยมีไฟล์ล้มถาวร — แต่ยังกันวนไม่จบไว้
+**ดีไซน์:** `_catchup_pending` ตั้งจากผลของ sync ทุกรอบ (halted/errors = ค้าง · ok = หาย · busy ไม่แตะ) ·
+**เริ่มเป็นค้างทุกครั้งที่แอปเริ่ม** · job ทุก 5 นาที (`vault_catchup`, max_instances=1, coalesce):
+ค้าง + TCP 2 วิไป embedder ต่อได้ → `sync_vault(wait_timeout=0)` · ต่อไม่ได้ → ข้าม**เงียบ** (DEBUG) ·
+ต่อได้แต่ยังมี error ที่ไม่ใช่ halted → **เลิกลองอัตโนมัติ** + WARNING ให้กดเอง
+**พิสูจน์บน prod ก่อน deploy** (ChromaDB/EF/TCP จริง · vault+collection ชั่วคราว ลบแล้ว):
+PC ปิด job ข้าม 2.0 วิ ไม่มี ERROR → คนกด halted → PC กลับมา job **sync 3 ไฟล์ หายค้าง** → รอบถัดไป 0 วิ ·
+**หลัง deploy:** scheduler ลงทะเบียน 08:51:29 → tick แรก **08:56:30** `Vault catch-up: sync สำเร็จ` ·
+1964 passed · mutation **10/10** · CI เขียว
+⚪ ข้อจำกัด: สถานะค้างอยู่ในหน่วยความจำ (แต่เริ่มเป็นค้างเมื่อ restart จึงไม่หลุด) · ช้าสุด 5 นาทีหลัง PC กลับมา
+
 ## [2026-09-23 ต่อ 10] กัน vault sync ซ้อนกัน — รอบที่สองรอคิว (`c51f86b`)
 **หลักฐานก่อนออกแบบ:** log 09-23 มี 2 รอบซ้อนจริง (เริ่ม ~04:30:45 / ~04:37:52) · ปุ่ม UI disable
 ระหว่าง sync อยู่แล้ว (`app.tsx:1617`) ⇒ ซ้อนจากคนละแท็บ/เครื่อง/curl · **uvicorn process เดียว**
