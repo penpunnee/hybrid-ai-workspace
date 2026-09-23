@@ -703,7 +703,31 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-21 บ่าย**)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-23**)
+
+> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 — เริ่มที่ `utils/llm.py` (user สั่งไว้ 09-23)**
+> ย้าย env ของ `utils/llm.py` (**28 จุด** = ไฟล์ที่เยอะสุด) เข้า `core/env_registry.py`
+> แล้วค่อยไล่ `agents/orchestrator.py` (11) → ที่เหลือ · **ทีละไฟล์ ทีละ commit**
+> วิธีทำ (พิสูจน์มาแล้ว 3 ก้อน): เทสแดงก่อน → ย้าย → `python scripts/gen_env_example.py --write`
+> → ชุดเต็ม + ruff + mutation → deploy + verify ในคอนเทนเนอร์
+> ⚠️ **`utils/llm.py` import `core.config` อยู่แล้ว** (ก้อน 1 ใส่ไว้) ไม่มี circular import
+> ⚠️ `GEMINI_MODEL_DEFAULT`/`RETIRED_GEMINI_MODELS` **ต้องอยู่ใน `utils/llm.py` ต่อไป** —
+> `tests/test_gemini_health.py` ตรึงทั้งชื่อค่าคงที่และ *รูปร่างบรรทัด* ที่อ่าน env ไว้
+> ⚠️ env ที่เป็น "ไม่ตั้ง ≠ ตั้งค่าว่าง" (เช่น `LMSTUDIO_API_KEY` ใน `reasoning/router.py`)
+> **ห้ามยัดเข้า registry แบบมี default** — จะเปลี่ยนพฤติกรรมเงียบๆ
+>
+> ## ✅ 09-23 ทำเสร็จ 3 ก้อน (devlog [2026-09-23] ×3 · **อย่าทำซ้ำ**)
+> | ก้อน | ได้อะไร |
+> |---|---|
+> | 1 | ปิด default ขัดกัน **6 ชื่อ 27 จุด** — `LMSTUDIO_BASE_URL` 4 ไฟล์เคย default เป็น **IP เครื่อง PC** · `GEMINI_MODEL` 3 ไฟล์เคยเป็นรุ่นที่ **retired (404)** · เทส `test_env_default_consistency.py` (AST · ผูกกับคุณสมบัติ) |
+> | 2 | `core/env_registry.py` — `core/config.py` อ่าน env ผ่าน helper (**27 ชื่อ 6 กลุ่ม** · doc บังคับ) · ไฟล์อื่นไม่ต้องแก้ |
+> | 3 | `.env.example` ส่วนบน **generate จากโค้ด** · เพิ่ม env แล้วไม่ regenerate = **CI แดง** |
+> mutation รวม 18/18 · ทั้งหมด deploy + verify บน prod + CI เขียว
+> 🔑 **บทเรียนซ้ำ 2 รอบในวันเดียว: ตัวกันที่ผูกกับ *รูปแบบการเขียน* พังตอนรูปแบบเปลี่ยน**
+> (regex `getenv(` ของ ratchet · เกณฑ์ "คำเตือนต้องอยู่บรรทัดเดียวกับ `NAME=`")
+> 🔑 **เทสที่อ่าน global state ต้อง assert ว่า state ถูกเติมแล้ว** — mutation จับได้ว่า
+> `test_ทุกรายการมีคำอธิบาย` วนลิสต์เปล่าแล้วผ่านฟรี
+>
 
 > ## 🧩 09-23: config ก้อน 1 เสร็จ — env ชื่อเดียวกัน default ต้องตรงกัน (devlog [2026-09-23])
 > ตัวกันใหม่ `tests/test_env_default_consistency.py` (AST · ผูกกับคุณสมบัติ ไม่ใช่รายชื่อ · mutation 5/5)
