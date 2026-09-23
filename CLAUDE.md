@@ -721,7 +721,8 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > 🐛 **บั๊กที่ยังเปิด (ตรวจด้วยหลักฐานแล้ว · devlog [2026-09-23 ต่อ 4/5]):**
 > ✅ ~~(1) Ollama ReAct ส่งคำตอบกุ~~ แก้แล้ว `47d94e5` · ✅ ~~(2) `LMSTUDIO_API_KEY=` ว่าง ⇒ แอปล้ม~~
 > แก้แล้ว (ค่าว่าง = ไม่ตั้ง → placeholder ที่ `core/config.py` ที่เดียว · devlog [ต่อ 8])
-> (3) vault sync ตอน PC ปิด → index ค้างเวอร์ชันเก่า · ไม่มี retry อัตโนมัติ · แต่ละรอบช้าถึง 22 นาที
+> (3) vault sync ตอน PC ปิด: ✅ ~~ช้า 22 นาที~~ จบ ~2 วิแล้ว `0329561` · ยังเหลือ: ไม่มี retry อัตโนมัติ ·
+> sync 2 รอบซ้อนกันได้ (devlog [ต่อ 9])
 > (❌ ~~"UI ขึ้น ✅ ทั้งที่มี errors"~~ **ผิด ถอนแล้ว** — UI ขึ้น ❌ ถูกต้องมาตั้งแต่ `df8e018` · devlog [ต่อ 7])
 > ✅ ~~(4) web_search ล้มทั้งก้อนเพราะหน้าเว็บช้า~~ แก้แล้ว `3bb1803` (`fetch_url_safe(deadline=)`
 > \+ ดัก `FuturesTimeout`) · devlog [2026-09-23 ต่อ 6]
