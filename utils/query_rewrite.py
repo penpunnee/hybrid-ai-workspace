@@ -11,7 +11,6 @@
 """
 import json
 import logging
-import os
 import re
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
@@ -23,13 +22,21 @@ from openai import OpenAI
 # (ตัวกัน: tests/test_env_default_consistency.py)
 
 from core.config import LMSTUDIO_BASE_URL as _CFG_LMSTUDIO_BASE_URL
+from core.config import LMSTUDIO_CHAT_MODEL as _CFG_LMSTUDIO_CHAT_MODEL
+from core.env_registry import env_bool, env_int, env_str
 
 logger = logging.getLogger(__name__)
 
+# env ของ query rewrite — ไฟล์นี้เป็นเจ้าของ 3 ชื่อ (ก้อน 4 · 2026-09-24 · ตัวกัน: tests/test_env_registry.py)
+_G = "Query Rewrite (Phase B)"
 _LMSTUDIO_BASE_URL = _CFG_LMSTUDIO_BASE_URL
-_REWRITE_MODEL = os.getenv("QUERY_REWRITE_MODEL", os.getenv("LMSTUDIO_CHAT_MODEL", "google/gemma-4-e4b"))
-_REWRITE_TIMEOUT = int(os.getenv("QUERY_REWRITE_TIMEOUT", "8"))
-_REWRITE_ENABLED = os.getenv("QUERY_REWRITE_ENABLED", "true").lower() == "true"
+# ลงทะเบียน "" — default เดิมคือ os.getenv("LMSTUDIO_CHAT_MODEL") ซ้อน (ค่าของ config) · ว่าง/ไม่ตั้ง = LMSTUDIO_CHAT_MODEL
+_REWRITE_MODEL = env_str("QUERY_REWRITE_MODEL", "", group=_G,
+                         doc="โมเดล rewrite คำค้น (LM Studio) — ว่าง = LMSTUDIO_CHAT_MODEL") or _CFG_LMSTUDIO_CHAT_MODEL
+_REWRITE_TIMEOUT = env_int("QUERY_REWRITE_TIMEOUT", 8, group=_G, doc="วินาที timeout (เกิน = ใช้ _fallback/clean_query)")
+_REWRITE_ENABLED = env_bool("QUERY_REWRITE_ENABLED", True, group=_G, doc=(
+    "false = ไม่เรียก LLM rewrite เลย (ใช้ clean_query กฎล้วน)\n"
+    "⚠️ กับ Qwen3.5 เส้น LLM เป็น no-op อยู่แล้ว (finish_reason=length · thinking ปิดไม่ได้) — ดู CLAUDE.md"))
 
 _client = OpenAI(base_url=_LMSTUDIO_BASE_URL, api_key="lmstudio", timeout=_REWRITE_TIMEOUT)
 

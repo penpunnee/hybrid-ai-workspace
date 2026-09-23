@@ -791,3 +791,80 @@ def test_scheduled_dream_เลือก_provider_จาก_GEMINI_API_KEY_ข�
     sched = _reload_with(monkeypatch, "core.scheduler", {"GEMINI_API_KEY": key})
     sched._scheduled_dream()
     assert seen.get("provider") == expected
+
+
+# ── 13) ก้อน 4 ไฟล์ที่ 15-17: utils/reflection.py · utils/query_rewrite.py · utils/ocr.py (2026-09-24) ──
+# 🔑 ตรวจบน prod ก่อนเขียน: REFLECTION_*/QUERY_REWRITE_* ไม่ได้ตั้งสักตัว · LMSTUDIO_*/GEMINI_API_KEY ตั้ง
+#    (เจ้าของ config) · *_MODEL เดิม default เป็น `os.getenv("LMSTUDIO_..._MODEL", ...)` ซ้อน ⇒ ลงทะเบียน ""
+#    แล้ว `or <ค่าจาก config>` (ตัวเลข default ซ้อนลงทะเบียนไม่ได้) · ocr อ่าน 4 ชื่อของ config ซ้ำ → import
+
+@pytest.mark.parametrize("mod", ["utils.reflection", "utils.query_rewrite", "utils.ocr"])
+def test_reflection_rewrite_ocr_อยู่ใน_MODULES(mod):
+    from core.env_registry import MODULES
+
+    assert mod in MODULES
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("REFLECTION_MODEL", ""),          # ว่าง = LMSTUDIO_REASON_MODEL
+    ("REFLECTION_TIMEOUT", 30),
+    ("REFLECTION_THRESHOLD", 0.7),
+    ("QUERY_REWRITE_MODEL", ""),       # ว่าง = LMSTUDIO_CHAT_MODEL
+    ("QUERY_REWRITE_TIMEOUT", 8),
+    ("QUERY_REWRITE_ENABLED", True),
+])
+def test_default_ของ_reflection_rewrite_เท่าของเดิม(name, expected):
+    from core.env_registry import REGISTRY, load_all
+
+    load_all()
+    spec = REGISTRY[name]
+    assert spec.default == expected and type(spec.default) is type(expected), (
+        f"{name}: default เป็น {spec.default!r} ควรเป็น {expected!r}")
+    assert spec.doc.strip()
+
+
+def test_ocr_ไม่ลงทะเบียนอะไร_และ_reflection_rewrite_ไม่ลงชื่อของ_config():
+    assert _helper_names((REPO / "utils" / "ocr.py").read_text()) == set()
+    for f in ("reflection", "query_rewrite"):
+        names = _helper_names((REPO / "utils" / f"{f}.py").read_text())
+        assert not names & {"LMSTUDIO_BASE_URL", "LMSTUDIO_REASON_MODEL", "LMSTUDIO_CHAT_MODEL",
+                            "GEMINI_API_KEY"}, (f, names)
+
+
+@pytest.mark.parametrize("raw,expected", [(None, "r-model"), ("", "r-model"), ("my-critic", "my-critic")])
+def test_REFLECTION_MODEL_ว่างถอยไป_LMSTUDIO_REASON_MODEL(monkeypatch, raw, expected):
+    rf = _reload_with(monkeypatch, "utils.reflection",
+                      {"REFLECTION_MODEL": raw, "LMSTUDIO_REASON_MODEL": "r-model"})
+    assert rf._REFLECT_MODEL == expected
+
+
+@pytest.mark.parametrize("raw,expected", [(None, "c-model"), ("", "c-model"), ("my-rw", "my-rw")])
+def test_QUERY_REWRITE_MODEL_ว่างถอยไป_LMSTUDIO_CHAT_MODEL(monkeypatch, raw, expected):
+    qr = _reload_with(monkeypatch, "utils.query_rewrite",
+                      {"QUERY_REWRITE_MODEL": raw, "LMSTUDIO_CHAT_MODEL": "c-model"})
+    assert qr._REWRITE_MODEL == expected
+
+
+def test_ocr_ใช้ค่า_LMSTUDIO_และ_GEMINI_KEY_จาก_config(monkeypatch):
+    ocr = _reload_with(monkeypatch, "utils.ocr", {
+        "LMSTUDIO_BASE_URL": "http://h:1/v1", "LMSTUDIO_VISION_MODEL": "v-model",
+        "LMSTUDIO_TIMEOUT": "7", "GEMINI_API_KEY": "g-key"})
+    assert (ocr._LMSTUDIO_BASE_URL, ocr._LMSTUDIO_VISION_MODEL, ocr._LMSTUDIO_TIMEOUT, ocr.GEMINI_API_KEY) \
+        == ("http://h:1/v1", "v-model", 7, "g-key")
+
+
+def test_ลงทะเบียนชื่อเดียวกันจากคนละโมดูลต้องดัง_แม้_default_เท่ากัน():
+    """ปิดช่องที่ mutation จับได้ (2026-09-24): ลงซ้ำผ่าน `env_registry.env_str(...)` แบบ attribute
+    รอดสแกน AST ของ `_helper_names` และ default เท่ากันจึงผ่าน `_register` เงียบๆ
+    ⇒ บังคับที่ตัว registry: เจ้าของโมดูลเดียว · โมดูลเดิมลงซ้ำได้ (reload)"""
+    from core.env_registry import REGISTRY, env_str
+
+    name = "ZZ_OWNER_TEST"
+    REGISTRY.pop(name, None)
+    try:
+        exec('env_str(NAME, "", doc="d")', {"__name__": "mod_a", "env_str": env_str, "NAME": name})
+        exec('env_str(NAME, "", doc="d")', {"__name__": "mod_a", "env_str": env_str, "NAME": name})  # reload = ok
+        with pytest.raises(ValueError, match="สองโมดูล"):
+            exec('env_str(NAME, "", doc="d")', {"__name__": "mod_b", "env_str": env_str, "NAME": name})
+    finally:
+        REGISTRY.pop(name, None)

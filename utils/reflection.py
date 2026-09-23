@@ -9,7 +9,6 @@ Flow:
 """
 import json
 import logging
-import os
 import re
 from dataclasses import dataclass, field, asdict
 from typing import Optional
@@ -19,13 +18,21 @@ from openai import OpenAI
 # (ตัวกัน: tests/test_env_default_consistency.py)
 
 from core.config import LMSTUDIO_BASE_URL as _CFG_LMSTUDIO_BASE_URL
+from core.config import LMSTUDIO_REASON_MODEL as _CFG_LMSTUDIO_REASON_MODEL
+from core.env_registry import env_float, env_int, env_str
 
 logger = logging.getLogger(__name__)
 
+# env ของ reflection — ไฟล์นี้เป็นเจ้าของ 3 ชื่อ (ก้อน 4 · 2026-09-24 · ตัวกัน: tests/test_env_registry.py)
+_G = "Reflection (Phase C)"
 _LMSTUDIO_BASE_URL = _CFG_LMSTUDIO_BASE_URL
-_REFLECT_MODEL = os.getenv("REFLECTION_MODEL", os.getenv("LMSTUDIO_REASON_MODEL", "qwen/qwen3.5-9b"))
-_REFLECT_TIMEOUT = int(os.getenv("REFLECTION_TIMEOUT", "30"))
-_REFLECT_THRESHOLD = float(os.getenv("REFLECTION_THRESHOLD", "0.7"))
+# ลงทะเบียน "" — default เดิมคือ os.getenv("LMSTUDIO_REASON_MODEL") ซ้อน (ค่าของ config) ลงเป็นตัวเลขไม่ได้
+# · ว่าง/ไม่ตั้ง = LMSTUDIO_REASON_MODEL (เดิม: ตั้ง "" ได้ = โมเดลชื่อว่าง → เรียกไม่ได้)
+_REFLECT_MODEL = env_str("REFLECTION_MODEL", "", group=_G,
+                         doc="โมเดล critic (LM Studio) — ว่าง = LMSTUDIO_REASON_MODEL") or _CFG_LMSTUDIO_REASON_MODEL
+_REFLECT_TIMEOUT = env_int("REFLECTION_TIMEOUT", 30, group=_G, doc="วินาที timeout ของ critic (opt-in ต่อ request ด้วย reflect:true)")
+_REFLECT_THRESHOLD = env_float("REFLECTION_THRESHOLD", 0.7, group=_G,
+                               doc="คะแนน 0-1 ที่ต่ำกว่านี้ critic จะเสนอ revised answer")
 
 _client = OpenAI(base_url=_LMSTUDIO_BASE_URL, api_key="lmstudio", timeout=_REFLECT_TIMEOUT)
 

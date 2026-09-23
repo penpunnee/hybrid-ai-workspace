@@ -6,21 +6,24 @@ Flow:
     → ส่ง base64 ให้ Vision LLM อ่าน
     → รวมข้อความทุกหน้า → คืนกลับ
 """
-import os
 import base64
 import logging
 import io
 
 logger = logging.getLogger(__name__)
 
-GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
-from core.config import LMSTUDIO_API_KEY as _CFG_LMSTUDIO_API_KEY
-from utils.llm import GEMINI_MODEL  # ที่เดียว — เดิมที่นี่ default เป็นรุ่นที่ปิดไปแล้ว
+# ทุกชื่อ env ที่ไฟล์นี้ใช้ เจ้าของคือ core/config.py — import ค่า ไม่อ่านซ้ำ (ก้อน 4 · 2026-09-24)
+from core.config import GEMINI_API_KEY  # noqa: E402  (ชื่อสาธารณะของโมดูลนี้ — คงไว้)
+from core.config import LMSTUDIO_API_KEY as _CFG_LMSTUDIO_API_KEY  # noqa: E402
+from core.config import LMSTUDIO_BASE_URL as _CFG_LMSTUDIO_BASE_URL  # noqa: E402
+from core.config import LMSTUDIO_TIMEOUT as _CFG_LMSTUDIO_TIMEOUT  # noqa: E402
+from core.config import LMSTUDIO_VISION_MODEL as _CFG_LMSTUDIO_VISION_MODEL  # noqa: E402
+from utils.llm import GEMINI_MODEL  # noqa: E402  ที่เดียว — เดิมที่นี่ default เป็นรุ่นที่ปิดไปแล้ว
 
-_LMSTUDIO_BASE_URL    = os.getenv("LMSTUDIO_BASE_URL", "")
+_LMSTUDIO_BASE_URL    = _CFG_LMSTUDIO_BASE_URL
 _LMSTUDIO_API_KEY     = _CFG_LMSTUDIO_API_KEY  # ค่าว่างถอยไป placeholder ที่ core/config.py
-_LMSTUDIO_VISION_MODEL = os.getenv("LMSTUDIO_VISION_MODEL", "llama-3.2-11b-vision-instruct")
-_LMSTUDIO_TIMEOUT     = int(os.getenv("LMSTUDIO_TIMEOUT", "180"))
+_LMSTUDIO_VISION_MODEL = _CFG_LMSTUDIO_VISION_MODEL
+_LMSTUDIO_TIMEOUT     = _CFG_LMSTUDIO_TIMEOUT
 
 _OCR_PROMPT = (
     "คุณเป็นระบบ OCR ที่แม่นยำสูง "

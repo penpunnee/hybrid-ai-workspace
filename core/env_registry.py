@@ -61,7 +61,8 @@ REGISTRY: dict[str, EnvSpec] = {}
 MODULES: tuple[str, ...] = ("core.config", "utils.llm", "agents.orchestrator", "utils.summarize",
                            "utils.home_tools", "utils.voice", "utils.fs_tools", "utils.embed",
                            "utils.code_sandbox", "utils.websearch", "utils.response_cache",
-                           "utils.memory", "core.ratelimit", "core.observability", "core.scheduler")
+                           "utils.memory", "core.ratelimit", "core.observability", "core.scheduler",
+                           "utils.reflection", "utils.query_rewrite", "utils.ocr")
 
 
 def load_all() -> dict[str, EnvSpec]:
@@ -84,6 +85,15 @@ def _register(spec: EnvSpec) -> None:
             f"{spec.name} ถูกลงทะเบียนซ้ำด้วยค่าที่ไม่ตรงกัน: "
             f"{old.default!r} ({old.kind}) vs {spec.default!r} ({spec.kind}) — "
             "env หนึ่งตัวต้องมี default เดียวทั้งระบบ"
+        )
+    # ชื่อหนึ่งตัวมีเจ้าของโมดูลเดียว — บังคับตอนรันด้วย ไม่ใช่แค่สแกน AST ในเทส
+    # (mutation 2026-09-24: ลงซ้ำผ่าน `env_registry.env_str(...)` แบบ attribute รอดสแกน `ast.Name`
+    #  แล้ว default เท่ากันจึงผ่านเงียบ · doc/group ของตัวหลังทับตัวแรกตามลำดับ import)
+    # โมดูลเดิมลงซ้ำได้ (importlib.reload / exec ไฟล์ใหม่ในเทส ทำแบบนั้นเป็นปกติ)
+    if old is not None and old.module and spec.module and old.module != spec.module:
+        raise ValueError(
+            f"{spec.name} ถูกลงทะเบียนจากสองโมดูล: {old.module} แล้ว {spec.module} — "
+            "ให้ import ค่าจากเจ้าของแทนการอ่าน env ซ้ำ"
         )
     REGISTRY[spec.name] = spec
 
