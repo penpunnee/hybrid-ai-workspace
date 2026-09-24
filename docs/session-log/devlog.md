@@ -1,5 +1,22 @@
 ---
 
+## [2026-09-24 ต่อ 5] config ก้อน 4 ไฟล์ที่ 27-30 — `memory/correction` · `memory/lexical` · `obsidian_sync` · `db_backup` 8 จุด (`b24fd84`)
+**ตรวจ prod ก่อน (nas-cf):** 5 ชื่อใหม่ไม่ได้ตั้งสักตัว · `OBSIDIAN_VAULT_PATH=/vault` (compose) ·
+`LMSTUDIO_BASE_URL/REASON_MODEL` ตั้ง (เจ้าของ config) · baseline `0.5 · 0.5 '/vault' · './db_backups' 7`
+(cwd `/app` · mount `db_backups` มีจริง) · หลัง deploy **ตรงทุกค่า** · registry บน prod 113 ชื่อ ·
+`/api/config` 200 · 0 error
+- `memory/correction.llm_extractor` อ่าน env **ตอนเรียกทั้ง 3 ชื่อ** → `LMSTUDIO_*` import จาก config ·
+  `CORRECTION_EXTRACT_TIMEOUT` เป็นเจ้าของเอง (env_float 60.0) · เทสตรวจที่*พฤติกรรม*: base_url ว่าง →
+  ไม่สร้าง client · ตั้งแล้ว → client ได้ base_url/timeout/model จาก config (fake `openai.OpenAI` จับ kwargs)
+- `DB_BACKUP_DEST` default `"./db_backups"` **relative โดยตั้งใจ** — ในคอนเทนเนอร์ cwd=`/app` ⇒ ตรง mount
+  `/app/db_backups` · ลงทะเบียนเป็น literal ได้เลย (ไม่ใช่ path คำนวณ) · doc ห้ามเขียน `/app` (guard)
+- `test_lexical` reload โมดูลอยู่แล้ว — ไม่ต้องแก้เทส (ต่างจาก heartbeat/brave ที่ setenv ตอนเรียก)
+- `.env.example`: 5 ชื่อเข้าส่วน generate (ไม่เคยถูกจดในไฟล์นี้มาก่อน)
+- เทสแดงก่อน 10 · กลุ่มควบคุม 241 เขียว · **2168 passed/17 skipped** (+12) · ruff · **mutation 10/10**
+- เหลืออ่าน env ดิบ **18 จุด**: `reasoning/router` 4 · `tts` 3 · `ha_client` 3 · `routers/system` 2 ·
+  `routers/reader` 2 · `routers/chat`/`image_gen`/`file_export`/`history` 1 · ถัดไป ก้อน "ง่าย" 8 จุด
+  (routers 5 + image_gen/file_export/history) แล้วปิดท้ายด้วย 3 ไฟล์ที่ต้องคิดก่อน (10)
+
 ## [2026-09-24 ต่อ 4] config ก้อน 4 ตระกูล skills — 5 ไฟล์ 8 จุด (`55fa487`)
 **ตรวจ prod ก่อน (nas-cf):** `SKILLS_*` ไม่ได้ตั้งสักตัว · `CHROMA_HOST/PORT`+`LMSTUDIO_CHAT_MODEL` ตั้ง
 (เจ้าของ config) · baseline `0.38 5.0 · 0.05 0.35 · True` · หลัง deploy **ตรงทุกค่า** + singleton
