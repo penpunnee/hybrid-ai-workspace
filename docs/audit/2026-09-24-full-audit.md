@@ -7,7 +7,9 @@
 · ✅ **ก้อน 2 ปิดแล้ว 09-24 ดึก (`e5223ef` · HIGH 3, 4)** — devlog [ต่อ 11] · ข้อ 4 ร้ายแรงกว่าที่ประเมิน: prod 24/30 memory created_at เป็นของคนอื่น
 (กู้จาก id แล้ว 28 รายการ · confidence/access_count กู้ไม่ได้ → รีเซ็ตตัวนับ)
 · ✅ **ก้อน 3 ปิดแล้ว 09-24 ดึก (`82681d9` · HIGH 5, 6, 8)** — devlog [ต่อ 12] · ข้อ 5 พิสูจน์บน prod ว่าอ่าน `/proc/self/environ` ได้จริง ·
-มี 2 ทางเข้า (agent tool + `POST /api/fs/search`) ปิดที่ `search_files` จุดเดียว · ที่เหลือยังไม่แก้ (HIGH 9-14 + MEDIUM/LOW)
+มี 2 ทางเข้า (agent tool + `POST /api/fs/search`) ปิดที่ `search_files` จุดเดียว
+· ✅ **ก้อน 4 ปิดแล้ว 09-24 ดึก (`fdc269a` · HIGH 9, 10, 11, 12)** — devlog [ต่อ 13] · ข้อ 12 ยืนยัน image มี `.env`+`data` 605 MB จริง ·
+ข้อ 10 วัด prod = 0 hit (ประเมินแรงไป) · 🔴 **ค้าง: rebuild+prune image บน NAS เพื่อล้าง layer เก่า (รอ user)** · ที่เหลือยังไม่แก้ (HIGH 13-14 + MEDIUM/LOW)
 
 ## 0. runtime บน prod — สะอาด (ยืนยันของจริง)
 - NAS HEAD = main · CI เขียว · `ai-backend-1` healthy restarts=0 · watchdog/cloudflared up 4 สัปดาห์ · ERROR 24 ชม. = 0
@@ -96,5 +98,5 @@ middleware order ตรง doc · `_BodyTooLarge` ถึง middleware (ยก�
 1. XSS `/shared` + token=รหัสดิบ/WS URL/access log (ข้อ 1-2) — ปิดด้วย escape/validate token + session token สุ่มหมดอายุ + `access_log=False` หรือกรอง query
 2. ✅ ~~truncate ข้าม session (3) + `bump_access_count` สลับ metadata (4)~~ ปิดแล้ว `e5223ef` (devlog [ต่อ 11])
 3. ✅ ~~fs glob (5) + calculator (6) + markdown backslash (8)~~ ปิดแล้ว `82681d9` (devlog [ต่อ 12]) · (7) ปิดไปกับก้อน 1
-4. memory cleanup ลบ user_facts (9) + teach ซ้ำ/regex (10) + body-cap กลืน (11) + `.dockerignore` (12)
+4. ✅ ~~memory cleanup ลบ user_facts (9) + teach ซ้ำ/regex (10) + body-cap กลืน (11) + `.dockerignore` (12)~~ ปิดแล้ว `fdc269a` (devlog [ต่อ 13]) · ค้าง rebuild+prune image
 5. overlay 🗑️ จอขาว (13) + `res.ok` (14) → MEDIUM ตามลำดับในหัวข้อ 2

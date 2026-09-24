@@ -703,8 +703,24 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-24 ดึก — ปิด audit ก้อน 3**)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-24 ดึก — ปิด audit ก้อน 4**)
 
+> ## 🥇 งานแรกเซสชันหน้า (ค้างจากก้อน 4 · **รอ user อยู่หน้าจอ**): **rebuild + prune image บน NAS ล้าง `.env`/`data` ออกจาก layer เก่า**
+> image ที่ใช้อยู่ + `<none>` 6 ใบ มี `/app/.env` และ `/app/data` 605 MB ฝังอยู่ (ยืนยัน 09-24) · `.dockerignore` ใส่แล้ว (`fdc269a`) แต่ไม่ล้างของเก่า
+> ทำ: `ssh nas-cf 'cd /var/services/homes/pawin/ui && sudo -n /usr/local/bin/docker compose build hybrid-ai && sudo -n /usr/local/bin/docker compose up -d hybrid-ai'`
+> → เช็ค `docker ps` healthy + `/api/config` 200 + `docker run --rm --entrypoint sh <image> -c "ls /app/.env"` ต้องไม่มี → `docker image prune -f` แล้วนับ `docker images` ว่า
+> `<none>` หายหมด · ⚠️ recreate เคยล้มกลางทาง (`docs/reference/infra-nas.md:29`) — กู้ด้วย `compose up -d hybrid-ai` เฉยๆ · downtime ~1-2 นาที
+> · **ห้ามใช้ `--no-cache` ถ้าไม่จำเป็น** (pip ลง 121 แพ็กเกจใหม่บน NAS ช้า) · `data/` ทั้งหมดเป็น bind mount → ไม่มีข้อมูลหาย
+>
+> ## ✅ audit ก้อน 4 **ปิดแล้ว 09-24 ดึก (`fdc269a` · devlog [ต่อ 13]) — อย่าทำซ้ำ**
+> body chunked เกินเพดานเคยตอบ 200 แล้วรัน cleanup/dream/unlock ด้วย body ว่าง (3 handler `except Exception` กลืน `_BodyTooLarge`) → ตัดออก + ratchet AST ·
+> ปุ่ม 🧹 allowlist episodic (`dualvec.is_episodic_collection` — เคยจะลบ `user_facts` 1/1 + `lessons` 8/8) · `teach()` ไม่ save ซ้ำ (`taught` gate ใน `chat.py`) +
+> anchor `^` ให้ `note/remember/prefer` · `.dockerignore` · mutation 12/12 · ชุดเต็ม 2302 · **build local: image ไม่มี `.env`/`data`/`.git` + pytest ในอิมเมจ 2302 ผ่าน**
+> 🔑 **กติกาใหม่จากก้อนนี้:** handler ที่เรียก `json_body_capped` ดัก `HTTPException` เฉพาะ 400 พอ **ห้าม `except Exception`** (exception ของ middleware ต้องทะลุ) ·
+> collection ที่ "ลบได้" ตัดสินด้วย `is_episodic_collection()` ที่เดียว (prune ยังใช้เงื่อนไข inline ที่ `dream.py:470` — ควรย้ายมาใช้ตัวเดียวกัน) ·
+> `.dockerignore` ห้าม `.env.*` (พา `.env.example` หาย) · ⚪ EF conflict ใน `utils/memory.get_collection` ทำ cleanup ข้าม collection เงียบๆ ยังไม่แก้
+> ⏭️ ถัดจาก rebuild: audit ก้อน 5 (หัวข้อ 5 ข้อ 5: overlay 🗑️ จอขาว (13) + `res.ok` (14) → MEDIUM) หรือ backlog `dbId` ข้างล่าง
+>
 > ## ✅ audit ก้อน 3 **ปิดแล้ว 09-24 ดึก (`82681d9` · appscript.ui `b09252b` · devlog [ต่อ 12]) — อย่าทำซ้ำ**
 > `fs_tools.search_files` 2 ชั้น (ปฏิเสธ glob `..`/absolute · ทุก match ผ่าน `_resolve_safe`) — เคยอ่าน `/proc/self/environ` ได้จริงบน prod ผ่าน agent tool
 > **และ** `POST /api/fs/search` · `_t_calculator` = regex เดิม + AST whitelist + เพดาน `bit_length(base)*exp ≤ 100k` (`9**9**9` เคยแขวน thread ถาวร ·
@@ -712,9 +728,6 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > · mutation 14/14 · ชุดเต็ม 2265 · vitest 509
 > 🔑 **กติกาใหม่จากก้อนนี้:** ผลจาก `rglob`/glob ใดๆ ต้องผ่าน `_resolve_safe` ต่อไฟล์เหมือน read/write · เทสที่อาจแขวน (GIL) ให้ `_calc_in_subprocess` ใน `test_agents.py`
 > · **macOS ไม่มี `timeout`** — รัน pytest ที่เสี่ยงค้างแบบ background+kill เสมอ (ครั้งนี้ค้างจริง ต้อง pkill)
->
-> ## 🥇 งานถัดไป: **audit ก้อน 4 (หัวข้อ 5 ข้อ 4)** — memory cleanup ลบ `user_facts` (9) · teach ซ้ำ/regex (10) · body-cap ถูกกลืน (11) · `.dockerignore` (12)
-> หรือ backlog `dbId` ข้างล่าง — ทำแบบเดิม: ค้น 2 ชั้น → รายงาน → /scrutinize แผน → "ไล่ทุกส่วน+ความสัมพันธ์" → เทสแดง → แก้ → mutation → deploy → verify
 >
 > ## ✅ audit ก้อน 2 **ปิดแล้ว 09-24 ดึก (`e5223ef` · devlog [ต่อ 11]) — อย่าทำซ้ำ**
 > `bump_access_count` จับคู่ด้วย `res["ids"]` (Chroma คืนเรียงตาม insert ไม่ใช่ที่ขอ — ซอร์ส `sqlite.py .orderby(embeddings_t.id)` + วัดจริง prod server) ·

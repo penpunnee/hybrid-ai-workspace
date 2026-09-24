@@ -1,5 +1,40 @@
 ---
 
+## [2026-09-24 ต่อ 13] audit ก้อน 4 — body-cap ถูกกลืน · 🧹 ลบข้ามชั้นความจำ · teach ซ้ำ/regex · `.dockerignore` (`fdc269a`) ✅ deployed+verified
+**ค้นก่อนลงมือ (ค้น → รายงาน → user ถามความเห็น → /scrutinize → เคาะ 3 ข้อ):**
+- ข้อ 12 **ยืนยันบน NAS**: image ที่ `ai-backend-1` ใช้มี `/app/.env` (1298 B) + `/app/data` **605 MB** ฝังใน layer (`docker history`: `COPY . .` 660 MB) ·
+  image `<none>` ค้าง 6 ใบ (137–168 MB · 3–5 สัปดาห์) build จาก Dockerfile เดียวกัน = มี `.env` ทุกใบ · context บน NAS: `data/` 826 MB + `.git` 56 MB
+- ข้อ 11 trace: `_BodyTooLarge` (`core/body_limit.py:94` · ตั้งใจไม่สืบ HTTPException) → ทะลุ `request.stream()` ใน `json_body_capped` (loop นอก try) →
+  handler `except Exception: data = {}` 3 ที่กลืน → ทำงานต่อด้วย body ว่าง → 200 · คอมเมนต์เดิมกันแค่ 413 ของ `http_limits` (คนละ exception) ·
+  **เทสแดงที่ระดับ app จริง** (ASGI chunked ไม่มี content-length 10.75 MB → ได้ 200 ก่อนแก้) — ไม่ mock `json_body_capped` เพราะต้องพิสูจน์ด้วยว่า
+  exception ทะลุ ExceptionMiddleware (starlette 1.6.0) กลับมาถึง `BodySizeLimitMiddleware` (ถ้าได้ 500 = ยังไม่จบ)
+- ข้อ 9 **วัดบน prod**: กดปุ่มวันนี้จะลบ `memory_kwan` 19/30 (เป้าจริง) + **`user_facts` 1/1** ("เราเตอร์ที่บ้านคือ ASUS RT-BE92U") + **`lessons` 8/8** ·
+  `documents` 1,740 / `obsidian_notes` 134 / `skills_collection` 22 รอดเพราะ*ไม่มี* `timestamp` (default "9999") · probe รอบแรกล้มด้วย EF conflict
+  ของ `utils/memory.get_collection` (เรื่องเดียวกับ `get_memory_stats` 09-02 — cleanup ก็ข้าม collection นั้นเงียบๆ · ยังไม่แก้ จดไว้)
+- ข้อ 10: `teach()` 2 รอบจริง (`chat.py:159` ก่อนตอบ · `:621` เธรดหลังตอบ) → fact save 2 doc · regex: `'ช่วยดู note ใน obsidian หน่อย'` → fact verified 0.95 (รันจริง) ·
+  **แต่ prod: `user_facts` 1 doc ไม่ซ้ำ · `detect_teaching`/`detect_correction` กับ prompt จริง 600 ข้อ = 0 hit** ⇒ ระเบิดที่ยังไม่ระเบิด · audit ประเมินแรงไป
+- /scrutinize จับได้ 3: (1) flag `taught` ชน `test_test_request_header.py:61-75` (MagicMock truthy → เธรดไม่ spawn) → แก้เทสให้ `return_value=False`
+  + เทสกลุ่มตรงข้าม (2) `.env.*` ห้ามใช้ (พา `.env.example` หาย · เทส 4 ตัวอ่าน) และ **CI พิสูจน์ `.dockerignore` ไม่ได้** (checkout ไม่มี `.env`/`data/` อยู่แล้ว)
+  → ต้อง build บนเครื่องที่มี `.env` (3) predicate episodic ต้องอยู่ที่เดียว (`dualvec.is_episodic_collection`) ไม่ copy จาก prune
+- **user เคาะ:** rebuild+prune image = ขั้นแยก · anchor แค่ `note/remember/prefer` ไม่แตะ `แก้ไข` · ปุ่ม 🧹 เลิกลบ `lessons`
+
+**แก้ (`fdc269a`):** ตัด `except Exception` ใน `routers/{memory,dream,system}` + ratchet AST (handler ที่เรียก `json_body_capped` ห้ามมี bare except) ·
+`is_episodic_collection()` ใน `memory/dualvec.py` + `cleanup_old_memories` allowlist · `chat.py` `taught = bool(teach(...))` → เธรดรอบหลังข้ามเมื่อบันทึกแล้ว ·
+`teach.py` `^\s*` 3 pattern · `.dockerignore` (`.env` `.env.bak*` `data/` `.git/` `db_backups/` `logs/` `*.db` `__pycache__/` `.pytest_cache/` `node_modules/`)
+· เทส +4 ไฟล์ 25 ตัว · **mutation 12/12** · ชุดเต็ม **2302** · ruff ผ่าน
+· **build บนเครื่อง (มี `.env` 850 B + `data/` จริง)**: `/app/.env` `/app/data` `/app/.git` **ไม่มี** · `.env.example`/`CLAUDE.md`/`tests`/`scripts` อยู่ครบ ·
+  pytest ในอิมเมจ (คำสั่ง CI) **2302 ผ่าน** · image 440 MB
+
+**deploy + verify prod:** `docker restart` → `/api/config` 200 · chunked 11 MB ไป `/api/admin/unlock` (เคสแย่สุด = ปลดล็อก IP ตัวเอง) → **413 `body too large`**
+(= จาก middleware) · `is_episodic_collection` บน collection จริง: เป้า `memory_a/kwan/logic` · ข้าม `user_facts`/`lessons`/`documents`/… 11 ตัว ·
+`detect_teaching("ช่วยดู note ใน obsidian หน่อย")` → None · `chat.py` มี gate · ⚠️ **ยังไม่ได้กดปุ่ม 🧹 บน prod** (จะลบ episodic 19 ตัว — ไม่ใช่งานที่สั่ง)
+🔴 **ค้าง (user เคาะแยก):** image บน NAS ยังมี `.env`/data ใน layer จนกว่าจะ `compose build` + `up -d` + `docker image prune` — ทำตอน user อยู่หน้าจอ
+(recreate เคยล้มกลางทาง `infra-nas.md:29`) · ⚪ EF conflict ใน `get_collection` ทำ cleanup ข้าม collection เงียบๆ (เหมือน stats 09-02) ยังไม่แก้
+
+🔑 **บทเรียน:** (1) "กัน 413 แล้ว" ไม่พอ ต้องถามว่า exception *ตัวไหน* เดินมาถึง — โปรเจกต์นี้มีเพดาน 2 ชั้น 2 exception (2) allowlist ด้วย predicate ที่มีเจ้าของ
+> denylist ที่ต้องไล่เติม (3) ratchet ที่ CI พิสูจน์ไม่ได้ (ไม่มี `.env` ใน checkout) ต้องหาที่พิสูจน์ที่มีของจริง (4) audit ประเมินความรุนแรงจากโค้ดได้ แต่ขอบเขต
+ต้องวัดจาก prod — ข้อ 10 "HIGH" ที่ 0 hit จริง
+
 ## [2026-09-24 ต่อ 12] audit ก้อน 3 — `fs_search` ทะลุ root · calculator แขวน thread · markdown `/\evil.com` + code fence (`82681d9` · appscript.ui `b09252b`) ✅ deployed+verified
 **ค้นก่อนลงมือ (user: "ค้นข้อมูลก่อนแล้วรายงาน" → /scrutinize → "ไล่ดูทุกส่วนให้ครบ ไม่แน่ใจอย่าเดา"):**
 - ข้อ 5 **พิสูจน์บน prod**: `search_files("PATH=", file_glob="../../../../../../proc/self/environ")` → `ok:true count:1` ไฟล์ `/app/sandbox/../../../../../../proc/self/environ`
