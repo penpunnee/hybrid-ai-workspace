@@ -1,5 +1,34 @@
 ---
 
+## [2026-09-24 ต่อ 7] config ก้อน 4 ปิดท้าย — `reasoning/router` 4 · `utils/tts` 3 · `utils/ha_client` 3 (`f9b638b`) ⇒ **ก้อน 4 จบ: 0 จุด**
+**ตรวจ prod ก่อน (nas-cf · HEAD `a3defd8`):** CLAUDE_AUTO/ANTHROPIC_API_KEY/LMSTUDIO_API_KEY/GEMINI_TTS_MODEL/TTS_MAX_* ไม่ได้ตั้ง ·
+CLAUDE_MODEL ตั้ง = default · HA_URL (LAN `.109:8123`)/HA_TOKEN ตั้งจริง · HA_TIMEOUT=10 · router ไม่แนบ Authorization ·
+tts resolve (`2.5-flash-preview-tts`, 2000, 3) · registry 117 · **หลัง deploy ตรงทุกค่า** · registry **124** · inode 4 ไฟล์
+host=container ตรง · 0 error ใหม่ · `/api/config` 200 ใน 10 วิ
+- **`LMSTUDIO_API_KEY` (จุดที่ต้องคิด):** ข้อห้าม "ห้ามใช้ค่า config ที่ถอยไป placeholder" ชนกับ "ห้ามลงทะเบียนซ้ำ
+  (เจ้าของ = config · registry raise)" → ทางออก: config ลงทะเบียน **ค่าดิบ** `LMSTUDIO_API_KEY_RAW` (default `""` ·
+  `""` = ไม่ตั้ง/ว่าง) แล้วคำนวณ `LMSTUDIO_API_KEY = RAW or "lmstudio"` · router อ่าน RAW ตอนเรียก (import ในฟังก์ชัน
+  แบบเดียวกับ `route()` ⇒ เทส patch `core.config.LMSTUDIO_API_KEY_RAW`) ⇒ ไม่ตั้ง/ว่าง = ไม่แนบ header เหมือนเดิม ·
+  ค่าหลักที่ทุก client ใช้ไม่เปลี่ยน (`_probe` ของ test_lmstudio_api_key_empty ยังเขียว · `_ALLOWED` ว่างแล้ว) ·
+  **สิ่งที่เปลี่ยนคือเอกสาร**: default ที่ลงทะเบียน `"lmstudio"` → `""` ⇒ `.env.example` เป็น `LMSTUDIO_API_KEY=`
+  (ตรงความจริงกว่า — env นี้ optional) · mutant "ใช้ placeholder แทนค่าดิบ" ถูกฆ่าด้วยเคส *ไม่ตั้ง → ต้องไม่มี header*
+- **`CLAUDE_AUTO`:** router เป็นเจ้าของ (ผู้บริโภคเดียว) · env_str ระดับโมดูล + `.lower()` (เดิมอ่านตอนเรียกทุกครั้ง) ·
+  group "Claude (Anthropic)" ⇒ ใน `.env.example` ไปต่อท้ายกลุ่ม Claude ของ llm (render รวมกลุ่มตามชื่อ group ข้ามโมดูล) ·
+  ANTHROPIC_API_KEY/CLAUDE_MODEL อ่าน attribute `utils.llm` ตอนเรียก (แบบ `has_anthropic`) · 🔑 คอมเมนต์รอบแรกเขียนว่า
+  "import ระดับโมดูล = วนกัน" **ไม่จริง** (ตรวจ AST: llm import router เฉพาะในฟังก์ชัน) → แก้เหตุผลเป็น "llm สร้าง client
+  ตอน import (หนัก) + อ่านตอนเรียกให้ patch ได้" ก่อน commit — กติกา "กับดักที่จดไว้ล่วงหน้าต้องเช็คก่อนเชื่อ" ใช้กับของที่ตัวเองเพิ่งเขียนด้วย
+- **`TTS_MAX_*`:** รอบแรกส่งชื่อผ่าน wrapper `_positive_env("TTS_MAX_CHARS", 2000, doc=…)` → ชุดเป้าหมาย 7 ไฟล์เขียว
+  **แต่ชุดเต็มแดง 1**: `test_env_docs_ratchet` เห็น `.env.example` โฆษณา 2 ชื่อที่ "ไม่มีโค้ดอ่าน" (regex ต้องการ
+  `env_str("NAME"` literal) ⇒ เปลี่ยนเป็น `_positive_int("TTS_MAX_CHARS", env_str("TTS_MAX_CHARS", "2000", …), 2000)`
+  แบบเดียวกับ `WEB_SEARCH_MIN_SCORE` · กติกา "ไม่ raise = กัน crashloop" คงเดิม — mutant raise / ยอมรับ 0 / ถอยเงียบ
+  (warning→debug) ถูกฆ่าครบ · 🔑 **ชุดย่อยเขียวไม่พอ — ratchet ข้ามไฟล์อยู่ในชุดเต็ม**
+- `ha_client`: HA_URL คง `.rstrip("/")` (mutant ถอดถูกฆ่า) · HA_TIMEOUT `env_int` (พิมพ์ผิด raise เหมือน `int()` เดิม — ตรึงด้วยเทส)
+- เทสเดิม 11 ตัวที่ `setenv` ตอนเรียก → `monkeypatch.setattr` ค่าในโมดูล (`_claude_env` ×6 · headers ×3 · key_empty ×2)
+- เทสแดงก่อน 27 (โครง) · กลุ่มควบคุม 321 · **2210 passed/17 skipped** (+27) · ruff · **mutation 13/13 KILLED**
+  (ตัว "ค่าหลักไม่ถอยไป placeholder" ตายด้วย ERROR ตอน import `utils.llm` = อาการจริงของบั๊ก 09-23 ไม่ใช่ fixture พัง — อ่านซ้ำแล้ว)
+- 📊 **ก้อน 4 ทั้งชุด (09-23→24):** `os.getenv` 195 จุด/40 ไฟล์ → **0** · registry 27 → **124 ชื่อ** · `.env.example`
+  ส่วนเขียนมือว่าง (generate ทั้งส่วนบน) · ชุดเต็ม 1830 → 2210 · ทุกก้อน deploy + probe ค่าก่อน=หลัง · CI เขียวทุก commit
+
 ## [2026-09-24 ปิดเซสชัน] config ก้อน 4 — วันเดียว 7 ก้อน จาก 80 → 10 จุด (user สั่งพัก 3 ไฟล์สุดท้ายไว้เซสชันหน้า)
 | commit | ก้อน | จุด |
 |---|---|---|

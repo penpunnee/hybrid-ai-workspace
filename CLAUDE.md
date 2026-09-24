@@ -703,9 +703,25 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-23**)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-24 บ่าย**)
 
-> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ก้อนสุดท้าย (10 จุด · ต้องคิดก่อน): `reasoning/router` 4 · `utils/tts` 3 · `utils/ha_client` 3**
+> ## ✅ config ก้อน 4 **ปิดแล้วทั้งชุด 09-24** — `os.getenv` ดิบนอก registry ในโค้ด prod = **0** (จาก 195 จุด/40 ไฟล์ ตอน 09-02)
+> ก้อนสุดท้าย `reasoning/router` 4 · `utils/tts` 3 · `utils/ha_client` 3 → `f9b638b` (devlog [2026-09-24 ต่อ 7])
+> · registry บน prod **124 ชื่อ** · ชุดเต็ม **2210** · mutation 13/13 · deploy + probe ค่าก่อน=หลัง ตรงทุกค่า
+> 🔑 **สิ่งที่ต้องรู้ต่อไป:** `core.config.LMSTUDIO_API_KEY_RAW` = ค่าดิบ (`""` = ไม่ตั้ง/ว่าง) ·
+> `LMSTUDIO_API_KEY` = `RAW or "lmstudio"` (ทุก client ใช้ตัวนี้) — **router แนบ Authorization จาก RAW เท่านั้น**
+> (เทสตรึง 3 เคส: ไม่ตั้ง/ว่าง/ตั้ง) · default ที่ลงทะเบียน = `""` ⇒ `.env.example` เป็น `LMSTUDIO_API_KEY=`
+> · `TTS_MAX_*` = `env_str` literal ที่ call site แล้ว `_positive_int` parse (ไม่ raise = กัน crashloop) —
+> **ratchet เอกสารมองไม่เห็นชื่อที่ส่งผ่าน wrapper** (`_positive_env("TTS_MAX_CHARS", …)` = env ผี 2 ชื่อ · ชุดเต็มจับได้)
+>
+> ## 🥇 งานแรกเซสชันหน้า: **รอ user เคาะ** — คิวที่เหลือ (ไม่มีอะไรบล็อกกัน · แนะนำ ก เพราะเล็กและปิด backlog ได้ 2 ข้อ)
+> | | งาน | ขนาด | ที่มา |
+> |---|---|---|---|
+> | ก | ถอด `CHROMA_PATH` dead config + กวาด collection กำพร้า `memory_a` · `memory_logic(__keys)` บน prod | เล็ก | งานเล็กข้อ 10 |
+> | ข | voice idle 1008-loop ตอนคุยธรรมดา (keepalive frame เงียบ — ยังไม่เคาะแนวทาง) | กลาง | 🥇 เดิม |
+> | ค | ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน (`core/scheduler.py`) | เล็ก | งานเล็กข้อ 12 |
+> | ง | ถอด Google CSE ออกจาก chain (`utils/websearch.py`) ถ้าไม่คิดแก้ Cloud project | เล็ก | 🥇 เดิม |
+> 🧪 ยังรอ user ทดสอบด้วยมือ (ไม่ต้องเขียนโค้ด): โหมดอ่าน **พัก → อ่านต่อ** (บล็อก 09-21/22) · กดลิงก์ `export_file` · ChatBox pills
 > 🔑 **กติกา user: "เช็คข้อมูล ก่อนจะลงมือให้ชัวร์ก่อนทุกครั้ง"** — ทั้งสองฝั่งของสัญญา + log/คำสั่งจริง
 > · **09-23 ค่ำ user เพิ่ม: "เช็คข้อมูลระบบจริงก่อน อย่าเชื่อ log ถ้าข้อมูลยังไม่ครอบคลุมให้ค้นเน็ตก่อน"**
 > ⇒ ก่อนย้ายไฟล์ไหน probe ในคอนเทนเนอร์ว่า env ตั้งจริงไหม + ค่าที่ resolve (ไม่ใช่อ่านจาก `.env.example`)
@@ -719,10 +735,8 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > · `dream`/`routers/dream`/`heartbeat`/`notify` (`1e69399`) — ส่วนเขียนมือของ `.env.example` **ว่างแล้ว**
 > · ตระกูล skills 5 ไฟล์ (`55fa487`) · **`memory/correction`/`lexical`/`obsidian_sync`/`db_backup` (`b24fd84`)**
 > · **ก้อนง่าย `routers/system`/`reader`/`chat` + `image_gen`/`file_export`/`history` (`f101186`)**
-> · เหลือ **10 จุด** = 3 ไฟล์สุดท้าย (นับด้วย AST ไม่รวม tests/scripts/legacy และ 4 จุดของ registry เอง):
-> `reasoning/router` 4 (`LMSTUDIO_API_KEY` ไม่มี default **โดยตั้งใจ** — ดูข้อเตือนล่าง · ห้ามย้ายไปใช้ค่า
-> config ที่ถอยไป placeholder) · `tts` 3 (`_positive_env` **ตั้งใจไม่ raise** เพราะ raise = crashloop จาก
-> ปุ่มลำโพง → `env_str` + คง parser) · `ha_client` 3
+> · **ก้อนปิดท้าย `reasoning/router`/`tts`/`ha_client` (`f9b638b`)** — เหลือ **0 จุด** (นับด้วย AST ไม่รวม
+> tests/scripts/legacy และ `core/env_registry.py` ที่เป็นที่เดียวที่แตะ `os.environ`)
 > 🔴 **reload `core.config` ในเทส = ต้องมี teardown reload กลับเสมอ** — fixture ที่ไม่คืนสภาพทำให้
 > tmp path รั่วให้เทสอื่น · ชุดเต็มเขียวเพราะลำดับไฟล์ (ครั้งที่ 3) · ตัวจับคือ baseline gate ของ mutation
 > ที่รันชุดย่อย ⇒ **รันชุดย่อยของไฟล์ที่แตะ + เทสของ config ก่อนเชื่อชุดเต็ม**
@@ -732,8 +746,6 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > 🔑 **mutant ที่ "รอด" ต้องอ่านซ้ำว่ามันเปลี่ยนพฤติกรรมจริงไหม** (`"" or x` = no-op) ก่อนไปแก้เทส
 > 🔑 **default ซ้อน** (`os.getenv("X", os.getenv("Y", ...))`) ลงทะเบียนเป็นตัวเลขไม่ได้ → ลง `""` +
 > `or <ค่า Y จาก config>` (ทำแล้ว: `REFLECTION_MODEL` · `QUERY_REWRITE_MODEL`)
-> ⚠️ ก้อนถัดไปที่ต้องคิดก่อน: `utils/tts.py` มี `_positive_env` ที่ **ตั้งใจไม่ raise** (crashloop) —
-> ลงเป็น `env_str` + คง parser · `reasoning/router.py` ดูข้อเตือนล่าง
 > 🔴 **ทุกก้อนต้องเช็ค `grep -c /app` ในส่วน generate ของ `.env.example` = 0 ก่อน push** — เกือบชน
 > CI guard ซ้ำรอบที่ 2 ที่ doc ของ `LOG_FILE` (จับได้จากเช็คนี้เอง ไม่ใช่จาก CI)
 > 🔑 **env ที่อ่าน *ในฟังก์ชัน* (runtime read) → ย้ายเป็นระดับโมดูล** (ทำแล้ว 6 จุดใน `e8844bc`):
@@ -742,8 +754,8 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > registry ไม่มี helper อ่านตอนเรียกโดยตั้งใจ (ลงทะเบียนในฟังก์ชัน = ไม่เข้า `.env.example`)
 > 🔑 **ค่าที่มี parser/guard เดิม (`off` · ค่าไม่บวก → default+warning) ลงเป็น `env_str` แล้วคง parser**
 > — `env_float`/`env_int` จะ raise ตอน import แทน (ทำแล้ว: `VOICE_LEVEL_LOG` · `WEB_SEARCH_MIN_SCORE` ·
-> `BRAVE_MIN_INTERVAL`) · ⚠️ `reasoning/router.py` อ่าน `LMSTUDIO_API_KEY` โดยไม่มี default **โดยตั้งใจ**
-> (ดูข้อเตือนล่าง) — ไฟล์นั้นต้องคิดก่อนย้าย
+> `BRAVE_MIN_INTERVAL` · `TTS_MAX_CHARS`/`TTS_MAX_CHUNKS`) — **ต้องเป็น `env_str("NAME"` literal ที่ call site**
+> ไม่ใช่ส่งชื่อผ่าน wrapper ไม่งั้น ratchet เอกสารนับเป็น env ผี (เจอจริง 09-24)
 > 🔴 **doc ที่ลงทะเบียนห้ามมี path ในคอนเทนเนอร์ (`/app/...`)** — `test_ไม่มี_path_เฉพาะเครื่องหลุดเข้าไฟล์`
 > ใช้ repo root ของเครื่องที่รันเป็น needle และในอิมเมจ CI root = `/app` ⇒ **Mac เขียวแต่ CI แดง**
 > (เกิดจริง `cbd7b1a` → แก้ `a8dc550`) · ให้ชี้ `docker-compose.yml` แทน
@@ -764,8 +776,9 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > ที่ prod resolve ได้ก่อน/หลัง (probe ในคอนเทนเนอร์)
 > ⚠️ **ชื่อที่มีเจ้าของแล้ว ให้ import ค่า ห้ามลงทะเบียนซ้ำ** (มีเทสบังคับ)
 > ⚠️ **ไม่เติม `MODULES` = ชื่อไม่เข้า `.env.example` เงียบๆ** (REGISTRY เติมตอน import)
-> ⚠️ `reasoning/router.py` อ่าน `LMSTUDIO_API_KEY` เอง**โดยไม่มี default** โดยตั้งใจ (ไม่ตั้ง/ว่าง =
-> ไม่แนบ Authorization) — **อย่าย้ายไปใช้ค่าจาก config** (ค่านั้นถอยไป placeholder เสมอ)
+> ✅ ~~`reasoning/router.py` อ่าน `LMSTUDIO_API_KEY` เองโดยไม่มี default~~ ปิดแล้ว 09-24: config ให้
+> **ค่าดิบ** `LMSTUDIO_API_KEY_RAW` แยกจากค่าหลักที่ถอยไป placeholder — router ยังไม่แนบ Authorization เมื่อ
+> ไม่ตั้ง/ว่าง (เทสตรึง) · ถ้าจะเพิ่มผู้บริโภคที่ต้องแยก "ไม่ตั้ง" ออกจาก placeholder ให้ใช้ RAW ตัวเดียวกัน
 > 🔑 mutation: ดูด้วยว่า **แดงกี่ตัว** — fixture พังทำให้ได้ "killed" ปลอม 10/10 มาแล้ว
 > 🐛 **บั๊กที่ยังเปิด (ตรวจด้วยหลักฐานแล้ว · devlog [2026-09-23 ต่อ 4/5]):**
 > ✅ ~~(1) Ollama ReAct ส่งคำตอบกุ~~ แก้แล้ว `47d94e5` · ✅ ~~(2) `LMSTUDIO_API_KEY=` ว่าง ⇒ แอปล้ม~~
@@ -980,7 +993,9 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 >     ทุกที่รวม CI** — skip ที่มีเหตุผลเขียนไว้ ก็ยังเป็น skip
 > 12. ⚪ ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน — ตอนนี้เป็นเครื่องมือรันมือ
 >     (คู่มือ Qdrant: reconciliation คือตัวที่จับเศษที่ cascade พลาด)
-> 9. ⚪ **config ไม่มี single source of truth** — `os.getenv` **195 จุดใน 40 ไฟล์**
+> 9. ✅ **config single source of truth — ปิดแล้ว 2026-09-24** (`core/env_registry.py` · `.env.example`
+>    generate จากโค้ด · `os.getenv` ดิบในโค้ด prod = **0** · registry 124 ชื่อ · devlog 09-23/24) ~~เดิม:~~
+>    ~~`os.getenv` **195 จุดใน 40 ไฟล์**~~
 >    (`core/config.py` ถือแค่ 28 = 14% · `utils/llm.py` อ่านเอง 28 จุด) ⇒ `.env.example`
 >    / `CLAUDE.md` / `docker-compose.yml` ดริฟต์จากกันได้เงียบๆ · ทางมาตรฐาน (ตรวจ
 >    2026-09-02): Symfony นับ `Used` ตอน resolve จริง *ไม่ใช่* สแกนข้อความ ·
