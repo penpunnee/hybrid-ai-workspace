@@ -1,5 +1,28 @@
 ---
 
+## [2026-09-24 ต่อ 3] config ก้อน 4 ไฟล์ที่ 18-21 — `dream` · `routers/dream` · `heartbeat` · `notify` 10 จุด (`1e69399`)
+**อยู่นอก LAN ตอนทำ** — `ssh nas`/`:8080` timeout แต่ `https://ai.pawinhome.com/api/config` = 200 (prod ขึ้น)
+และ gateway เครื่องคือ `192.168.154.1` ⇒ เป็นเครือข่ายเรา ไม่ใช่ NAS · **`nas-cf` ใช้ได้** (Access ยังไม่หมดอายุ)
+→ ตรวจ prod + deploy ผ่าน `nas-cf` ทั้งก้อน · macOS ไม่มี `timeout` → ใช้ background+kill guard 25 วิ
+**ตรวจ prod ก่อน:** `DREAM_*`/`MEMORY_EPISODIC_CAP`/`LINE_NOTIFY_TOKEN` ไม่ได้ตั้ง · `HEARTBEAT_URL` ตั้งใน
+`.env` · `OBSIDIAN_VAULT_PATH=/vault` (ทั้ง `.env` และ compose) · baseline dream `2 False` · rd `600` ·
+heartbeat `10.0 3 10.0` · หลัง deploy **ตรงทุกค่า** (cap resolve 500 · vault `/vault` · url ยังไม่ว่าง) ·
+registry บน prod 103 ชื่อ · `/api/config` 200 · 0 error
+- runtime read 3 จุด → ระดับโมดูล: `MEMORY_EPISODIC_CAP` (ใน prune เมื่อ `cap=None`) · `OBSIDIAN_VAULT_PATH`
+  (ใน `_save_report` → import จาก config) · `HEARTBEAT_URL` (ใน `ping()` ทุกครั้ง) — `test_heartbeat`
+  ที่ `setenv`/`delenv` → `monkeypatch.setattr(heartbeat, "HEARTBEAT_URL", …)`
+- รวม `utils/notify.py` (1 จุด) เข้าก้อน — เส้น Dream ล้มเหลว → LINE Notify เป็นโดเมนเดียวกัน
+- **ส่วนเขียนมือของ `.env.example` ว่างแล้ว** (บล็อก LINE/heartbeat ย้ายเข้า doc ของ registry) ⇒
+  `test_ส่วนเขียนมือไม่ถูกกลืนหาย` เปลี่ยนเป็นบรรทัดสมมติ `ZZ_MANUAL_ONLY=1` — เดิมผูกกับชื่อจริง 4 ตัว
+  ที่ต้องเปลี่ยนตัวแทนทุกก้อน (3 รอบแล้ว) และวันนี้ไม่เหลือให้ใช้
+- เทสแดงก่อน 14 · กลุ่มควบคุม 196 เขียว · `_save_report`/ฟังก์ชัน cap ตรวจว่าอ้างชื่อจาก config/registry
+  ด้วย ast · **2127 passed/17 skipped** (+17) · ruff · **mutation 10/10** — 🔑 M8 รอบแรก "รอด" เพราะ
+  mutant ผมเขียนเป็น `"" or env_str(...)` = no-op (ประเมินได้ค่าเดิม) ⇒ **mutant ที่รอดต้องอ่านซ้ำว่า
+  มันเปลี่ยนพฤติกรรมจริงไหมก่อนไปแก้เทส** · M8b `env_str(...) and ""` ตายจริง
+- เหลืออ่าน env ดิบ **34 จุด** · ถัดไป ตระกูล skills (`skills` 2 · `skills_search` 2 · `skills_select` 2 ·
+  `skills_shadow` 1 · `skill_discovery` 1) — `skills_search` อ่าน `CHROMA_HOST/PORT` default `"localhost"`
+  ไม่ตรง config (`""`) → import จาก config
+
 ## [2026-09-24 ต่อ 2] config ก้อน 4 ไฟล์ที่ 15-17 — `reflection` · `query_rewrite` · `ocr` + registry บังคับเจ้าของ (`7ccd25a`)
 **ตรวจ prod ก่อน:** `REFLECTION_*`/`QUERY_REWRITE_*` ไม่ได้ตั้ง · `LMSTUDIO_*`/`GEMINI_API_KEY` ตั้ง
 (เจ้าของ config) · baseline reflection `qwen/qwen3.5-9b 30 0.7` · query_rewrite `qwen/qwen3.5-9b 8 True` ·
