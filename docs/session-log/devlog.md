@@ -1,5 +1,40 @@
 ---
 
+## [2026-09-24 ต่อ 11] audit ก้อน 2 — `bump_access_count` สลับ metadata + `truncate` ข้าม session (`e5223ef`) ✅ deployed + กู้ข้อมูลบน prod แล้ว
+**ค้นก่อนลงมือ (user: "ค้นข้อมูลก่อนแล้วรายงาน" → /scrutinize → "ไม่ชัวร์ตรงไหนค้นเพิ่ม"):**
+- ข้อ 4 เป็นบั๊กจริง 3 ชั้น: ซอร์สที่ติดตั้ง `chromadb/segment/impl/metadata/sqlite.py:158,170,211` `.orderby(embeddings_t.id)` (= ลำดับ insert) ·
+  docs.trychroma.com + cookbook **ไม่รับประกันลำดับ** รับประกันแค่ `ids[i]`↔`metadatas[i]` ในคำตอบเดียวกัน · รันจริงบน **prod server (image 1.0.0 · client 1.5.9)**
+  ด้วย collection ชั่วคราว (ลบแล้ว): ขอ `[e,c,a]` ได้ `[a,c,e]` · local EphemeralClient เหมือนกัน
+- ขอบเขต prod (`memory_kwan` 30): doc id ฝังเวลาสร้าง (`mem_YYYYMMDDHHMMSS_`, writer เดียว `store.py:51` นาฬิกาเดียวกับ `created_at` `schema.py:19`)
+  ⇒ **24/30 created_at ไม่ตรง id** · เดินมาตั้งแต่ `4d0f579` (05-27) · `__keys` snapshot กู้ไม่ได้ (backfill 08-02 หลังสลับ — 12/27 ผิดเหมือนกัน)
+  · `source/type/verified` ทั้ง 30 ค่าเดียวกัน (สลับแล้วมองไม่เห็น) · `confidence`/`access_count`/`last_accessed` **กู้ไม่ได้** ไม่มี snapshot ที่ถูกที่ไหน
+  · `user_facts`/`long_term` ไม่โดน (ไม่มีเส้น bump) · จุด zip อื่น (`store.py:108,272,329` `utils/memory.py:242` `dream.py:387,474` `obsidian_sync.py:223`) ปลอดภัย
+- ข้อ 3 เป็นบั๊กจริง: `history.py:234` `DELETE … WHERE id >= ?` ไม่กรอง · caller ทั้ง 2 (`app.tsx:772` · `enhanced.js:2621`) ส่งแค่ id · ไม่มีเทส · ตั้งแต่ `5106c19` (04-26)
+  · เคยเกิดบน prod ไหม **ตรวจย้อนไม่ได้** (ของที่ถูกลบไม่มีร่องรอย)
+- /scrutinize แผนตัวเอง → แก้แผน 3 จุด: (1) `backfill_keys.py` upsert ทับทุก id อยู่แล้ว → ใช้ resync keys แทนเขียนตัวแก้แยก
+  (2) Dream อ่าน `last_accessed` **ก่อน** `created_at` (`dream.py:395,431`) ⇒ กู้ created_at อย่างเดียว prune ยังใช้ตัวเลขสลับ → ต้องตั้ง `last_accessed=created_at` + `access_count=0` ด้วย
+  · **จำลอง prune บน prod ก่อน (อ่านอย่างเดียว) 3 สถานการณ์ = floor-prune ลบ 0/30 · cap 500** ⇒ รีเซ็ตปลอดภัย
+  (3) เทสเดิม `test_search_entries_bumps_access_count` fake `get()` ไม่มี `ids` จึงจับไม่ได้ — เทสใหม่ต้องคืน ids สลับลำดับ **และตรวจการจับคู่**
+- mounts ยืนยันด้วย `docker inspect`: `memory/` `utils/` `routers/` `scripts/` เป็น dir bind ⇒ `docker restart` พอ
+
+**แก้ (`e5223ef`):** `store.py:bump_access_count` zip/update ด้วย `res["ids"]` เท่านั้น · `history.py:truncate_from_db_id` หา assistant/session จาก row เอง
+(ไม่แก้ FE) + คืน False/**404** เมื่อ id ไม่มี (เดิม = ลบทุกอย่างที่ใหม่กว่า) · helper `_purge_message_side_tables` กวาด `skill_shadow`/`feedback`
+ใช้ร่วมกับ `delete_message_by_id` · `scripts/restore_memory_created_at.py` (pure `plan_restore` มีเทส) · เทสใหม่ 3 ไฟล์ 13 ตัว · **mutation 15/15** · ชุดเต็ม **2248**
+
+**deploy + กู้ + verify บน prod:** `docker restart` → `/api/config` 200 · `DELETE /api/truncate/999999999` → 404 จริง · dry-run 28 จะเขียน/ข้าม 2 →
+`--apply` เขียน 28 ตรวจกลับตรง 0 → `backfill_keys.py --apply --collections memory_kwan` 28/28 → probe **`memory_kwan` 0/30 · `__keys` 0/28 ไม่ตรง**
+→ เดินเส้นจริง `search_entries` 2 รอบ (1+2 รายการ) หลังแก้: created_at ยังตรงทั้ง 30 · bump เฉพาะตัวที่ recall · ตัวอื่นไม่ถูกแตะ · CI เขียว
+🔴 **ที่กู้ไม่ได้ (บอก user แล้ว):** `confidence` ของทั้ง 30 อาจเป็นของคนอื่นมา 4 เดือน · access_count/last_accessed รีเซ็ตเริ่มนับใหม่
+
+🐛 **บั๊กข้างเคียงที่เจอ (คนละก้อน · ยังไม่แก้):** เส้นส่งหลัก `app.tsx:1308/1324/1344` สร้าง user message ไม่มี `dbId` และ `done` ที่ `app.tsx:1399`
+ไม่ตั้ง `dbId` ให้ AI ด้วย (ต่างจาก regenerate/edit 760/810) · `dbId` มาจาก `loadHistory` ตอนสลับเซสชัน/ออกจากหน้าเสียงเท่านั้น ⇒ ในหน้าเดียวกันหลังส่ง:
+แก้ข้อความ = ไม่ truncate (DB ซ้อน) · ปุ่มที่ gate ด้วย `msg.dbId &&` (`1967/1979` pin/feedback) ไม่ขึ้นจนรีโหลด (ยืนยันจากโค้ด ยังไม่ดูใน browser)
+· แก้ต้อง backend ส่ง `user_message_id` ใน `done` + `app.tsx` 2 จุด
+
+🔑 **บทเรียน:** (1) "ลำดับที่ API คืน" เป็นสัญญาที่ต้องอ่านจากเอกสาร/ซอร์ส ไม่ใช่จากที่เห็นในเทสตัวเดียว — fake ที่คืนของครบกว่าของจริงซ่อนบั๊กได้ 4 เดือน
+(2) snapshot ที่เพิ่งทำ (keys 08-02) ไม่ใช่ความจริงถ้าทำ *หลัง* ความเสียหายเริ่ม — ต้องหาแหล่งที่เขียนตอนเกิด (id) (3) ก่อนรีเซ็ตค่าที่งานกลางคืนใช้ตัดสินใจ
+จำลองงานนั้นบน prod แบบอ่านอย่างเดียวก่อน (4) scrutinize แผนตัวเองก่อนลงมือจับได้ 3 จุดที่รายงานรอบแรกพลาด
+
 ## [2026-09-24 ปิดเซสชัน ค่ำ] สรุปทั้งวันช่วงบ่าย-ค่ำ — config ก้อน 4 จบ · audit ทั้งระบบ · ปิด audit ก้อน 1 · เซสชันหน้าเริ่มก้อน 2
 | ลำดับ | งาน | commit | devlog |
 |---|---|---|---|

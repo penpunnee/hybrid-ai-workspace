@@ -27,7 +27,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 3. `MEMORY.md` เก็บได้แค่ "เปิดไฟล์ไหนก่อน + ข้อห้ามที่ยังมีผล"
 4. ⚠️ ไฟล์นี้ถูกฉีดเข้า context **ทันทีที่แตะไฟล์ใดก็ตามในรีโป** (nested CLAUDE.md ·
    เพดาน CLI = 4 MB จึงไม่มีการตัดให้) ⇒ **มันโตเมื่อไหร่เสียโควตาทุกเซสชันทันที**
-   ตอนนี้ ~88 KB · บทเรียนเต็มที่ vault `wiki/concepts/claude-md-context-budget.md`
+   ตอนนี้ **~176 KB** (วัด 09-24 · โตเท่าตัวจาก 08-17 — ควรย้ายบล็อก ▶️ เก่าลง devlog) · บทเรียนเต็มที่ vault `wiki/concepts/claude-md-context-budget.md`
 5. **ถังความจำของโปรเจกต์นี้:** `~/.claude/projects/-Users-pawin-Desktop-ui/memory/`
    — เปิดงานด้วย **`cc khim`** เท่านั้นถึงจะได้ถังนี้ (เปิดจาก `~` = ได้ถังกลาง คนละใบ)
    · `MEMORY.md` ในถัง = หน้าแรก (ตัวชี้/ข้อห้าม/งานค้าง) · โน้ตข้างเคียงเป็น **symlink
@@ -703,17 +703,25 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-24 ค่ำ — ปิดเซสชัน**)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-24 ดึก — ปิด audit ก้อน 2**)
 
-> ## 🥇 งานแรกเซสชันหน้า (user สั่งตอนปิดเซสชัน 09-24): **audit ก้อน 2 — `DELETE /api/truncate` ข้าม session + `bump_access_count` สลับ metadata**
-> รายละเอียดข้อ 3-4 ใน `docs/audit/2026-09-24-full-audit.md` (HIGH) · ทำแบบเดียวกับก้อน 1 (devlog [ต่อ 10]):
-> 1. **ค้นวิธีแก้ก่อน แล้วรายงานให้ user ก่อนแตะไฟล์** — truncate: ต้องกรอง `assistant`+`session_id` และตรวจว่า id เป็นของ session นั้น ·
->    caller `app.tsx:772` (`submitEdit`) + `enhanced.js:2629` · bump_access_count: จับคู่ด้วย `res["ids"]` ที่ Chroma คืน (เรียงตาม internal id ไม่ใช่ที่ขอ —
->    Chroma Cookbook) · ตรวจว่ามีเส้นอื่นที่ zip metadata กับ ids ที่ขอแบบเดียวกันไหม (`memory/store.py`, `utils/memory.py`, `dream.py`)
-> 2. probe prod ก่อน: นับ memory ที่ metadata อาจสลับไปแล้ว (verified/user_taught ที่ timestamp ไม่ตรง created_at) — **ของที่สลับไปแล้วกู้ย้อนไม่ได้**
->    ต้องบอก user ตรงๆ · truncate: ไม่มีเทสเดิมเลย
-> 3. เทสแดงก่อน → แก้ → mutation → deploy (`utils/`/`memory/`/`routers/` mount เป็น dir → `docker restart` พอ) → probe หลัง
-> 🔒 กติกา user ที่ยังมีผล: ค้นข้อมูล 2 ชั้น (เป็นบั๊ก? · วิธีแก้?) ก่อนลงมือ · ไม่ชัวร์ค้นเน็ต · จดทุกอย่างลง devlog
+> ## ✅ audit ก้อน 2 **ปิดแล้ว 09-24 ดึก (`e5223ef` · devlog [ต่อ 11]) — อย่าทำซ้ำ**
+> `bump_access_count` จับคู่ด้วย `res["ids"]` (Chroma คืนเรียงตาม insert ไม่ใช่ที่ขอ — ซอร์ส `sqlite.py .orderby(embeddings_t.id)` + วัดจริง prod server) ·
+> `truncate_from_db_id` หา assistant/session จาก row เอง + 404 เมื่อ id ไม่มี · helper กวาด `skill_shadow`/`feedback` ใช้ทั้ง truncate และ delete เดี่ยว
+> · **กู้ข้อมูล prod แล้ว**: created_at/timestamp จาก id (writer เดียว `store.py:51`) 28 รายการ + `last_accessed=created_at` + `access_count=0`
+> (จำลอง prune ก่อน = ลบ 0) → `backfill_keys.py` resync → probe 0/30 · 🔴 **`confidence` ของ episodic ทั้ง 30 อาจเป็นของคนอื่นมา 4 เดือน กู้ไม่ได้**
+> · mutation 15/15 · ชุดเต็ม 2248 · CI เขียว · `scripts/restore_memory_created_at.py` ใช้ซ้ำได้ (idempotent · dry-run default)
+> 🔑 **กติกาใหม่จากก้อนนี้:** ผลจาก `col.get(ids=…)` ห้าม zip กับ ids ที่ขอ — zip กับ `res["ids"]` เสมอ (เทส `test_bump_access_count_order.py` ตรึง)
+>
+> ## 🐛 backlog ใหม่ (เจอระหว่างก้อน 2 · ยังไม่แก้ · คนละก้อน): **ข้อความที่เพิ่งส่งไม่มี `dbId`**
+> เส้นส่งหลัก `app.tsx:1308/1324/1344` สร้าง user message ไม่มี `dbId` และ `done` ที่ `app.tsx:1399` ไม่ตั้ง `dbId` ให้ AI (ต่างจาก regenerate/edit 760/810)
+> · `dbId` มาจาก `loadHistory` ตอนสลับเซสชัน/ออกจากหน้าเสียงเท่านั้น ⇒ ในหน้าเดียวกันหลังส่ง: แก้ข้อความ = ไม่ยิง truncate (DB ซ้อนคู่เก่า+ใหม่) ·
+> ปุ่มที่ gate ด้วย `msg.dbId &&` (`1967/1979` pin/feedback) ไม่ขึ้นจนรีโหลด (ยืนยันจากโค้ด **ยังไม่ดูใน browser** — เช็คก่อนแก้)
+> · แก้ = backend ส่ง `user_message_id` ใน `done` (`routers/chat.py:741` + short-circuit 150/175/314/368) + `app.tsx` ตั้ง dbId ทั้ง user/AI
+>
+> ## 🥇 งานถัดไป: **audit ก้อน 3 (หัวข้อ 5 ข้อ 3 ของ `docs/audit/2026-09-24-full-audit.md`)** — fs glob (5) · calculator (6) · markdown backslash (8)
+> (ข้อ 7 ปิดไปกับก้อน 1 แล้ว) · ทำแบบเดิม: ค้น 2 ชั้น → รายงาน → /scrutinize แผน → เทสแดง → แก้ → mutation → deploy → verify · หรือ backlog `dbId` ข้างบนถ้า user เลือก
+> 🔒 กติกา user ที่ยังมีผล: ค้นข้อมูล 2 ชั้น (เป็นบั๊ก? · วิธีแก้?) ก่อนลงมือ · ไม่ชัวร์ค้นเน็ต/ซอร์สที่ติดตั้ง · **scrutinize แผนตัวเองก่อนลงมือ** (ก้อน 2 จับได้ 3 จุด) · จดทุกอย่างลง devlog
 >
 > ## ✅ config ก้อน 4 **ปิดแล้วทั้งชุด 09-24** — `os.getenv` ดิบนอก registry ในโค้ด prod = **0** (จาก 195 จุด/40 ไฟล์ ตอน 09-02)
 > ก้อนสุดท้าย `reasoning/router` 4 · `utils/tts` 3 · `utils/ha_client` 3 → `f9b638b` (devlog [2026-09-24 ต่อ 7])
