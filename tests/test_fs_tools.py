@@ -206,3 +206,53 @@ def test_search_deadline_stops_long_scan(sandbox, monkeypatch):
     assert r["ok"] is True
     assert r["timed_out"] is True
     assert r["count"] < 1500                    # ไม่ได้สแกนครบทุกไฟล์
+
+
+# ─────────────────────────────────────────────────────────────
+# search_files — glob ต้องอยู่ใน root เหมือน read/write (audit 2026-09-24 ข้อ 5)
+# `root.rglob(file_glob)` รับ `..` ได้และผลที่ match ไม่เคยผ่าน `_resolve_safe`
+# → พิสูจน์บน prod: file_glob="../../../../../../proc/self/environ" อ่าน env ทั้งก้อนได้
+# ─────────────────────────────────────────────────────────────
+def _outside_secret(sandbox, tmp_path):
+    outside = (tmp_path / "outside").resolve()
+    outside.mkdir()
+    (outside / "secret.txt").write_text("SECRET=1\n")
+    (sandbox / "inside.txt").write_text("hello SECRET here\n")
+    return outside
+
+
+def _assert_nothing_left_root(sandbox, r):
+    assert all(str(m["file"]).startswith(str(sandbox)) and ".." not in m["file"] for m in r.get("matches", [])), r
+    assert r.get("count", 0) == 0, r
+    assert r.get("files_scanned", 0) == 0, "ไฟล์นอก root ต้องไม่ถูกนับว่าสแกน"
+
+
+def test_search_glob_dotdot_must_not_escape_root(sandbox, tmp_path):
+    """ชั้นแรก: `..` ใน glob ต้องถูกปฏิเสธก่อนเดินไฟล์ (ไม่ใช่แค่กรองผลทีหลัง) — error ชัดกว่า "0 ผล"
+    และไม่ต้องเดิน rglob ออกนอก root เลย"""
+    _outside_secret(sandbox, tmp_path)
+    r = fs.search_files("SECRET", file_glob="../outside/*.txt")
+    assert r["ok"] is False and "file_glob" in r["error"], r
+    _assert_nothing_left_root(sandbox, r)
+
+
+def test_search_glob_symlink_must_not_escape_root(sandbox, tmp_path):
+    """ไม่มี `..` ในรูป glob แต่เดินผ่าน symlink ใต้ root ออกไปได้ — ต้องกันที่ตัว match"""
+    outside = _outside_secret(sandbox, tmp_path)
+    os.symlink(outside, sandbox / "link")
+    r = fs.search_files("SECRET", file_glob="*/secret.txt")
+    _assert_nothing_left_root(sandbox, r)
+
+
+def test_search_glob_absolute_returns_error_not_exception(sandbox, tmp_path):
+    _outside_secret(sandbox, tmp_path)
+    r = fs.search_files("SECRET", file_glob="/etc/*")
+    assert r["ok"] is False and r.get("error"), r
+
+
+def test_search_glob_normal_still_finds_inside(sandbox, tmp_path):
+    """กลุ่มควบคุม — glob ปกติต้องยังเจอของใน root (กัน mutant ที่ปฏิเสธทุกอย่าง)"""
+    _outside_secret(sandbox, tmp_path)
+    r = fs.search_files("SECRET", file_glob="*.txt")
+    assert r["ok"] and r["count"] == 1 and r["files_scanned"] == 1
+    assert r["matches"][0]["file"] == str(sandbox / "inside.txt")

@@ -5,7 +5,9 @@
   - parameters: JSON schema สำหรับ arguments
   - fn: ฟังก์ชัน Python ที่รันจริง (รับ **kwargs คืน string)
 """
+import ast
 import logging
+import operator
 import re
 from datetime import datetime
 from typing import Any
@@ -93,12 +95,57 @@ def _t_current_time(timezone: str = "Asia/Bangkok") -> str:
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+_CALC_MAX_LEN = 200          # ตัวอักษรของนิพจน์
+_CALC_MAX_BITS = 100_000     # ประมาณขนาดผลลัพธ์ int สูงสุด (bit_length(base) * exp) — เพดานเดียวพอ:
+                             # เพดานเลขชี้กำลังแยกต่างหากซ้ำซ้อน (mutation พิสูจน์ว่าไม่มีเคสที่จับได้เพิ่ม)
+_CALC_OPS = {
+    ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+    ast.Div: operator.truediv, ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod,
+}
+
+
+def _calc_pow(a, b):
+    """`**` แบบมีเพดาน — `9**9**9` เป็น C call เดียวที่ถือ GIL จนจบ (ไม่มีทางยกเลิก) ⇒ ต้องกัน
+    *ก่อน* ยก · float pow เร็ว/ล้นเป็น inf เอง ไม่ต้องกัน · แนวเดียวกับ simpleeval.safe_power
+    แต่ผูกกับขนาดผลลัพธ์จริง (MAX_POWER=4e6 ของเขายังปล่อย 4e6**4e6)"""
+    # b < 0 → Python คืน float (pow ของ float เร็ว/ล้นเป็น 0.0 หรือ OverflowError ทันที) ไม่ต้องกัน
+    if isinstance(a, int) and isinstance(b, int) and b > 0 and a.bit_length() * b > _CALC_MAX_BITS:
+        raise ValueError("ผลลัพธ์ใหญ่เกินเพดาน")
+    return a ** b
+
+
+def _calc_eval(node):
+    """เดิน AST เฉพาะ node ที่เป็นเลขคณิตล้วน — ไม่มี name/call/attribute/tuple ให้หลุด"""
+    if isinstance(node, ast.Expression):
+        return _calc_eval(node.body)
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+        return node.value
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        v = _calc_eval(node.operand)
+        return v if isinstance(node.op, ast.UAdd) else -v
+    if isinstance(node, ast.BinOp):
+        if isinstance(node.op, ast.Pow):
+            return _calc_pow(_calc_eval(node.left), _calc_eval(node.right))
+        fn = _CALC_OPS.get(type(node.op))
+        if fn is not None:
+            return fn(_calc_eval(node.left), _calc_eval(node.right))
+    raise ValueError(f"ไม่รองรับ {type(node).__name__}")
+
+
 def _t_calculator(expression: str) -> str:
-    """คำนวณนิพจน์ทางคณิตศาสตร์ (เฉพาะตัวเลข + - * / % ** ฯลฯ)"""
+    """คำนวณนิพจน์ทางคณิตศาสตร์ (เฉพาะตัวเลข + - * / // % ** และวงเล็บ)
+
+    regex ชั้นแรกคงไว้ (ข้อความ "ไม่ปลอดภัย" เป็นสัญญากับเทส/ผู้ใช้) · ชั้นสอง = AST whitelist
+    แทน `eval` — `eval` ของเดิมผ่าน regex ด้วย `9**9**9` แล้วค้าง 100% CPU ถาวรใน threadpool
+    (audit 2026-09-24 ข้อ 6) · `1,2` (tuple) เดิมคืน `(1, 2)` ตอนนี้ ❌ โดยตั้งใจ
+    """
     if not re.match(r"^[\d\s\+\-\*\/\(\)\.\%\,\s]+$", expression.replace("**", "")):
         return "❌ นิพจน์ไม่ปลอดภัย (อนุญาตเฉพาะตัวเลขและเครื่องหมายพื้นฐาน)"
+    if len(expression) > _CALC_MAX_LEN:
+        return f"❌ นิพจน์ยาวเกิน {_CALC_MAX_LEN} ตัวอักษร"
     try:
-        result = eval(expression, {"__builtins__": {}}, {})
+        # literal >4300 หลักโยน SyntaxError ตอน parse (int_max_str_digits) — จับรวมด้านล่าง
+        result = _calc_eval(ast.parse(expression, mode="eval"))
         return f"{expression} = {result}"
     except Exception as e:
         return f"❌ คำนวณไม่ได้: {e}"

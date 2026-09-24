@@ -358,3 +358,53 @@ def test_agent_hint_advertises_home_tools():
     # ไม่งั้นถามเรื่อง network/NAS แล้วโมเดลเดาแทนเรียก tool (กุ)
     for kw in ("ping_network", "nas_disk", "nas_docker"):
         assert kw in orch.AGENT_SYSTEM_HINT
+
+
+# ══════════════════ calculator — ต้องไม่แขวน thread (audit 2026-09-24 ข้อ 6) ═══════════
+# regex เดิมตรวจบน expression.replace("**","") แล้ว eval ของเดิม → `9**9**9` ค้าง 100% CPU ถาวร
+# (วัดจริง: >3 วิจน SIGALRM ตัด) ใน threadpool 40 slot ⇒ ยิงซ้ำไม่กี่ครั้ง = ระบบตาย
+
+
+
+def _calc_in_subprocess(expr, seconds):
+    """รันในโปรเซสลูก — โค้ดเดิมถือ GIL ตลอดการยกกำลัง (C call เดียว) จึงใช้ thread+join ไม่ได้
+    ถ้าค้างต้องเป็นเทสแดง ไม่ใช่แขวนทั้งชุด"""
+    import subprocess, sys
+    code = ("import sys; sys.path.insert(0, %r); from agents import tools; "
+            "print(tools._t_calculator(%r))" % (str(_REPO), expr))
+    try:
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=seconds)
+    except subprocess.TimeoutExpired:
+        return None, True
+    return (r.stdout.strip() or r.stderr.strip()), False
+
+
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+# (7**40000)**1000: เลขชี้กำลังไม่เกินเพดาน แต่ผลลัพธ์ ~112M bits — วัดจริง >8 วิ ถ้าไม่มีเพดานขนาดผลลัพธ์
+@pytest.mark.parametrize("expr", ["9**9**9", "10**10**10", "2**100000000", "(9**9)**9**5", "(7**40000)**1000"])
+def test_calculator_huge_power_rejected_fast(expr):
+    out, hung = _calc_in_subprocess(expr, 5)
+    assert not hung, f"{expr} ยังคำนวณอยู่หลัง 5 วิ = แขวน thread (บั๊กเดิม)"
+    assert out.startswith("❌"), out
+
+
+def test_calculator_tuple_syntax_rejected():
+    """`1,2` เดิม eval ได้ tuple — ไม่ใช่นิพจน์คณิตศาสตร์ ต้อง ❌ ไม่ใช่คืน '(1, 2)'"""
+    assert tools._t_calculator("1,2").startswith("❌")
+
+
+@pytest.mark.parametrize("expr,expected", [
+    ("15**2", "225"), ("-3+5", "2"), ("7/2", "3.5"), ("2**10", "1024"), ("10%3", "1"), ("7//2", "3"),
+])
+def test_calculator_normal_math_unchanged(expr, expected):
+    """กลุ่มควบคุม — ของที่เคยใช้ได้ต้องได้ผลเท่าเดิม"""
+    assert tools._t_calculator(expr) == f"{expr} = {expected}"
+
+
+def test_calculator_overlong_expression_rejected():
+    """เพดานความยาวนิพจน์ — literal ยาวๆ/นิพจน์ยาวๆ ไม่ควรถูก parse เลย"""
+    expr = "+".join(["1"] * 150)          # 299 ตัวอักษร คำนวณได้ถ้าไม่มีเพดาน
+    assert tools._t_calculator(expr).startswith("❌")
+    assert tools._t_calculator("+".join(["1"] * 50)) == "+".join(["1"] * 50) + " = 50"

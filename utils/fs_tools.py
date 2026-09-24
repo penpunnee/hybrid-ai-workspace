@@ -203,6 +203,12 @@ def search_files(
             "unsafe pattern — nested quantifier ทำให้ regex ระเบิด (catastrophic "
             "backtracking) และหยุดกลางคันไม่ได้ · ใช้ pattern ที่ง่ายกว่านี้หรือค้นแบบ literal"
         )}
+    # glob เป็นชั้นแรก: `..` / absolute ทำให้ rglob เดินออกนอก root ได้ (pathlib ไม่กันให้ —
+    # docs บอกแค่ "relative pattern") · พิสูจน์บน prod: "../../../../../../proc/self/environ"
+    # อ่าน env ทั้งก้อนได้ (audit 2026-09-24 ข้อ 5) · absolute เดิมโยน NotImplementedError หลุดออกไป
+    glob_parts = re.split(r"[\\/]", file_glob or "")
+    if not file_glob or file_glob[0] in "/\\" or ".." in glob_parts:
+        return {"ok": False, "error": "file_glob ต้องเป็น pattern ภายใน root (ห้าม .. / absolute)"}
     try:
         root = _resolve_safe(path or str(_ROOTS[0]))
         if not root.is_dir():
@@ -219,6 +225,13 @@ def search_files(
         timed_out = False
         deadline = time.monotonic() + _SEARCH_DEADLINE
         for file in root.rglob(file_glob):
+            # ชั้นหลัก: ทุก match ต้องผ่านด่านเดียวกับ read/write — resolve symlink แล้วเทียบ root
+            # (glob ที่ไม่มี `..` ก็เดินผ่าน symlink ใต้ root ออกไปได้ · ตัวเลข files_scanned
+            # ต้องไม่นับตัวที่ถูกกัน ไม่งั้นหลอกว่าสแกนไฟล์นอก root)
+            try:
+                _resolve_safe(str(file))
+            except FSError:
+                continue
             if not file.is_file():
                 continue
             if time.monotonic() > deadline:
