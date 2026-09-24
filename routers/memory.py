@@ -84,9 +84,9 @@ async def memory_cleanup(request: Request):
         if e.status_code == 413:
             raise
         data = {}
-    except Exception:
-        # เจตนาเดิม: body ของเส้นนี้ไม่บังคับ — ไม่มี/ไม่ใช่ JSON ให้ใช้ค่า default
-        data = {}
+    # ⚠️ ห้ามมี `except Exception` ตรงนี้ — `_BodyTooLarge` ของ core/body_limit.py (ตั้งใจไม่สืบ
+    # HTTPException) ทะลุ json_body_capped() มาถึงที่นี่ ถ้ากลืน = รันด้วย body ว่างแล้วตอบ 200
+    # (audit 2026-09-24 ข้อ 11 · tests/test_body_cap_not_swallowed.py ตรึง)
     days = data.get("days", 30) if isinstance(data, dict) else 30
     # ไล่ `col.get()` ทุก collection แล้ว delete — หนักตามขนาดคลัง ไม่ใช่ตามพารามิเตอร์
     return await run_in_threadpool(cleanup_old_memories, days=days)

@@ -502,13 +502,14 @@ def cleanup_old_memories(days: int = 30) -> dict:
     detail = {}
     # เงาต้องหายเพราะ "ตัวหลักถูกลบ" ไม่ใช่เพราะถูกกวาดเองแยกกัน — กวาดแยก =
     # สองชุดเดินคนละจังหวะแล้วดริฟต์ (ดู memory/dualvec.is_keys_collection)
-    from memory.dualvec import is_keys_collection
-    skip_collections = {"long_term_memory", "preferences"}
+    # allowlist เฉพาะ episodic (`memory_<slug>`) — เดิม denylist แล้วลบ user_facts/lessons ด้วย
+    # (audit 2026-09-24 ข้อ 9 · วัดบน prod: กดวันนี้จะลบ fact ที่ user สอน 1/1 + lessons 8/8)
+    from memory.dualvec import is_episodic_collection
     try:
         all_collections = client.list_collections()
         for col_info in all_collections:
             name = col_info.name if hasattr(col_info, "name") else str(col_info)
-            if name in skip_collections or is_keys_collection(name):
+            if not is_episodic_collection(name):
                 continue
             try:
                 col = get_collection(client, name)

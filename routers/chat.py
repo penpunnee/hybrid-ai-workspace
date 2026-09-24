@@ -155,8 +155,12 @@ async def chat(request: Request):
                                           "X-Provider-Used": "image_gen"})
 
     # ── ตรวจจับ Teaching signal จาก user ────────────────────────────────────
+    # taught=True = รอบนี้บันทึก fact ลง user_facts แล้ว → รอบหลังตอบ (เธรด _teach ด้านล่าง)
+    # ต้องข้าม ไม่งั้น save ซ้ำเป็น 2 doc (audit 2026-09-24 ข้อ 10) · รอบหลังยังจำเป็นสำหรับ
+    # เส้น correction ที่ต้องมี prev_answer
+    taught = False
     if not is_test_request:
-        await run_in_threadpool(teach, assistant, prompt)
+        taught = bool(await run_in_threadpool(teach, assistant, prompt))
 
     # ── Semantic response cache (short-circuit ถ้า Q ใกล้ของที่ thumbs-up) ─
     if use_response_cache and prompt:
@@ -622,7 +626,8 @@ async def chat(request: Request):
                 except Exception as e:
                     logger.debug(f"[Chat/teach] failed: {e}")
 
-            threading.Thread(target=_teach, daemon=True).start()
+            if not taught:
+                threading.Thread(target=_teach, daemon=True).start()
 
         # preference detection แยกจากเธรด lesson — เดิมฝังอยู่ข้างในทำให้ทำงานเฉพาะ
         # ตอนคำตอบยาว >100 ตัวอักษร + ผ่าน gate ของ lesson → preferences ว่าง 0 รายการ

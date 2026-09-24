@@ -139,6 +139,17 @@ def key_hits(client, col_name: str, query: str, n_results: int = 5) -> tuple[dic
     return scores, texts
 
 
+def is_episodic_collection(name: str) -> bool:
+    """collection ความจำระยะสั้นต่อผู้ช่วย (`memory_<slug>`) — ไม่รวมเงา `__keys`
+
+    ตัวเดียวที่ปุ่ม 🧹 (`utils/memory.cleanup_old_memories`) ควรลบ · denylist เดิม
+    `{long_term_memory, preferences}` ทำให้ `user_facts`/`lessons` ถูกลบด้วย และ `documents`/
+    `obsidian_notes` รอดแค่เพราะบังเอิญไม่มี `timestamp` (audit 2026-09-24 ข้อ 9) ·
+    Dream prune (`utils/dream.memory_prune`) ใช้เงื่อนไขเดียวกันนี้ — ถ้าแก้ให้แก้ที่นี่ที่เดียว
+    """
+    return bool(name) and name.startswith("memory_") and not is_keys_collection(name)
+
+
 def is_keys_collection(name: str) -> bool:
     """`name` เป็น collection เงาหรือไม่
 

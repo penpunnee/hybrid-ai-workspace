@@ -21,10 +21,13 @@ _TEACH_PATTERNS = [
     (r"ที่ถูกต้องคือ[:\s]+(.+)",     "correction"),
     (r"แก้ไข[:\s]+(.+)",             "correction"),
     (r"ไม่ใช่.+แต่(?:เป็น)?[:\s]+(.+)", "correction"),
-    (r"prefer\s+(.+)",               "preference"),
+    # คำอังกฤษ 3 ตัวนี้โผล่กลางประโยคไทยปกติได้ ("ช่วยดู note ใน obsidian หน่อย") จึง anchor
+    # ที่ต้นข้อความเท่านั้น — `\b` ไม่ช่วยเพราะช่องว่างก่อนคำก็เป็น boundary · pattern ไทย/แก้ไข
+    # ไม่แตะ: prompt จริงบน prod 600 ข้อ = 0 hit ไม่มีหลักฐานให้จูน (audit 2026-09-24 ข้อ 10)
+    (r"^\s*prefer\s+(.+)",          "preference"),
     (r"ชอบ(.+)มากกว่า",              "preference"),
-    (r"remember[:\s]+(.+)",          "fact"),
-    (r"note[:\s]+(.+)",              "fact"),
+    (r"^\s*remember[:\s]+(.+)",     "fact"),
+    (r"^\s*note[:\s]+(.+)",         "fact"),
 ]
 
 # pattern ตรวจจับการแก้ไข AI ที่ตอบผิด

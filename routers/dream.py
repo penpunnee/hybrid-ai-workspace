@@ -34,8 +34,8 @@ async def trigger_dream(request: Request):
         if e.status_code == 413:
             raise
         data = {}
-    except Exception:
-        data = {}
+    # ⚠️ ห้ามมี `except Exception` — จะกลืน `_BodyTooLarge` ของ middleware แล้วรัน dream ด้วย body ว่าง
+    # (audit 2026-09-24 ข้อ 11)
     provider = data.get("provider", _default_dream_provider()) if isinstance(data, dict) else _default_dream_provider()
     hours = data.get("hours", 24) if isinstance(data, dict) else 24
 

@@ -1,0 +1,18 @@
+# กัน secrets/ข้อมูลจริงออกจาก build context — Dockerfile ใช้ `COPY . .`
+# ยืนยันบน NAS 2026-09-24: image เดิมมี /app/.env และ /app/data 605 MB ฝังใน layer
+# (audit ข้อ 12 · tests/test_dockerignore.py ตรึง)
+#
+# ⚠️ ห้ามใช้ `.env.*` — จะพา .env.example หายไปด้วย (เทส 4 ตัวอ่าน)
+# ⚠️ ห้ามตัด tests/ scripts/ skills/ CLAUDE.md — CI รัน pytest *ในอิมเมจ*
+.env
+.env.bak*
+data/
+.git/
+db_backups/
+logs/
+*.db
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+.DS_Store

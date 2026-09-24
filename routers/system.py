@@ -366,8 +366,8 @@ async def admin_unlock(request: Request):
         # จึงต้องปล่อย 400 (JSON เสีย) ให้ผ่านเหมือนเดิม · เหมือน memory/cleanup กับ dream
         if e.status_code == 413:
             raise
-    except Exception:
-        pass
+    # ⚠️ ห้ามมี `except Exception` — จะกลืน `_BodyTooLarge` ของ middleware แล้ว unlock ด้วย body ว่าง
+    # (audit 2026-09-24 ข้อ 11)
     ip = body.get("ip") or client_key(request)
     unlock_ip(ip)
     return {"unlocked": ip}

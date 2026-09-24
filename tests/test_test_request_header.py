@@ -43,7 +43,9 @@ def _post(monkeypatch, headers=None):
     with patch("routers.chat.stream_response") as mock_stream, \
          patch("routers.chat.save_message", return_value=1), \
          patch("routers.chat.remember") as mock_remember, \
-         patch("routers.chat.teach") as mock_teach:
+         patch("routers.chat.teach", return_value=False) as mock_teach:
+        # return_value=False = รอบแรกไม่ได้บันทึก fact → เธรด _teach รอบหลังต้องถูก spawn
+        # (ถ้าบันทึกแล้วจะข้าม — tests/test_teach_once.py) · MagicMock เปล่าเป็น truthy จะทำเทสนี้แดง
         mock_stream.return_value = iter(["ก" * 150])  # >100 chars → auto-learn branch ปกติจะทำงาน
         resp = client.post("/api/chat", json=_BODY, headers=headers or {})
         _ = resp.text  # drain stream
