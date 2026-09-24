@@ -16,10 +16,12 @@ import time
 import uuid
 
 from core.config import NAS_DATA_PATH
+from core.env_registry import env_str
 
 logger = logging.getLogger(__name__)
 
-IMAGE_GEN_MODEL = os.getenv("IMAGE_GEN_MODEL", "gemini-2.5-flash-image")
+IMAGE_GEN_MODEL = env_str("IMAGE_GEN_MODEL", "gemini-2.5-flash-image", group="Image Generation", doc=(
+    "โมเดล Gemini สร้างรูป — ⛔ free tier ไม่เปิดให้ทุกตัว (429 limit:0) ใช้ได้เมื่อเปิด billing (~$0.04/รูป)"))
 GEN_IMAGE_DIR = os.path.join(NAS_DATA_PATH, "gen_images")
 
 # จับเฉพาะ "คำสั่งให้สร้าง/วาดรูป" — ระวัง false positive:

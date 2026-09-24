@@ -1088,3 +1088,70 @@ def test_obsidian_sync_และ_db_backup_ค่าที่_resolve_จริ�
     assert (ob.VAULT_PATH, ob._VAULT_MIN_SCORE) == (str(tmp_path), 0.7)
     db = _reload_with(monkeypatch, "utils.db_backup", {"DB_BACKUP_DEST": "/tmp/zz-bk", "DB_BACKUP_RETAIN": "3"})
     assert (db.DB_BACKUP_DEST, db.DB_BACKUP_RETAIN_DAYS) == ("/tmp/zz-bk", 3)
+
+
+# ── 17) ก้อน 4 "ง่าย": routers/system · routers/reader · routers/chat · image_gen · file_export · history (2026-09-24) ──
+# 🔑 ตรวจบน prod ก่อนเขียน (nas-cf): DOC_RETRIEVAL_MIN_SCORE/EXPORT_MAX_BYTES/IMAGE_GEN_MODEL/READER_MAX_DISK_BYTES/
+#    READER_DB_PATH ไม่ได้ตั้ง · DB_PATH=/app/chat_history.db (compose) — history.DB_PATH == config.DB_PATH ไฟล์เดียวกัน
+#    · has_anthropic False · has_vault True · reader อ่าน READER_DB_PATH ซ้ำ (เจ้าของ config) เพราะเทสเคย
+#    setenv+reload(routers.reader) → ตอนนี้เทส reload core.config ก่อน (ตัวกัน test_เทสต้องแยก_db ยังอยู่)
+
+@pytest.mark.parametrize("mod", ["routers.system", "routers.reader", "routers.chat",
+                                 "utils.image_gen", "utils.file_export", "utils.history"])
+def test_easy_batch_อยู่ใน_MODULES(mod):
+    from core.env_registry import MODULES
+
+    assert mod in MODULES
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("DOC_RETRIEVAL_MIN_SCORE", 0.5),
+    ("READER_MAX_DISK_BYTES", 200 * 1024 * 1024),
+    ("IMAGE_GEN_MODEL", "gemini-2.5-flash-image"),
+    ("EXPORT_MAX_BYTES", 1024 * 1024),
+])
+def test_default_ของ_easy_batch_เท่าของเดิม(name, expected):
+    from core.env_registry import REGISTRY, load_all
+
+    load_all()
+    spec = REGISTRY[name]
+    assert spec.default == expected and type(spec.default) is type(expected), (
+        f"{name}: default เป็น {spec.default!r} ควรเป็น {expected!r}")
+    assert spec.doc.strip()
+
+
+def test_system_reader_history_ไม่ลงชื่อของ_config_หรือ_llm():
+    for f, owned in (("routers/system.py", {"ANTHROPIC_API_KEY", "OBSIDIAN_VAULT_PATH"}),
+                     ("routers/reader.py", {"READER_DB_PATH"}), ("utils/history.py", {"DB_PATH"})):
+        assert not _helper_names((REPO / f).read_text()) & owned, f
+
+
+def test_get_config_อ่าน_ANTHROPIC_จาก_utils_llm_ตอนเรียก(monkeypatch):
+    """has_anthropic เคย os.getenv ตอนเรียก — ตอนนี้อ่าน attribute ของ utils.llm (เจ้าของ) ตอนเรียก
+    ⇒ ไม่ต้อง reload ก็สลับได้ (และคือสิ่งที่เทสอื่นจะ patch)"""
+    import utils.llm as llm
+    import routers.system as sysr
+
+    monkeypatch.setattr(llm, "ANTHROPIC_API_KEY", "  k  ")
+    assert sysr.get_config()["has_anthropic"] is True
+    monkeypatch.setattr(llm, "ANTHROPIC_API_KEY", "   ")
+    assert sysr.get_config()["has_anthropic"] is False
+
+
+def test_get_config_has_vault_จาก_config(monkeypatch, tmp_path):
+    s = _reload_with(monkeypatch, "routers.system", {"OBSIDIAN_VAULT_PATH": str(tmp_path)})
+    assert s.get_config()["has_vault"] is True
+    s = _reload_with(monkeypatch, "routers.system", {"OBSIDIAN_VAULT_PATH": ""})
+    assert s.get_config()["has_vault"] is False
+
+
+def test_reader_chat_history_export_ค่าที่_resolve_จริง(monkeypatch, tmp_path):
+    r = _reload_with(monkeypatch, "routers.reader",
+                     {"READER_DB_PATH": str(tmp_path / "r.db"), "READER_MAX_DISK_BYTES": "5"})
+    assert (r._DB, r._MAX_DISK_BYTES) == (str(tmp_path / "r.db"), 5)
+    h = _reload_with(monkeypatch, "utils.history", {"DB_PATH": str(tmp_path / "h.db")})
+    assert h.DB_PATH == str(tmp_path / "h.db")
+    fe = _reload_with(monkeypatch, "utils.file_export", {"EXPORT_MAX_BYTES": "9"})
+    assert fe.MAX_EXPORT_BYTES == 9
+    ig = _reload_with(monkeypatch, "utils.image_gen", {"IMAGE_GEN_MODEL": "img-x"})
+    assert ig.IMAGE_GEN_MODEL == "img-x"

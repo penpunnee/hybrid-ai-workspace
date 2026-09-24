@@ -18,14 +18,40 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("READER_DB_PATH", str(tmp_path / "reader.db"))
     import importlib
 
+    import core.config as C
     import routers.reader as R
 
+    importlib.reload(C)  # เจ้าของ READER_DB_PATH — reader import ค่าจากที่นี่ (ก้อน 4 · 2026-09-24)
     importlib.reload(R)
     from fastapi import FastAPI
 
     app = FastAPI()
     app.include_router(R.router)
-    return TestClient(app)
+    yield TestClient(app)
+    # 🔴 teardown: core.config ที่ reload ไว้กับ tmp path **ต้องคืนสภาพ** ไม่งั้นค่า tmp รั่วไปเทสอื่น
+    # ที่อ่าน cfg.READER_DB_PATH (เจอจริง 2026-09-24: ชุดเต็มเขียวเพราะลำดับไฟล์ · ชุดย่อยแดง)
+    monkeypatch.undo()
+    importlib.reload(C)
+    importlib.reload(R)
+
+
+def test_fixture_ไม่ทิ้ง_tmp_path_ค้างใน_core_config(tmp_path, monkeypatch):
+    """ตัวกันการรั่วของ fixture ข้างบน — เดินเส้นเดียวกันแล้วตรวจว่าหลัง teardown config กลับเป็นของจริง"""
+    import importlib
+
+    import core.config as C
+    import routers.reader as R
+
+    real = C.READER_DB_PATH
+    gen = client.__wrapped__(tmp_path, monkeypatch)
+    next(gen)
+    assert C.READER_DB_PATH == str(tmp_path / "reader.db")
+    try:
+        next(gen)
+    except StopIteration:
+        pass
+    assert C.READER_DB_PATH == real and R._DB == real, "tmp path รั่วค้างใน core.config หลัง fixture จบ"
+    importlib.reload(C); importlib.reload(R)
 
 
 BOOK = "นิยาย.pdf"

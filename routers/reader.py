@@ -20,7 +20,8 @@ import os
 
 from fastapi import APIRouter, HTTPException, Request
 
-from core.config import READER_DB_DEFAULT
+from core.config import READER_DB_PATH as _CFG_READER_DB_PATH
+from core.env_registry import env_int
 from utils.http_limits import MAX_BODY_BYTES, json_body_capped
 from utils.reader import BookmarkStore, BookStore, next_block
 from utils.thaipdf import (
@@ -36,9 +37,10 @@ logger = logging.getLogger(__name__)
 # แยกไฟล์จาก chat_history.db เพื่อให้ backup/ล้างแยกกันได้ (เล่มละหลายเมกะไบต์)
 # 🔴 **ค่า default** อยู่ที่ core/config.py ที่เดียว — ห้ามเขียน "reader.db" ซ้ำที่นี่
 #    (เดิมประกาศ default เอง แล้ว utils/db_backup.py ไม่รู้จัก ⇒ ไม่เคยถูก backup เลย
-#     23 วัน) · ส่วน getenv ต้องอยู่ตรงนี้ ไม่งั้น reload ในเทสจะไม่เห็น env ใหม่
-#     แล้วเทสจะไปเขียนทับ DB ตัวจริง — มีเทสตรึงทั้งสองข้อ
-_DB = os.getenv("READER_DB_PATH", READER_DB_DEFAULT)
+#     23 วัน) · **ค่า** ก็มาจาก core/config.py (เจ้าของ READER_DB_PATH · ก้อน 4 · 2026-09-24)
+#     ⇒ เทสที่แยก DB ต้อง `reload(core.config)` **ก่อน** `reload(routers.reader)` ไม่งั้นจะไม่เห็น
+#     env ใหม่แล้วไปเขียนทับ DB ตัวจริง — มีเทสตรึง (test_db_backup_reader::test_เทสต้องแยก_db…)
+_DB = _CFG_READER_DB_PATH
 os.makedirs(os.path.dirname(_DB) or ".", exist_ok=True)
 
 _books = BookStore(_DB)
@@ -47,7 +49,8 @@ _marks = BookmarkStore(_DB)
 
 # เพดานอ่านไฟล์จากดิสก์ — คนละเรื่องกับเพดาน HTTP (อันนั้นกัน RAM 2.5x/req ของ body)
 # อ่านจากดิสก์ไม่ผ่าน body จึงตั้งกว้างได้: เล่มใหญ่สุดที่มีจริง 56.8 MB → เผื่อ ~3.5 เท่า
-_MAX_DISK_BYTES = int(os.getenv("READER_MAX_DISK_BYTES", str(200 * 1024 * 1024)))
+_MAX_DISK_BYTES = env_int("READER_MAX_DISK_BYTES", 200 * 1024 * 1024, group="Reader (นิยาย)", doc=(
+    "ไบต์สูงสุดของไฟล์หนังสือที่อ่านจากดิสก์ (คนละเพดานกับ HTTP body) — เล่มใหญ่สุดจริง 56.8 MB → เผื่อ ~3.5 เท่า"))
 
 
 def _ingest(source: str, content: str) -> dict:

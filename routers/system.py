@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
-from core.config import GEMINI_API_KEY, DB_PATH, NAS_DATA_PATH, LMSTUDIO_BASE_URL
+from core.config import GEMINI_API_KEY, DB_PATH, NAS_DATA_PATH, LMSTUDIO_BASE_URL, OBSIDIAN_VAULT_PATH
 from core.scheduler import scheduler
 from assistants.config import ASSISTANTS
 import utils.llm as _llm
@@ -63,7 +63,6 @@ def routing_preview(q: str):
 
 @router.get("/config")
 def get_config():
-    import os
     from core.config import LMSTUDIO_BASE_URL, LMSTUDIO_CHAT_MODEL
     active_local_model = LMSTUDIO_CHAT_MODEL if LMSTUDIO_BASE_URL else OLLAMA_MODEL
     return {
@@ -73,8 +72,10 @@ def get_config():
         ],
         "ollama_model": active_local_model,
         "gemini_model": GEMINI_MODEL,
-        "has_anthropic": bool(os.getenv("ANTHROPIC_API_KEY", "").strip()),
-        "has_vault": bool(os.getenv("OBSIDIAN_VAULT_PATH", "").strip()),
+        # เจ้าของ: ANTHROPIC_API_KEY = utils.llm (อ่าน attribute ตอนเรียก — เทส patch ได้) · OBSIDIAN_VAULT_PATH = config
+        # (เดิม os.getenv ตอนเรียกทั้งคู่ — ก้อน 4 · 2026-09-24)
+        "has_anthropic": bool(_llm.ANTHROPIC_API_KEY.strip()),
+        "has_vault": bool(OBSIDIAN_VAULT_PATH.strip()),
     }
 
 

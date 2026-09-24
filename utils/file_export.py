@@ -13,11 +13,13 @@ import re
 import uuid
 
 from core.config import NAS_DATA_PATH
+from core.env_registry import env_int
 
 logger = logging.getLogger(__name__)
 
 EXPORT_DIR = os.path.join(NAS_DATA_PATH, "exports")
-MAX_EXPORT_BYTES = int(os.getenv("EXPORT_MAX_BYTES", str(1024 * 1024)))  # 1MB
+MAX_EXPORT_BYTES = env_int("EXPORT_MAX_BYTES", 1024 * 1024, group="File Export (agent)",
+                           doc="ไบต์สูงสุดต่อไฟล์ที่ tool export_file เขียนให้ดาวน์โหลด (1 MB)")
 
 _TOKEN_RE = re.compile(r"^[0-9a-f]{32}$")
 # อักขระที่พัง markdown link / URL / filesystem — แทนด้วย _

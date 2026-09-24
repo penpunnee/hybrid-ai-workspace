@@ -1,5 +1,4 @@
 import sqlite3
-import os
 import logging
 import threading
 from datetime import datetime
@@ -9,8 +8,10 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-_default_db = os.path.join(os.path.dirname(__file__), "..", "chat_history.db")
-DB_PATH = os.getenv("DB_PATH", _default_db)
+# เจ้าของ DB_PATH คือ core/config.py (default "./chat_history.db") — เดิมไฟล์นี้มี default ของตัวเอง
+# เป็น path สัมบูรณ์ <repo>/chat_history.db ซึ่ง "เทียบไม่ได้" กับของ config (คำนวณ) จึงหลุดตัวกัน
+# default-consistency มาตลอด · prod ตั้ง DB_PATH ผ่าน compose ⇒ ไฟล์เดียวกันอยู่แล้ว (ก้อน 4 · 2026-09-24)
+from core.config import DB_PATH  # noqa: E402
 
 _schema_lock = threading.Lock()
 _schema_ready = False

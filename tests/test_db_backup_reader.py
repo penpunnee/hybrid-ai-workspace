@@ -122,15 +122,18 @@ def test_เทสต้องแยก_db_ออกจากของจริ�
     """
     import importlib
 
+    import core.config as C
     import routers.reader as R
 
     monkeypatch.setenv("READER_DB_PATH", str(tmp_path / "iso.db"))
+    importlib.reload(C)  # เจ้าของ READER_DB_PATH (ก้อน 4 · 2026-09-24) — ต้องมาก่อน reader
     importlib.reload(R)
     try:
         assert R._DB == str(tmp_path / "iso.db"), (
             "reload แล้วไม่เห็น READER_DB_PATH ใหม่ — เทสจะไปเขียน DB ตัวจริง")
     finally:
         monkeypatch.undo()
+        importlib.reload(C)
         importlib.reload(R)
 
 

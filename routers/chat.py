@@ -1,12 +1,12 @@
 import json
 import logging
-import os
 import threading
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
 from assistants.config import ASSISTANTS
+from core.env_registry import env_float
 from core.config import SKILLS_DIR
 from utils.llm import stream_response
 from utils.rag import inject_context_to_system, format_skill_files
@@ -30,7 +30,8 @@ router = APIRouter(prefix="/api", tags=["chat"])
 logger = logging.getLogger(__name__)
 
 # คะแนน similarity ขั้นต่ำที่จะดึง chunk เอกสารเข้า context (ปรับได้ทาง .env)
-_DOC_MIN_SCORE = float(os.getenv("DOC_RETRIEVAL_MIN_SCORE", "0.5"))
+_DOC_MIN_SCORE = env_float("DOC_RETRIEVAL_MIN_SCORE", 0.5, group="Documents (Phase B)", doc=(
+    "similarity ขั้นต่ำที่จะดึง chunk เอกสารที่อัปโหลดเข้า context ของแชท"))
 
 
 def _is_test_request(request: Request) -> bool:
