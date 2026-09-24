@@ -29,6 +29,7 @@ from core.config import SKILLS_DIR as _SKILLS_DIR
 # ⬇️ อ่านจาก core/config.py ที่เดียว — เดิมไฟล์นี้มี default ของตัวเองที่ไม่ตรงกับที่อื่น
 # (ตัวกัน: tests/test_env_default_consistency.py)
 from core.config import LMSTUDIO_BASE_URL as _CFG_LMSTUDIO_BASE_URL
+from core.config import LMSTUDIO_CHAT_MODEL as _CFG_LMSTUDIO_CHAT_MODEL
 from utils.embed import embed_texts, cosine_similarity, embed_query
 from utils.history import _get_conn
 
@@ -149,7 +150,7 @@ def _summarize_cluster(prompts: list[str]) -> tuple[str, str]:
             timeout=15,
         )
         resp = client.chat.completions.create(
-            model=os.getenv("LMSTUDIO_CHAT_MODEL", "google/gemma-4-e4b"),
+            model=_CFG_LMSTUDIO_CHAT_MODEL,  # เจ้าของคือ config — เดิมอ่าน env ตอนเรียก (ก้อน 4 · 2026-09-24)
             messages=[{"role": "system", "content": sys_msg},
                       {"role": "user", "content": user_msg}],
             temperature=0.3,

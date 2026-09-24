@@ -8,6 +8,7 @@ import time
 from contextlib import contextmanager
 
 from core.config import SKILLS_DB_PATH
+from core.env_registry import env_str
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,13 @@ def _parse_min_score(raw: str):
         return None
 
 
-SKILLS_SEARCH_MIN_SCORE = _parse_min_score(os.getenv("SKILLS_SEARCH_MIN_SCORE", "0.38"))
+# env ของ skills — ไฟล์นี้เป็นเจ้าของ 2 ชื่อ (ก้อน 4 · 2026-09-24 · ตัวกัน: tests/test_env_registry.py)
+# ลงเป็น str + คง parser เดิม (off/none/"" = ปิด · พิมพ์ผิด = ปิด+warning) — env_float จะ raise ตอน import แทน
+_G = "Skills"
+SKILLS_SEARCH_MIN_SCORE = _parse_min_score(env_str("SKILLS_SEARCH_MIN_SCORE", "0.38", group=_G, doc=(
+    "พื้นคะแนน cosine ของ search_skills() (ChromaDB skills_collection) — ต่ำกว่านี้ไม่ฉีด\n"
+    "0.38 จาก sweep ground truth 110 คู่ (P 0.583/R 0.636) · ห้ามยืมเลข 0.35 ของ WEB/FALLBACK (คนละ scorer)\n"
+    "off = ปิดพื้น (พฤติกรรมก่อน 2026-08-04)")))
 
 
 def _drop_below_min_score(rows: list, min_score=_UNSET) -> list:
@@ -151,7 +158,9 @@ def _parse_lock_timeout(raw: str) -> float | None:
 # ทั้งตัวไม่มีทางออก (เกณฑ์เดียวกับ `_handle_unscorable_results`)
 # ⚠️ งาน maintenance ที่คนสั่งเอง (`scripts/clean_skills_db.py`) ใช้เพดาน**ยาวกว่านี้** —
 # มันควรรอให้แอปว่างแล้วทำงานให้จบ ไม่ใช่ยอมแพ้ใน 5 วิ
-SKILLS_DB_LOCK_TIMEOUT = _parse_lock_timeout(os.getenv("SKILLS_DB_LOCK_TIMEOUT", "5"))
+SKILLS_DB_LOCK_TIMEOUT = _parse_lock_timeout(env_str("SKILLS_DB_LOCK_TIMEOUT", "5", group=_G, doc=(
+    "วินาทีสูงสุดที่รอ file lock ของ skills_db.json ก่อนโยน SkillsDbLocked (fail-fast — เส้นเขียนอยู่ใน threadpool 40 slot)\n"
+    "off = รอไม่จำกัด (พฤติกรรมก่อน 2026-08-04) · scripts/clean_skills_db.py ใช้เพดานยาวกว่านี้เอง")))
 
 
 def _db_lock_path() -> str:

@@ -943,3 +943,75 @@ def test_heartbeat_ping_ใช้_HEARTBEAT_URL_ระดับโมดูล(m
 def test_notify_token_มาจาก_registry(monkeypatch):
     n = _reload_with(monkeypatch, "utils.notify", {"LINE_NOTIFY_TOKEN": "tok-x"})
     assert n.LINE_NOTIFY_TOKEN == "tok-x"
+
+
+# ── 15) ก้อน 4 ตระกูล skills: skills · skills_search · skills_select · skills_shadow · skill_discovery (2026-09-24) ──
+# 🔑 ตรวจบน prod ก่อนเขียน (nas-cf): SKILLS_* ไม่ได้ตั้งสักตัว · CHROMA_HOST/PORT + LMSTUDIO_CHAT_MODEL ตั้ง
+#    (เจ้าของ config) · baseline 0.38 5.0 / 0.05 0.35 / True · 3 ชื่อมี parser เดิม (off/พิมพ์ผิด) → env_str
+#    · skills_search อ่าน CHROMA_* ใน __init__ default "localhost" ≠ config ("") → import แล้ว `or "localhost"` เท่าเดิม
+
+@pytest.mark.parametrize("mod", ["utils.skills", "utils.skills_search", "utils.skills_select",
+                                 "utils.skills_shadow", "utils.skill_discovery"])
+def test_skills_family_อยู่ใน_MODULES(mod):
+    from core.env_registry import MODULES
+
+    assert mod in MODULES
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("SKILLS_SEARCH_MIN_SCORE", "0.38"),   # str — parser เดิม: off/none/"" = None · พิมพ์ผิด = None+warning
+    ("SKILLS_DB_LOCK_TIMEOUT", "5"),       # str — parser เดิม: off = รอไม่จำกัด · พิมพ์ผิด = 5.0
+    ("SKILLS_FALLBACK_MARGIN", "0.05"),    # str — parser เดิม: พิมพ์ผิด/ติดลบ = None (ปิด)
+    ("SKILLS_FALLBACK_MIN_SCORE", 0.35),
+    ("SKILLS_SHADOW_LOG", True),
+])
+def test_default_ของ_skills_family_เท่าของเดิม(name, expected):
+    from core.env_registry import REGISTRY, load_all
+
+    load_all()
+    spec = REGISTRY[name]
+    assert spec.default == expected and type(spec.default) is type(expected), (
+        f"{name}: default เป็น {spec.default!r} ควรเป็น {expected!r}")
+    assert spec.doc.strip()
+
+
+def test_skills_search_และ_skill_discovery_ไม่ลงทะเบียน_แต่ใช้ค่าจาก_config():
+    for f in ("skills_search", "skill_discovery"):
+        assert _helper_names((REPO / "utils" / f"{f}.py").read_text()) == set(), f
+    src = (REPO / "utils" / "skills_search.py").read_text()
+    assert {"_CFG_CHROMA_HOST", "_CFG_CHROMA_PORT"} <= _fn_names(src, "__init__")
+    sd = (REPO / "utils" / "skill_discovery.py").read_text()
+    users = [n.name for n in ast.walk(ast.parse(sd)) if isinstance(n, ast.FunctionDef)
+             and "_CFG_LMSTUDIO_CHAT_MODEL" in {x.id for x in ast.walk(n) if isinstance(x, ast.Name)}]
+    assert users, "ไม่มีฟังก์ชันไหนใน skill_discovery ใช้ _CFG_LMSTUDIO_CHAT_MODEL"
+
+
+@pytest.mark.parametrize("raw,expected", [(None, 0.38), ("0.5", 0.5), ("off", None), ("", None), ("x", None)])
+def test_SKILLS_SEARCH_MIN_SCORE_ยัง_parse_แบบเดิม(monkeypatch, raw, expected):
+    sk = _reload_with(monkeypatch, "utils.skills", {"SKILLS_SEARCH_MIN_SCORE": raw})
+    assert sk.SKILLS_SEARCH_MIN_SCORE == expected
+
+
+@pytest.mark.parametrize("raw,expected", [(None, 5.0), ("2", 2.0), ("off", None), ("x", 5.0)])
+def test_SKILLS_DB_LOCK_TIMEOUT_ยัง_parse_แบบเดิม(monkeypatch, raw, expected):
+    sk = _reload_with(monkeypatch, "utils.skills", {"SKILLS_DB_LOCK_TIMEOUT": raw})
+    assert sk.SKILLS_DB_LOCK_TIMEOUT == expected
+
+
+@pytest.mark.parametrize("raw,expected", [(None, 0.05), ("0.1", 0.1), ("off", None), ("-1", None)])
+def test_SKILLS_FALLBACK_MARGIN_ยัง_parse_แบบเดิม(monkeypatch, raw, expected):
+    ss = _reload_with(monkeypatch, "utils.skills_select", {"SKILLS_FALLBACK_MARGIN": raw})
+    assert ss.FALLBACK_MARGIN == expected
+
+
+@pytest.mark.parametrize("raw,expected", [(None, True), ("false", False), ("FALSE", False), ("true", True)])
+def test_SKILLS_SHADOW_LOG_ยังตีความแบบเดิม(monkeypatch, raw, expected):
+    sh = _reload_with(monkeypatch, "utils.skills_shadow", {"SKILLS_SHADOW_LOG": raw})
+    assert sh.SHADOW_ENABLED is expected
+
+
+def test_skills_search_ค่า_config_ที่_import_มา(monkeypatch):
+    s = _reload_with(monkeypatch, "utils.skills_search", {"CHROMA_HOST": "10.0.0.9", "CHROMA_PORT": "9001"})
+    assert (s._CFG_CHROMA_HOST, s._CFG_CHROMA_PORT) == ("10.0.0.9", 9001)
+    d = _reload_with(monkeypatch, "utils.skill_discovery", {"LMSTUDIO_CHAT_MODEL": "m-x"})
+    assert d._CFG_LMSTUDIO_CHAT_MODEL == "m-x"

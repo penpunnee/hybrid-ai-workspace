@@ -2,12 +2,13 @@
 Skills Search - Semantic Search using ChromaDB for Skills
 ทำให้ AI สามารถค้นหาและใช้ skills ที่เกี่ยวข้องกับคำถามได้
 """
-import os
 import logging
 import threading
 from typing import List, Dict, Optional
 import chromadb
 
+from core.config import CHROMA_HOST as _CFG_CHROMA_HOST
+from core.config import CHROMA_PORT as _CFG_CHROMA_PORT
 from utils.memory import get_or_create_collection
 
 logger = logging.getLogger(__name__)
@@ -24,8 +25,9 @@ class SkillsSearch:
             chroma_host: ChromaDB host (default from env or localhost)
             chroma_port: ChromaDB port (default from env or 8000)
         """
-        self.chroma_host = chroma_host or (os.getenv("CHROMA_HOST") or "localhost")
-        self.chroma_port = chroma_port or int(os.getenv("CHROMA_PORT", "8000"))
+        # ค่าจาก config (เจ้าของ CHROMA_*) — config default "" จึง `or "localhost"` เท่าเดิม (ก้อน 4 · 2026-09-24)
+        self.chroma_host = chroma_host or (_CFG_CHROMA_HOST or "localhost")
+        self.chroma_port = chroma_port or _CFG_CHROMA_PORT
         
         # Initialize ChromaDB client
         try:

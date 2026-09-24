@@ -24,6 +24,7 @@ import os
 import re
 from datetime import datetime
 
+from core.env_registry import env_bool
 from memory.lexical import lexical_score
 from utils.history import _get_conn
 from utils.rag import SKILL_HEAD_CHARS
@@ -39,7 +40,9 @@ RECORD_TOP = 8
 _LATIN = re.compile(r"[A-Za-z]")
 
 # เปิดไว้เป็น default: ปิดไว้แล้วลืมเปิด = "ตั้ง cron ไว้ไม่ได้แปลว่ามันรัน" เวอร์ชันนี้
-SHADOW_ENABLED = os.getenv("SKILLS_SHADOW_LOG", "true").lower() == "true"
+SHADOW_ENABLED = env_bool("SKILLS_SHADOW_LOG", True, group="Skills", doc=(
+    "บันทึก shadow log ของการเลือก skill (semantic vs rule) ลง SQLite ทุกเทิร์น — ข้อมูลสำหรับจูนเกณฑ์\n"
+    "เปิดเป็น default: ปิดไว้แล้วลืมเปิด = \"ตั้ง cron ไว้ไม่ได้แปลว่ามันรัน\""))
 
 
 # ── scorer ที่เอามาเทียบกัน (ตัวเดียวกับที่ scripts/skills_groundtruth.py ใช้) ────

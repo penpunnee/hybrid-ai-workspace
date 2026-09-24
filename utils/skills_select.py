@@ -35,6 +35,7 @@ from __future__ import annotations
 import logging
 import os
 
+from core.env_registry import env_float, env_str
 from utils.rag import SkillPick, select_skill_files
 from utils.skills_shadow import rule_margin, semantic_scores, skill_haystacks
 
@@ -53,7 +54,11 @@ def _parse_margin(raw: str | None) -> float | None:
 # 0.08 มาจากการวัด: ให้ไทย 14.5% (≈2.5 เท่าของเกณฑ์สัมบูรณ์ 0.40) ที่ precision พอกัน
 # ⚠️ **ยังไม่มีหลักฐานระดับที่ยืนยัน 0.08 เป๊ะๆ ได้** — ที่ยืนยันได้คือ "ดีกว่าไม่ฉีดเลย"
 # ซึ่งเป็นเกณฑ์ที่ดีไซน์นี้ต้องผ่านจริงๆ เพราะมันทำงานเฉพาะตอนทางเลือกอื่นคือศูนย์
-FALLBACK_MARGIN = _parse_margin(os.getenv("SKILLS_FALLBACK_MARGIN", "0.05"))
+# env ของ fallback แบบกฎ — ไฟล์นี้เป็นเจ้าของ 2 ชื่อ (ก้อน 4 · 2026-09-24 · ตัวกัน: tests/test_env_registry.py)
+_G = "Skills"
+FALLBACK_MARGIN = _parse_margin(env_str("SKILLS_FALLBACK_MARGIN", "0.05", group=_G, doc=(
+    "ช่องห่างคะแนนขั้นต่ำระหว่างอันดับ 1 กับ 2 ของ rule-based fallback ถึงจะฉีด (กันเลือกมั่วตอนคะแนนเสมอ)\n"
+    "ค่าพิมพ์ผิด/ติดลบ = ปิดฟีเจอร์ (ห้าม crash ตอน import — นี่คือเส้นแชทหลัก)")))
 
 # ⚠️ **พื้นสัมบูรณ์จำเป็น ห้ามถอด** — เกณฑ์สัมพัทธ์ล้วนพูดประโยคว่า "ไม่มีอะไรเกี่ยวเลย"
 # ไม่ได้ เพราะมันเทียบผู้สมัครกันเองอย่างเดียว พอคำถามไม่เกี่ยวกับ skill ไหนเลยมันก็ยัง
@@ -61,7 +66,9 @@ FALLBACK_MARGIN = _parse_margin(os.getenv("SKILLS_FALLBACK_MARGIN", "0.05"))
 # `env-variables-reference.md` ที่ 0.138 (2026-08-03) ทั้งที่ตัวเลขรวมดูดีขึ้นทุกช่อง
 # 0.35 = จุดที่ยังเหลือ prompt ไทยผ่านได้จริง (p90 ของคะแนนอันดับ 1 ฝั่งไทย = 0.347)
 # ต่างจาก 0.40 ที่ตัดไทยเหลือ 5.9% — แคบกว่านั้นนิดเดียวแต่คนละผลลัพธ์
-FALLBACK_MIN_SCORE = float(os.getenv("SKILLS_FALLBACK_MIN_SCORE", "0.35"))
+FALLBACK_MIN_SCORE = env_float("SKILLS_FALLBACK_MIN_SCORE", 0.35, group=_G, doc=(
+    "พื้นคะแนนสัมบูรณ์ของ rule-based fallback (เมื่อ ChromaDB ล่ม) — 0.35 = p90 ของอันดับ 1 ฝั่งไทย (0.347)\n"
+    "0.40 ตัดไทยเหลือ 5.9% · คนละ scorer กับ SKILLS_SEARCH_MIN_SCORE/WEB_SEARCH_MIN_SCORE"))
 
 
 def select_skills(folder_path: str, query: str,

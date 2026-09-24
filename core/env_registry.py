@@ -63,7 +63,9 @@ MODULES: tuple[str, ...] = ("core.config", "utils.llm", "agents.orchestrator", "
                            "utils.code_sandbox", "utils.websearch", "utils.response_cache",
                            "utils.memory", "core.ratelimit", "core.observability", "core.scheduler",
                            "utils.reflection", "utils.query_rewrite", "utils.ocr",
-                           "utils.dream", "routers.dream", "utils.heartbeat", "utils.notify")
+                           "utils.dream", "routers.dream", "utils.heartbeat", "utils.notify",
+                           "utils.skills", "utils.skills_search", "utils.skills_select",
+                           "utils.skills_shadow", "utils.skill_discovery")
 
 
 def load_all() -> dict[str, EnvSpec]:
