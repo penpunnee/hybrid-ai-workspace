@@ -2,7 +2,8 @@
 
 วิธี: 6 สายตรวจโค้ดคู่ขนาน (core/infra · routers · LLM/agent · memory/RAG · เสียง/reader · frontend) อ่านไฟล์เต็มทุกไฟล์ในขอบเขต
 + repro read-only ใน `/tmp/uivenv` · ผมตรวจ runtime บน prod เองผ่าน `nas-cf` และยืนยันข้อ CRITICAL/HIGH ซ้ำด้วยการอ่านโค้ดจริง
-**ทุกข้อในไฟล์นี้ยังไม่ได้แก้** — ลำดับที่แนะนำอยู่ท้ายไฟล์ · การแก้แต่ละข้อต้องมี failing test ก่อน (Iron Law)
+ลำดับที่แนะนำอยู่ท้ายไฟล์ · การแก้แต่ละข้อต้องมี failing test ก่อน (Iron Law)
+**สถานะ:** ✅ ก้อน 1 ปิดแล้ว 09-24 ค่ำ (`ff1ce17` · HIGH 1, 2, 7 + share token 40-bit ใน LOW) — devlog [ต่อ 10] · ที่เหลือยังไม่แก้
 
 ## 0. runtime บน prod — สะอาด (ยืนยันของจริง)
 - NAS HEAD = main · CI เขียว · `ai-backend-1` healthy restarts=0 · watchdog/cloudflared up 4 สัปดาห์ · ERROR 24 ชม. = 0

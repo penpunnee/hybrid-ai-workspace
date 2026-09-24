@@ -1,5 +1,26 @@
 ---
 
+## [2026-09-24 ต่อ 10] audit ก้อน 1 — session token แทนรหัสดิบ · `/shared` XSS · WS lockout · log redaction (`ff1ce17` · appscript.ui `693bbe0`)
+**ค้นก่อนลงมือ (user สั่ง "ค้นข้อมูลก่อนแล้วรายงาน"):** OWASP Session Mgmt (≥64-bit · ห้าม localStorage/URL · cookie Secure+HttpOnly+SameSite=Strict ·
+renew หลัง login) · OWASP XSS ("directly in a script" ไม่มี encoding ปลอดภัย → ไม่ interpolate เลย) · websockets docs/websocket.org (cookie
+vs subprotocol vs ticket) · ซอร์ส uvicorn ที่ติดตั้ง (`[accepted]` ออกทาง `uvicorn.error` พร้อม query) · onyx PR #15043 (filter ตัดหลัง `?` ทั้ง 2 logger)
+· lock ไม่มี itsdangerous → HMAC stdlib · **user เคาะ:** 30 วัน · header รับเฉพาะ session token
+- **แบบ:** token = `nonce(128-bit).exp.HMAC-SHA256(secret=HMAC(UI_PASSWORD,"hybrid-ai-session-v1"))` — ไม่มี store · รอด restart ·
+  เปลี่ยนรหัส = เพิกถอนทุก session · cookie `hw_session` HttpOnly/Secure/SameSite=Strict/Max-Age 30 วัน · middleware/WS อ่าน header ก่อน cookie
+  · ratelimit นับเฉพาะ header ผิด (cookie หมดอายุตอนโหลดหน้า = หลายคำขอ ไม่ใช่ brute-force) · WS ผ่าน `websocket_auth_ok` (lock → ปฏิเสธแม้ token ถูก ·
+  ล้มโดยมี credential = นับ) · `/auth/check` 401 · `/auth/logout` · `/shared` regex+404 แล้ว HTML static (JS อ่าน `location.pathname`) ·
+  `DropQueryStringFilter` บน `uvicorn.access`+`uvicorn.error` ติดตั้ง 2 จุด (import + lifespan) · share token `token_urlsafe(16)`
+- frontend: enhanced.js ไม่เก็บ token (ล้าง `hw_auth_token` เก่า) · 401 → modal · `/auth/check` ด้วย cookie · voicelive/bookreader ส่ง `''` ใน URL
+- 🔴 กับดักระหว่างทาง: (1) ลบ `import uuid` ใน sessions.py ทั้งที่ยังใช้ — เทสไม่ผ่านบรรทัดนั้น จับได้ตอน grep เอง (2) เทส reader 9 ตัว patch
+  `server.websocket_authorized` → คงชื่อไว้ในโมดูลแล้วส่งเข้า gate เป็น `authorize=` (3) ถอด f-string ของ HTML ต้อง un-escape `{{ }}` —
+  พิสูจน์ด้วย diff render เก่า/ใหม่ = 3 บรรทัดที่ตั้งใจเท่านั้น
+- เทสแดงก่อน 27 · กลุ่มควบคุม 83 · **2235 passed** (+25) · ruff · **mutation 15/15** · vitest 501 · tsc · node 29 · CSS ใหม่ = เดิม (27,926 B)
+- deploy `--force-recreate` (server.py inode 263259 ตรง) · **verify prod:** login → cookie attr ครบ/ไม่มีรหัสใน cookie · รหัสดิบ header 401 ·
+  session header/cookie 200 · check 401/401/200 · WS cookie 101 · WS รหัสดิบ query 403 · `/shared` xss 404 · **docker logs บรรทัด WS ไม่มี query
+  แม้ probe ส่ง `?token=` ไป** · registry 125 · served bundle ใหม่
+- ⚠️ ผลข้างเคียงที่ตั้งใจ: ทุกเครื่องต้อง login ใหม่ + รีเฟรช · `probe_live.sh` login ก่อน · OpenClaw/สคริปต์อื่นที่เคยส่งรหัสดิบใน header ใช้ไม่ได้แล้ว
+- ยังไม่ทำ (จดไว้): CSP header สำหรับ SPA/`/shared` (defense-in-depth) · ปุ่ม logout ใน UI
+
 ## [2026-09-24 ต่อ 9] 🩺 ตรวจทั้งระบบแบบไม่เว้น (user: "ห้ามข้าม ห้ามเว้น หาข้อผิดพลาด") — รายงานเต็ม `docs/audit/2026-09-24-full-audit.md`
 6 สายตรวจโค้ดคู่ขนาน + runtime prod · **HIGH 14 · MEDIUM ~30 · LOW ~35 · ยังไม่แก้สักข้อ (รอ user เคาะลำดับ)**
 ตัวหนัก: XSS `/shared/{token}` ขโมย `UI_PASSWORD` (token = รหัสดิบ อยู่ใน localStorage + WS URL + access log) · `DELETE /api/truncate`

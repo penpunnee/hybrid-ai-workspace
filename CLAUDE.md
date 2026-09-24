@@ -130,8 +130,8 @@ overlay แบบ vanilla (ไม่ต้อง build, ทำงานคู่
 
 ### Request Flow (`/api/chat`)
 1. Middleware ใน `server.py` → gen `X-Request-Id` + log timing
-2. Auth middleware (`core/auth.py`): **fail-closed** — ทุก request ต้อง `x-auth-token` เว้นแต่อยู่ใน `_OPEN_PATHS`/`_OPEN_PREFIXES` (/, config, status, health, auth/*, /static, /shared, /api/shared, /ws). LAN/loopback peer IP bypass (`is_local_request`, spoof-resistant). **เพิ่ม endpoint sensitive ใหม่ = ปลอดภัยโดย default** (ไม่ต้องไป maintain denylist). middleware order (outer→inner): request_id → rate_limit → auth (rate_limit wrap auth เพื่อเห็น 401 → feed brute-force lockout)
-   - ⚠️ **middleware ไม่แตะ WebSocket** (`BaseHTTPMiddleware` ลัดผ่าน scope ที่ไม่ใช่ `http`) → WS handler ต้องเรียก `core.auth.websocket_authorized(ws, token)` เองก่อน `accept()`. token มาทาง query param `?token=` เพราะ browser ตั้ง header บน WS ไม่ได้ (client: `~/appscript.ui/utils/voicelive.ts:voiceWsUrl`) — **เพิ่ม WS endpoint ใหม่ = ต้อง gate เอง ไม่ปลอดภัยโดย default เหมือนฝั่ง HTTP**
+2. Auth middleware (`core/auth.py`): **fail-closed** — ทุก request ต้องมี **session token** (cookie `hw_session` HttpOnly ที่ `/api/auth/login` ออกให้ หรือ header `x-auth-token` = session token · **รหัสดิบใช้ไม่ได้อีกตั้งแต่ 2026-09-24** · token = nonce.exp.HMAC(derive จาก `UI_PASSWORD`) อายุ `SESSION_TTL_DAYS`=30 · เปลี่ยนรหัส = เพิกถอนทุก session) เว้นแต่อยู่ใน `_OPEN_PATHS`/`_OPEN_PREFIXES` (/, config, status, health, auth/*, /static, /shared, /api/shared, /ws). LAN/loopback peer IP bypass (`is_local_request`, spoof-resistant). **เพิ่ม endpoint sensitive ใหม่ = ปลอดภัยโดย default** (ไม่ต้องไป maintain denylist). middleware order (outer→inner): request_id → rate_limit → auth (rate_limit wrap auth เพื่อเห็น 401 → feed brute-force lockout)
+   - ⚠️ **middleware ไม่แตะ WebSocket** (`BaseHTTPMiddleware` ลัดผ่าน scope ที่ไม่ใช่ `http`) → WS handler ต้องเรียก `core.ratelimit.websocket_auth_ok(ws, token, authorize=websocket_authorized)` เองก่อน `accept()` (เข้า lockout เดียวกับ http · 2026-09-24). credential หลัก = cookie `hw_session` ที่ browser แนบเองตอน handshake · `?token=` ยังรับ session token ไว้ให้ bundle เก่า/สคริปต์ (log ของ uvicorn ถูก `DropQueryStringFilter` ตัด query ออกแล้ว) · client ไม่ส่ง token ใน URL อีก (`voicelive.ts`/`bookreader.ts` ส่ง `''`) — **เพิ่ม WS endpoint ใหม่ = ต้อง gate เอง ไม่ปลอดภัยโดย default เหมือนฝั่ง HTTP**
    - brute-force lockout นับ 401 เมื่อมี header `x-auth-token` **หรือ** path เป็น `/api/auth/login` (login ส่งรหัสใน body — เคยหลุดจากการนับทั้งหมด ดู backlog ข้อ 7)
 3. `routers/chat.py:chat()` builds context (ดู Context Assembly ด้านล่าง)
 4. Stream SSE: `chunk` (incremental) + `citations` + `reflection` + `cache_hit` + `active_learning` + `done`
@@ -722,10 +722,15 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > | ค | ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน (`core/scheduler.py`) | เล็ก | งานเล็กข้อ 12 |
 > | ง | ถอด Google CSE ออกจาก chain (`utils/websearch.py`) ถ้าไม่คิดแก้ Cloud project | เล็ก | 🥇 เดิม |
 > 🧪 ยังรอ user ทดสอบด้วยมือ (ไม่ต้องเขียนโค้ด): โหมดอ่าน **พัก → อ่านต่อ** (บล็อก 09-21/22) · กดลิงก์ `export_file` · ChatBox pills
+> ✅ **ก้อน 1 ของ audit ปิดแล้ว 09-24 ค่ำ (`ff1ce17` · devlog [ต่อ 10])**: session token (cookie HttpOnly 30 วัน) แทนรหัสดิบ ·
+> `/shared` XSS · `/auth/check` 401 · WS เข้า lockout · uvicorn log ตัด query · share token 128-bit · **header รับเฉพาะ session token**
+> (`scripts/probe_live.sh` login ก่อนแล้ว) · ⚠️ **ทุกเครื่องต้อง login ใหม่ 1 ครั้ง + รีเฟรช** (bundle `index-S1X6MYpW.js` · enhanced `v=20260924-ebe7d45f`)
+> 🔑 กติกา user 09-24: **ค้นข้อมูล 2 ชั้นก่อนแก้ทุกก้อน** — (1) เป็นบั๊กจริงไหม (2) วิธีแก้ที่ถูกต้องของเรื่องนั้น (เอกสาร/สเปก/ซอร์ส lib ที่ติดตั้ง) แล้วรายงานก่อนลงมือ
+> ⏭️ **งานถัดไป = ก้อน 2 ของ audit (หัวข้อ 5 ข้อ 2): truncate ข้าม session + `bump_access_count` สลับ metadata** — เริ่มด้วยขั้นค้นเหมือนก้อน 1
 > 🩺 **ตรวจทั้งระบบแบบไม่เว้น 09-24 บ่าย → `docs/audit/2026-09-24-full-audit.md`** (devlog [ต่อ 9]) — runtime สะอาด แต่โค้ดเจอ
 > **HIGH 14** (XSS `/shared` ขโมยรหัส · truncate ข้าม session · metadata สลับทุก recall · fs glob หลุด root · calculator DoS ·
 > auth/check+WS ไม่เข้า lockout · markdown `/\` bypass · cleanup ลบ user_facts · teach ซ้ำ · body-cap ถูกกลืน · ไม่มี .dockerignore ·
-> overlay 🗑️ จอขาว · stream ไม่เช็ค res.ok) + MEDIUM ~30 + LOW ~35 · **ยังไม่แก้สักข้อ — งานแรกเซสชันหน้า = user เคาะลำดับจากหัวข้อ 5 ของไฟล์นั้น**
+> overlay 🗑️ จอขาว · stream ไม่เช็ค res.ok) + MEDIUM ~30 + LOW ~35 · ก้อน 1 (ข้อ 1,2,7) ปิดแล้ว — ที่เหลือตามหัวข้อ 5 ของไฟล์นั้น
 > 🔴 **1008→1007 ถอนแล้ว**: 1007 เกิดบนสายสด (go_away 0 ครั้ง) ทั้ง "handle พาบริบท" และ "โซ่ go_away" ผิด · ต้นเหตุยังไม่รู้ ·
 > สายเสียงต้อง log `usage=` ก่อน (reader มีแล้ว) · ที่แน่คือ 1008-loop = client reconnect วน ไม่มี idle cutoff
 > 🔑 **กติกา user: "เช็คข้อมูล ก่อนจะลงมือให้ชัวร์ก่อนทุกครั้ง"** — ทั้งสองฝั่งของสัญญา + log/คำสั่งจริง
