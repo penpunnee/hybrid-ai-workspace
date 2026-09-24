@@ -162,10 +162,14 @@ LMSTUDIO_TIMEOUT      = env_int("LMSTUDIO_TIMEOUT", 180, group=_G, doc="วิ�
 #    · ตรงกับ reasoning/router.py ที่ `if key:` ถือว่าค่าว่างไม่ได้ตั้งอยู่แล้ว
 #    · ทุกไฟล์ที่สร้าง client ต้อง import ค่านี้ (tests/test_lmstudio_api_key_empty.py)
 _LMSTUDIO_KEY_PLACEHOLDER = "lmstudio"
-LMSTUDIO_API_KEY      = env_str("LMSTUDIO_API_KEY", _LMSTUDIO_KEY_PLACEHOLDER, group=_G, doc=(
+# ค่าดิบตามที่ผู้ใช้ตั้ง ("" = ไม่ตั้ง/ตั้งว่าง) — `reasoning/router.py` ใช้ตัดสินว่าจะแนบ Authorization ไหม
+# (ไม่ตั้ง/ว่าง = ไม่แนบ · ห้ามหลุดเป็น `Bearer lmstudio`) · ทุกที่ที่สร้าง OpenAI client ใช้ค่าหลักข้างล่าง
+LMSTUDIO_API_KEY_RAW  = env_str("LMSTUDIO_API_KEY", "", group=_G, doc=(
     "token ของ LM Studio รุ่นใหม่ (หรือปิด \"Require API key\" ในตัวโปรแกรม)\n"
-    "ว่าง/ไม่ตั้ง = ใช้ค่า placeholder (LM Studio ที่ปิด auth รับได้) — ไม่ทำให้แอปล้ม"
-)) or _LMSTUDIO_KEY_PLACEHOLDER
+    "ว่าง/ไม่ตั้ง = client ใช้ค่า placeholder \"lmstudio\" (LM Studio ที่ปิด auth รับได้) — ไม่ทำให้แอปล้ม\n"
+    "· router (auto-route) ไม่แนบ Authorization เมื่อว่าง/ไม่ตั้ง"
+))
+LMSTUDIO_API_KEY      = LMSTUDIO_API_KEY_RAW or _LMSTUDIO_KEY_PLACEHOLDER
 SHOW_THINKING         = env_bool("SHOW_THINKING", False, group=_G,
                                  doc="โชว์ <think> ของโมเดลบน UI")
 

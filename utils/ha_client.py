@@ -5,16 +5,20 @@ Environment variables:
   HA_TOKEN — Long-Lived Access Token (HA → Profile → Security)
 """
 import logging
-import os
 from typing import Any
 
 import requests
 
+from core.env_registry import env_int, env_str
+
 logger = logging.getLogger(__name__)
 
-HA_URL = os.getenv("HA_URL", "").rstrip("/")
-HA_TOKEN = os.getenv("HA_TOKEN", "")
-HA_TIMEOUT = int(os.getenv("HA_TIMEOUT", "10"))
+# ไฟล์นี้เป็นเจ้าของ 3 ชื่อ (ก้อน 4 · 2026-09-24 · ตัวกัน: tests/test_env_registry.py §18)
+_G = "Home Assistant"
+HA_URL = env_str("HA_URL", "", group=_G,
+                 doc="HA base URL เช่น https://ha.pawinhome.com หรือ http://192.168.51.x:8123 (LAN) · ว่าง = ปิด tool HA").rstrip("/")
+HA_TOKEN = env_str("HA_TOKEN", "", group=_G, doc="Long-Lived Access Token (HA → Profile → Security)")
+HA_TIMEOUT = env_int("HA_TIMEOUT", 10, group=_G, doc="วินาที")
 
 
 def _headers() -> dict:

@@ -20,7 +20,6 @@ import pathlib
 import subprocess
 import sys
 
-import pytest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
@@ -68,8 +67,9 @@ def test_คีย์ที่ตั้งไว้จริงต้องถ�
 
 # ── ต้นเหตุเชิงโครงสร้าง: อ่านคีย์ดิบกระจาย 4 ไฟล์ แต่ละที่ตีความค่าว่างเอง ─────────
 _PROD_DIRS = ("core", "routers", "utils", "memory", "reasoning", "agents", "assistants")
-# router ตั้งใจอ่านเอง: ต้องแยก "ไม่ตั้ง" (ไม่แนบ header) ออกจาก "ตั้ง" — ไม่สร้าง client
-_ALLOWED = {"reasoning/router.py"}
+# ไม่มีข้อยกเว้นแล้ว (2026-09-24): router เคยอ่านเองเพื่อแยก "ไม่ตั้ง" (ไม่แนบ header) ออกจาก "ตั้ง" —
+# ตอนนี้ config ให้ค่าดิบ `LMSTUDIO_API_KEY_RAW` ("" = ไม่ตั้ง/ว่าง) แยกจากค่าหลักที่ถอยไป placeholder
+_ALLOWED: set[str] = set()
 
 
 def _raw_key_reads(src: str) -> list[int]:
@@ -103,13 +103,12 @@ def test_สแกนเนอร์มีตา():
     assert _raw_key_reads('import os\nk = os.environ.get("LMSTUDIO_API_KEY")\n') == [2]
 
 
-@pytest.mark.parametrize("value", ["", None])
-def test_router_ยังไม่แนบ_Authorization_เมื่อว่างหรือไม่ตั้ง(monkeypatch, value):
-    """กลุ่มควบคุมของ router — ต้องไม่ถูกลากไปใช้ placeholder"""
+def test_router_ยังไม่แนบ_Authorization_เมื่อค่าดิบว่าง(monkeypatch):
+    """กลุ่มควบคุมของ router — ต้องไม่ถูกลากไปใช้ placeholder (ค่าดิบว่าง = ไม่ตั้ง/ตั้งว่าง ⇒ ไม่แนบ)
+    ระดับ env (ไม่ตั้ง vs ว่าง vs ตั้ง) ตรวจที่ tests/test_env_registry.py §18"""
+    import core.config as cfg
     import reasoning.router as router
 
-    if value is None:
-        monkeypatch.delenv("LMSTUDIO_API_KEY", raising=False)
-    else:
-        monkeypatch.setenv("LMSTUDIO_API_KEY", value)
+    monkeypatch.setattr(cfg, "LMSTUDIO_API_KEY_RAW", "")
+    assert cfg.LMSTUDIO_API_KEY == "lmstudio", "ค่าหลักยังถอยไป placeholder"
     assert "Authorization" not in router._lmstudio_headers()

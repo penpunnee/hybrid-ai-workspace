@@ -120,15 +120,13 @@ def test_lmstudio_failure_with_image_does_not_cascade_to_ollama(monkeypatch):
 # ─────────────────────────────────────────────────────────────
 def _claude_env(monkeypatch, mode, key="sk-ant-x"):
     import reasoning.router as router
+    import utils.llm as llm
     from reasoning.classifier import Complexity
-    if key is None:
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    else:
-        monkeypatch.setenv("ANTHROPIC_API_KEY", key)
-    if mode is None:
-        monkeypatch.delenv("CLAUDE_AUTO", raising=False)
-    else:
-        monkeypatch.setenv("CLAUDE_AUTO", mode)
+    # env ถูกอ่านตอน import แล้ว (ก้อน 4 · 2026-09-24): ANTHROPIC_API_KEY/CLAUDE_MODEL เจ้าของ = utils.llm ·
+    # CLAUDE_AUTO เจ้าของ = router ⇒ patch ค่าในโมดูลแทน setenv (None = "ไม่ตั้ง" = ค่า default)
+    monkeypatch.setattr(llm, "ANTHROPIC_API_KEY", key or "")
+    monkeypatch.setattr(llm, "CLAUDE_MODEL", "claude-sonnet-4-6")
+    monkeypatch.setattr(router, "CLAUDE_AUTO", (mode or "off").lower())
     monkeypatch.setattr("reasoning.classifier.needs_internet", lambda p: False)
     return router, Complexity
 
@@ -184,15 +182,17 @@ def test_auto_claude_does_not_steal_internet(monkeypatch):
 
 
 # ── Fix #5: LM Studio probe ต้องส่ง LMSTUDIO_API_KEY (รุ่นใหม่บังคับ token) ──
+# router อ่าน "ค่าดิบ" `core.config.LMSTUDIO_API_KEY_RAW` ตอนเรียก (ก้อน 4 · 2026-09-24) — ไม่ตั้ง/ว่าง = ""
+# = ไม่แนบ header · เทสระดับ env (ไม่ตั้ง vs ว่าง vs ตั้ง) อยู่ที่ tests/test_env_registry.py §18
 def test_lmstudio_headers_includes_token(monkeypatch):
     import reasoning.router as router
-    monkeypatch.setenv("LMSTUDIO_API_KEY", "sk-xyz")
+    monkeypatch.setattr("core.config.LMSTUDIO_API_KEY_RAW", "sk-xyz")
     assert router._lmstudio_headers().get("Authorization") == "Bearer sk-xyz"
 
 
 def test_lmstudio_headers_no_token(monkeypatch):
     import reasoning.router as router
-    monkeypatch.delenv("LMSTUDIO_API_KEY", raising=False)
+    monkeypatch.setattr("core.config.LMSTUDIO_API_KEY_RAW", "")
     assert "Authorization" not in router._lmstudio_headers()
 
 
@@ -200,7 +200,7 @@ def test_ping_model_sends_token(monkeypatch):
     """ไม่งั้น probe 401 → _is_model_available=False → auto-route หลบ lmstudio เสมอ"""
     import reasoning.router as router
     import urllib.request
-    monkeypatch.setenv("LMSTUDIO_API_KEY", "sk-test")
+    monkeypatch.setattr("core.config.LMSTUDIO_API_KEY_RAW", "sk-test")
     captured = {}
     def fake_urlopen(req, *a, **k):
         captured["auth"] = req.get_header("Authorization")

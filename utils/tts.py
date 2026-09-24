@@ -1,11 +1,14 @@
-import os, io, wave, re, logging
+import io, wave, re, logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
 from google.genai import types
 
+from core.config import GEMINI_API_KEY  # เจ้าของ = config (ก้อน 4 · 2026-09-24) — ห้ามอ่าน env ซ้ำที่นี่
+from core.env_registry import env_str
+
 logger = logging.getLogger(__name__)
 
-GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
+_G = "Gemini TTS (/api/tts — ปุ่มอ่านออกเสียง)"
 
 # ⚠️ ต้องเป็นโมเดลสาย `*-tts` เท่านั้น — ไฟล์นี้เรียกผ่าน `generate_content()`
 # สาย `native-audio` รองรับแค่ `bidiGenerateContent` (Live API, ดู utils/voice.py)
@@ -14,22 +17,23 @@ GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
 #                                  3.1-flash-tts-preview → 180480/176640
 # เลือก 2.5-flash-preview-tts ให้อยู่ตระกูลเดียวกับ GEMINI_MODEL=gemini-2.5-flash ที่ deploy อยู่
 # `tests/test_tts_model.py` ตรึงกติกานี้ไว้แล้ว
-GEMINI_TTS_MODEL = os.getenv("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts")
+GEMINI_TTS_MODEL = env_str("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts", group=_G, doc=(
+    "⚠️ ต้องเป็นสาย *-tts เท่านั้น (เรียกผ่าน generateContent) — สาย native-audio = 404 ทุก request\n"
+    "free tier 10 req/วัน/โมเดล · ทางเลือกที่วัดแล้วใช้ได้: gemini-3.1-flash-tts-preview"))
 
 # ⚠️ โควตา free tier = **10 request/วัน/โมเดล** ⇒ 1 chunk = 1 request คือของหายาก
 # เดิมยิง 1 request ต่อ 1 ประโยค (คำตอบ 5 ประโยค = 5 req) ⇒ ใช้ได้จริง ~2 คำตอบ/วัน
 # ตอนนี้จัดกลุ่มประโยคให้เต็ม TTS_MAX_CHARS ก่อน แล้วจำกัดที่ TTS_MAX_CHUNKS
 # TTS_MAX_CHARS ต้องไม่เกินขนาดที่ `_generate_one` ส่งได้จริง (มันตัด `text[:TTS_MAX_CHARS]`)
-def _positive_env(name: str, default: int) -> int:
-    """อ่าน env ที่ต้องเป็นจำนวนเต็มบวก — ค่าเพี้ยนให้ถอยไปใช้ default **พร้อมเตือน**
+def _positive_int(name: str, raw: str, default: int) -> int:
+    """parse env ที่ต้องเป็นจำนวนเต็มบวก — ค่าเพี้ยนให้ถอยไปใช้ default **พร้อมเตือน**
 
     เลือกถอยแทน raise เพราะ NAS มี `backend-watchdog` คอย `compose up -d` ทุก 60 วิ
     ⇒ โยน error ตอน import = **crashloop ทั้งระบบเพราะปุ่มลำโพงตัวเดียว**
     แต่ห้ามถอยเงียบ ไม่งั้นคนตั้ง env ไว้จะไม่มีทางรู้ว่ามันไม่มีผล
+    ⇒ ลงทะเบียนเป็น str (`env_str` ที่ call site — ratchet เอกสารต้องเห็นชื่อ literal) แล้วคง parser นี้
+    — **ห้ามเปลี่ยนเป็น env_int** (มัน raise ตอน import)
     """
-    raw = os.getenv(name)
-    if raw is None:
-        return default
     try:
         val = int(raw)
         if val <= 0:
@@ -40,8 +44,11 @@ def _positive_env(name: str, default: int) -> int:
         return default
 
 
-TTS_MAX_CHARS = _positive_env("TTS_MAX_CHARS", 2000)
-TTS_MAX_CHUNKS = _positive_env("TTS_MAX_CHUNKS", 3)
+TTS_MAX_CHARS = _positive_int("TTS_MAX_CHARS", env_str("TTS_MAX_CHARS", "2000", group=_G, doc=(
+    "ตัวอักษรสูงสุดต่อ chunk (1 chunk = 1 request) — วัดจากคำตอบจริง 469 ข้อความ: 95% กิน 1 request\n"
+    "ค่าไม่บวก/พิมพ์ผิด → ถอยไป default พร้อม warning (ไม่ raise — กัน crashloop)")), 2000)
+TTS_MAX_CHUNKS = _positive_int("TTS_MAX_CHUNKS", env_str("TTS_MAX_CHUNKS", "3", group=_G, doc=(
+    "จำนวน chunk สูงสุดต่อคำตอบ — เกินถูกตัดทิ้งพร้อม logger.warning เสมอ (นโยบายที่ user เคาะ)")), 3)
 
 # ⚠️ ตารางเสียงอยู่ที่ `utils/voice.py` ที่เดียว — ห้ามนิยามซ้ำที่นี่อีก
 # (เคยมี 2 ก๊อป และตัวที่ `server.py` ใช้จริงคือของไฟล์นี้ ทำให้คนที่ไปแก้ `voice.py`

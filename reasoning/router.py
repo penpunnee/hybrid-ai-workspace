@@ -7,11 +7,20 @@ Provider mapping:
   ollama         →  Ollama fallback
 """
 import logging
-import os
 from dataclasses import dataclass
+
+from core.env_registry import env_str
+
 from .classifier import Complexity, classify
 
 logger = logging.getLogger(__name__)
+
+# ไฟล์นี้เป็นเจ้าของชื่อเดียว (ก้อน 4 · 2026-09-24) — เคยอ่านตอนเรียกทุกครั้ง ย้ายเป็นระดับโมดูล (env ใน prod นิ่ง ·
+# เทส patch `router.CLAUDE_AUTO` แทน setenv) · ANTHROPIC_API_KEY/CLAUDE_MODEL เจ้าของ = utils.llm ·
+# LMSTUDIO_API_KEY เจ้าของ = core.config (อ่าน "ค่าดิบ" ตอนเรียก — ดู `_lmstudio_headers`)
+CLAUDE_AUTO = env_str("CLAUDE_AUTO", "off", group="Claude (Anthropic)", doc=(
+    "ให้ provider=auto เลือก Claude — off | reasoning (เฉพาะคำถามยาก) | all (ทุก text) · ต้องมี ANTHROPIC_API_KEY\n"
+    "internet/vision ยังไปทางเดิม (Claude ที่นี่ไม่มี web/search tool)")).lower()
 
 _model_cache: dict[str, bool] = {}
 
@@ -20,9 +29,10 @@ def _lmstudio_headers() -> dict:
     """header สำหรับยิง LM Studio — แนบ Authorization ถ้าตั้ง LMSTUDIO_API_KEY
     (LM Studio รุ่นใหม่บังคับ token; ไม่งั้น probe 401 → auto-route หลบ lmstudio)"""
     headers = {"Content-Type": "application/json"}
-    # ไม่ใส่ default โดยตั้งใจ: แนบ Authorization เฉพาะเมื่อผู้ใช้ "ตั้งคีย์เอง"
-    # ("ไม่ตั้ง" ≠ "ตั้งเป็นค่าว่าง") — ไฟล์อื่นที่ต้องมีคีย์เสมอใช้ค่า "lmstudio"
-    key = os.environ.get("LMSTUDIO_API_KEY")
+    # แนบ Authorization เฉพาะเมื่อผู้ใช้ "ตั้งคีย์เอง" — อ่าน **ค่าดิบ** จาก config (เจ้าของ) ไม่ใช่
+    # `LMSTUDIO_API_KEY` ที่ถอยไป placeholder "lmstudio" (ไฟล์ที่สร้าง client ต้องมีคีย์เสมอจึงใช้ตัวนั้น)
+    # · import ตอนเรียกแบบเดียวกับ route() ⇒ เทส patch `core.config.LMSTUDIO_API_KEY_RAW` ได้
+    from core.config import LMSTUDIO_API_KEY_RAW as key
     if key:
         headers["Authorization"] = f"Bearer {key}"
     return headers
@@ -163,14 +173,17 @@ def route(
     # Claude (opt-in) — CLAUDE_AUTO=reasoning ใช้ Claude เฉพาะคำถามยาก, =all ใช้ทุก text
     # ต้องมี ANTHROPIC_API_KEY. ปิด default → พฤติกรรมเดิมไม่เปลี่ยน + ไม่เปลือง cost เงียบๆ
     # หมายเหตุ: internet/vision ถูกจัดการไปก่อนหน้าแล้ว (Claude ที่นี่ไม่มี web/search tool)
-    claude_auto = os.getenv("CLAUDE_AUTO", "off").lower()
-    if os.getenv("ANTHROPIC_API_KEY", "") and (
-        claude_auto == "all"
-        or (claude_auto == "reasoning" and complexity == Complexity.REASONING)
+    # คีย์/โมเดล Claude อ่าน attribute ของ utils.llm (เจ้าของ) ตอนเรียก (แบบเดียวกับ has_anthropic ใน
+    # routers/system) — ไม่ import ระดับโมดูล เพราะ llm สร้าง client ตอน import (หนัก) และ router ถูกใช้
+    # จาก dream/summarize ด้วย · ไม่ใช่เรื่อง cycle (ตรวจแล้ว llm import router เฉพาะในฟังก์ชัน)
+    # · เทส patch `utils.llm.ANTHROPIC_API_KEY`/`CLAUDE_MODEL` ได้
+    import utils.llm as _llm
+    if _llm.ANTHROPIC_API_KEY and (
+        CLAUDE_AUTO == "all"
+        or (CLAUDE_AUTO == "reasoning" and complexity == Complexity.REASONING)
     ):
-        claude_model = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
-        return RouteDecision("claude", claude_model, complexity,
-                             f"{complexity.value} → Claude (CLAUDE_AUTO={claude_auto})")
+        return RouteDecision("claude", _llm.CLAUDE_MODEL, complexity,
+                             f"{complexity.value} → Claude (CLAUDE_AUTO={CLAUDE_AUTO})")
 
     # ถ้า LM Studio ไม่ได้ตั้งค่า → fallback Ollama
     if not LMSTUDIO_BASE_URL:

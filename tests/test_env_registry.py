@@ -257,7 +257,9 @@ def test_load_all_เติมชื่อของ_llm_เข้า_registry():
 @pytest.mark.parametrize("name,expected", [
     ("GEMINI_FALLBACK_MODEL", ""),
     ("GEMINI_SEARCH_MODEL", ""),
-    ("LMSTUDIO_API_KEY", "lmstudio"),
+    # 2026-09-24: default ที่ลงทะเบียนเป็นค่าดิบ "" (ไม่ตั้ง/ว่าง) — ค่าหลักยังถอยไป "lmstudio"
+    # (ตรึงที่ §18 test_LMSTUDIO_API_KEY_RAW_… + tests/test_lmstudio_api_key_empty.py)
+    ("LMSTUDIO_API_KEY", ""),
     ("ANTHROPIC_API_KEY", ""),
     ("CLAUDE_MODEL", "claude-sonnet-4-6"),
     ("CLAUDE_MAX_TOKENS", 4096),
@@ -1155,3 +1157,120 @@ def test_reader_chat_history_export_ค่าที่_resolve_จริง(monk
     assert fe.MAX_EXPORT_BYTES == 9
     ig = _reload_with(monkeypatch, "utils.image_gen", {"IMAGE_GEN_MODEL": "img-x"})
     assert ig.IMAGE_GEN_MODEL == "img-x"
+
+
+# ── 18) ก้อน 4 ปิดท้าย — 3 ไฟล์ที่ "ต้องคิดก่อน": reasoning/router · utils/tts · utils/ha_client (2026-09-24) ──
+# 🔑 ตรวจบน prod ก่อนเขียน (nas-cf): CLAUDE_AUTO/ANTHROPIC_API_KEY/LMSTUDIO_API_KEY/GEMINI_TTS_MODEL/TTS_MAX_*
+#    ไม่ได้ตั้ง · CLAUDE_MODEL ตั้ง = default · HA_URL/HA_TOKEN ตั้งจริง · HA_TIMEOUT=10 · router ไม่แนบ Authorization
+# 🔴 LMSTUDIO_API_KEY: router ต้องแยก "ไม่ตั้ง/ว่าง" (ไม่แนบ header) ออกจาก placeholder ของ config —
+#    ห้ามอ่าน env ซ้ำ (เจ้าของ = config) และห้ามใช้ค่าที่ถอยไป placeholder ⇒ config ลงทะเบียน default ""
+#    เป็น "ค่าดิบ" (`LMSTUDIO_API_KEY_RAW`) แล้วค่อยถอยไป placeholder เองใน `LMSTUDIO_API_KEY`
+# 🔴 TTS_MAX_*: parser เดิม (`_positive_int`) ตั้งใจ**ไม่ raise** (raise ตอน import = backend-watchdog พาเข้า crashloop
+#    เพราะปุ่มลำโพงตัวเดียว) ⇒ ลงเป็น str แล้วคง parser · ห้ามใช้ env_int
+
+@pytest.mark.parametrize("mod", ["reasoning.router", "utils.tts", "utils.ha_client"])
+def test_final_batch_อยู่ใน_MODULES(mod):
+    from core.env_registry import MODULES
+
+    assert mod in MODULES
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("CLAUDE_AUTO", "off"),
+    ("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts"),
+    ("TTS_MAX_CHARS", "2000"),   # str โดยตั้งใจ — parser เดิมถอยไป default พร้อม warning ไม่ raise
+    ("TTS_MAX_CHUNKS", "3"),
+    ("HA_URL", ""),
+    ("HA_TOKEN", ""),
+    ("HA_TIMEOUT", 10),
+    ("LMSTUDIO_API_KEY", ""),    # ค่าดิบ — placeholder "lmstudio" คำนวณใน config ไม่ใช่ default ที่ลงทะเบียน
+])
+def test_default_ของ_final_batch_เท่าของเดิม(name, expected):
+    from core.env_registry import REGISTRY, load_all
+
+    load_all()
+    spec = REGISTRY[name]
+    assert spec.default == expected and type(spec.default) is type(expected), (
+        f"{name}: default เป็น {spec.default!r} ควรเป็น {expected!r}")
+    assert spec.doc.strip()
+
+
+def test_router_tts_ไม่ลงชื่อของ_config_หรือ_llm():
+    for f, owned in (("reasoning/router.py", {"ANTHROPIC_API_KEY", "CLAUDE_MODEL", "LMSTUDIO_API_KEY"}),
+                     ("utils/tts.py", {"GEMINI_API_KEY"})):
+        assert not _helper_names((REPO / f).read_text()) & owned, f
+
+
+@pytest.mark.parametrize("raw,expect_raw,expect_key", [
+    (None, "", "lmstudio"), ("", "", "lmstudio"), ("sk-x", "sk-x", "sk-x"),
+])
+def test_LMSTUDIO_API_KEY_RAW_คือค่าดิบ_และค่าหลักถอยไป_placeholder(monkeypatch, raw, expect_raw, expect_key):
+    cfg = _reload_with(monkeypatch, "core.config", {"LMSTUDIO_API_KEY": raw})
+    assert (cfg.LMSTUDIO_API_KEY_RAW, cfg.LMSTUDIO_API_KEY) == (expect_raw, expect_key)
+
+
+@pytest.mark.parametrize("raw,auth", [(None, None), ("", None), ("sk-x", "Bearer sk-x")])
+def test_router_แนบ_Authorization_ตามค่าดิบ_ไม่ใช่_placeholder(monkeypatch, raw, auth):
+    """ไม่ตั้ง/ว่าง = ไม่แนบ (ห้ามหลุดเป็น `Bearer lmstudio`) · ตั้งแล้ว = แนบค่านั้น — กติกาเดิมของ router"""
+    r = _reload_with(monkeypatch, "reasoning.router", {"LMSTUDIO_API_KEY": raw})
+    assert r._lmstudio_headers().get("Authorization") == auth
+
+
+def test_route_ใช้_CLAUDE_AUTO_ของ_router_และคีย์_โมเดลจาก_utils_llm(monkeypatch):
+    """CLAUDE_AUTO เคยอ่าน env ตอนเรียก — ตอนนี้ระดับโมดูล (router เป็นเจ้าของ) · คีย์/โมเดล Claude อ่าน
+    attribute ของ utils.llm (เจ้าของ) ตอนเรียก ⇒ เทส patch ค่าในโมดูล ไม่ใช่ setenv"""
+    import utils.llm as llm
+    import reasoning.router as router
+    from reasoning.classifier import Complexity
+
+    monkeypatch.setattr("reasoning.classifier.needs_internet", lambda p: False)
+    monkeypatch.setattr(router, "classify", lambda p: Complexity.NORMAL)
+    monkeypatch.setattr(llm, "ANTHROPIC_API_KEY", "k")
+    monkeypatch.setattr(llm, "CLAUDE_MODEL", "claude-x")
+    monkeypatch.setattr(router, "CLAUDE_AUTO", "all")
+    d = router.route("อะไรก็ได้", provider_hint="auto")
+    assert (d.provider, d.model) == ("claude", "claude-x")
+
+    # env ตอนเรียกไม่มีผลอีกแล้ว — ค่าในโมดูลคือตัวตัดสิน
+    monkeypatch.setenv("CLAUDE_AUTO", "all")
+    monkeypatch.setattr(router, "CLAUDE_AUTO", "off")
+    monkeypatch.setattr("core.config.LMSTUDIO_BASE_URL", "")
+    monkeypatch.setattr("core.config.GEMINI_API_KEY", "")
+    assert router.route("อะไรก็ได้", provider_hint="auto").provider != "claude"
+
+
+def test_CLAUDE_AUTO_ยัง_lower_เหมือนเดิม(monkeypatch):
+    r = _reload_with(monkeypatch, "reasoning.router", {"CLAUDE_AUTO": "ALL"})
+    assert r.CLAUDE_AUTO == "all"
+    r = _reload_with(monkeypatch, "reasoning.router", {"CLAUDE_AUTO": None})
+    assert r.CLAUDE_AUTO == "off"
+
+
+def test_tts_ค่าที่_resolve_จริง(monkeypatch):
+    t = _reload_with(monkeypatch, "utils.tts", {"GEMINI_TTS_MODEL": "x-tts", "TTS_MAX_CHARS": "50",
+                                                "TTS_MAX_CHUNKS": "2", "GEMINI_API_KEY": "tts-k"})
+    assert (t.GEMINI_TTS_MODEL, t.TTS_MAX_CHARS, t.TTS_MAX_CHUNKS, t.GEMINI_API_KEY) == ("x-tts", 50, 2, "tts-k")
+
+
+@pytest.mark.parametrize("raw", [None, "0", "-3", "ล้าน", ""])
+def test_TTS_MAX_ยังถอยไป_default_พร้อมเตือน_ไม่_raise(monkeypatch, caplog, raw):
+    """ค่าไม่บวก/พิมพ์ผิด → default + warning (ห้าม raise = crashloop) · ไม่ตั้ง → default เงียบ"""
+    with caplog.at_level("WARNING", logger="utils.tts"):
+        t = _reload_with(monkeypatch, "utils.tts", {"TTS_MAX_CHARS": raw, "TTS_MAX_CHUNKS": raw})
+    assert (t.TTS_MAX_CHARS, t.TTS_MAX_CHUNKS) == (2000, 3)
+    warned = [r for r in caplog.records if "TTS_MAX" in r.getMessage()]
+    assert bool(warned) == (raw is not None), "ค่าเพี้ยนต้องเตือน · ไม่ตั้งต้องเงียบ"
+
+
+def test_ha_client_ค่าที่_resolve_จริง(monkeypatch):
+    h = _reload_with(monkeypatch, "utils.ha_client",
+                     {"HA_URL": "http://ha.local/", "HA_TOKEN": "t", "HA_TIMEOUT": "7"})
+    assert (h.HA_URL, h.HA_TOKEN, h.HA_TIMEOUT) == ("http://ha.local", "t", 7)   # rstrip("/") ยังอยู่
+    h = _reload_with(monkeypatch, "utils.ha_client", {"HA_URL": None, "HA_TOKEN": None, "HA_TIMEOUT": None})
+    assert (h.HA_URL, h.HA_TOKEN, h.HA_TIMEOUT) == ("", "", 10)
+    assert h._check_config(), "ไม่ตั้ง = ต้องบอกว่าไม่ได้ตั้ง ไม่ใช่ยิงเน็ต"
+
+
+def test_HA_TIMEOUT_พิมพ์ผิดต้องดังเหมือน_int_เดิม(monkeypatch):
+    with pytest.raises(ValueError):
+        _reload_with(monkeypatch, "utils.ha_client", {"HA_TIMEOUT": "สิบ"})
