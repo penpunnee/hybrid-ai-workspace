@@ -703,14 +703,16 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-24 ดึก — ปิด audit ก้อน 4**)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-24 ดึก — ปิด audit ก้อน 4 + rebuild image แล้ว**)
 
-> ## 🥇 งานแรกเซสชันหน้า (ค้างจากก้อน 4 · **รอ user อยู่หน้าจอ**): **rebuild + prune image บน NAS ล้าง `.env`/`data` ออกจาก layer เก่า**
-> image ที่ใช้อยู่ + `<none>` 6 ใบ มี `/app/.env` และ `/app/data` 605 MB ฝังอยู่ (ยืนยัน 09-24) · `.dockerignore` ใส่แล้ว (`fdc269a`) แต่ไม่ล้างของเก่า
-> ทำ: `ssh nas-cf 'cd /var/services/homes/pawin/ui && sudo -n /usr/local/bin/docker compose build hybrid-ai && sudo -n /usr/local/bin/docker compose up -d hybrid-ai'`
-> → เช็ค `docker ps` healthy + `/api/config` 200 + `docker run --rm --entrypoint sh <image> -c "ls /app/.env"` ต้องไม่มี → `docker image prune -f` แล้วนับ `docker images` ว่า
-> `<none>` หายหมด · ⚠️ recreate เคยล้มกลางทาง (`docs/reference/infra-nas.md:29`) — กู้ด้วย `compose up -d hybrid-ai` เฉยๆ · downtime ~1-2 นาที
-> · **ห้ามใช้ `--no-cache` ถ้าไม่จำเป็น** (pip ลง 121 แพ็กเกจใหม่บน NAS ช้า) · `data/` ทั้งหมดเป็น bind mount → ไม่มีข้อมูลหาย
+> ## ✅ rebuild + prune image **ทำแล้ว 09-24 ดึก (devlog [ต่อ 14]) — อย่าทำซ้ำ**
+> image ใหม่ `1ce9d740…` 717 MB ไม่มี `.env`/`data`/`.git` · healthy · `<none>` 174→22 ใบ 48.65→14.71 GB · **ตอนนี้คอนเทนเนอร์ไม่มี `/app/.env`** (env จาก compose
+> `env_file:` — โค้ดไม่อ่านไฟล์ตรง) · วิธี rebuild ครั้งหน้า: `compose build hybrid-ai` แล้ว `compose up -d hybrid-ai` แยกคำสั่ง (ไม่ใช้ `--force-recreate`) · layer pip cache
+> อยู่ ⇒ ~30 วิ · **ห้าม `--no-cache`** ถ้าไม่จำเป็น · ⚠️ `docker image prune` รายงาน "reclaimed" ต่ำกว่าจริง (layer แชร์) ดู `system df` แทน
+>
+> ## 🥇 งานถัดไป: **audit ก้อน 5 (หัวข้อ 5 ข้อ 5 ของ `docs/audit/2026-09-24-full-audit.md`)** — overlay 🗑️ จอขาว (13) · stream ไม่เช็ค `res.ok` (14) → แล้วต่อ MEDIUM
+> หรือ backlog `dbId` ข้างล่าง · ทำแบบเดิม: ค้น 2 ชั้น → รายงาน → /scrutinize → "ไล่ทุกส่วน+ความสัมพันธ์" → เทสแดง → แก้ → mutation → deploy → verify · ข้อ 13/14 เป็น
+> frontend (`enhanced.js` overlay + `app.tsx`) ⇒ เทส = `node --test` (overlay) / vitest (React) · deploy = ไฟล์ static ไม่ต้อง restart · overlay ต้อง bump `?v=` ใน `~/appscript.ui/index.html`
 >
 > ## ✅ audit ก้อน 4 **ปิดแล้ว 09-24 ดึก (`fdc269a` · devlog [ต่อ 13]) — อย่าทำซ้ำ**
 > body chunked เกินเพดานเคยตอบ 200 แล้วรัน cleanup/dream/unlock ด้วย body ว่าง (3 handler `except Exception` กลืน `_BodyTooLarge`) → ตัดออก + ratchet AST ·

@@ -1,5 +1,15 @@
 ---
 
+## [2026-09-24 ต่อ 14] rebuild + prune image บน NAS — ล้าง `.env`/`data` ออกจาก layer เก่า ✅ (user สั่ง "ต่อดิ")
+- ก่อน: running image `1125abd9…` 1.37 GB (5 สัปดาห์) · `<none>` ค้าง **~150 ใบ** (หลายใบ 1–2 GB · ย้อน 5 เดือน) · `docker system df`: 174 image 48.65 GB reclaimable 35 GB
+- `compose build hybrid-ai`: layer base/apt/pip **CACHED** ทั้งหมด เปลี่ยนแค่ `COPY . .` (6.1 วิ) → **33 วิ** · image ใหม่ `1ce9d740…` **717 MB** (ถ้าไม่มี `.dockerignore` layer COPY = 660 MB)
+- `compose up -d hybrid-ai` → Recreated/Started · **healthy ใน 36 วิ** · mounts 22 เท่าเดิม · `server.py` inode host=container (263259) · `/api/config` 200 ทั้งใน
+  คอนเทนเนอร์และ public · ในคอนเทนเนอร์ **ไม่มี `/app/.env`** (env มาจาก compose `env_file:` — โค้ดไม่มีตัวไหนอ่านไฟล์ `.env` ตรงๆ นอกจาก `load_dotenv()`) ·
+  image ใหม่: ไม่มี `.env`/`data`/`.git` · `/app` 12 MB
+- `docker image prune -f` → **174 → 22 image · 48.65 → 14.71 GB** · `<none>` เหลือ 0 (image เก่าที่มี `.env` ทุกใบหายหมด) · container 19 ตัวขึ้นครบ
+- ⚠️ ตัวเลข "Total reclaimed space: 89.56MB" ของ docker หลอกตา — นับเฉพาะ layer ที่ไม่แชร์ · ต้องดู `system df` ก่อน/หลัง
+- 🔑 recreate ไม่ล้มรอบนี้ (ต่างจาก 06-15/08) — build เสร็จก่อน `up` แยกคำสั่ง ไม่ใช้ `--force-recreate` · watchdog ไม่ชน (compose up ถือ lock เอง)
+
 ## [2026-09-24 ต่อ 13] audit ก้อน 4 — body-cap ถูกกลืน · 🧹 ลบข้ามชั้นความจำ · teach ซ้ำ/regex · `.dockerignore` (`fdc269a`) ✅ deployed+verified
 **ค้นก่อนลงมือ (ค้น → รายงาน → user ถามความเห็น → /scrutinize → เคาะ 3 ข้อ):**
 - ข้อ 12 **ยืนยันบน NAS**: image ที่ `ai-backend-1` ใช้มี `/app/.env` (1298 B) + `/app/data` **605 MB** ฝังใน layer (`docker history`: `COPY . .` 660 MB) ·

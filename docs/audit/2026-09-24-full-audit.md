@@ -9,7 +9,7 @@
 · ✅ **ก้อน 3 ปิดแล้ว 09-24 ดึก (`82681d9` · HIGH 5, 6, 8)** — devlog [ต่อ 12] · ข้อ 5 พิสูจน์บน prod ว่าอ่าน `/proc/self/environ` ได้จริง ·
 มี 2 ทางเข้า (agent tool + `POST /api/fs/search`) ปิดที่ `search_files` จุดเดียว
 · ✅ **ก้อน 4 ปิดแล้ว 09-24 ดึก (`fdc269a` · HIGH 9, 10, 11, 12)** — devlog [ต่อ 13] · ข้อ 12 ยืนยัน image มี `.env`+`data` 605 MB จริง ·
-ข้อ 10 วัด prod = 0 hit (ประเมินแรงไป) · 🔴 **ค้าง: rebuild+prune image บน NAS เพื่อล้าง layer เก่า (รอ user)** · ที่เหลือยังไม่แก้ (HIGH 13-14 + MEDIUM/LOW)
+ข้อ 10 วัด prod = 0 hit (ประเมินแรงไป) · ✅ rebuild+prune image แล้ว (devlog [ต่อ 14] · image เก่าที่มี `.env` หายหมด) · ที่เหลือยังไม่แก้ (HIGH 13-14 + MEDIUM/LOW)
 
 ## 0. runtime บน prod — สะอาด (ยืนยันของจริง)
 - NAS HEAD = main · CI เขียว · `ai-backend-1` healthy restarts=0 · watchdog/cloudflared up 4 สัปดาห์ · ERROR 24 ชม. = 0
