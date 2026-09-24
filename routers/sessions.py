@@ -1,7 +1,7 @@
 import secrets
 import uuid
 from datetime import datetime
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from core.state import share_store_set, share_store_get
 from utils.http_limits import json_body_capped, MAX_BODY_BYTES
@@ -71,7 +71,9 @@ def export_session(assistant: str, session_id: str):
 
 @router.delete("/truncate/{db_id}")
 def truncate_endpoint(db_id: int):
-    truncate_from_db_id(db_id)
+    """ลบตั้งแต่ข้อความนี้ถึงท้าย session *ของข้อความนี้* (ใช้ตอนแก้ข้อความแล้วส่งใหม่)"""
+    if not truncate_from_db_id(db_id):
+        raise HTTPException(status_code=404, detail="ไม่พบข้อความ id นี้")
     return {"ok": True}
 
 

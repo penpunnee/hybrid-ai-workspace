@@ -228,20 +228,64 @@ def delete_last_assistant_message(assistant: str, session_id: str) -> bool:
     return bool(row)
 
 
-def truncate_from_db_id(db_id: int):
-    """ลบข้อความทุกรายการที่มี id >= db_id"""
+def _purge_message_side_tables(conn: sqlite3.Connection, message_ids: list[int]) -> None:
+    """ลบแถวในตารางพ่วงที่ผูกกับ message_id ของข้อความที่กำลังจะหาย
+
+    ⚠️ ตารางไหนเพิ่ม `message_id` ใหม่ ต้องมาต่อลิสต์นี้ — ไม่งั้นเหลือ orphan ที่ไม่มีใคร
+    ลบให้ (บทเรียนเดียวกับ `clear_session` · `tests/test_truncate_session_scope.py` คุมไว้)
+    """
+    if not message_ids:
+        return
+    marks = ",".join("?" * len(message_ids))
+    for table in ("skill_shadow", "feedback"):
+        try:
+            conn.execute(f"DELETE FROM {table} WHERE message_id IN ({marks})", message_ids)
+        except sqlite3.OperationalError:
+            # DB เก่าที่ยังไม่เคยสร้างตารางนี้ — ห้ามทำให้การลบข้อความพัง
+            logger.debug("purge side tables: ข้ามตาราง %s (ยังไม่มีในฐานข้อมูล)", table)
+
+
+def truncate_from_db_id(db_id: int) -> bool:
+    """ลบข้อความตั้งแต่ db_id เป็นต้นไป **เฉพาะใน session เดียวกับ db_id นั้น**
+
+    caller (แก้ข้อความแล้วส่งใหม่) ส่งมาแค่ id ⇒ หา assistant/session จาก row เอง
+    ⚠️ เดิม `DELETE ... WHERE id >= ?` ไม่กรองอะไร = ลบทุกแชทของทุกผู้ช่วยที่ใหม่กว่า
+    (audit 2026-09-24 ข้อ 3) · คืน False ถ้าไม่มี id นั้น (ห้ามเดา ห้ามลบอะไรเลย)
+    """
     conn = _get_conn()
-    conn.execute("DELETE FROM messages WHERE id >= ?", (db_id,))
-    conn.commit()
-    conn.close()
+    try:
+        row = conn.execute(
+            "SELECT assistant, session_id FROM messages WHERE id = ?", (db_id,)
+        ).fetchone()
+        if not row:
+            return False
+        assistant, session_id = row
+        doomed = [
+            r[0] for r in conn.execute(
+                "SELECT id FROM messages WHERE assistant = ? AND session_id = ? AND id >= ?",
+                (assistant, session_id, db_id),
+            )
+        ]
+        _purge_message_side_tables(conn, doomed)
+        conn.execute(
+            "DELETE FROM messages WHERE assistant = ? AND session_id = ? AND id >= ?",
+            (assistant, session_id, db_id),
+        )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
 
 
 def delete_message_by_id(db_id: int):
-    """ลบ message เดี่ยวตาม db_id"""
+    """ลบ message เดี่ยวตาม db_id พร้อมตารางพ่วงของมัน"""
     conn = _get_conn()
-    conn.execute("DELETE FROM messages WHERE id = ?", (db_id,))
-    conn.commit()
-    conn.close()
+    try:
+        _purge_message_side_tables(conn, [db_id])
+        conn.execute("DELETE FROM messages WHERE id = ?", (db_id,))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_last_user_message(assistant: str, session_id: str) -> str:

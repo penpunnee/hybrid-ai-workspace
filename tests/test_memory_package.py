@@ -225,7 +225,9 @@ def test_search_entries_bumps_access_count(monkeypatch):
         "metadatas": [[{"confidence": 0.8, "verified": False, "access_count": 0}]],
         "distances": [[0.1]],
     }
-    get_res = {"metadatas": [{"confidence": 0.8, "verified": False, "access_count": 0}]}
+    # Chroma คืน ids มาเสมอ — fake เดิมไม่มี ids ทำให้บั๊ก zip-กับ-ที่ขอ รอดมาได้
+    # (ดู tests/test_bump_access_count_order.py)
+    get_res = {"ids": ["m1"], "metadatas": [{"confidence": 0.8, "verified": False, "access_count": 0}]}
     updates = []
 
     class _Col:

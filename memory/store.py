@@ -196,15 +196,21 @@ def bump_access_count(assistant: str, doc_ids: list[str]) -> None:
         from utils.memory import get_collection
         col = get_collection(client, col_name)
         res = col.get(ids=doc_ids)
-        metas = res.get("metadatas", [])
-        updated_metas = []
-        for meta in metas:
+        # ⚠️ Chroma คืน get() เรียงตาม row id ภายใน (ลำดับ insert) ไม่ใช่ลำดับที่ขอ
+        # และเอกสารไม่รับประกันลำดับ — รับประกันแค่ ids[i] คู่กับ metadatas[i] ในคำตอบเดียวกัน
+        # ⇒ ต้องจับคู่/เขียนกลับด้วย ids ที่ *ได้มา* เท่านั้น (เดิม zip กับ doc_ids ที่ขอ
+        # → metadata สลับข้าม memory ทุกเทิร์น · audit 2026-09-24 ข้อ 4)
+        got_ids = res.get("ids") or []
+        metas = res.get("metadatas") or []
+        updated_ids, updated_metas = [], []
+        for doc_id, meta in zip(got_ids, metas):
             m = dict(meta) if meta else {}
             m["access_count"] = m.get("access_count", 0) + 1
             m["last_accessed"] = datetime.now().isoformat()
+            updated_ids.append(doc_id)
             updated_metas.append(m)
-        if updated_metas:
-            col.update(ids=doc_ids, metadatas=updated_metas)
+        if updated_ids:
+            col.update(ids=updated_ids, metadatas=updated_metas)
     except Exception as e:
         logger.debug(f"bump_access_count failed (non-critical): {e}")
 
