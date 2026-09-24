@@ -722,6 +722,9 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > | ค | ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน (`core/scheduler.py`) | เล็ก | งานเล็กข้อ 12 |
 > | ง | ถอด Google CSE ออกจาก chain (`utils/websearch.py`) ถ้าไม่คิดแก้ Cloud project | เล็ก | 🥇 เดิม |
 > 🧪 ยังรอ user ทดสอบด้วยมือ (ไม่ต้องเขียนโค้ด): โหมดอ่าน **พัก → อ่านต่อ** (บล็อก 09-21/22) · กดลิงก์ `export_file` · ChatBox pills
+> 🩺 **ตรวจทั้งโปรเจกต์ใหม่ 09-24 บ่าย (devlog [ต่อ 8]) — สะอาดทุกชั้น · ERROR 24 ชม. = 0** · ที่ต้องรู้: **1008-loop มีตัวเลขแล้ว**
+> (365 reconnect/วัน session เดียว → จบด้วย 1007 token เกิน 8192 เพราะ `resume_handle` โตข้าม reconnect) ⇒ ข้อ ข. มีน้ำหนักขึ้น ·
+> เทส 2 ตัว parametrize บนรายชื่อว่าง (ratchet:121 · default_consistency:200) ควรถอด · main-without-`__keys` = ปกติ ไม่ใช่บั๊ก
 > 🔑 **กติกา user: "เช็คข้อมูล ก่อนจะลงมือให้ชัวร์ก่อนทุกครั้ง"** — ทั้งสองฝั่งของสัญญา + log/คำสั่งจริง
 > · **09-23 ค่ำ user เพิ่ม: "เช็คข้อมูลระบบจริงก่อน อย่าเชื่อ log ถ้าข้อมูลยังไม่ครอบคลุมให้ค้นเน็ตก่อน"**
 > ⇒ ก่อนย้ายไฟล์ไหน probe ในคอนเทนเนอร์ว่า env ตั้งจริงไหม + ค่าที่ resolve (ไม่ใช่อ่านจาก `.env.example`)

@@ -1,5 +1,28 @@
 ---
 
+## [2026-09-24 ต่อ 8] 🩺 ตรวจทั้งโปรเจกต์ใหม่ (user สั่ง "ไปตรวจสอบทั้งหมดมาใหม่") — ของจริงทั้งหมด ไม่อ่านจากบันทึก
+**สะอาด (ยืนยันบน prod ผ่าน nas-cf + repo):** NAS HEAD = main `0110b15` dirty 0 · CI เขียว 3 commit ล่าสุด · canary 09-21 เขียว ·
+`ai-backend-1` healthy restarts=0 · `ai-backend-watchdog`/`ai-cloudflared`/`pihole-watchdog` up 4 สัปดาห์ · mem 170 MiB/2 GiB ·
+NAS disk 2% · `/api/status` ทุก provider ok (`gemini_ok` true · `local_ok` true) · **ERROR ใน 24 ชม. = 0** ·
+backup: db 03:30 วันนี้ 19.9 MB (มี reader.db) + chroma 00:00 วันนี้ 24.6 MB · Dream 02:00 เดินทุกคืน (skip เพราะไม่มี memory ใหม่ = ปกติ) ·
+skills git 22 = mount 22 = chroma 22 · bundle `index-BpLfIzAR.js` git = dist (appscript.ui) = ที่เสิร์ฟจริง · appscript.ui dirty 0 ·
+router 14 ไฟล์ import ครบ · auth fail-closed จาก public: `/api/memory/stats` 401 · `/api/sessions` 401 · `/api/config` 200 ·
+env ใน `.env` NAS 36 ชื่อ — ทุกตัวอยู่ใน registry ยกเว้น `OBSIDIAN_VAULT_NAS_PATH` ซึ่งเป็นของ compose (`${…:-./data}:/vault`) ไม่ใช่โค้ด ·
+`reconcile_keys.py` dry-run: เงาไม่มีกำพร้า (main 30 / keys 27 — **main ไม่มีกุญแจเป็นสถานะปกติ** ตาม docstring `key_text()` คืน None ได้)
+**ที่เจอ/ยืนยันใหม่:**
+- 🔴 **voice idle 1008-loop มีตัวเลขแล้ว:** 09-21 session เดียว `s_20260918_125915` เปิดสาย **365 ครั้ง/วัน** (1008 ×353) ตอนมือถือ
+  `muted=True · cap=interrupted` นาน ~14 ชม. (05:31→19:41 UTC) แล้วจบที่ 09-22 06:10 ด้วย **1007 "input token count exceeds 8192"**
+  ⇒ `resume_handle` พาบริบทโตข้าม reconnect จนชนเพดาน — โหมดคุยยังใช้ handle (โหมดอ่านทิ้งแล้ว `b295465`) · ค่าใช้จ่ายจริง = โควตา Live
+  ต่อวัน + ความจำหายเมื่อ 1007 · **ยังไม่แก้ (รอเคาะแนวทาง ข.)** — ทางเลือก: ปิดสายเองเมื่อ idle เกิน N นาที ก่อน keepalive
+- ERROR 7 วัน = 360 `server` (356 = 1008 ข้างบน) · 66 `skills_search` + 59 `obsidian_sync` "timed out in upsert" **ทั้งหมด 09-23** (ช่วง PC/embedder
+  ดับ — ปิดแล้วด้วย vault_catchup `f3a4e9d`) · 8 `utils.llm` = Ollama/LM Studio timeout 09-22 20:11 (PC ดับ) — ไม่มีอันไหนซ้ำใน 24 ชม.
+- `chromadb` "Up 13 ชม." restarts=0 · StartedAt 00:00:29 BKK = ตรงเวลา DSM task chroma backup (ไฟล์ 00:00:02) ⇒ **น่าจะ** task stop/start
+  เพื่อ backup — ไม่ใช่ crash (ยังไม่ได้เปิดดู task script ยืนยัน)
+- เทส skip 17 = thaiscatter 14 (`pythainlp` ไม่มี — งานเล็กข้อ 11) + TTS live 1 + **2 ตัว "empty parameter set"** (`test_env_docs_ratchet:121` ·
+  `test_env_default_consistency:200`) — parametrize บนรายชื่อ `os.getenv` ดิบซึ่งว่างแล้วหลังก้อน 4 ⇒ เทสสองตัวนี้ไม่ได้ตรวจอะไรอีก (ควรถอดหรือเปลี่ยนเป็น
+  assert ว่ารายชื่อว่าง)
+- ท่อนไม่ครบ (โหมดอ่าน): 09-18 ×7 · 09-21 ×2 · หลัง `b295465` (09-21) = 0 แต่ยังไม่มีการอ่านจริงหลังจากนั้น (พิสูจน์ไม่ได้)
+
 ## [2026-09-24 ต่อ 7] config ก้อน 4 ปิดท้าย — `reasoning/router` 4 · `utils/tts` 3 · `utils/ha_client` 3 (`f9b638b`) ⇒ **ก้อน 4 จบ: 0 จุด**
 **ตรวจ prod ก่อน (nas-cf · HEAD `a3defd8`):** CLAUDE_AUTO/ANTHROPIC_API_KEY/LMSTUDIO_API_KEY/GEMINI_TTS_MODEL/TTS_MAX_* ไม่ได้ตั้ง ·
 CLAUDE_MODEL ตั้ง = default · HA_URL (LAN `.109:8123`)/HA_TOKEN ตั้งจริง · HA_TIMEOUT=10 · router ไม่แนบ Authorization ·
