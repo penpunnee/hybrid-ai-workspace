@@ -67,13 +67,16 @@ def test_ชื่อใน_registry_ต้องไม่ซ้ำในส่�
 
 
 def test_ส่วนเขียนมือไม่ถูกกลืนหาย():
-    """generator ต้องคงของที่ยังไม่เข้า registry ไว้ครบ — ไม่ใช่ลบทิ้งให้ไฟล์สวย"""
-    from core.env_registry import REGISTRY, render_env_example
+    """generator ต้องคงของที่ยังไม่เข้า registry ไว้ครบ — ไม่ใช่ลบทิ้งให้ไฟล์สวย
+    2026-09-24: ชื่อจริงย้ายเข้า registry หมดแล้ว (ส่วนเขียนมือว่าง) ⇒ ใช้บรรทัดสมมติแทน
+    ไม่งั้นเทสนี้ต้องแก้ตัวแทนทุกก้อนและวันหนึ่งไม่เหลือตัวแทนให้ใช้"""
+    from core.env_registry import END_MARKER, REGISTRY, render_env_example
 
-    out = render_env_example(ENV_EXAMPLE.read_text())
-    for name in ("HEARTBEAT_ATTEMPTS", "HEARTBEAT_URL", "LINE_NOTIFY_TOKEN", "HEARTBEAT_RETRY_WAIT"):
-        assert name not in REGISTRY, f"{name} เข้า registry แล้ว — แก้เทสนี้ให้ใช้ตัวอื่น"
-        assert f"{name}=" in out, f"{name} หายไปตอน generate"
+    assert "ZZ_MANUAL_ONLY" not in REGISTRY
+    head = ENV_EXAMPLE.read_text().split(END_MARKER, 1)[0]
+    fake = head + END_MARKER + "\n\n# ของที่ยังเขียนมือ\nZZ_MANUAL_ONLY=1\n"
+    out = render_env_example(fake)
+    assert "# ของที่ยังเขียนมือ\nZZ_MANUAL_ONLY=1" in out.split(END_MARKER, 1)[1], "ส่วนเขียนมือหายตอน generate"
 
 
 def test_เครื่องมือวัดมีตาจริง():

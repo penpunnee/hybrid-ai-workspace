@@ -24,7 +24,7 @@ class _Resp:
 
 @pytest.fixture(autouse=True)
 def _clear_env(monkeypatch):
-    monkeypatch.delenv("HEARTBEAT_URL", raising=False)
+    monkeypatch.setattr(heartbeat, "HEARTBEAT_URL", "")  # ค่าระดับโมดูล (registry) — ไม่ใช่ env ตอนเรียกแล้ว
 
 
 @pytest.fixture(autouse=True)
@@ -77,7 +77,7 @@ def test_ping_noop_when_not_configured():
 
 
 def test_ping_uses_env_when_no_arg(monkeypatch):
-    monkeypatch.setenv("HEARTBEAT_URL", "https://hc-ping.com/from-env")
+    monkeypatch.setattr(heartbeat, "HEARTBEAT_URL", "https://hc-ping.com/from-env")
     with patch("utils.heartbeat.requests.post", return_value=_Resp()) as post:
         assert heartbeat.ping() is True
     assert post.call_args[0][0] == "https://hc-ping.com/from-env"

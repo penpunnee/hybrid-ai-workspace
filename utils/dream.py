@@ -24,6 +24,9 @@ from utils.llm import stream_response
 # ⬇️ อ่านจาก core/config.py ที่เดียว — เดิมไฟล์นี้มี default ของตัวเองที่ไม่ตรงกับที่อื่น
 # (ตัวกัน: tests/test_env_default_consistency.py)
 from core.config import LMSTUDIO_REASON_MODEL as _CFG_LMSTUDIO_REASON_MODEL
+# OBSIDIAN_VAULT_PATH เจ้าของคือ config (compose ตั้ง /vault) — เดิม _save_report อ่านตอนเรียก (ก้อน 4 · 2026-09-24)
+from core.config import OBSIDIAN_VAULT_PATH as _CFG_OBSIDIAN_VAULT_PATH
+from core.env_registry import env_bool, env_int
 from utils.skills import save_skill
 
 _PROCEDURAL_KW = (
@@ -66,7 +69,11 @@ DREAM_REPORTS_DIR.mkdir(exist_ok=True)
 PROMOTE_MIN_SCORE = 0.5
 # ≥2 เพราะจุดประสงค์ของ Dream promotion คือหา "รูปแบบที่เกิดซ้ำ" — เจอครั้งเดียว
 # ไม่ใช่รูปแบบตามนิยาม (เดิม =1 = ไม่มีการกรองเลย → prod ได้ skill ขยะ 60 อัน)
-PROMOTE_MIN_HITS = int(os.getenv("DREAM_PROMOTE_MIN_HITS", "2"))
+# env ของ Dream — ไฟล์นี้เป็นเจ้าของ 3 ชื่อ (ก้อน 4 · 2026-09-24 · ตัวกัน: tests/test_env_registry.py)
+_G = "Dream Cycle"
+PROMOTE_MIN_HITS = env_int("DREAM_PROMOTE_MIN_HITS", 2, group=_G, doc=(
+    "ธีมต้องเจอกี่ครั้งใน 24 ชม. ถึงเลื่อนขั้นเข้า long_term_memory (Deep Sleep)\n"
+    "≥2 = ต้องเป็น \"รูปแบบที่เกิดซ้ำ\" (เดิม 1 = ไม่กรอง → prod ได้ skill ขยะ 60 อัน)"))
 PROMOTE_MIN_QUERIES = 1
 
 # ⛔ ปิดการสร้าง skill อัตโนมัติ (user ตัดสินใจ 2026-08-02 หลัง audit)
@@ -76,7 +83,12 @@ PROMOTE_MIN_QUERIES = 1
 # ("User requested…", "A question was posed…") ไม่ใช่ "ความรู้" — เพิ่ม keyword
 # gate เท่าไหร่ก็ยังได้ของแบบเดิม ต้องแก้ prompt ที่ต้นทางถึงจะเปิดกลับได้
 # ⚠️ ปิดเฉพาะขา skills_db — long_term_memory / decay / prune ยังทำงานปกติ
-PROMOTE_SKILLS_ENABLED = os.getenv("DREAM_PROMOTE_SKILLS", "false").lower() == "true"
+PROMOTE_SKILLS_ENABLED = env_bool("DREAM_PROMOTE_SKILLS", False, group=_G, doc=(
+    "true = ให้ Dream เขียนธีมลง skills_db.json ด้วย (ปิดตั้งแต่ 2026-08-02: 3 เดือนได้ 60 skill ใช้ได้ 1)\n"
+    "long_term_memory / decay / prune ทำงานปกติไม่ว่าค่านี้เป็นอะไร"))
+# เดิมอ่านตอนเรียกใน prune (cap=None) — env ใน prod นิ่ง จึงเป็นระดับโมดูลได้
+_EPISODIC_CAP = env_int("MEMORY_EPISODIC_CAP", 500, group=_G,
+                        doc="เพดานจำนวน episodic memory ที่ไม่ใช่ verified/user_taught ต่อผู้ช่วย — เกินแล้ว prune ตัว retention ต่ำสุด")
 
 # ธีมที่เป็น "บันทึกว่าระบบทำอะไรไม่ได้" — ยิ่งป้อนให้โมเดลยิ่งชวนให้ปฏิเสธงาน
 _FAILURE_KW = (
@@ -438,7 +450,7 @@ def memory_prune(cap: int = None, max_age_days: int = 30, min_confidence: float 
     cap default จาก env MEMORY_EPISODIC_CAP (500)
     """
     if cap is None:
-        cap = int(os.getenv("MEMORY_EPISODIC_CAP", "500"))
+        cap = _EPISODIC_CAP
     client = _get_client()
     if client is None:
         return {"pruned": 0, "kept": 0, "cap": cap}
@@ -699,7 +711,7 @@ def _save_report(report: dict):
         logger.error(f"Dream/_save_report JSON error: {str(e)}")
     
     # บันทึก Markdown ลง Obsidian Vault
-    vault_path = os.getenv("OBSIDIAN_VAULT_PATH", "")
+    vault_path = _CFG_OBSIDIAN_VAULT_PATH
     if not vault_path or not os.path.isdir(vault_path):
         logger.warning(f"Dream/_save_report: Obsidian Vault not available: {vault_path}")
         return

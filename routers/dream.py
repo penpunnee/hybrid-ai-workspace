@@ -1,8 +1,8 @@
 import logging
-import os
 from fastapi import APIRouter, Request, HTTPException
 from starlette.concurrency import run_in_threadpool
 
+from core.env_registry import env_int
 from core.state import dream_lock
 from utils.dream import run_dream_cycle, get_latest_report, list_reports
 from utils.http_limits import json_body_capped, MAX_BODY_BYTES
@@ -10,7 +10,8 @@ from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 router = APIRouter(prefix="/api/dream", tags=["dream"])
 logger = logging.getLogger(__name__)
 
-_DREAM_TIMEOUT = int(os.getenv("DREAM_TIMEOUT", "600"))  # 10 นาที default
+_DREAM_TIMEOUT = env_int("DREAM_TIMEOUT", 600, group="Dream Cycle",
+                         doc="วินาทีสูงสุดของ POST /api/dream/run (เกิน = 504 · job กลางคืนไม่ผ่านเพดานนี้)")
 
 
 def _default_dream_provider() -> str:

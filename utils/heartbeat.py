@@ -21,19 +21,28 @@ code หันมาเช็ค body — ยังหลุดอยู่ด�
 ตั้งค่า: HEARTBEAT_URL (เช่น https://hc-ping.com/<uuid>) — ไม่ตั้ง = ปิดเงียบ
 """
 import logging
-import os
 import time
 from urllib.parse import urlsplit
 
 import requests
 
+from core.env_registry import env_float, env_int, env_str
+
 logger = logging.getLogger(__name__)
 
-HEARTBEAT_TIMEOUT = float(os.getenv("HEARTBEAT_TIMEOUT", "10"))
+# env ของ heartbeat — ไฟล์นี้เป็นเจ้าของ 4 ชื่อ (ก้อน 4 · 2026-09-24 · ตัวกัน: tests/test_env_registry.py)
+# HEARTBEAT_URL เคยอ่านใน ping() ทุกครั้ง — env ใน prod นิ่ง จึงเป็นระดับโมดูล · เทส patch ค่าในโมดูล
+_G = "Backup dead-man's switch"
+HEARTBEAT_URL = env_str("HEARTBEAT_URL", "", group=_G, doc=(
+    "ยิงหลัง DB backup 03:30 สำเร็จ *จริง* เท่านั้น (ของเปล่า/พังกลางคัน = ไม่ยิง → ปลายทางเตือนเมื่อสัญญาณขาด)\n"
+    "สร้าง check ที่ https://healthchecks.io แล้วตั้ง period 1 วัน + grace 2 ชม. · ว่าง = ปิดเงียบ (ไม่มีใครเฝ้า)"))
+HEARTBEAT_TIMEOUT = env_float("HEARTBEAT_TIMEOUT", 10.0, group=_G, doc="วินาที timeout ต่อการยิง")
 # ยิงซ้ำเฉพาะความผิดพลาดชั่วคราว — งานนี้รันตี 3 ครึ่ง ไม่มีใครนั่งรอ
 # หน่วงเพิ่มสูงสุด ~20 วิ แลกกับการไม่ถูกปลุกเพราะเน็ตกระตุกวินาทีเดียว
-HEARTBEAT_ATTEMPTS = int(os.getenv("HEARTBEAT_ATTEMPTS", "3"))
-HEARTBEAT_RETRY_WAIT = float(os.getenv("HEARTBEAT_RETRY_WAIT", "10"))
+HEARTBEAT_ATTEMPTS = env_int("HEARTBEAT_ATTEMPTS", 3, group=_G, doc=(
+    "ยิงซ้ำเฉพาะ \"พังชั่วคราว\" (ต่อไม่ติด / HTTP 5xx) — ไม่ยิงซ้ำเมื่อ body ผิดหรือ 4xx\n"
+    "เพราะนั่นคือความผิดถาวร (uuid พิมพ์ผิด/check ถูกลบ) ยิงอีกกี่ครั้งก็ได้คำตอบเดิม"))
+HEARTBEAT_RETRY_WAIT = env_float("HEARTBEAT_RETRY_WAIT", 10.0, group=_G, doc="วินาทีระหว่างการยิงซ้ำ")
 
 # body ที่ถือว่าปลายทางรับรู้จริง — healthchecks.io ตอบ "OK" ตัวเดียวเป๊ะ
 # (อย่าเปลี่ยนเป็น startswith เด็ดขาด — ดู docstring หัวไฟล์)
@@ -67,7 +76,7 @@ def ping(url: str | None = None, timeout: float | None = None,
     ไม่เคย raise: heartbeat ที่ยิงไม่ออกต้องไม่ทำให้งานที่สำเร็จแล้วกลายเป็นล้มเหลว
     แต่ต้อง log ระดับ error เสมอ เพราะ "เฝ้าไม่ได้" ก็เป็นปัญหาที่ต้องรู้
     """
-    target = (url or os.getenv("HEARTBEAT_URL", "")).strip()
+    target = (url or HEARTBEAT_URL).strip()
     if not target:
         # ไม่ได้ตั้งค่า (เครื่อง dev) — เงียบ ไม่ใช่ error
         return False

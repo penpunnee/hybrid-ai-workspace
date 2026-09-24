@@ -868,3 +868,78 @@ def test_ลงทะเบียนชื่อเดียวกันจา�
             exec('env_str(NAME, "", doc="d")', {"__name__": "mod_b", "env_str": env_str, "NAME": name})
     finally:
         REGISTRY.pop(name, None)
+
+
+# ── 14) ก้อน 4 ไฟล์ที่ 18-21: utils/dream.py · routers/dream.py · utils/heartbeat.py · utils/notify.py (2026-09-24) ──
+# 🔑 หลักฐาน prod ที่มี: DREAM_* ไม่ได้ตั้ง (probe ชั้น core) · OBSIDIAN_VAULT_PATH=/vault จาก compose ·
+#    HEARTBEAT_*/MEMORY_EPISODIC_CAP/LINE_NOTIFY_TOKEN ยังไม่ได้ probe (NAS เข้าไม่ถึงตอนเขียน) — default
+#    ทุกตัวไม่เปลี่ยน · runtime read 3 จุด (MEMORY_EPISODIC_CAP · OBSIDIAN_VAULT_PATH · HEARTBEAT_URL) → ระดับโมดูล
+
+@pytest.mark.parametrize("mod", ["utils.dream", "routers.dream", "utils.heartbeat", "utils.notify"])
+def test_dream_heartbeat_notify_อยู่ใน_MODULES(mod):
+    from core.env_registry import MODULES
+
+    assert mod in MODULES
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("DREAM_PROMOTE_MIN_HITS", 2),
+    ("DREAM_PROMOTE_SKILLS", False),
+    ("MEMORY_EPISODIC_CAP", 500),
+    ("DREAM_TIMEOUT", 600),
+    ("HEARTBEAT_URL", ""),
+    ("HEARTBEAT_TIMEOUT", 10.0),
+    ("HEARTBEAT_ATTEMPTS", 3),
+    ("HEARTBEAT_RETRY_WAIT", 10.0),
+    ("LINE_NOTIFY_TOKEN", ""),
+])
+def test_default_ของ_dream_heartbeat_notify_เท่าของเดิม(name, expected):
+    from core.env_registry import REGISTRY, load_all
+
+    load_all()
+    spec = REGISTRY[name]
+    assert spec.default == expected and type(spec.default) is type(expected), (
+        f"{name}: default เป็น {spec.default!r} ควรเป็น {expected!r}")
+    assert spec.doc.strip()
+
+
+def _fn_names(src: str, fn: str) -> set[str]:
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == fn:
+            return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+    raise AssertionError(f"ไม่พบฟังก์ชัน {fn}")
+
+
+def test_dream_ใช้_OBSIDIAN_VAULT_PATH_ของ_config_และ_cap_ระดับโมดูล(monkeypatch, tmp_path):
+    """เดิม `_save_report` อ่าน OBSIDIAN_VAULT_PATH ตอนเรียก และ cap อ่าน MEMORY_EPISODIC_CAP ตอนเรียก
+    (env ใน prod นิ่ง) — ตรวจว่าค่ามาจาก config/registry จริง + ฟังก์ชันอ้างชื่อนั้น (เดินด้วย ast)"""
+    src = (REPO / "utils" / "dream.py").read_text()
+    assert "OBSIDIAN_VAULT_PATH" not in _helper_names(src), "dream ต้อง import จาก config ไม่ลงซ้ำ"
+    d = _reload_with(monkeypatch, "utils.dream",
+                     {"OBSIDIAN_VAULT_PATH": str(tmp_path), "MEMORY_EPISODIC_CAP": "7"})
+    assert d._CFG_OBSIDIAN_VAULT_PATH == str(tmp_path) and d._EPISODIC_CAP == 7
+    assert "_CFG_OBSIDIAN_VAULT_PATH" in _fn_names(src, "_save_report")
+    cap_users = [n.name for n in ast.walk(ast.parse(src))
+                 if isinstance(n, ast.FunctionDef) and "_EPISODIC_CAP" in {x.id for x in ast.walk(n) if isinstance(x, ast.Name)}]
+    assert cap_users, "ไม่มีฟังก์ชันไหนใช้ _EPISODIC_CAP"
+
+
+@pytest.mark.parametrize("url,expect_post", [("", False), ("https://hc-ping.com/from-env", True)])
+def test_heartbeat_ping_ใช้_HEARTBEAT_URL_ระดับโมดูล(monkeypatch, url, expect_post):
+    import requests
+
+    class _R:
+        status_code, text = 200, "OK"
+
+    posts = []
+    monkeypatch.setattr(requests, "post", lambda u, **k: posts.append(u) or _R())
+    monkeypatch.setattr("time.sleep", lambda *_: None)
+    hb = _reload_with(monkeypatch, "utils.heartbeat", {"HEARTBEAT_URL": url})
+    assert hb.ping() is expect_post
+    assert posts == ([url] if expect_post else [])
+
+
+def test_notify_token_มาจาก_registry(monkeypatch):
+    n = _reload_with(monkeypatch, "utils.notify", {"LINE_NOTIFY_TOKEN": "tok-x"})
+    assert n.LINE_NOTIFY_TOKEN == "tok-x"
