@@ -722,9 +722,12 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > | ค | ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน (`core/scheduler.py`) | เล็ก | งานเล็กข้อ 12 |
 > | ง | ถอด Google CSE ออกจาก chain (`utils/websearch.py`) ถ้าไม่คิดแก้ Cloud project | เล็ก | 🥇 เดิม |
 > 🧪 ยังรอ user ทดสอบด้วยมือ (ไม่ต้องเขียนโค้ด): โหมดอ่าน **พัก → อ่านต่อ** (บล็อก 09-21/22) · กดลิงก์ `export_file` · ChatBox pills
-> 🩺 **ตรวจทั้งโปรเจกต์ใหม่ 09-24 บ่าย (devlog [ต่อ 8]) — สะอาดทุกชั้น · ERROR 24 ชม. = 0** · ที่ต้องรู้: **1008-loop มีตัวเลขแล้ว**
-> (365 reconnect/วัน session เดียว → จบด้วย 1007 token เกิน 8192 เพราะ `resume_handle` โตข้าม reconnect) ⇒ ข้อ ข. มีน้ำหนักขึ้น ·
-> เทส 2 ตัว parametrize บนรายชื่อว่าง (ratchet:121 · default_consistency:200) ควรถอด · main-without-`__keys` = ปกติ ไม่ใช่บั๊ก
+> 🩺 **ตรวจทั้งระบบแบบไม่เว้น 09-24 บ่าย → `docs/audit/2026-09-24-full-audit.md`** (devlog [ต่อ 9]) — runtime สะอาด แต่โค้ดเจอ
+> **HIGH 14** (XSS `/shared` ขโมยรหัส · truncate ข้าม session · metadata สลับทุก recall · fs glob หลุด root · calculator DoS ·
+> auth/check+WS ไม่เข้า lockout · markdown `/\` bypass · cleanup ลบ user_facts · teach ซ้ำ · body-cap ถูกกลืน · ไม่มี .dockerignore ·
+> overlay 🗑️ จอขาว · stream ไม่เช็ค res.ok) + MEDIUM ~30 + LOW ~35 · **ยังไม่แก้สักข้อ — งานแรกเซสชันหน้า = user เคาะลำดับจากหัวข้อ 5 ของไฟล์นั้น**
+> 🔴 **1008→1007 ถอนแล้ว**: 1007 เกิดบนสายสด (go_away 0 ครั้ง) ทั้ง "handle พาบริบท" และ "โซ่ go_away" ผิด · ต้นเหตุยังไม่รู้ ·
+> สายเสียงต้อง log `usage=` ก่อน (reader มีแล้ว) · ที่แน่คือ 1008-loop = client reconnect วน ไม่มี idle cutoff
 > 🔑 **กติกา user: "เช็คข้อมูล ก่อนจะลงมือให้ชัวร์ก่อนทุกครั้ง"** — ทั้งสองฝั่งของสัญญา + log/คำสั่งจริง
 > · **09-23 ค่ำ user เพิ่ม: "เช็คข้อมูลระบบจริงก่อน อย่าเชื่อ log ถ้าข้อมูลยังไม่ครอบคลุมให้ค้นเน็ตก่อน"**
 > ⇒ ก่อนย้ายไฟล์ไหน probe ในคอนเทนเนอร์ว่า env ตั้งจริงไหม + ค่าที่ resolve (ไม่ใช่อ่านจาก `.env.example`)

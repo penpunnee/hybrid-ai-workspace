@@ -1,5 +1,16 @@
 ---
 
+## [2026-09-24 ต่อ 9] 🩺 ตรวจทั้งระบบแบบไม่เว้น (user: "ห้ามข้าม ห้ามเว้น หาข้อผิดพลาด") — รายงานเต็ม `docs/audit/2026-09-24-full-audit.md`
+6 สายตรวจโค้ดคู่ขนาน + runtime prod · **HIGH 14 · MEDIUM ~30 · LOW ~35 · ยังไม่แก้สักข้อ (รอ user เคาะลำดับ)**
+ตัวหนัก: XSS `/shared/{token}` ขโมย `UI_PASSWORD` (token = รหัสดิบ อยู่ใน localStorage + WS URL + access log) · `DELETE /api/truncate`
+ลบข้าม session ทุกผู้ช่วย · `bump_access_count` สลับ metadata ข้าม memory ทุกเทิร์น · `fs_search` glob หลุด root อ่าน env ได้ ·
+calculator `**` DoS · `/auth/check` + WS ไม่เข้า lockout · markdown `/\evil` bypass · cleanup ลบ `user_facts` · teach ซ้ำ 2 ครั้ง/เทิร์น ·
+body-cap ถูกกลืน 3 handler · ไม่มี `.dockerignore` · overlay 🗑️ ทำจอขาว · stream ไม่เช็ค `res.ok`
+🔴 **ถอนข้อสรุป [ต่อ 8]** เรื่อง 1008→1007: log พิสูจน์ว่า 1007 เกิดบนสายสด #367 (37 วิหลัง connect · go_away 0 ครั้งใน 10 ชม.ก่อนหน้า)
+⇒ ทั้ง "handle พาบริบทข้าม reconnect" และ "โซ่ go_away" ผิด · ต้นเหตุยังไม่รู้ · สายเสียงไม่ log `usage=` — ต้องเติมก่อนสรุปอะไร
+🔑 บทเรียน: ผมสรุปสาเหตุจากตัวเลขสองชุดที่*อยู่ใกล้กันในเวลา* (365 reconnect + 1007) โดยไม่ได้ดูว่ามีอะไรคั่นกลาง (เงียบ 10 ชม.) —
+ต้อง dump log ช่วงรอยต่อทุกบรรทัดก่อนผูกเหตุกับผล
+
 ## [2026-09-24 ต่อ 8] 🩺 ตรวจทั้งโปรเจกต์ใหม่ (user สั่ง "ไปตรวจสอบทั้งหมดมาใหม่") — ของจริงทั้งหมด ไม่อ่านจากบันทึก
 **สะอาด (ยืนยันบน prod ผ่าน nas-cf + repo):** NAS HEAD = main `0110b15` dirty 0 · CI เขียว 3 commit ล่าสุด · canary 09-21 เขียว ·
 `ai-backend-1` healthy restarts=0 · `ai-backend-watchdog`/`ai-cloudflared`/`pihole-watchdog` up 4 สัปดาห์ · mem 170 MiB/2 GiB ·
