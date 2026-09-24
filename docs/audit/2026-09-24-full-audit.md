@@ -5,7 +5,9 @@
 ลำดับที่แนะนำอยู่ท้ายไฟล์ · การแก้แต่ละข้อต้องมี failing test ก่อน (Iron Law)
 **สถานะ:** ✅ ก้อน 1 ปิดแล้ว 09-24 ค่ำ (`ff1ce17` · HIGH 1, 2, 7 + share token 40-bit ใน LOW) — devlog [ต่อ 10]
 · ✅ **ก้อน 2 ปิดแล้ว 09-24 ดึก (`e5223ef` · HIGH 3, 4)** — devlog [ต่อ 11] · ข้อ 4 ร้ายแรงกว่าที่ประเมิน: prod 24/30 memory created_at เป็นของคนอื่น
-(กู้จาก id แล้ว 28 รายการ · confidence/access_count กู้ไม่ได้ → รีเซ็ตตัวนับ) · ที่เหลือยังไม่แก้
+(กู้จาก id แล้ว 28 รายการ · confidence/access_count กู้ไม่ได้ → รีเซ็ตตัวนับ)
+· ✅ **ก้อน 3 ปิดแล้ว 09-24 ดึก (`82681d9` · HIGH 5, 6, 8)** — devlog [ต่อ 12] · ข้อ 5 พิสูจน์บน prod ว่าอ่าน `/proc/self/environ` ได้จริง ·
+มี 2 ทางเข้า (agent tool + `POST /api/fs/search`) ปิดที่ `search_files` จุดเดียว · ที่เหลือยังไม่แก้ (HIGH 9-14 + MEDIUM/LOW)
 
 ## 0. runtime บน prod — สะอาด (ยืนยันของจริง)
 - NAS HEAD = main · CI เขียว · `ai-backend-1` healthy restarts=0 · watchdog/cloudflared up 4 สัปดาห์ · ERROR 24 ชม. = 0
@@ -93,6 +95,6 @@ middleware order ตรง doc · `_BodyTooLarge` ถึง middleware (ยก�
 ## 5. ลำดับที่แนะนำ (ยังไม่แก้ — รอ user เคาะ)
 1. XSS `/shared` + token=รหัสดิบ/WS URL/access log (ข้อ 1-2) — ปิดด้วย escape/validate token + session token สุ่มหมดอายุ + `access_log=False` หรือกรอง query
 2. ✅ ~~truncate ข้าม session (3) + `bump_access_count` สลับ metadata (4)~~ ปิดแล้ว `e5223ef` (devlog [ต่อ 11])
-3. fs glob (5) + calculator (6) + auth/check & WS lockout (7) + markdown backslash (8)
+3. ✅ ~~fs glob (5) + calculator (6) + markdown backslash (8)~~ ปิดแล้ว `82681d9` (devlog [ต่อ 12]) · (7) ปิดไปกับก้อน 1
 4. memory cleanup ลบ user_facts (9) + teach ซ้ำ/regex (10) + body-cap กลืน (11) + `.dockerignore` (12)
 5. overlay 🗑️ จอขาว (13) + `res.ok` (14) → MEDIUM ตามลำดับในหัวข้อ 2

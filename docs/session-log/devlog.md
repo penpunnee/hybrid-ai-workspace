@@ -1,5 +1,33 @@
 ---
 
+## [2026-09-24 ต่อ 12] audit ก้อน 3 — `fs_search` ทะลุ root · calculator แขวน thread · markdown `/\evil.com` + code fence (`82681d9` · appscript.ui `b09252b`) ✅ deployed+verified
+**ค้นก่อนลงมือ (user: "ค้นข้อมูลก่อนแล้วรายงาน" → /scrutinize → "ไล่ดูทุกส่วนให้ครบ ไม่แน่ใจอย่าเดา"):**
+- ข้อ 5 **พิสูจน์บน prod**: `search_files("PATH=", file_glob="../../../../../../proc/self/environ")` → `ok:true count:1` ไฟล์ `/app/sandbox/../../../../../../proc/self/environ`
+  (env ทั้งก้อนเข้า `text[:300]` — ไม่ได้พิมพ์เนื้อหา) · python 3.11 docs pathlib บอกแค่ "relative pattern" ไม่พูดถึง `..` = ไลบรารีไม่กัน ·
+  symlink ใต้ root หลุดด้วย `*/secret.txt` (วัด 3.11+3.12 · `**/` ไม่ตาม symlink) · **2 ทางเข้า** ไม่ใช่ 1: agent tool (`orchestrator.py:597` ให้ทุก tool)
+  + REST `POST /api/fs/search` (`routers/sandbox.py:84`) · โซ่ symlink: `run_python` mount แค่ tmpdir ตัวเอง `:ro` ⇒ สร้าง symlink ใน sandbox จากในระบบไม่ได้
+- ข้อ 6: `9**9**9` ผ่าน regex แล้ว `eval` ค้าง >3 วิ (SIGALRM ตัด) · **ถือ GIL ตลอด C call เดียว ⇒ เทส thread+join แขวนทั้งชุด** (เกิดจริง ต้อง pkill) → เทสใช้
+  subprocess+timeout · simpleeval `safe_power` MAX_POWER=4e6 หลวมเกิน (ยังปล่อย 4e6**4e6) → ผูกกับขนาดผลลัพธ์ `bit_length(base)*exp ≤ 100k` แทน ·
+  literal >4300 หลัก → `ast.parse` โยน **SyntaxError** (int_max_str_digits) · ทางเข้า: agent + MCP (`test_mcp_server.py:36` ผูก `"6*7 = 42"`)
+- ข้อ 8: vitest จริง `[x](/\\evil.com/p)` → `<a href="/\evil.com/p">` · WHATWG URL: scheme พิเศษถือ `\` = `/` ("invalid-reverse-solidus … relative slash state") ·
+  `new URL('/\\evil.com/x', origin)` → `https://evil.com/x` · code fence/inline code โดนกฎลิงก์/รูป/bold แปลงข้างใน (3 เคส) · renderer อื่นไม่มีกฎลิงก์
+  (`/shared` `server.py:188 fmt()` · `enhanced.js`) · ไม่มี CSS `.md-pre` ⇒ ใส่ placeholder คืน**ก่อน** `\n→<br>` ให้ output เท่าเดิมทุกไบต์
+- /scrutinize แผนตัวเอง → แก้ 3 จุด: ไม่ต้อง bump `?v=` (bundle มี hash) · regex pre-check calculator ต้องคงไว้ (ข้อความเป็นสัญญาเทส) ·
+  `_resolve_safe` ต่อ match คือชั้นหลัก ปฏิเสธ `..` เป็นชั้นเสริม (symlink ไม่มี `..`) · mounts ยืนยันด้วย `docker inspect`: `agents/` เป็น bind ⇒ restart พอ
+
+**แก้ (`82681d9`):** `fs_tools.search_files` 2 ชั้น (glob มี `..`/absolute → error ก่อนเดิน · ทุก match ผ่าน `_resolve_safe` ก่อน `is_file/stat/open` และก่อนนับ
+`files_scanned`) · `_t_calculator` = regex เดิม → `ast.parse` → whitelist (`Expression/BinOp/UnaryOp/Constant(int|float)` · `+ - * / // % **`) + `_calc_pow`
+เพดาน bits + เพดานความยาว 200 · `1,2` เดิมคืน tuple ตอนนี้ ❌ โดยตั้งใจ · `markdown.tsx` regex `(?![\/\\])` ทั้ง 2 กฎ + stash NUL placeholder
+· เทส backend +15 · vitest +8 (509) · tsc 0 · ชุดเต็ม **2265** · **mutation fs 4/4 · calc 5/5 · md 5/5**
+🔑 **mutant รอด 2 ตัว → อ่านซ้ำแล้วพบว่าเพดาน exp กับเพดาน bits ทับซ้อนกัน** (ทุกเคสอีกตัวจับแทน · `(7**40000)**1000` โดนเพดาน exp ที่ชั้นในก่อน)
+⇒ **ถอดเพดาน exp ออก** เหลือเพดานเดียว แล้ว `(7**40000)**1000` (วัด >8 วิถ้าไม่มีเพดาน) กลายเป็น killer จริง · `2**N` ใช้เป็น killer ไม่ได้ (shift เร็ว 0.36 วิ)
+
+**deploy + verify prod:** `docker restart` → `/api/config` 200 · ในคอนเทนเนอร์: glob `..`/absolute → `ok:false` error ชัด · `9**9**9` → ❌ ใน **0.1 ms** ·
+`15**2 = 225` / `__import__` "ไม่ปลอดภัย" เท่าเดิม · public `https://ai.pawinhome.com/` ชี้ `index-CEy6xRyw.js` และ md5 ที่เสิร์ฟ = local (`552e9ae5…`) · CSS hash เดิม
+
+🔑 **บทเรียน:** (1) "ทางเข้า" ต้อง grep ทั้ง registry และ routers — รายงานรอบแรกนับได้ 1 จาก 2 (2) บั๊กที่ถือ GIL ทดสอบด้วย thread ไม่ได้ ต้อง subprocess
+(3) killer ของเพดานต้องผ่านทุกชั้น*อื่น*ให้ได้ก่อน ไม่งั้นวัดชั้นผิด (4) macOS ไม่มี `timeout` — เทสที่อาจค้างต้องรันแบบ background+kill เสมอ
+
 ## [2026-09-24 ต่อ 11] audit ก้อน 2 — `bump_access_count` สลับ metadata + `truncate` ข้าม session (`e5223ef`) ✅ deployed + กู้ข้อมูลบน prod แล้ว
 **ค้นก่อนลงมือ (user: "ค้นข้อมูลก่อนแล้วรายงาน" → /scrutinize → "ไม่ชัวร์ตรงไหนค้นเพิ่ม"):**
 - ข้อ 4 เป็นบั๊กจริง 3 ชั้น: ซอร์สที่ติดตั้ง `chromadb/segment/impl/metadata/sqlite.py:158,170,211` `.orderby(embeddings_t.id)` (= ลำดับ insert) ·

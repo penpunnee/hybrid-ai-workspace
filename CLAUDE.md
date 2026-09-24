@@ -703,8 +703,19 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-24 ดึก — ปิด audit ก้อน 2**)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-24 ดึก — ปิด audit ก้อน 3**)
 
+> ## ✅ audit ก้อน 3 **ปิดแล้ว 09-24 ดึก (`82681d9` · appscript.ui `b09252b` · devlog [ต่อ 12]) — อย่าทำซ้ำ**
+> `fs_tools.search_files` 2 ชั้น (ปฏิเสธ glob `..`/absolute · ทุก match ผ่าน `_resolve_safe`) — เคยอ่าน `/proc/self/environ` ได้จริงบน prod ผ่าน agent tool
+> **และ** `POST /api/fs/search` · `_t_calculator` = regex เดิม + AST whitelist + เพดาน `bit_length(base)*exp ≤ 100k` (`9**9**9` เคยแขวน thread ถาวร ·
+> เทสต้องใช้ subprocess เพราะถือ GIL) · `markdown.tsx` regex `(?![\/\\])` + code fence/inline เป็น placeholder · bundle **`index-CEy6xRyw.js`** (md5 ตรง public)
+> · mutation 14/14 · ชุดเต็ม 2265 · vitest 509
+> 🔑 **กติกาใหม่จากก้อนนี้:** ผลจาก `rglob`/glob ใดๆ ต้องผ่าน `_resolve_safe` ต่อไฟล์เหมือน read/write · เทสที่อาจแขวน (GIL) ให้ `_calc_in_subprocess` ใน `test_agents.py`
+> · **macOS ไม่มี `timeout`** — รัน pytest ที่เสี่ยงค้างแบบ background+kill เสมอ (ครั้งนี้ค้างจริง ต้อง pkill)
+>
+> ## 🥇 งานถัดไป: **audit ก้อน 4 (หัวข้อ 5 ข้อ 4)** — memory cleanup ลบ `user_facts` (9) · teach ซ้ำ/regex (10) · body-cap ถูกกลืน (11) · `.dockerignore` (12)
+> หรือ backlog `dbId` ข้างล่าง — ทำแบบเดิม: ค้น 2 ชั้น → รายงาน → /scrutinize แผน → "ไล่ทุกส่วน+ความสัมพันธ์" → เทสแดง → แก้ → mutation → deploy → verify
+>
 > ## ✅ audit ก้อน 2 **ปิดแล้ว 09-24 ดึก (`e5223ef` · devlog [ต่อ 11]) — อย่าทำซ้ำ**
 > `bump_access_count` จับคู่ด้วย `res["ids"]` (Chroma คืนเรียงตาม insert ไม่ใช่ที่ขอ — ซอร์ส `sqlite.py .orderby(embeddings_t.id)` + วัดจริง prod server) ·
 > `truncate_from_db_id` หา assistant/session จาก row เอง + 404 เมื่อ id ไม่มี · helper กวาด `skill_shadow`/`feedback` ใช้ทั้ง truncate และ delete เดี่ยว
@@ -719,8 +730,6 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > ปุ่มที่ gate ด้วย `msg.dbId &&` (`1967/1979` pin/feedback) ไม่ขึ้นจนรีโหลด (ยืนยันจากโค้ด **ยังไม่ดูใน browser** — เช็คก่อนแก้)
 > · แก้ = backend ส่ง `user_message_id` ใน `done` (`routers/chat.py:741` + short-circuit 150/175/314/368) + `app.tsx` ตั้ง dbId ทั้ง user/AI
 >
-> ## 🥇 งานถัดไป: **audit ก้อน 3 (หัวข้อ 5 ข้อ 3 ของ `docs/audit/2026-09-24-full-audit.md`)** — fs glob (5) · calculator (6) · markdown backslash (8)
-> (ข้อ 7 ปิดไปกับก้อน 1 แล้ว) · ทำแบบเดิม: ค้น 2 ชั้น → รายงาน → /scrutinize แผน → เทสแดง → แก้ → mutation → deploy → verify · หรือ backlog `dbId` ข้างบนถ้า user เลือก
 > 🔒 กติกา user ที่ยังมีผล: ค้นข้อมูล 2 ชั้น (เป็นบั๊ก? · วิธีแก้?) ก่อนลงมือ · ไม่ชัวร์ค้นเน็ต/ซอร์สที่ติดตั้ง · **scrutinize แผนตัวเองก่อนลงมือ** (ก้อน 2 จับได้ 3 จุด) · จดทุกอย่างลง devlog
 >
 > ## ✅ config ก้อน 4 **ปิดแล้วทั้งชุด 09-24** — `os.getenv` ดิบนอก registry ในโค้ด prod = **0** (จาก 195 จุด/40 ไฟล์ ตอน 09-02)
