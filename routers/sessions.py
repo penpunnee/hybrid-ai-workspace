@@ -1,3 +1,4 @@
+import secrets
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, Request
@@ -90,7 +91,7 @@ async def create_share(request: Request):
         return {"ok": False, "error": "ระบุ assistant และ session_id"}
     import logging
     logger = logging.getLogger(__name__)
-    token = uuid.uuid4().hex[:10]
+    token = secrets.token_urlsafe(16)   # 128-bit (เดิม uuid.hex[:10] = 40-bit · OWASP ≥64) · audit 09-24
     created = datetime.now().isoformat()
     share_store_set(token, {"assistant": assistant, "session_id": session_id, "created": created})
     try:

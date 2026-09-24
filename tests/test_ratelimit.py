@@ -232,8 +232,11 @@ def test_mw_success_does_not_count_as_authfail(fresh_limiters):
 
 # ── constant-time token compare ───────────────────────────────────────────────
 def test_token_matches_correct(monkeypatch):
+    """2026-09-24: token_matches = session token เท่านั้น · รหัสดิบเทียบผ่าน password_matches"""
     monkeypatch.setattr(auth, "UI_PASSWORD", "s3cret")
-    assert auth.token_matches("s3cret") is True
+    assert auth.token_matches(auth.issue_session_token()) is True
+    assert auth.token_matches("s3cret") is False
+    assert auth.password_matches("s3cret") is True
 
 
 def test_token_matches_wrong(monkeypatch):

@@ -7,8 +7,12 @@
 (function () {
   "use strict";
 
-  // ── Auth token (stored in localStorage) ─────────────────────────────────────
-  let _authToken = localStorage.getItem("hw_auth_token") || "";
+  // ── Auth (2026-09-24 · audit ข้อ 1-2) ──────────────────────────────────────────
+  // เดิมเก็บ UI_PASSWORD ดิบใน localStorage แล้วแนบ header/URL ของ WS ทุกครั้ง → XSS/log อ่านได้
+  // ตอนนี้ server ออก session token เป็น cookie HttpOnly (browser แนบเองทั้ง fetch และ WS handshake)
+  // JS ไม่เห็น/ไม่ถือ token อีก · `_authToken` คงไว้เป็น "" เพื่อให้จุดที่เคยแนบ header ไม่แนบอะไร
+  const _authToken = "";
+  try { localStorage.removeItem("hw_auth_token"); } catch {}   // ล้างรหัสดิบที่เครื่องเก่าเคยเก็บไว้
 
   // ── Single unified fetch override (auth + stop + history + typing) ──────────
   const ctx = { assistant: null, session: null };
@@ -105,9 +109,9 @@
         throw err;
       })
       .then((resp) => {
-        // ดัก 401 → login modal เฉพาะกรณีไม่มี token (ยังไม่ login)
-        // ถ้ามี token อยู่แล้วแต่ได้ 401 = endpoint อื่น ไม่ force logout
-        if (resp.status === 401 && !_authToken) {
+        // ดัก 401 → login modal (cookie หมดอายุ/ไม่มี) — JS ไม่รู้สถานะ cookie HttpOnly จึงดูจากคำตอบ server
+        // idempotent: เปิดซ้ำไม่เป็นไร · LAN ไม่มี 401 จาก auth อยู่แล้ว
+        if (resp.status === 401 && !_isLocalHost()) {
           loginOverlay.classList.add("open");
           setTimeout(() => document.getElementById("login-input")?.focus(), 100);
         }
@@ -464,10 +468,9 @@
       });
       const d = await r.json();
       if (d.ok) {
-        _authToken = d.token;
-        localStorage.setItem("hw_auth_token", _authToken);
+        // server ตั้ง cookie hw_session (HttpOnly) ให้แล้ว — ไม่เก็บอะไรฝั่ง JS
         loginOverlay.classList.remove("open");
-        // reload เพื่อให้ React โหลด session ใหม่ด้วย token
+        // reload เพื่อให้ React โหลด session ใหม่ด้วย cookie
         setTimeout(() => window.location.reload(), 100);
       } else {
         document.getElementById("login-err").textContent = d.error || "รหัสผ่านไม่ถูกต้อง";
@@ -495,25 +498,14 @@
     setTimeout(() => document.getElementById("login-input")?.focus(), 50);
   }
 
-  // Step 1 — แสดง modal ทันที ถ้าเป็น domain + ไม่มี token
-  if (!_isLocalHost() && !_authToken) {
-    _openLogin();
-  }
-
-  // Step 2 — validate token กับ server (จับกรณี token หมดอายุ/ผิด)
+  // ถาม server ว่า cookie ใช้ได้ไหม (JS อ่าน cookie HttpOnly ไม่ได้) — 401 = ยังไม่ login/หมดอายุ → modal
   (async () => {
     if (_isLocalHost()) return; // LAN ไม่ต้อง validate
     try {
-      const r = await _origFetch("/api/auth/check", {
-        headers: _authToken ? { "x-auth-token": _authToken } : {},
-      });
+      const r = await _origFetch("/api/auth/check");
+      if (r.status === 401) { _openLogin(); return; }
       const d = await r.json();
-      if (d.required && !d.ok) {
-        // token ไม่ valid — clear แล้วโชว์ modal
-        _authToken = "";
-        localStorage.removeItem("hw_auth_token");
-        _openLogin();
-      }
+      if (d.required && !d.ok) _openLogin();
     } catch {}
   })();
 

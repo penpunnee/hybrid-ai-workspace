@@ -100,6 +100,34 @@ class _JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False)
 
 
+class DropQueryStringFilter(logging.Filter):
+    """ตัด query string ออกจาก path ใน record ของ uvicorn (audit 09-24 ข้อ 2)
+
+    บรรทัด `"WebSocket /ws/voice/kwan?token=…" [accepted]` ออกทาง logger **`uvicorn.error`** (ไม่ใช่ access)
+    ด้วย args `(client, path_with_query_string)` — ซอร์สที่ติดตั้ง `websockets_impl.py:281` · access log ก็ส่ง
+    path พร้อม query เป็น args เช่นกัน ⇒ ตัดทุกอย่างหลัง `?` ของ arg ที่เป็น path (ไม่ใช้ blocklist ชื่อ key —
+    fail-open เมื่อมี param ใหม่ · แนวเดียวกับ onyx PR #15043)
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and args:
+            record.args = tuple(
+                a.split("?", 1)[0] if isinstance(a, str) and a.startswith("/") and "?" in a else a
+                for a in args
+            )
+        return True
+
+
+def install_uvicorn_redaction() -> None:
+    """ติดตั้ง filter บน uvicorn.access + uvicorn.error — idempotent · เรียกทั้งตอน import และใน lifespan
+    (uvicorn.run ทำ dictConfig หลัง import — filter ระดับ logger รอด แต่เรียกซ้ำไว้ให้แน่)"""
+    for name in ("uvicorn.access", "uvicorn.error"):
+        lg = logging.getLogger(name)
+        if not any(isinstance(f, DropQueryStringFilter) for f in lg.filters):
+            lg.addFilter(DropQueryStringFilter())
+
+
 def install_logging(level: Optional[str] = None) -> None:
     """เรียกครั้งเดียวที่ startup — replace root logger config
 
@@ -143,6 +171,7 @@ def install_logging(level: Optional[str] = None) -> None:
     root.setLevel(lvl)
     root.addHandler(file_handler)
     root.addHandler(stream_handler)
+    install_uvicorn_redaction()
 
 
 def timing_summary() -> str:

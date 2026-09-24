@@ -33,6 +33,7 @@ class _FakeRequest:
         self.method = method
         self.client = _FakeClient(host) if host is not None else None
         self.headers = headers or {}
+        self.cookies = {}
 
 
 async def _ok(_req):
@@ -130,8 +131,16 @@ def test_middleware_open_prefix_is_segment_bounded(monkeypatch, path):
 def test_middleware_public_write_with_correct_token(monkeypatch):
     monkeypatch.setattr(auth, "UI_PASSWORD", "secret")
     req = _FakeRequest(path="/api/memory/x", method="POST", host="8.8.8.8",
-                       headers={"x-auth-token": "secret"})
+                       headers={"x-auth-token": auth.issue_session_token()})
     assert _run_mw(req) == "PASSED"
+
+
+def test_middleware_header_raw_password_is_401(monkeypatch):
+    """2026-09-24: header รับเฉพาะ session token — รหัสดิบใช้ได้แค่ /api/auth/login"""
+    monkeypatch.setattr(auth, "UI_PASSWORD", "secret")
+    req = _FakeRequest(path="/api/memory/x", method="POST", host="8.8.8.8",
+                       headers={"x-auth-token": "secret"})
+    assert getattr(_run_mw(req), "status_code", None) == 401
 
 
 def test_middleware_public_write_with_wrong_token_is_401(monkeypatch):
@@ -176,5 +185,5 @@ def test_middleware_sensitive_get_with_token_ok(monkeypatch):
     """GET sensitive + token ถูก → ผ่าน"""
     monkeypatch.setattr(auth, "UI_PASSWORD", "secret")
     req = _FakeRequest(path="/api/vault/search", method="GET", host="8.8.8.8",
-                       headers={"x-auth-token": "secret"})
+                       headers={"x-auth-token": auth.issue_session_token()})
     assert _run_mw(req) == "PASSED"

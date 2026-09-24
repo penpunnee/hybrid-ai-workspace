@@ -114,7 +114,9 @@ class TestServerWiring:
 
     def test_handler_is_gated_by_auth(self, handler):
         """WS ไม่ผ่าน middleware (บทเรียน BaseHTTPMiddleware) — ต้อง gate เองก่อน accept"""
-        assert "websocket_authorized(" in handler
+        # 2026-09-24: gate ผ่าน core.ratelimit.websocket_auth_ok (lockout เดียวกับ http) โดยส่ง
+        # websocket_authorized ของ server เข้าไป (เทส reader patch `server.websocket_authorized` ได้เหมือนเดิม)
+        assert "websocket_auth_ok(" in handler and "authorize=websocket_authorized" in handler
 
     def test_bookmark_advances_only_after_turn_completes(self, handler):
         """ที่คั่นหน้าเลื่อนเมื่อโมเดลอ่านท่อนจบเท่านั้น — เลื่อนตอนป้อนแล้วแอปดับ

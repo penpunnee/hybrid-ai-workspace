@@ -7,7 +7,12 @@ set -u
 NAS_API=${NAS_API:-https://ai.pawinhome.com}
 LAN_CHROMA=${LAN_CHROMA:-192.168.51.49:8000}
 LAN_LMSTUDIO=${LAN_LMSTUDIO:-192.168.51.235:1234}
-AUTH_TOKEN=${UI_PASSWORD:-}
+# 2026-09-24: header x-auth-token รับเฉพาะ session token — login ด้วยรหัสก่อนแล้วใช้ token ที่ได้
+AUTH_TOKEN=""
+if [[ -n "${UI_PASSWORD:-}" ]]; then
+  AUTH_TOKEN=$(curl -sS --max-time 10 -X POST "$NAS_API/api/auth/login" -H 'Content-Type: application/json' \
+    -d "{\"password\":\"$UI_PASSWORD\"}" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("token",""))' 2>/dev/null || true)
+fi
 
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
 red()   { printf '\033[31m%s\033[0m\n' "$*"; }

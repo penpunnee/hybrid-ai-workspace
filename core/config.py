@@ -75,8 +75,10 @@ CHROMA_PATH  = env_str("CHROMA_PATH", "./data/chroma", group=_G,
 # ── App ──────────────────────────────────────────────────────────────────────
 _G = "App"
 UI_PASSWORD  = env_str("UI_PASSWORD", "", group=_G,
-                       doc="รหัสผ่านเข้า UI — ว่าง = เปิดสาธารณะ (auth middleware ยังกัน endpoint\n"
-                           "ที่ไม่อยู่ใน _OPEN_PATHS อยู่ แต่ไม่มีรหัสให้ผ่านด่าน)")
+                       doc="รหัสผ่านเข้า UI — ว่าง = **ปิด auth ทั้งหมด** ทุก endpoint รวม /api/admin/* เปิดสาธารณะ\n"
+                           "(เหลือแค่ LAN check ของ admin) · ใช้ได้เฉพาะ /api/auth/login — header/cookie รับ session token เท่านั้น")
+SESSION_TTL_DAYS = env_int("SESSION_TTL_DAYS", 30, group=_G,
+                           doc="อายุ session token (วัน) ที่ /api/auth/login ออกให้ — cookie HttpOnly · เปลี่ยน UI_PASSWORD = เพิกถอนทุก session")
 CORS_ORIGINS = env_str("CORS_ORIGINS", "", group=_G,
                        doc="origin ที่อนุญาต คั่นด้วย , — ว่าง = ใช้ค่าตั้งต้นใน CORS_ORIGINS_LIST\n"
                            "ตัวอย่าง: http://192.168.51.49:8080,https://ai.pawinhome.com")

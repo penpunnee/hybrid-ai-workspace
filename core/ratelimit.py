@@ -120,6 +120,26 @@ _req_limiter = SlidingWindowLimiter(_RPM, _WINDOW)
 _authfail_limiter = SlidingWindowLimiter(_AUTH_FAIL_MAX, _AUTH_FAIL_WINDOW)
 
 
+def websocket_auth_ok(websocket, token: str = "", authorize=None) -> bool:
+    """gate ของ WS ที่เข้า lockout เดียวกับ HTTP (audit 09-24 ข้อ 7 — WS ไม่ผ่าน middleware http)
+
+    · IP ที่ถูก lock อยู่ → ปฏิเสธแม้ token ถูก (เหมือน 429 ฝั่ง http)
+    · ล้มโดย**มี credential แนบมา** (query/cookie) → นับเข้า `_authfail_limiter` · ไม่มี credential = ไม่นับ
+      (browser ที่ยังไม่ login ไม่ควรถูก lock)
+    """
+    from core.auth import SESSION_COOKIE, websocket_authorized
+    authorize = authorize or websocket_authorized   # server.py ส่ง `websocket_authorized` ของตัวเองมา (เทส patch ได้)
+    if not _ENABLED or is_local_request(websocket):
+        return authorize(websocket, token)
+    key = client_key(websocket)
+    if _authfail_limiter.over_limit(key)[0]:
+        return False
+    ok = authorize(websocket, token)
+    if not ok and (token or websocket.cookies.get(SESSION_COOKIE)):
+        _authfail_limiter.record(key)
+    return ok
+
+
 def unlock_ip(ip: str) -> None:
     """ล้าง auth-fail lock สำหรับ IP นั้น — เรียกจาก admin endpoint (LAN-only)"""
     _authfail_limiter.reset_key(ip)

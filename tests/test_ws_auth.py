@@ -47,8 +47,9 @@ def test_ws_rejects_public_with_wrong_token(monkeypatch):
 
 
 def test_ws_accepts_public_with_correct_token(monkeypatch):
+    """query `?token=` ยังรับ **session token** (bundle เก่า) — รหัสดิบไม่รับแล้ว (tests/test_session_auth.py)"""
     monkeypatch.setattr(auth, "UI_PASSWORD", "s3cret")
-    with _client().websocket_connect("/ws/voice/kwan?token=s3cret") as ws:
+    with _client().websocket_connect(f"/ws/voice/kwan?token={auth.issue_session_token()}") as ws:
         # GEMINI_API_KEY ไม่ได้ตั้งใน test → handler ตอบ error หลัง accept
         # (สิ่งที่เทสพิสูจน์คือ "ต่อติด" ไม่ใช่ตัว Live session)
         assert ws.receive_json()["type"] == "error"

@@ -1,5 +1,6 @@
 import os
 import logging
+import re
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -11,10 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import CORS_ORIGINS_LIST, RELOAD, GEMINI_API_KEY, GEMINI_LIVE_MODEL
 from core.auth import auth_middleware, websocket_authorized
-from core.ratelimit import rate_limit_middleware
+from core.ratelimit import rate_limit_middleware, websocket_auth_ok
 from core.body_limit import BodySizeLimitMiddleware
 from utils.http_limits import MAX_BODY_BYTES
-from core.observability import install_logging, start_request, timing_summary
+from core.observability import install_logging, install_uvicorn_redaction, start_request, timing_summary
 from core.scheduler import start_scheduler
 from utils.skills import _load_skills_db
 
@@ -38,6 +39,8 @@ def _startup_sync_skills():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # uvicorn.run() ทำ dictConfig ของตัวเองก่อนถึงตรงนี้ — ติดตั้ง filter ซ้ำให้แน่ (idempotent)
+    install_uvicorn_redaction()
     threading.Thread(target=_startup_sync_skills, daemon=True).start()
     start_scheduler()
     yield
@@ -117,10 +120,20 @@ async def root():
         return f.read()
 
 
+_SHARE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")   # 10-hex เดิม + urlsafe 22 ตัวใหม่
+
+
 @app.get("/shared/{token}", response_class=HTMLResponse)
 async def shared_page(token: str):
-    """Shared chat page — HTML served here, data fetched via /api/shared/{token}"""
-    html = f"""<!DOCTYPE html>
+    """Shared chat page — HTML served here, data fetched via /api/shared/{token}
+
+    🔴 audit 09-24 ข้อ 1: เดิม interpolate `token` ลง `<script>` ตรงๆ = reflected XSS บน open path
+    (OWASP: "directly in a script" ไม่มี encoding ที่ปลอดภัย) → HTML เป็น static ทั้งก้อน
+    JS อ่าน token จาก `location.pathname` เอง · server แค่ validate รูปแบบแล้ว 404 (ชั้นที่สอง)
+    """
+    if not _SHARE_TOKEN_RE.match(token):
+        return HTMLResponse("<h1>404</h1>ไม่พบแชทนี้", status_code=404)
+    html = """<!DOCTYPE html>
 <html lang="th">
 <head>
 <meta charset="UTF-8">
@@ -128,35 +141,35 @@ async def shared_page(token: str):
 <title>Shared Chat</title>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-*{{box-sizing:border-box;margin:0;padding:0}}
-body{{font-family:'Sora',sans-serif;background:#060810;color:#e2e8f0;min-height:100vh}}
-.bg{{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}}
-.orb{{position:absolute;border-radius:50%;filter:blur(80px);opacity:.5}}
-.orb1{{width:400px;height:400px;background:radial-gradient(circle,rgba(168,85,247,.5),transparent 70%);top:-100px;right:10%}}
-.orb2{{width:300px;height:300px;background:radial-gradient(circle,rgba(236,72,153,.4),transparent 70%);bottom:50px;left:5%}}
-.wrap{{position:relative;z-index:1;max-width:800px;margin:0 auto;padding:24px 16px 60px}}
-header{{display:flex;align-items:center;gap:12px;padding:20px 0 24px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:28px}}
-.avatar{{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#a855f7,#ec4899);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff;flex-shrink:0}}
-.title{{font-size:1rem;font-weight:600;color:#e2e8f0}}
-.subtitle{{font-size:.72rem;color:rgba(148,163,184,.5);margin-top:2px}}
-.badge{{margin-left:auto;font-size:.65rem;padding:3px 10px;border-radius:20px;background:rgba(168,85,247,.12);border:1px solid rgba(168,85,247,.25);color:#c4b5fd}}
-.msgs{{display:flex;flex-direction:column;gap:16px}}
-.msg{{display:flex;gap:12px}}
-.msg.user{{flex-direction:row-reverse}}
-.bubble-avatar{{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;margin-top:2px}}
-.msg.ai .bubble-avatar{{background:linear-gradient(135deg,#a855f7,#7c3aed);color:#fff}}
-.msg.user .bubble-avatar{{background:linear-gradient(135deg,#2dd4bf,#06b6d4);color:#fff}}
-.bubble{{max-width:72%;padding:12px 16px;border-radius:18px;font-size:.88rem;line-height:1.65}}
-.msg.ai .bubble{{background:linear-gradient(135deg,rgba(99,102,241,.09),rgba(139,92,246,.06));border:1px solid rgba(99,102,241,.2);border-radius:4px 18px 18px 18px}}
-.msg.user .bubble{{background:linear-gradient(135deg,rgba(45,212,191,.1),rgba(6,182,212,.07));border:1px solid rgba(45,212,191,.22);border-radius:18px 4px 18px 18px}}
-.role-label{{font-size:.65rem;font-weight:600;margin-bottom:5px;opacity:.5;text-transform:uppercase}}
-pre{{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:.5em 0;font-family:'JetBrains Mono',monospace;font-size:.78em}}
-code{{background:rgba(255,255,255,.1);border-radius:4px;padding:1px 5px;font-family:'JetBrains Mono',monospace;font-size:.82em}}
-.empty{{text-align:center;padding:60px 20px;color:rgba(148,163,184,.35)}}
-.spinner{{width:32px;height:32px;border:2px solid rgba(168,85,247,.2);border-top-color:#a855f7;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px}}
-.footer{{text-align:center;padding-top:40px;font-size:.7rem;color:rgba(148,163,184,.25)}}
-@keyframes spin{{to{{transform:rotate(360deg)}}}}
-@media(max-width:600px){{.bubble{{max-width:88%}}}}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Sora',sans-serif;background:#060810;color:#e2e8f0;min-height:100vh}
+.bg{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+.orb{position:absolute;border-radius:50%;filter:blur(80px);opacity:.5}
+.orb1{width:400px;height:400px;background:radial-gradient(circle,rgba(168,85,247,.5),transparent 70%);top:-100px;right:10%}
+.orb2{width:300px;height:300px;background:radial-gradient(circle,rgba(236,72,153,.4),transparent 70%);bottom:50px;left:5%}
+.wrap{position:relative;z-index:1;max-width:800px;margin:0 auto;padding:24px 16px 60px}
+header{display:flex;align-items:center;gap:12px;padding:20px 0 24px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:28px}
+.avatar{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#a855f7,#ec4899);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff;flex-shrink:0}
+.title{font-size:1rem;font-weight:600;color:#e2e8f0}
+.subtitle{font-size:.72rem;color:rgba(148,163,184,.5);margin-top:2px}
+.badge{margin-left:auto;font-size:.65rem;padding:3px 10px;border-radius:20px;background:rgba(168,85,247,.12);border:1px solid rgba(168,85,247,.25);color:#c4b5fd}
+.msgs{display:flex;flex-direction:column;gap:16px}
+.msg{display:flex;gap:12px}
+.msg.user{flex-direction:row-reverse}
+.bubble-avatar{width:32px;height:32px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;margin-top:2px}
+.msg.ai .bubble-avatar{background:linear-gradient(135deg,#a855f7,#7c3aed);color:#fff}
+.msg.user .bubble-avatar{background:linear-gradient(135deg,#2dd4bf,#06b6d4);color:#fff}
+.bubble{max-width:72%;padding:12px 16px;border-radius:18px;font-size:.88rem;line-height:1.65}
+.msg.ai .bubble{background:linear-gradient(135deg,rgba(99,102,241,.09),rgba(139,92,246,.06));border:1px solid rgba(99,102,241,.2);border-radius:4px 18px 18px 18px}
+.msg.user .bubble{background:linear-gradient(135deg,rgba(45,212,191,.1),rgba(6,182,212,.07));border:1px solid rgba(45,212,191,.22);border-radius:18px 4px 18px 18px}
+.role-label{font-size:.65rem;font-weight:600;margin-bottom:5px;opacity:.5;text-transform:uppercase}
+pre{background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 14px;overflow-x:auto;margin:.5em 0;font-family:'JetBrains Mono',monospace;font-size:.78em}
+code{background:rgba(255,255,255,.1);border-radius:4px;padding:1px 5px;font-family:'JetBrains Mono',monospace;font-size:.82em}
+.empty{text-align:center;padding:60px 20px;color:rgba(148,163,184,.35)}
+.spinner{width:32px;height:32px;border:2px solid rgba(168,85,247,.2);border-top-color:#a855f7;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px}
+.footer{text-align:center;padding-top:40px;font-size:.7rem;color:rgba(148,163,184,.25)}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:600px){.bubble{max-width:88%}}
 </style>
 </head>
 <body>
@@ -171,31 +184,32 @@ code{{background:rgba(255,255,255,.1);border-radius:4px;padding:1px 5px;font-fam
   <div class="footer">Hybrid AI Workspace · Shared via link</div>
 </div>
 <script>
-function esc(s){{return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}}
-function fmt(s){{
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmt(s){
   s=esc(s);
   s=s.replace(/```([\\s\\S]*?)```/g,'<pre><code>$1</code></pre>');
   s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
   s=s.replace(/\\*\\*([^*]+)\\*\\*/g,'<strong>$1</strong>');
   s=s.replace(/\\n/g,'<br>');
   return s;
-}}
-fetch('/api/shared/{token}').then(r=>r.json()).then(d=>{{
-  if(!d.ok){{document.getElementById('msgs').innerHTML='<div class="empty">❌ ไม่พบแชทนี้</div>';return;}}
+}
+const token=decodeURIComponent(location.pathname.split('/').filter(Boolean).pop()||'');
+fetch('/api/shared/'+encodeURIComponent(token)).then(r=>r.json()).then(d=>{
+  if(!d.ok){document.getElementById('msgs').innerHTML='<div class="empty">❌ ไม่พบแชทนี้</div>';return;}
   document.getElementById('title').textContent='💬 '+d.assistant;
   document.getElementById('avatar').textContent=d.assistant.charAt(0).toUpperCase();
   document.getElementById('subtitle').textContent=(d.messages?.length||0)+' ข้อความ';
   const c=document.getElementById('msgs');
-  if(!d.messages?.length){{c.innerHTML='<div class="empty">ไม่มีข้อความ</div>';return;}}
+  if(!d.messages?.length){c.innerHTML='<div class="empty">ไม่มีข้อความ</div>';return;}
   c.innerHTML='';
-  d.messages.forEach(m=>{{
+  d.messages.forEach(m=>{
     const isUser=m.role==='user';
     const el=document.createElement('div');
     el.className='msg '+(isUser?'user':'ai');
-    el.innerHTML=`<div class="bubble-avatar">${{isUser?'U':'A'}}</div><div class="bubble"><div class="role-label">${{isUser?'User':'AI'}}</div>${{fmt(m.content)}}</div>`;
+    el.innerHTML=`<div class="bubble-avatar">${isUser?'U':'A'}</div><div class="bubble"><div class="role-label">${isUser?'User':'AI'}</div>${fmt(m.content)}</div>`;
     c.appendChild(el);
-  }});
-}}).catch(()=>{{document.getElementById('msgs').innerHTML='<div class="empty">❌ โหลดไม่ได้</div>';}});
+  });
+}).catch(()=>{document.getElementById('msgs').innerHTML='<div class="empty">❌ โหลดไม่ได้</div>';});
 </script>
 </body>
 </html>"""
@@ -214,7 +228,8 @@ _VOICE_OPENS = VoiceOpenTracker()
 async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id: str = "voice_default",
                           token: str = ""):
     # gate ก่อน accept — middleware ไม่แตะ WebSocket (ดู core.auth.websocket_authorized)
-    if not websocket_authorized(websocket, token):
+    # · ผ่าน core.ratelimit.websocket_auth_ok เพื่อเข้า lockout เดียวกับ http (audit 09-24)
+    if not websocket_auth_ok(websocket, token, authorize=websocket_authorized):
         await websocket.close(code=1008)
         return
 
@@ -587,7 +602,7 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
     🔑 **ที่คั่นหน้าเลื่อนเมื่อโมเดลอ่านท่อนจบเท่านั้น** — เลื่อนตอนป้อนแล้วหลุดกลางท่อน
     = ท่อนนั้นหายถาวร · เลื่อนหลังจบ = อย่างแย่แค่ฟังซ้ำท่อนเดียว
     """
-    if not websocket_authorized(websocket, token):
+    if not websocket_auth_ok(websocket, token, authorize=websocket_authorized):
         await websocket.close(code=1008)
         return
 
