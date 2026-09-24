@@ -1,5 +1,24 @@
 ---
 
+## [2026-09-24 ปิดเซสชัน] config ก้อน 4 — วันเดียว 7 ก้อน จาก 80 → 10 จุด (user สั่งพัก 3 ไฟล์สุดท้ายไว้เซสชันหน้า)
+| commit | ก้อน | จุด |
+|---|---|---|
+| `e8844bc` | `websearch` · `response_cache` · `memory` | 16 |
+| `641617d` | ชั้น core: `ratelimit` · `observability` · `scheduler` (`LOG_*` เจ้าของ = config) | 9 |
+| `7ccd25a` | `reflection` · `query_rewrite` · `ocr` + **registry ปฏิเสธชื่อที่ลงจากคนละโมดูล** | 10 |
+| `1e69399` | `dream` · `routers/dream` · `heartbeat` · `notify` (ส่วนเขียนมือ `.env.example` ว่าง) | 10 |
+| `55fa487` | ตระกูล skills 5 ไฟล์ | 8 |
+| `b24fd84` | `memory/correction` · `lexical` · `obsidian_sync` · `db_backup` | 8 |
+| `f101186` | `routers/system`/`reader`/`chat` · `image_gen` · `file_export` · `history` | 8 |
+ทุกก้อน: ตรวจ prod ก่อน (ครึ่งหลังผ่าน `nas-cf` เพราะอยู่นอก LAN) → เทสแดง → ย้าย → ชุดเต็ม + ruff →
+mutation 10/10 → deploy → probe ค่าก่อน=หลัง · registry 94 → **117 ชื่อ** · ชุดเต็ม 2072 → **2183**
+· CI เขียวทุก commit · NAS HEAD = main
+**บทเรียนที่ยกเป็นกติกาใน ▶️:** runtime read → ระดับโมดูล (เทส patch ค่าในโมดูลแทน setenv) · ค่าที่มี parser
+เดิมลง `env_str` + คง parser · default ซ้อน → `""` + `or <ค่า config>` · reload `core.config` ในเทสต้องมี
+teardown · mutant ที่รอดต้องอ่านซ้ำว่าเปลี่ยนพฤติกรรมจริงไหม · ตัวกันที่ผูกกับรูปแบบการเขียน (AST) พังเมื่อ
+รูปแบบเปลี่ยน → บังคับที่พฤติกรรมของ registry แทน
+⏭️ **เหลือ 10 จุดใน 3 ไฟล์ที่ต้องคิดก่อน** (`reasoning/router` 4 · `tts` 3 · `ha_client` 3) — ดู ▶️
+
 ## [2026-09-24 ต่อ 6] config ก้อน 4 "ง่าย" — `routers/system` · `routers/reader` · `routers/chat` · `image_gen` · `file_export` · `history` 8 จุด (`f101186`)
 **ตรวจ prod ก่อน (nas-cf):** 5 ชื่อใหม่ไม่ได้ตั้ง · `DB_PATH=/app/chat_history.db` (compose) — `history.DB_PATH`
 กับ `config.DB_PATH` เป็นไฟล์เดียวกัน · `has_anthropic False` · `has_vault True` · หลัง deploy **ตรงทุกค่า** ·
