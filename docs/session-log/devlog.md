@@ -1,5 +1,21 @@
 ---
 
+## [2026-09-24 ปิดเซสชัน ค่ำ] สรุปทั้งวันช่วงบ่าย-ค่ำ — config ก้อน 4 จบ · audit ทั้งระบบ · ปิด audit ก้อน 1 · เซสชันหน้าเริ่มก้อน 2
+| ลำดับ | งาน | commit | devlog |
+|---|---|---|---|
+| 1 | config ก้อน 4 ปิดท้าย 3 ไฟล์ (router/tts/ha_client) → `os.getenv` ดิบ = **0** · registry 124 | `f9b638b` | [ต่อ 7] |
+| 2 | ตรวจทั้งโปรเจกต์รอบแรก (runtime สะอาด · 1008-loop มีตัวเลข) | `c9e9dea` | [ต่อ 8] — ข้อสรุป 1007 ถูกถอนใน [ต่อ 9] |
+| 3 | audit ทั้งระบบแบบไม่เว้น 6 สาย + runtime → HIGH 14 / MEDIUM ~30 / LOW ~35 · ค้นเสริมข้อ plausible ทุกข้อ | `92a4d2d` `c849be0` | [ต่อ 9] + `docs/audit/2026-09-24-full-audit.md` |
+| 4 | **audit ก้อน 1**: session token/cookie แทนรหัสดิบ · `/shared` XSS · WS lockout · log redaction · share token 128-bit | `ff1ce17` (+ appscript.ui `693bbe0`) | [ต่อ 10] |
+ทุกก้อน deploy + verify บน prod · CI เขียวทุก commit · NAS HEAD = main · ชุดเต็ม 2183 → **2235**
+**กติกาที่ user เพิ่มวันนี้ (อยู่ใน memory `feedback_evidence_before_proposing` ข้อ 11):** ไม่ชัวร์ค้นเน็ตก่อน · การค้นมี 2 ชั้น
+(เป็นบั๊กจริงไหม / วิธีแก้ที่ถูกต้อง) ต้องทำชั้น 2 ก่อนแตะไฟล์แล้วรายงานก่อนลงมือ · จดการทำงานทุกครั้ง
+**บทเรียนของวัน:** ผูกเหตุกับผลจากตัวเลขที่ใกล้กันในเวลาโดยไม่ dump log ช่วงรอยต่อ = สรุปผิด (1008→1007) · เทส "plausible" ของสายตรวจ
+ต้องไล่ปิดด้วยเอกสาร/ซอร์สที่ติดตั้ง/ทดลอง ไม่ปล่อยค้าง · ก่อนถอด import ต้อง grep ว่ายังมีใครใช้ (uuid)
+⏭️ **เซสชันหน้า: audit ก้อน 2 (truncate ข้าม session + bump_access_count สลับ metadata)** — ขั้นตอนอยู่ใน ▶️ ของ CLAUDE.md
+⚠️ ฝั่ง user: ต้อง login ใหม่ทุกเครื่อง + รีเฟรชหน้า (ก้อน 1) — ถ้าเจอปัญหา login/เสียง/อ่านนิยายหลังจากนี้ ให้สงสัยก้อน 1 ก่อน
+(rollback = `git revert ff1ce17` + appscript.ui `693bbe0` แล้ว rebuild/sync/recreate)
+
 ## [2026-09-24 ต่อ 10] audit ก้อน 1 — session token แทนรหัสดิบ · `/shared` XSS · WS lockout · log redaction (`ff1ce17` · appscript.ui `693bbe0`)
 **ค้นก่อนลงมือ (user สั่ง "ค้นข้อมูลก่อนแล้วรายงาน"):** OWASP Session Mgmt (≥64-bit · ห้าม localStorage/URL · cookie Secure+HttpOnly+SameSite=Strict ·
 renew หลัง login) · OWASP XSS ("directly in a script" ไม่มี encoding ปลอดภัย → ไม่ interpolate เลย) · websockets docs/websocket.org (cookie

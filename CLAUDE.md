@@ -703,8 +703,18 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-24 บ่าย**)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-24 ค่ำ — ปิดเซสชัน**)
 
+> ## 🥇 งานแรกเซสชันหน้า (user สั่งตอนปิดเซสชัน 09-24): **audit ก้อน 2 — `DELETE /api/truncate` ข้าม session + `bump_access_count` สลับ metadata**
+> รายละเอียดข้อ 3-4 ใน `docs/audit/2026-09-24-full-audit.md` (HIGH) · ทำแบบเดียวกับก้อน 1 (devlog [ต่อ 10]):
+> 1. **ค้นวิธีแก้ก่อน แล้วรายงานให้ user ก่อนแตะไฟล์** — truncate: ต้องกรอง `assistant`+`session_id` และตรวจว่า id เป็นของ session นั้น ·
+>    caller `app.tsx:772` (`submitEdit`) + `enhanced.js:2629` · bump_access_count: จับคู่ด้วย `res["ids"]` ที่ Chroma คืน (เรียงตาม internal id ไม่ใช่ที่ขอ —
+>    Chroma Cookbook) · ตรวจว่ามีเส้นอื่นที่ zip metadata กับ ids ที่ขอแบบเดียวกันไหม (`memory/store.py`, `utils/memory.py`, `dream.py`)
+> 2. probe prod ก่อน: นับ memory ที่ metadata อาจสลับไปแล้ว (verified/user_taught ที่ timestamp ไม่ตรง created_at) — **ของที่สลับไปแล้วกู้ย้อนไม่ได้**
+>    ต้องบอก user ตรงๆ · truncate: ไม่มีเทสเดิมเลย
+> 3. เทสแดงก่อน → แก้ → mutation → deploy (`utils/`/`memory/`/`routers/` mount เป็น dir → `docker restart` พอ) → probe หลัง
+> 🔒 กติกา user ที่ยังมีผล: ค้นข้อมูล 2 ชั้น (เป็นบั๊ก? · วิธีแก้?) ก่อนลงมือ · ไม่ชัวร์ค้นเน็ต · จดทุกอย่างลง devlog
+>
 > ## ✅ config ก้อน 4 **ปิดแล้วทั้งชุด 09-24** — `os.getenv` ดิบนอก registry ในโค้ด prod = **0** (จาก 195 จุด/40 ไฟล์ ตอน 09-02)
 > ก้อนสุดท้าย `reasoning/router` 4 · `utils/tts` 3 · `utils/ha_client` 3 → `f9b638b` (devlog [2026-09-24 ต่อ 7])
 > · registry บน prod **124 ชื่อ** · ชุดเต็ม **2210** · mutation 13/13 · deploy + probe ค่าก่อน=หลัง ตรงทุกค่า
