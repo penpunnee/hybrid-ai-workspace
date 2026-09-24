@@ -705,7 +705,7 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-23**)
 
-> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อที่ตระกูล skills (`skills` 2 · `skills_search` 2 · `skills_select` 2 · `skills_shadow` 1 · `skill_discovery` 1)**
+> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อที่ `memory/correction` (3) + `memory/lexical` (1) + `utils/obsidian_sync` (2) + `utils/db_backup` (2)**
 > 🔑 **กติกา user: "เช็คข้อมูล ก่อนจะลงมือให้ชัวร์ก่อนทุกครั้ง"** — ทั้งสองฝั่งของสัญญา + log/คำสั่งจริง
 > · **09-23 ค่ำ user เพิ่ม: "เช็คข้อมูลระบบจริงก่อน อย่าเชื่อ log ถ้าข้อมูลยังไม่ครอบคลุมให้ค้นเน็ตก่อน"**
 > ⇒ ก่อนย้ายไฟล์ไหน probe ในคอนเทนเนอร์ว่า env ตั้งจริงไหม + ค่าที่ resolve (ไม่ใช่อ่านจาก `.env.example`)
@@ -716,8 +716,11 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > · ชั้น core `ratelimit`/`observability`/`scheduler` (`641617d`) — `LOG_*` เจ้าของ = config
 > · `reflection`/`query_rewrite`/`ocr` (`7ccd25a`) — registry **ปฏิเสธชื่อที่ลงจากคนละโมดูลแล้ว**
 > (fail-loud ตอน import · แม้ default เท่ากัน) ⇒ ไฟล์ที่ย้ายต้อง import ค่าจากเจ้าของจริงๆ ไม่งั้นแอปไม่ขึ้น
-> · **`dream`/`routers/dream`/`heartbeat`/`notify` (`1e69399`)** — ส่วนเขียนมือของ `.env.example` **ว่างแล้ว**
-> · เหลือ **34 จุด** (นับด้วย AST ไม่รวม tests/scripts/legacy และ 4 จุดของ registry เอง)
+> · `dream`/`routers/dream`/`heartbeat`/`notify` (`1e69399`) — ส่วนเขียนมือของ `.env.example` **ว่างแล้ว**
+> · **ตระกูล skills 5 ไฟล์ (`55fa487`)** · เหลือ **26 จุด** (นับด้วย AST ไม่รวม tests/scripts/legacy
+> และ 4 จุดของ registry เอง) — ที่เหลือ: `reasoning/router` 4 · `memory/correction` 3 · `tts` 3 ·
+> `ha_client` 3 · `routers/system` 2 · `routers/reader` 2 · `obsidian_sync` 2 · `db_backup` 2 ·
+> `routers/chat`/`memory/lexical`/`image_gen`/`file_export`/`history` 1
 > 🔑 **อยู่นอก LAN → ใช้ `nas-cf` ได้ทั้ง probe และ deploy** (ยืนยัน 09-24) · แยก "NAS ดับ" ออกจาก
 > "เราอยู่นอกวง" ด้วย `curl https://ai.pawinhome.com/api/config` + `route -n get default` ก่อนสรุป ·
 > macOS ไม่มี `timeout` — guard ด้วย background + kill

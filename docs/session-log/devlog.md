@@ -1,5 +1,24 @@
 ---
 
+## [2026-09-24 ต่อ 4] config ก้อน 4 ตระกูล skills — 5 ไฟล์ 8 จุด (`55fa487`)
+**ตรวจ prod ก่อน (nas-cf):** `SKILLS_*` ไม่ได้ตั้งสักตัว · `CHROMA_HOST/PORT`+`LMSTUDIO_CHAT_MODEL` ตั้ง
+(เจ้าของ config) · baseline `0.38 5.0 · 0.05 0.35 · True` · หลัง deploy **ตรงทุกค่า** + singleton
+`SkillsSearch` ตัวจริงต่อ `192.168.51.49:8000` ได้ (`available=True`) · registry บน prod 108 ชื่อ ·
+`/api/config` 200 · 0 error
+- **3 ชื่อมี parser เดิม** (`SKILLS_SEARCH_MIN_SCORE` · `SKILLS_DB_LOCK_TIMEOUT` · `SKILLS_FALLBACK_MARGIN`:
+  `off`/`none`/`""` = ปิดหรือรอไม่จำกัด · พิมพ์ผิด = ปิด/5.0 + warning) → ลง `env_str` + คง parser ·
+  mutation M2 "สลับเป็น `env_float`" ตายด้วย **import error ตอน `off`** = สาธิตตรงๆ ว่าทำไมห้าม
+  (`_parse_margin` มี docstring เขียนไว้เองว่า "ห้าม crash ตอน import — นี่คือเส้นแชทหลัก")
+- `skills_search.__init__` อ่าน `CHROMA_HOST` default `"localhost"` **ไม่ตรง config (`""`)** — ปิดด้วย
+  การ import alias `_CFG_` แล้ว `or "localhost"` ⇒ ค่าเท่าเดิมทุกกรณี ไม่ต้องลงทะเบียนซ้ำ (registry
+  จะปฏิเสธอยู่แล้ว — M10 ตายด้วย import error)
+- `skill_discovery` อ่าน `LMSTUDIO_CHAT_MODEL` ตอนเรียก → import จาก config
+- `.env.example`: 5 ชื่อเข้าส่วน generate (ไม่เคยถูกจดในไฟล์นี้ — CLAUDE.md มีคำอธิบายยาวอยู่แล้ว)
+- เทสแดงก่อน 12 · กลุ่มควบคุม 227 เขียว · **2156 passed/17 skipped** (+29) · ruff (ถอด `import os`
+  ที่เหลือใน skills_search — ตัวนับของผมนับคำใน docstring) · **mutation 10/10**
+- เหลืออ่าน env ดิบ **26 จุด** · ถัดไป `memory/correction` 3 + `memory/lexical` 1 + `obsidian_sync` 2 +
+  `db_backup` 2 · เก็บ `reasoning/router`/`tts`/`ha_client` + routers ไว้ท้าย (ต้องคิดก่อน)
+
 ## [2026-09-24 ต่อ 3] config ก้อน 4 ไฟล์ที่ 18-21 — `dream` · `routers/dream` · `heartbeat` · `notify` 10 จุด (`1e69399`)
 **อยู่นอก LAN ตอนทำ** — `ssh nas`/`:8080` timeout แต่ `https://ai.pawinhome.com/api/config` = 200 (prod ขึ้น)
 และ gateway เครื่องคือ `192.168.154.1` ⇒ เป็นเครือข่ายเรา ไม่ใช่ NAS · **`nas-cf` ใช้ได้** (Access ยังไม่หมดอายุ)
