@@ -13,9 +13,20 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 from typing import Callable, Optional
+
+# เจ้าของ LMSTUDIO_* คือ config — import ค่า ไม่อ่านซ้ำ · ไฟล์นี้เป็นเจ้าของ CORRECTION_EXTRACT_TIMEOUT
+# (ก้อน 4 · 2026-09-24 · ตัวกัน: tests/test_env_registry.py)
+from core.config import LMSTUDIO_BASE_URL as _CFG_LMSTUDIO_BASE_URL
+from core.config import LMSTUDIO_REASON_MODEL as _CFG_LMSTUDIO_REASON_MODEL
+from core.env_registry import env_float
+
+# timeout กว้างได้เพราะผู้เรียกอยู่ในเธรดเบื้องหลัง (ดู routers/chat.py) —
+# ผู้ใช้ไม่ได้รอผลนี้ · โมเดล reasoning ใช้เวลาจริง ~40-60 วิ
+_EXTRACT_TIMEOUT = env_float("CORRECTION_EXTRACT_TIMEOUT", 60.0, group="Memory", doc=(
+    "วินาที timeout ของ LLM ที่สกัด \"ข้อเท็จจริงที่ถูก\" จากคำแก้ของผู้ใช้ (รันในเธรดเบื้องหลัง ผู้ใช้ไม่รอ)\n"
+    "โมเดล reasoning ใช้จริง ~40-60 วิ"))
 
 logger = logging.getLogger(__name__)
 
@@ -142,15 +153,14 @@ def llm_extractor(correction: str, wrong_answer: str) -> Optional[str]:
 
     แยกจาก `build_correction_record` เพื่อให้ตรรกะ fallback เทสได้โดยไม่แตะเครือข่าย
     """
-    base_url = os.getenv("LMSTUDIO_BASE_URL", "")
+    # ค่าจาก config/registry ระดับโมดูล — เดิมอ่าน env ตอนเรียกทั้ง 3 ชื่อ (ก้อน 4 · 2026-09-24)
+    base_url = _CFG_LMSTUDIO_BASE_URL
     if not base_url:
         return None
     from openai import OpenAI
 
-    model = os.getenv("LMSTUDIO_REASON_MODEL", "qwen/qwen3.5-9b")
-    # timeout กว้างได้เพราะผู้เรียกอยู่ในเธรดเบื้องหลัง (ดู routers/chat.py) —
-    # ผู้ใช้ไม่ได้รอผลนี้ · โมเดล reasoning ใช้เวลาจริง ~40-60 วิ
-    timeout = float(os.getenv("CORRECTION_EXTRACT_TIMEOUT", "60"))
+    model = _CFG_LMSTUDIO_REASON_MODEL
+    timeout = _EXTRACT_TIMEOUT
     from core.config import LMSTUDIO_API_KEY  # ค่าว่างถอยไป placeholder ที่นั่น
     client = OpenAI(base_url=base_url, api_key=LMSTUDIO_API_KEY, timeout=timeout)
     resp = client.chat.completions.create(

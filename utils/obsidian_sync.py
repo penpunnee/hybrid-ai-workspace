@@ -8,6 +8,9 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from dotenv import load_dotenv
 
+from core.config import OBSIDIAN_VAULT_PATH as _CFG_OBSIDIAN_VAULT_PATH
+from core.env_registry import env_float
+
 load_dotenv()
 
 # Configure logging for obsidian sync
@@ -15,9 +18,12 @@ logger = logging.getLogger(__name__)
 
 # คะแนนความคล้ายขั้นต่ำที่จะถือว่าโน้ต "เกี่ยวข้อง" พอจะยัดเข้า context/อ้างอิง
 # วัดจาก prod 2026-08-02: คำถามที่ไม่เกี่ยวกับ vault ทำได้ ≤0.40 · ที่ตรงจริง 0.72-0.74
-_VAULT_MIN_SCORE = float(os.getenv("VAULT_MIN_SCORE", "0.5"))
+_VAULT_MIN_SCORE = env_float("VAULT_MIN_SCORE", 0.5, group="Obsidian Vault", doc=(
+    "คะแนนความคล้ายขั้นต่ำที่โน้ตถือว่า \"เกี่ยวข้อง\" พอจะฉีด/อ้างอิง\n"
+    "วัด prod 2026-08-02: คำถามไม่เกี่ยว ≤0.40 · ที่ตรงจริง 0.72-0.74"))
 
-VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH", "")
+# เจ้าของคือ config (compose ตั้ง /vault) — import ค่า ไม่อ่านซ้ำ (ก้อน 4 · 2026-09-24)
+VAULT_PATH = _CFG_OBSIDIAN_VAULT_PATH
 COLLECTION_NAME = "obsidian_notes"
 
 

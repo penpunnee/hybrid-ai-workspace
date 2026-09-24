@@ -1015,3 +1015,76 @@ def test_skills_search_ค่า_config_ที่_import_มา(monkeypatch):
     assert (s._CFG_CHROMA_HOST, s._CFG_CHROMA_PORT) == ("10.0.0.9", 9001)
     d = _reload_with(monkeypatch, "utils.skill_discovery", {"LMSTUDIO_CHAT_MODEL": "m-x"})
     assert d._CFG_LMSTUDIO_CHAT_MODEL == "m-x"
+
+
+# ── 16) ก้อน 4 ไฟล์ที่ 27-30: memory/correction · memory/lexical · utils/obsidian_sync · utils/db_backup (2026-09-24) ──
+# 🔑 ตรวจบน prod ก่อนเขียน (nas-cf): CORRECTION_EXTRACT_TIMEOUT/LEXICAL_MIN_SCORE/VAULT_MIN_SCORE/DB_BACKUP_* ไม่ได้ตั้ง
+#    · OBSIDIAN_VAULT_PATH=/vault (compose) · LMSTUDIO_BASE_URL/REASON_MODEL ตั้ง (เจ้าของ config)
+#    · baseline 0.5 · 0.5 '/vault' · './db_backups' 7 (cwd /app · mount มีจริง) · correction อ่าน 3 ชื่อ *ตอนเรียก*
+
+@pytest.mark.parametrize("mod", ["memory.correction", "memory.lexical", "utils.obsidian_sync", "utils.db_backup"])
+def test_correction_lexical_vault_backup_อยู่ใน_MODULES(mod):
+    from core.env_registry import MODULES
+
+    assert mod in MODULES
+
+
+@pytest.mark.parametrize("name,expected", [
+    ("CORRECTION_EXTRACT_TIMEOUT", 60.0),
+    ("LEXICAL_MIN_SCORE", 0.5),
+    ("VAULT_MIN_SCORE", 0.5),
+    ("DB_BACKUP_DEST", "./db_backups"),   # relative โดยตั้งใจ — ในคอนเทนเนอร์ cwd=/app ⇒ /app/db_backups (mount)
+    ("DB_BACKUP_RETAIN", 7),              # ชื่อ env ≠ ชื่อตัวแปร (DB_BACKUP_RETAIN_DAYS)
+])
+def test_default_ของ_correction_lexical_vault_backup_เท่าของเดิม(name, expected):
+    from core.env_registry import REGISTRY, load_all
+
+    load_all()
+    spec = REGISTRY[name]
+    assert spec.default == expected and type(spec.default) is type(expected), (
+        f"{name}: default เป็น {spec.default!r} ควรเป็น {expected!r}")
+    assert spec.doc.strip()
+
+
+def test_correction_และ_obsidian_sync_ไม่ลงชื่อของ_config_และฟังก์ชันอ้างค่าที่_import():
+    co = (REPO / "memory" / "correction.py").read_text()
+    assert not _helper_names(co) & {"LMSTUDIO_BASE_URL", "LMSTUDIO_REASON_MODEL"}
+    assert {"_CFG_LMSTUDIO_BASE_URL", "_CFG_LMSTUDIO_REASON_MODEL", "_EXTRACT_TIMEOUT"} <= _fn_names(co, "llm_extractor")
+    ob = (REPO / "utils" / "obsidian_sync.py").read_text()
+    assert "OBSIDIAN_VAULT_PATH" not in _helper_names(ob)
+
+
+def test_llm_extractor_ไม่ยิงเมื่อ_base_url_ว่าง_และส่งค่าจาก_config_เมื่อตั้ง(monkeypatch):
+    import openai
+
+    co = _reload_with(monkeypatch, "memory.correction", {"LMSTUDIO_BASE_URL": ""})
+    monkeypatch.setattr(openai, "OpenAI", lambda **kw: (_ for _ in ()).throw(AssertionError("ต้องไม่สร้าง client")))
+    assert co.llm_extractor("ไม่ใช่ A", "A") is None
+
+    seen = {}
+
+    class _Boom(Exception):
+        pass
+
+    class _Client:
+        def __init__(self, **kw):
+            seen.update(kw)
+            self.chat = type("C", (), {"completions": type("X", (), {"create": staticmethod(
+                lambda **k: seen.update(model=k["model"]) or (_ for _ in ()).throw(_Boom()))})()})()
+
+    monkeypatch.setattr(openai, "OpenAI", _Client)
+    co = _reload_with(monkeypatch, "memory.correction", {
+        "LMSTUDIO_BASE_URL": "http://h:1/v1", "LMSTUDIO_REASON_MODEL": "r-model", "CORRECTION_EXTRACT_TIMEOUT": "7"})
+    try:
+        co.llm_extractor("ไม่ใช่ A", "A")
+    except _Boom:
+        pass
+    assert (seen.get("base_url"), seen.get("timeout"), seen.get("model")) == ("http://h:1/v1", 7.0, "r-model")
+
+
+def test_obsidian_sync_และ_db_backup_ค่าที่_resolve_จริง(monkeypatch, tmp_path):
+    ob = _reload_with(monkeypatch, "utils.obsidian_sync",
+                      {"OBSIDIAN_VAULT_PATH": str(tmp_path), "VAULT_MIN_SCORE": "0.7"})
+    assert (ob.VAULT_PATH, ob._VAULT_MIN_SCORE) == (str(tmp_path), 0.7)
+    db = _reload_with(monkeypatch, "utils.db_backup", {"DB_BACKUP_DEST": "/tmp/zz-bk", "DB_BACKUP_RETAIN": "3"})
+    assert (db.DB_BACKUP_DEST, db.DB_BACKUP_RETAIN_DAYS) == ("/tmp/zz-bk", 3)

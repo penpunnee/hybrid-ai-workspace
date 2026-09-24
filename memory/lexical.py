@@ -16,7 +16,7 @@ n-gram ระดับตัวอักษรทนต่อการตัด�
 """
 from __future__ import annotations
 
-import os
+from core.env_registry import env_float
 
 _NGRAM = 3
 
@@ -26,7 +26,9 @@ _NGRAM = 3
 # ที่ราบกว้าง 0.45-0.70 เพราะ **ค่าสูงสุดของคู่ "ไม่ควรดึง" ที่วัดได้คือ 0.409**
 # เลือก 0.50 = กลางที่ราบ เหนือ noise ที่สังเกตได้จริงพอมีระยะเผื่อ
 # (ต่างจากจุดดีที่สุดของ dual-vector ที่กว้างแค่ 0.013 = overfit เชื่อไม่ได้)
-LEXICAL_MIN_SCORE = float(os.getenv("LEXICAL_MIN_SCORE", "0.50"))
+LEXICAL_MIN_SCORE = env_float("LEXICAL_MIN_SCORE", 0.5, group="Memory", doc=(
+    "พื้นคะแนน lexical (OR-gate คู่ semantic) ของ recall — ที่ราบ 0.45-0.70 · noise สูงสุดที่วัดได้ 0.409\n"
+    "0.50 = กลางที่ราบ เหนือ noise พอมีระยะเผื่อ"))
 
 
 def _ngrams(text: str, n: int = _NGRAM) -> set[str]:

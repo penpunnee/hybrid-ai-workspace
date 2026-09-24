@@ -28,11 +28,16 @@ from core.config import (
     READER_DB_PATH,
     RESPONSE_CACHE_DB,
 )
+from core.env_registry import env_int, env_str
 
 logger = logging.getLogger(__name__)
 
-DB_BACKUP_DEST = os.getenv("DB_BACKUP_DEST", "./db_backups")
-DB_BACKUP_RETAIN_DAYS = int(os.getenv("DB_BACKUP_RETAIN", "7"))
+# env ของ backup — ไฟล์นี้เป็นเจ้าของ 2 ชื่อ (ก้อน 4 · 2026-09-24 · ตัวกัน: tests/test_env_registry.py)
+_G = "DB Backup (03:30)"
+DB_BACKUP_DEST = env_str("DB_BACKUP_DEST", "./db_backups", group=_G, doc=(
+    "โฟลเดอร์เก็บ tar.gz ของ chat_history/reader/cache DBs — relative จาก cwd โดยตั้งใจ:\n"
+    "ในคอนเทนเนอร์ cwd คือรากแอป ⇒ ตรงกับ volume mount db_backups ใน docker-compose.yml"))
+DB_BACKUP_RETAIN_DAYS = env_int("DB_BACKUP_RETAIN", 7, group=_G, doc="เก็บกี่วัน (ใบเก่ากว่านี้ถูกลบหลัง backup สำเร็จ)")
 
 # DB ตัวชี้ขาด = **ตัวแรกใน db_paths ที่ผู้เรียกขอมา** (default = DB_PATH)
 # cache ที่เหลือ regenerate เอาใหม่ได้ จึงไม่นับ — เตือนผิดตัวบ่อยๆ คือทางที่ทำให้
