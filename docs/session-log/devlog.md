@@ -1,5 +1,28 @@
 ---
 
+## [2026-09-24 ต่อ 6] config ก้อน 4 "ง่าย" — `routers/system` · `routers/reader` · `routers/chat` · `image_gen` · `file_export` · `history` 8 จุด (`f101186`)
+**ตรวจ prod ก่อน (nas-cf):** 5 ชื่อใหม่ไม่ได้ตั้ง · `DB_PATH=/app/chat_history.db` (compose) — `history.DB_PATH`
+กับ `config.DB_PATH` เป็นไฟล์เดียวกัน · `has_anthropic False` · `has_vault True` · หลัง deploy **ตรงทุกค่า** ·
+registry บน prod 117 ชื่อ · `/api/config` 200 · 0 error
+- `routers/reader` อ่าน `READER_DB_PATH` ซ้ำ (เจ้าของ config) **โดยตั้งใจ** — คอมเมนต์เดิมบอกว่า "getenv
+  ต้องอยู่ตรงนี้ ไม่งั้น reload ในเทสจะไม่เห็น env ใหม่แล้วไปเขียนทับ DB จริง" · แก้โดย import จาก config
+  แล้วให้เทสที่แยก DB `reload(core.config)` **ก่อน** `reload(routers.reader)` (ตัวกัน `test_เทสต้องแยก_db…`
+  ยังอยู่และยังเขียว)
+- 🔴 **รั่วซ้ำอีกชั้น — จับได้จาก baseline gate ของ mutation ไม่ใช่ชุดเต็ม:** fixture `client` ใน
+  `test_reader_api` reload `core.config` กับ tmp path แล้ว**ไม่ reload กลับ** ⇒ `cfg.READER_DB_PATH` รั่วเป็น
+  tmp path ให้เทสอื่น (`test_ครบทั้ง_4_ใบ` แดง) · **ชุดเต็ม 2182 เขียวเพราะลำดับไฟล์บังเอิญ** · ยกเป็น
+  yield fixture + teardown (undo → reload config → reload reader) + เทสกัน
+  `test_fixture_ไม่ทิ้ง_tmp_path_ค้างใน_core_config` · 🔑 **reload โมดูล config ในเทส = ต้องมี teardown
+  เสมอ** (ครั้งที่ 3 ของบทเรียน "ชุดเต็มเขียวเพราะลำดับ")
+- `history.DB_PATH` เดิม default เป็น path สัมบูรณ์ `<repo>/chat_history.db` (คำนวณ) ต่างจาก config
+  (`"./chat_history.db"`) — ตัวกัน default-consistency เทียบไม่ได้ = ช่องที่ CLAUDE.md จดว่า "ยังหลุด" ·
+  ปิดด้วยการ import จากเจ้าของ (prod ตั้งผ่าน compose ⇒ ไฟล์เดียวกันอยู่แล้ว)
+- `get_config.has_anthropic` อ่าน `utils.llm.ANTHROPIC_API_KEY` เป็น attribute ตอนเรียก (เจ้าของ = llm ·
+  เทส patch ได้) · `has_vault` import `OBSIDIAN_VAULT_PATH`
+- `.env.example`: 4 ชื่อเข้าส่วน generate
+- เทสแดงก่อน 11 · กลุ่มควบคุม 254 เขียว · **2183 passed/17 skipped** (+15) · ruff · **mutation 10/10**
+- เหลืออ่าน env ดิบ **10 จุด = 3 ไฟล์ที่ต้องคิดก่อนทั้งหมด**: `reasoning/router` 4 · `tts` 3 · `ha_client` 3
+
 ## [2026-09-24 ต่อ 5] config ก้อน 4 ไฟล์ที่ 27-30 — `memory/correction` · `memory/lexical` · `obsidian_sync` · `db_backup` 8 จุด (`b24fd84`)
 **ตรวจ prod ก่อน (nas-cf):** 5 ชื่อใหม่ไม่ได้ตั้งสักตัว · `OBSIDIAN_VAULT_PATH=/vault` (compose) ·
 `LMSTUDIO_BASE_URL/REASON_MODEL` ตั้ง (เจ้าของ config) · baseline `0.5 · 0.5 '/vault' · './db_backups' 7`

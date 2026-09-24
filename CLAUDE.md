@@ -705,7 +705,7 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-23**)
 
-> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ต่อที่ก้อน "ง่าย" 8 จุด: `routers/system` 2 · `routers/reader` 2 · `routers/chat` 1 · `image_gen` 1 · `file_export` 1 · `history` 1**
+> ## 🥇 งานแรกเซสชันหน้า: **config ก้อน 4 ก้อนสุดท้าย (10 จุด · ต้องคิดก่อน): `reasoning/router` 4 · `utils/tts` 3 · `utils/ha_client` 3**
 > 🔑 **กติกา user: "เช็คข้อมูล ก่อนจะลงมือให้ชัวร์ก่อนทุกครั้ง"** — ทั้งสองฝั่งของสัญญา + log/คำสั่งจริง
 > · **09-23 ค่ำ user เพิ่ม: "เช็คข้อมูลระบบจริงก่อน อย่าเชื่อ log ถ้าข้อมูลยังไม่ครอบคลุมให้ค้นเน็ตก่อน"**
 > ⇒ ก่อนย้ายไฟล์ไหน probe ในคอนเทนเนอร์ว่า env ตั้งจริงไหม + ค่าที่ resolve (ไม่ใช่อ่านจาก `.env.example`)
@@ -718,10 +718,14 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > (fail-loud ตอน import · แม้ default เท่ากัน) ⇒ ไฟล์ที่ย้ายต้อง import ค่าจากเจ้าของจริงๆ ไม่งั้นแอปไม่ขึ้น
 > · `dream`/`routers/dream`/`heartbeat`/`notify` (`1e69399`) — ส่วนเขียนมือของ `.env.example` **ว่างแล้ว**
 > · ตระกูล skills 5 ไฟล์ (`55fa487`) · **`memory/correction`/`lexical`/`obsidian_sync`/`db_backup` (`b24fd84`)**
-> · เหลือ **18 จุด** (นับด้วย AST ไม่รวม tests/scripts/legacy และ 4 จุดของ registry เอง) —
-> ก้อนง่าย: `routers/system` 2 · `routers/reader` 2 · `routers/chat`/`image_gen`/`file_export`/`history` 1
-> · **ปิดท้าย (ต้องคิดก่อน · 10 จุด):** `reasoning/router` 4 (`LMSTUDIO_API_KEY` ไม่มี default โดยตั้งใจ —
-> ดูข้อเตือนล่าง) · `tts` 3 (`_positive_env` ตั้งใจไม่ raise → `env_str` + คง parser) · `ha_client` 3
+> · **ก้อนง่าย `routers/system`/`reader`/`chat` + `image_gen`/`file_export`/`history` (`f101186`)**
+> · เหลือ **10 จุด** = 3 ไฟล์สุดท้าย (นับด้วย AST ไม่รวม tests/scripts/legacy และ 4 จุดของ registry เอง):
+> `reasoning/router` 4 (`LMSTUDIO_API_KEY` ไม่มี default **โดยตั้งใจ** — ดูข้อเตือนล่าง · ห้ามย้ายไปใช้ค่า
+> config ที่ถอยไป placeholder) · `tts` 3 (`_positive_env` **ตั้งใจไม่ raise** เพราะ raise = crashloop จาก
+> ปุ่มลำโพง → `env_str` + คง parser) · `ha_client` 3
+> 🔴 **reload `core.config` ในเทส = ต้องมี teardown reload กลับเสมอ** — fixture ที่ไม่คืนสภาพทำให้
+> tmp path รั่วให้เทสอื่น · ชุดเต็มเขียวเพราะลำดับไฟล์ (ครั้งที่ 3) · ตัวจับคือ baseline gate ของ mutation
+> ที่รันชุดย่อย ⇒ **รันชุดย่อยของไฟล์ที่แตะ + เทสของ config ก่อนเชื่อชุดเต็ม**
 > 🔑 **อยู่นอก LAN → ใช้ `nas-cf` ได้ทั้ง probe และ deploy** (ยืนยัน 09-24) · แยก "NAS ดับ" ออกจาก
 > "เราอยู่นอกวง" ด้วย `curl https://ai.pawinhome.com/api/config` + `route -n get default` ก่อนสรุป ·
 > macOS ไม่มี `timeout` — guard ด้วย background + kill
