@@ -90,6 +90,46 @@ def _close_quietly(gen) -> None:
         logger.debug(f"[Chat] ปิด generator หลังตัดสายไม่ได้ (ปล่อยให้ GC): {e}")
 
 
+# regenerate ที่กำลังวิ่งอยู่ (key = assistant:session) — handler ตัดสายของ /api/chat ใช้ตัดสินว่า
+# "มีคนกำลังตอบ user message นี้อยู่แล้ว" (ตอนที่ DB ยังไม่มีคำตอบใหม่) · uvicorn worker เดียว
+# (Dockerfile CMD ไม่มี --workers) จึงใช้ set ในโปรเซสได้
+_REGEN_INFLIGHT: set[str] = set()
+
+
+def _regen_key(assistant: str, session_id: str) -> str:
+    return f"{assistant}:{session_id}"
+
+
+async def _guard_disconnect(inner, on_cut):
+    """ครอบ sync generator ของ SSE ให้จับ "client ตัดสาย" ได้แบบ deterministic
+
+    client ตัดสายกลาง stream (กด Stop / ปิดแท็บ): starlette (spec < 2.4 ที่ uvicorn ส่ง) cancel
+    task ที่กำลัง stream → CancelledError ซึ่งไม่เข้า `except Exception` ใดๆ ของ generator ตัวใน
+    ⇒ user message ที่ save ไปแล้วกลายเป็น orphan (audit 2026-09-24 MEDIUM · เทส
+    test_stream_disconnect_orphan.py) · `on_cut` = งานฝั่งผู้เรียก (save คำตอบบางส่วนคู่ user ฯลฯ)
+
+    ⚠️ ทำไมต้องเป็น async generator ไม่ใช่ sync wrapper ที่ดัก GeneratorExit: sync generator
+    ถูก close() ตอน **cyclic GC** (traceback ของ CancelledError ถือเฟรมไว้) ไม่ใช่ตอนตัดสาย —
+    วัดแล้วรอ 3 วิยังไม่มา ⇒ บันทึกช้าแบบสุ่ม
+    · ⚠️ ต้อง `checkpoint()` ก่อน yield ทุกชิ้น: run_sync รอ thread แบบ shield แล้วคืนค่าโดยไม่ผ่าน
+      checkpoint ⇒ ไม่มีบรรทัดนี้ CancelledError จะไปโผล่ที่ `await send()` ของ starlette (นอกเฟรมเรา)
+    · มาถึงได้ *ช้า*: anyio รอ thread คืนค่าก่อน (abandon_on_cancel=False) — thread ที่ค้างรอ LLM
+      คิดยกเลิกไม่ได้ (วัดบน prod 09-25: 8–63 วิ) ⇒ on_cut ต้องทนกับ "ระหว่างนั้นมีคนตอบไปแล้ว"
+    · shield ไว้ไม่งั้น await ตัวแรกใน scope ที่ถูก cancel จะโยนซ้ำก่อนได้บันทึก
+    · ปิด inner ให้เสร็จเลย (LLM stream หยุดจริง ไม่รอ GC) — ถ้า thread ยังถือมันอยู่ close() จะ
+      ValueError → ปล่อยให้ GC ปิดเหมือนเดิม
+    """
+    try:
+        async for piece in iterate_in_threadpool(inner):
+            await anyio.lowlevel.checkpoint()
+            yield piece
+    except (asyncio.CancelledError, GeneratorExit):
+        with anyio.CancelScope(shield=True):
+            await run_in_threadpool(on_cut)
+            await run_in_threadpool(_close_quietly, inner)
+        raise
+
+
 def persist_agent_turn(assistant: str, prompt: str, full_response: str, session_id: str,
                         is_test_request: bool = False) -> int:
     """persist คำตอบ agent → save_message + push_working เสมอ, แต่ **gate** remember()
@@ -709,45 +749,25 @@ async def chat(request: Request):
         }
         yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
 
-    async def generate():
-        # client ตัดสายกลาง stream (กด Stop / ปิดแท็บ): starlette (spec < 2.4 ที่ uvicorn ส่ง)
-        # cancel task ที่กำลัง stream → CancelledError โผล่ที่ await ใน iterate_in_threadpool
-        # ไม่เข้า `except Exception` ใดๆ ใน `_generate_inner` ⇒ user message ที่ save ไปแล้ว
-        # กลายเป็น orphan (audit 2026-09-24 MEDIUM · เทส test_stream_disconnect_orphan.py)
-        #
-        # ⚠️ ทำไมต้องเป็น async generator ไม่ใช่ sync wrapper ที่ดัก GeneratorExit:
-        # sync generator ถูก close() ตอน **cyclic GC** (traceback ของ CancelledError ถือเฟรม
-        # ไว้) ไม่ใช่ตอนตัดสาย — วัดแล้วรอ 3 วิยังไม่มา ⇒ บันทึกช้าแบบสุ่ม regenerate ที่ตามมา
-        # จะเห็น orphan อยู่ดี · CancelledError มาถึง async generator ตัวนี้ทันทีที่ chunk ที่
-        # ค้างใน thread คืนค่า (anyio abandon_on_cancel=False) จึง deterministic
-        # · shield ไว้ไม่งั้น await ตัวแรกใน scope ที่ถูก cancel จะโยนซ้ำก่อนได้บันทึก
-        # · ปิด inner ให้เสร็จเลย (LLM stream หยุดจริง ไม่รอ GC) — ถ้า thread ยังถือมันอยู่
-        #   close() จะ ValueError → ปล่อยให้ GC ปิดเหมือนเดิม
-        # · ⚠️ ต้อง `checkpoint()` ก่อน yield ทุกชิ้น: run_sync รอ thread แบบ shield แล้วคืนค่า
-        #   โดยไม่ผ่าน checkpoint ⇒ ถ้าไม่มีบรรทัดนี้ CancelledError จะไปโผล่ที่ `await send()`
-        #   ของ starlette (นอกเฟรมเรา) แล้ว generator ตัวนี้ถูกทิ้งไว้จน GC = ช้าแบบสุ่มเหมือนเดิม
-        # · ⚠️ มาถึงได้ *ช้า*: anyio รอ thread คืนค่าก่อน — ถ้า thread ค้างรอ LLM คิด (วัดบน prod
-        #   09-25: 63 วิ) ระหว่างนั้น user อาจกด regenerate จนได้คำตอบใหม่แล้ว ⇒ เช็ค DB ก่อน
-        #   (`has_reply_after`) ถ้ามีคำตอบคู่ user message นี้แล้วให้ข้าม ไม่ต่อฟอง "หยุดกลางคัน" ซ้ำ
-        st = {"user_saved": False, "assistant_saved": False, "save_crash": None, "user_msg_id": 0}
-        inner = _generate_inner(st)
-        try:
-            async for piece in iterate_in_threadpool(inner):
-                await anyio.lowlevel.checkpoint()
-                yield piece
-        except (asyncio.CancelledError, GeneratorExit):
-            if st["user_saved"] and not st["assistant_saved"] and st["save_crash"]:
-                with anyio.CancelScope(shield=True):
-                    answered = await run_in_threadpool(has_reply_after, assistant, session_id, st["user_msg_id"])
-                    if answered:
-                        logger.info("[Chat] client ตัดสายกลาง stream — มีคำตอบคู่แล้ว (regenerate?) ไม่บันทึกซ้ำ")
-                    else:
-                        logger.info("[Chat] client ตัดสายกลาง stream — บันทึกคำตอบบางส่วนคู่ user message")
-                        await run_in_threadpool(st["save_crash"], "client ตัดสายกลางคัน (กด Stop / ปิดหน้า)")
-                    await run_in_threadpool(_close_quietly, inner)
-            raise
+    # client ตัดสายกลาง stream → `_guard_disconnect` (ดูเหตุผลทั้งหมดที่นั่น) · on_cut ตัดสินจาก `st`:
+    # save user แล้วแต่ยังไม่มีคำตอบคู่ → save คำตอบบางส่วน + "หยุดกลางคัน" · ยกเว้นระหว่างที่ handler
+    # มาถึงช้า user กด regenerate ไปแล้ว — เช็คทั้ง "regenerate กำลังวิ่ง" (`_REGEN_INFLIGHT`) และ
+    # "มีคำตอบใน DB แล้ว" (`has_reply_after`) ไม่งั้นได้ฟอง "หยุดกลางคัน" เกินมาคั่น (เห็นจริง prod 09-25)
+    st = {"user_saved": False, "assistant_saved": False, "save_crash": None, "user_msg_id": 0}
 
-    return StreamingResponse(generate(), media_type="text/event-stream",
+    def _on_cut():
+        if not (st["user_saved"] and not st["assistant_saved"] and st["save_crash"]):
+            return
+        if _regen_key(assistant, session_id) in _REGEN_INFLIGHT:
+            logger.info("[Chat] client ตัดสายกลาง stream — regenerate ของ session นี้กำลังวิ่ง ไม่บันทึกซ้ำ")
+            return
+        if has_reply_after(assistant, session_id, st["user_msg_id"]):
+            logger.info("[Chat] client ตัดสายกลาง stream — มีคำตอบคู่แล้ว (regenerate?) ไม่บันทึกซ้ำ")
+            return
+        logger.info("[Chat] client ตัดสายกลาง stream — บันทึกคำตอบบางส่วนคู่ user message")
+        st["save_crash"]("client ตัดสายกลางคัน (กด Stop / ปิดหน้า)")
+
+    return StreamingResponse(_guard_disconnect(_generate_inner(st), _on_cut), media_type="text/event-stream",
                              headers={
                                  "Cache-Control": "no-cache",
                                  "X-Accel-Buffering": "no",
@@ -768,9 +788,14 @@ async def regenerate_response(request: Request):
     provider   = data.get("provider", "auto")
     agent_mode = bool(data.get("agent_mode", False))
 
+    # ประกาศ "กำลัง regenerate" ก่อนแตะ DB — handler ตัดสายของ /api/chat ที่มาถึงช้าจะได้ไม่ต่อฟองซ้ำ
+    rkey = _regen_key(assistant, session_id)
+    _REGEN_INFLIGHT.add(rkey)
+
     # ลบเฉพาะคำตอบที่ตามหลัง user ล่าสุด (turn orphan = ไม่ลบอะไร · A1 ของ turn ก่อนหน้ารอด)
     last_prompt = await run_in_threadpool(pop_replies_after_last_user, assistant, session_id)
     if not last_prompt:
+        _REGEN_INFLIGHT.discard(rkey)
         async def _err():
             yield "data: " + json.dumps({'error': 'ไม่พบข้อความ'}) + "\n\n"
         return StreamingResponse(_err(), media_type="text/event-stream")
@@ -787,29 +812,47 @@ async def regenerate_response(request: Request):
     messages = [{"role": "system", "content": system_prompt}]
     messages += [{"role": m["role"], "content": m["content"]} for m in history]
 
+    # สถานะแชร์กับ on_cut: text = คำตอบที่ stream ไปแล้ว · saved = มีคำตอบคู่ใน DB แล้ว
+    st = {"text": "", "saved": False}
+
+    def _save_regen_crash(err_text: str):
+        # pop_replies_after_last_user() ลบคำตอบเก่าไปแล้วก่อนเริ่ม stream —
+        # ถ้าไม่ save อะไรเลยตอนนี้ turn จะไม่มีคำตอบคู่กับ user message เลย
+        # (แย่กว่า chat() ปกติ เพราะที่นี่ลบของเดิมทิ้งไปแล้วด้วย)
+        text = (st["text"] + "\n\n" if st["text"].strip() else "") + f"⚠️ การตอบหยุดกลางคัน: {err_text}"
+        try:
+            save_message(assistant, "assistant", text, provider, session_id)
+            st["saved"] = True
+        except Exception as save_err:
+            logger.error(f"[Regenerate] save partial response after crash failed too: {save_err}")
+
     def gen_regen():
-        full_response = ""
         usage_sink: dict = {}
         try:
-            for chunk in stream_response(messages, provider=provider, agent_mode=agent_mode,
-                                         usage_sink=usage_sink):
-                full_response += chunk
-                yield f"data: {json.dumps({'chunk': chunk})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
-            # pop_replies_after_last_user() ลบคำตอบเก่าไปแล้วก่อนเริ่ม stream —
-            # ถ้าไม่ save อะไรเลยตอนนี้ turn จะไม่มีคำตอบคู่กับ user message เลย
-            # (แย่กว่า chat() ปกติ เพราะที่นี่ลบของเดิมทิ้งไปแล้วด้วย)
-            text = (full_response + "\n\n" if full_response.strip() else "") + f"⚠️ การตอบหยุดกลางคัน: {e}"
             try:
-                save_message(assistant, "assistant", text, provider, session_id)
-            except Exception as save_err:
-                logger.error(f"[Regenerate] save partial response after crash failed too: {save_err}")
-            return
-        # ⚠️ ต้องส่ง message_id ใน done เหมือนเส้น /api/chat — FE ใช้ตั้ง dbId
-        # ของข้อความ (เดิมทิ้งค่า return → ปุ่ม 👍/👎/📌 หายทุกครั้งหลัง regenerate)
-        mid = save_message(assistant, "assistant", full_response, provider, session_id)
-        yield f"data: {json.dumps({'done': True, 'message_id': mid, 'usage': usage_sink or None})}\n\n"
+                for chunk in stream_response(messages, provider=provider, agent_mode=agent_mode,
+                                             usage_sink=usage_sink):
+                    st["text"] += chunk
+                    yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                _save_regen_crash(str(e))
+                return
+            # ⚠️ ต้องส่ง message_id ใน done เหมือนเส้น /api/chat — FE ใช้ตั้ง dbId
+            # ของข้อความ (เดิมทิ้งค่า return → ปุ่ม 👍/👎/📌 หายทุกครั้งหลัง regenerate)
+            mid = save_message(assistant, "assistant", st["text"], provider, session_id)
+            st["saved"] = True
+            yield f"data: {json.dumps({'done': True, 'message_id': mid, 'usage': usage_sink or None})}\n\n"
+        finally:
+            _REGEN_INFLIGHT.discard(rkey)
 
-    return StreamingResponse(gen_regen(), media_type="text/event-stream",
+    def _on_cut():
+        # client ตัดสาย regenerate กลางคัน — orphan แบบเดียวกับ /api/chat (ที่นี่ไม่ต้องเช็ค
+        # "มีคนตอบแล้วไหม" เพราะ regenerate คือตัวที่กำลังตอบเอง)
+        _REGEN_INFLIGHT.discard(rkey)
+        if not st["saved"]:
+            logger.info("[Regenerate] client ตัดสายกลาง stream — บันทึกคำตอบบางส่วนคู่ user message")
+            _save_regen_crash("client ตัดสายกลางคัน (กด Stop / ปิดหน้า)")
+
+    return StreamingResponse(_guard_disconnect(gen_regen(), _on_cut), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

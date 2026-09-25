@@ -29,14 +29,14 @@ class _ClientGone(Exception):
     pass
 
 
-async def _post_then_drop(session_id: str, drop_after_chunks: int):
+async def _post_then_drop(session_id: str, drop_after_chunks: int, path: str = "/api/chat", body: bytes | None = None):
     scope = {
         "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST",
-        "scheme": "http", "path": "/api/chat", "raw_path": b"/api/chat", "query_string": b"",
+        "scheme": "http", "path": path, "raw_path": path.encode(), "query_string": b"",
         "root_path": "", "headers": [(b"host", b"t"), (b"content-type", b"application/json")],
         "client": ("127.0.0.1", 1), "server": ("t", 80),
     }
-    body = (BODY % session_id).encode()
+    body = body if body is not None else (BODY % session_id).encode()
     delivered = False
     gone = asyncio.Event()
 
@@ -157,3 +157,98 @@ async def test_ตัดสายใน_session_ที่มี_turn_เก่�
     roles = [m["role"] for m in history]
     assert roles == ["user", "assistant", "user", "assistant"], f"turn ใหม่ต้องได้คู่ของตัวเอง ({roles})"
     assert "หยุดกลางคัน" in history[3]["content"]
+
+
+REGEN_BODY = '{"assistant":"kwan","session_id":"%s","provider":"ollama"}'
+
+
+def _seed_turns(sid: str, turns):
+    from utils.history import save_message
+    for role, content in turns:
+        save_message("kwan", role, content, "ollama", sid)
+
+
+@pytest.mark.asyncio
+async def test_regenerate_ตัดสายกลาง_stream_ต้องไม่เหลือ_orphan(monkeypatch):
+    """/api/regenerate ลบคำตอบเก่าทิ้งก่อน stream — client ตัดสายกลางคัน = orphan แบบเดียวกับ /api/chat
+    (แย่กว่าด้วยซ้ำเพราะของเดิมหายไปแล้ว) → ต้องผ่าน `_guard_disconnect` เหมือนกัน"""
+    sid = "s_regen_disconnect"
+    _seed_turns(sid, [("user", "U1"), ("assistant", "A1"), ("user", "U2"), ("assistant", "A2 เก่า")])
+    monkeypatch.setattr(chatmod, "stream_response", _slow_stream)
+    monkeypatch.setattr(chatmod, "search_memory", lambda *a, **k: "")
+    await _post_then_drop(sid, drop_after_chunks=2, path="/api/regenerate", body=(REGEN_BODY % sid).encode())
+    history = load_history("kwan", sid)
+    contents = [m["content"] for m in history]
+    assert contents[:3] == ["U1", "A1", "U2"], contents
+    assert len(contents) == 4 and "หยุดกลางคัน" in contents[3] and "ท่อน0" in contents[3], contents
+    assert chatmod._regen_key("kwan", sid) not in chatmod._REGEN_INFLIGHT, "ตัดสายแล้วต้องถอดธง in-flight"
+
+
+@pytest.mark.asyncio
+async def test_regenerate_จบปกติ_ต้องถอดธง_inflight(monkeypatch):
+    sid = "s_regen_inflight_ctrl"
+    _seed_turns(sid, [("user", "U1"), ("assistant", "A1")])
+    monkeypatch.setattr(chatmod, "stream_response", _slow_stream)
+    monkeypatch.setattr(chatmod, "search_memory", lambda *a, **k: "")
+    await _post_then_drop(sid, drop_after_chunks=10 ** 6, path="/api/regenerate", body=(REGEN_BODY % sid).encode())
+    assert [m["role"] for m in load_history("kwan", sid)] == ["user", "assistant"]
+    assert chatmod._regen_key("kwan", sid) not in chatmod._REGEN_INFLIGHT
+
+
+@pytest.mark.asyncio
+async def test_ตัดสาย_chat_ระหว่าง_regenerate_กำลังวิ่ง_ต้องไม่ต่อฟองซ้ำ(monkeypatch):
+    """ลำดับที่เห็นจริงบน prod 09-25 รอบ 2: กด Stop → Regenerate ทันที → regenerate ตอบนาน (355 chunk)
+    → handler ตัดสายของ chat มาถึง *ก่อน* regenerate save ⇒ DB ยังไม่มีคำตอบ (`has_reply_after` ช่วยไม่ได้)
+    ต้องดูธง in-flight แทน · จำลองด้วยสองคำขอพร้อมกัน: regenerate ที่ stream ช้า + chat ที่ถูกตัดสาย"""
+    sid = "s_regen_vs_chat_cut"
+    _seed_turns(sid, [("user", "U1"), ("assistant", "A1")])
+
+    def _dispatch(messages, **k):
+        import time
+        last = messages[-1]["content"]
+        if last == "ยิงแล้วตัดสาย":            # chat ที่จะถูกตัดสาย — chunk เร็ว
+            for i in range(6):
+                time.sleep(0.05)
+                yield f"ท่อน{i} "
+        else:                                    # regenerate — ช้า ให้ยังวิ่งอยู่ตอน chat ถูกตัด
+            for i in range(3):
+                time.sleep(0.6)
+                yield f"regen{i} "
+
+    monkeypatch.setattr(chatmod, "stream_response", _dispatch)
+    monkeypatch.setattr(chatmod, "search_memory", lambda *a, **k: "")
+
+    async def _chat_cut():
+        await asyncio.sleep(0.3)                # ให้ regenerate ประกาศ in-flight ก่อนแน่ๆ
+        await _post_then_drop(sid, drop_after_chunks=2)
+
+    with patch.object(chatmod, "remember"), patch.object(chatmod, "teach", return_value=False):
+        await asyncio.gather(
+            _post_then_drop(sid, drop_after_chunks=10 ** 6, path="/api/regenerate", body=(REGEN_BODY % sid).encode()),
+            _chat_cut(),
+        )
+    contents = [m["content"] for m in load_history("kwan", sid)]
+    assert not any("หยุดกลางคัน" in c for c in contents), f"ห้ามต่อฟอง 'หยุดกลางคัน' ระหว่าง regenerate วิ่ง ({contents})"
+    assert "regen0 regen1 regen2 " in contents, contents
+
+
+@pytest.mark.asyncio
+async def test_ตัดสายแล้ว_stream_ของ_LLM_ต้องถูกปิดทันที(monkeypatch):
+    """`_guard_disconnect` ต้อง close() inner ก่อน raise — ไม่งั้น generator ของ LLM ค้างเปิดจน
+    cyclic GC (ต่อ HTTP ค้าง · โมเดลเดินต่อ) · mutation "ไม่ปิด inner" รอดจากเทสอื่นทุกตัว"""
+    closed = {"v": False}
+
+    def _stream_tracking_close(messages, **k):
+        import time
+        try:
+            for i in range(6):
+                time.sleep(0.02)
+                yield f"ท่อน{i} "
+        finally:
+            closed["v"] = True      # GeneratorExit มาถึงตัว stream เมื่อ inner ถูกปิด
+
+    monkeypatch.setattr(chatmod, "stream_response", _stream_tracking_close)
+    sid = "s_disconnect_close"
+    with patch.object(chatmod, "remember"), patch.object(chatmod, "teach", return_value=False):
+        await _post_then_drop(sid, drop_after_chunks=2)
+    assert closed["v"], "stream ของ LLM ต้องถูกปิดก่อน request จบ ไม่ใช่รอ GC"
