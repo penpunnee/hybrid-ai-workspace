@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 import shutil
 from datetime import datetime, date, timedelta
 from fastapi import APIRouter, Request, HTTPException
@@ -16,8 +17,10 @@ from utils.skills import get_skill_count
 from utils.dream import get_latest_report
 from utils.tts import generate_tts
 from utils.history import search_messages
+from utils.reqparse import as_str
 from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["system"])
 
 
@@ -307,8 +310,8 @@ def daily_digest():
 @router.post("/tts")
 async def text_to_speech(request: Request):
     data = await json_body_capped(request, MAX_BODY_BYTES)
-    text = data.get("text", "").strip()
-    slug = data.get("assistant_slug", "")
+    text = as_str(data.get("text"))
+    slug = as_str(data.get("assistant_slug"))
     if not text:
         return {"error": "no text"}
     try:
@@ -317,7 +320,10 @@ async def text_to_speech(request: Request):
         wav = await run_in_threadpool(generate_tts, text, slug)
         return Response(content=wav, media_type="audio/wav", headers={"Cache-Control": "no-cache"})
     except Exception as e:
-        return {"error": str(e)}
+        # ห้ามพังเงียบ: เดิมตอบ {"error"} 200 โดยไม่ log = ปุ่ม 🔊 พังอยู่ 2 เดือนไม่มีใครรู้ (devlog 08-06)
+        # frontend (app.tsx) เช็ค `!res.ok || content-type json` อยู่แล้ว → ตอบ 502 ได้
+        logger.error(f"[TTS] generate_tts ล้ม ({len(text)} ตัวอักษร · slug={slug!r}): {e}", exc_info=True)
+        return JSONResponse({"error": str(e)}, status_code=502)
 
 
 @router.post("/tts/stream")
@@ -325,8 +331,8 @@ async def text_to_speech_stream(request: Request):
     import base64
     from utils.tts import _group_sentences, _split_sentences
     data = await json_body_capped(request, MAX_BODY_BYTES)
-    text = data.get("text", "").strip()
-    slug = data.get("assistant_slug", "")
+    text = as_str(data.get("text"))
+    slug = as_str(data.get("assistant_slug"))
     if not text:
         return {"error": "no text"}
     # ⚠️ เคยแบ่งเป็น "ประโยค" ที่นี่เอง แล้วยิง 1 request ต่อ 1 ประโยค — เผาโควตา
@@ -344,6 +350,7 @@ async def text_to_speech_stream(request: Request):
                 b64 = base64.b64encode(wav).decode()
                 yield f"data: {json.dumps({'chunk': b64, 'done': False})}\n\n"
             except Exception as e:
+                logger.error(f"[TTS/stream] generate_tts ล้ม (chunk {len(sentence)} ตัวอักษร · slug={slug!r}): {e}", exc_info=True)
                 yield f"data: {json.dumps({'error': str(e), 'done': False})}\n\n"
         yield f"data: {json.dumps({'done': True})}\n\n"
 

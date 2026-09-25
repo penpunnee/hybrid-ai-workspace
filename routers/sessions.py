@@ -4,6 +4,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Request
 
 from core.state import share_store_set, share_store_get
+from utils.reqparse import as_str
 from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 from utils.history import (
     load_history, get_sessions, clear_session, export_history_md,
@@ -32,7 +33,7 @@ def new_session(assistant: str):
 @router.patch("/sessions/{assistant}/{session_id}")
 async def patch_session(assistant: str, session_id: str, request: Request):
     data = await json_body_capped(request, MAX_BODY_BYTES)
-    name = data.get("name", "").strip()
+    name = as_str(data.get("name"))
     if not name:
         return {"ok": False, "error": "ชื่อว่างไม่ได้"}
     rename_session(assistant, session_id, name)

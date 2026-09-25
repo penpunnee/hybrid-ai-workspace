@@ -17,6 +17,7 @@ from starlette.concurrency import run_in_threadpool
 from utils.code_sandbox import run_python, info as sandbox_info
 from utils.file_export import resolve_export
 from utils.fs_tools import list_dir, read_file, write_file, search_files, info as fs_info
+from utils.reqparse import as_int
 from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 
 router = APIRouter(prefix="/api", tags=["sandbox-fs"])
@@ -92,8 +93,8 @@ async def fs_search(request: Request):
         pattern,
         path=str(data.get("path", "")),
         file_glob=str(data.get("file_glob", "*")),
-        max_results=int(data.get("max_results", 50)),
-        max_per_file=int(data.get("max_per_file", 5)),
+        max_results=as_int(data.get("max_results"), 50, lo=1, hi=500),
+        max_per_file=as_int(data.get("max_per_file"), 5, lo=1, hi=100),
     )
 
 

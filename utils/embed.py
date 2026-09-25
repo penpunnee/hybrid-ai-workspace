@@ -264,15 +264,25 @@ def cache_stats() -> dict:
 # ── Embedding API ─────────────────────────────────────────────────────────────
 @lru_cache(maxsize=512)
 def _embed_one_cached(text: str) -> tuple:
-    """Two-tier cache: LRU (hot) → sqlite (warm) → LMStudio/Ollama (cold)"""
+    """Two-tier cache: LRU (hot) → sqlite (warm) → LMStudio/Ollama (cold)
+
+    ⚠️ ล้ม = **raise** ไม่ใช่คืน tuple() — `lru_cache` แคชค่าที่คืนแต่ไม่แคช exception
+    เดิมคืน tuple() ⇒ Ollama สะดุดครั้งเดียว = ข้อความนั้น embed ไม่ได้ตลอดอายุโปรเซส
+    (audit 2026-09-24 MEDIUM · เทส test_embed_failure_not_cached.py) · ผู้เรียกใช้ `_embed_one()`
+    """
     cached = _cache_get(text)
     if cached:
         return tuple(cached)
+    vecs, used_model = _create_embeddings([text])   # LM Studio → fallback Ollama
+    vec = vecs[0]
+    _cache_set(text, vec, used_model)
+    return tuple(vec)
+
+
+def _embed_one(text: str) -> tuple:
+    """เหมือน `_embed_one_cached` แต่ล้ม → tuple() (ไม่ถูกจำใน LRU — ครั้งถัดไปลองใหม่)"""
     try:
-        vecs, used_model = _create_embeddings([text])   # LM Studio → fallback Ollama
-        vec = vecs[0]
-        _cache_set(text, vec, used_model)
-        return tuple(vec)
+        return _embed_one_cached(text)
     except Exception as e:
         logger.warning(f"[Embed] failed for text {text[:40]!r}: {e}")
         return tuple()
@@ -324,7 +334,7 @@ def embed_texts(texts: Sequence[str]) -> list[list[float]]:
 
 def embed_query(query: str) -> list[float]:
     """Embed query (cached) — return list ว่างเมื่อ fail"""
-    v = _embed_one_cached(query)
+    v = _embed_one(query)
     return list(v) if v else []
 
 

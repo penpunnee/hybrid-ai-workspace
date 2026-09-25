@@ -17,6 +17,7 @@ from utils.ocr import ocr_pdf, ocr_image
 from utils.thaipdf import fix_thai_pua
 from starlette.concurrency import run_in_threadpool
 
+from utils.reqparse import as_int
 from utils.http_limits import read_capped, json_body_capped, MAX_BODY_BYTES
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -145,7 +146,7 @@ async def search(request: Request):
     query = (data.get("query") or "").strip()
     if not query:
         raise HTTPException(400, "field 'query' required")
-    top_k = int(data.get("top_k", 5))
+    top_k = as_int(data.get("top_k"), 5, lo=1, hi=50)
     source = data.get("source") or None
     results = await run_in_threadpool(retrieve_chunks, query, top_k=top_k, source_filter=source)
     return {"query": query, "results": results, "count": len(results)}

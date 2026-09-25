@@ -7,6 +7,7 @@
 ให้เองอยู่แล้ว ไม่ต้องแตะ (ดู tests/test_memory_skills_router_concurrency.py)
 """
 from fastapi import APIRouter, Request, HTTPException
+from utils.reqparse import as_str
 from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 from starlette.concurrency import run_in_threadpool
 
@@ -44,7 +45,7 @@ def memory_recall(assistant: str, q: str, session_id: str = ""):
 async def memory_teach(assistant: str, request: Request):
     """สอน AI โดยตรง — บันทึกเป็น verified memory"""
     data = await json_body_capped(request, _MAX_BODY_BYTES)
-    text = data.get("text", "").strip()
+    text = as_str(data.get("text"))
     if not text:
         return {"ok": False, "error": "ไม่มีข้อความ"}
     saved = await run_in_threadpool(teach, assistant, text)

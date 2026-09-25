@@ -203,6 +203,9 @@ class TestStoreWiring:
             "metadatas": [[{"confidence": 0.9, "verified": False}]],
             "distances": [[0.90]],
         }
+        # ก้อน 7 (09-26): รายการ key-only ต้องดึง doc+metadata จากตัวหลัก (ไม่ใช่ข้อความกุญแจ/ค่าตายตัว)
+        col.get.return_value = {"ids": ["zz"], "documents": ["Q: ตัวจริง\nA: เนื้อเต็ม"],
+                                "metadatas": [{"confidence": 0.8, "verified": True, "type": "fact"}]}
         with patch.object(ms, "_get_chroma_client", return_value=MagicMock()), \
              patch("utils.memory.get_collection", return_value=col), \
              patch.object(ms, "bump_access_count"), \
@@ -210,7 +213,8 @@ class TestStoreWiring:
             out = ms.search_entries("kwan", "คำถาม")
 
         assert [r["id"] for r in out] == ["zz"]
-        assert out[0]["content"] == "เนื้อจากกุญแจ"
+        assert out[0]["content"] == "Q: ตัวจริง\nA: เนื้อเต็ม"
+        assert out[0]["verified"] is True and out[0]["confidence"] == 0.8 and out[0]["type"] == "fact"
 
 
 class TestLessonsWiring:

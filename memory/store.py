@@ -77,6 +77,33 @@ def _ids_or_placeholder(res: dict, n: int) -> list:
     return [f"_noid_{i}" for i in range(n)]
 
 
+def _key_only_from_primary(col, ids: list, min_confidence: float, verified_only: bool) -> tuple[dict, dict]:
+    """สำหรับ id ที่เจอเฉพาะฝั่ง `__keys`: อ่าน doc+metadata จากตัวหลักแล้วคัดด้วยเกณฑ์เดียวกับ
+    ฝั่งหลัก → ({id: doc}, {id: meta}) · อ่านไม่ได้/ไม่มีตัวหลัก = ไม่ฉีด (fail-closed)
+    ⚠️ zip กับ `res["ids"]` ไม่ใช่ ids ที่ขอ (Chroma คืนเรียงตาม insert · ก้อน 2)"""
+    if not ids:
+        return {}, {}
+    try:
+        res = col.get(ids=list(ids), include=["documents", "metadatas"])
+        got_ids = list(res.get("ids") or [])
+        docs = list(res.get("documents") or [])
+        metas = list(res.get("metadatas") or [])
+    except Exception as e:
+        logger.debug(f"key-only lookup ข้าม: {e}")
+        return {}, {}
+    kdocs, kmetas = {}, {}
+    for doc_id, doc, meta in zip(got_ids, docs, metas):
+        meta = meta or {}
+        if meta.get("confidence", 0.7) < min_confidence:
+            continue
+        if verified_only and not meta.get("verified", False):
+            continue
+        if doc:
+            kdocs[doc_id] = doc
+            kmetas[doc_id] = meta
+    return kdocs, kmetas
+
+
 def search_entries(assistant: str, query: str, n_results: int = 5,
                    min_confidence: float = 0.0,
                    verified_only: bool = False) -> list[dict]:
@@ -128,7 +155,11 @@ def search_entries(assistant: str, query: str, n_results: int = 5,
     # vector ที่สอง (ข้อ 17): เอา max ของ (doc เต็ม, กุญแจ) **ก่อน** ตัดด้วยพื้น —
     # ประเด็นทั้งหมดคือ doc ที่ถูก dilution กดจนต่ำกว่าพื้น ต้องมีโอกาสกลับมา
     ks, kdocs = key_hits(client, col_name, query, n_results=min(n_results * 2, 20))
-    candidates = merge_max(candidates, ks, key_docs=kdocs)
+    # รายการที่เจอจากกุญแจอย่างเดียว → ดึง doc+metadata *ของตัวหลัก* แล้วกรองด้วยเกณฑ์เดียวกัน
+    # (กุญแจกำพร้า = ตัวหลักไม่มีแล้ว → ทิ้ง · confidence ที่ Dream ลดไว้ต้องมีผล)
+    kdocs, kmetas = _key_only_from_primary(col, [i for i in ks if i not in {c["id"] for c in candidates}],
+                                           min_confidence, verified_only)
+    candidates = merge_max(candidates, ks, key_docs=kdocs, key_metas=kmetas)
 
     # พื้นความเกี่ยวข้อง — เดิมมีแต่ตัวกรอง confidence/verified แล้วเอา score ไป
     # *จัดอันดับ* อย่างเดียว ทำให้ memory ที่มั่นใจสูงแต่ไม่เกี่ยวกับคำถามยังถูก

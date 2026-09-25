@@ -71,7 +71,8 @@ def key_text(doc: str | None) -> str | None:
 
 
 def merge_max(primary: list[dict], key_scores: dict[str, float],
-              key_docs: dict[str, str] | None = None) -> list[dict]:
+              key_docs: dict[str, str] | None = None,
+              key_metas: dict[str, dict] | None = None) -> list[dict]:
     """รวมผลจากฝั่ง doc เต็มกับฝั่งกุญแจ โดยเอา score ที่สูงกว่าของแต่ละ id
 
     `key_docs` = เนื้อของรายการที่เจอจากฝั่งกุญแจอย่างเดียว (ไม่ติด top-N ฝั่งเต็ม
@@ -84,10 +85,14 @@ def merge_max(primary: list[dict], key_scores: dict[str, float],
         elif key_docs and doc_id in key_docs:
             # ต้องมี field ครบชุดเดียวกับฝั่งหลัก — ผู้เรียกปลายทาง (เช่น _rank_results
             # ใน store.py) อ่าน x["verified"] ตรงๆ ถ้าขาดจะ KeyError ทั้ง search
+            # `key_metas` = metadata *ของตัวหลัก* (ผู้เรียกกรอง min_confidence/verified_only มาแล้ว)
+            # — ค่าตายตัว 0.7/False เดิมทำให้ memory ที่ถูกลดขั้นโผล่กลับเป็น "probable" (audit 2026-09-24)
+            meta = (key_metas or {}).get(doc_id) or {}
             out[doc_id] = {
                 "id": doc_id, "content": key_docs[doc_id], "score": score,
-                "confidence": 0.7, "verified": False,
-                "type": "event", "source": "conversation", "timestamp": "",
+                "confidence": meta.get("confidence", 0.7), "verified": meta.get("verified", False),
+                "type": meta.get("type", "event"), "source": meta.get("source", "conversation"),
+                "timestamp": meta.get("timestamp", ""),
                 "from_key_only": True,
             }
     return sorted(out.values(), key=lambda r: r.get("score", 0.0), reverse=True)

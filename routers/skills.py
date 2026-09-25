@@ -18,7 +18,7 @@ import json
 import logging
 import os
 from datetime import datetime
-from fastapi import APIRouter, Request, UploadFile, File
+from fastapi import APIRouter, Request, UploadFile, File, HTTPException
 from starlette.concurrency import run_in_threadpool
 
 from core.config import SKILLS_DIR
@@ -27,6 +27,7 @@ from utils.skills import (
     cleanup_junk_skills, set_skill_entry, delete_skill_entries, SkillsDbError,
 )
 from utils.llm import stream_response
+from utils.reqparse import as_str
 from utils.http_limits import read_capped, json_body_capped, MAX_BODY_BYTES
 
 logger = logging.getLogger(__name__)
@@ -83,8 +84,8 @@ def skills_list():
 @router.post("/skills/extract")
 async def skills_extract(request: Request):
     data = await json_body_capped(request, MAX_BODY_BYTES)
-    content = data.get("content", "").strip()
-    topic = data.get("topic", "").strip()
+    content = as_str(data.get("content"))
+    topic = as_str(data.get("topic"))
     if not content:
         return {"ok": False, "error": "ไม่มี content"}
     if not topic:
@@ -159,14 +160,18 @@ def skills_delete(skill_id: str, delete_file: bool = False):
     """
     from urllib.parse import unquote
     skill_id = unquote(skill_id)
+    # `.`/`..`/ว่าง (มาได้ทาง %2E — httpx/เบราว์เซอร์ normalize แต่ curl --path-as-is ไม่) → os.path.join ได้
+    # ตัวไดเรกทอรีเอง → os.remove(dir) = 500 (audit 2026-09-24 MEDIUM)
+    if not skill_id.strip() or skill_id.strip(".") == "" or "/" in skill_id or "\\" in skill_id:
+        raise HTTPException(400, "skill_id ไม่ถูกต้อง")
     deleted_file = False
     skills_dir = SKILLS_DIR
 
     if delete_file:
-        if ".." not in skill_id and "/" not in skill_id:
+        if ".." not in skill_id:
             for fname in [skill_id, f"{skill_id}.md"]:
                 fp = os.path.join(skills_dir, fname)
-                if os.path.exists(fp):
+                if os.path.isfile(fp):
                     os.remove(fp)
                     deleted_file = True
                     logger.warning(f"[skills_delete] removed file {fp} (delete_file=true)")
