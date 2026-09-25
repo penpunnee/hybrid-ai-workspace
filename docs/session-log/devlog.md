@@ -1,5 +1,32 @@
 ---
 
+## [2026-09-25 ต่อ 16] audit MEDIUM ก้อน 6 ข้อ 1-2 — client ตัดสายไม่ทิ้ง orphan · regenerate ไม่ลบ A1/ไม่ส่ง U2 ซ้ำ (`b4e6d7a` `0526f8c` `97a6fcf`) ✅ deployed + verify prod 3 รอบ
+**ค้น 2 ชั้นก่อนลงมือ:** เทสแดงทั้ง 3 (ถอด xfail) แดงด้วยเหตุผลถูก (`['user']` เดี่ยว · `U2,U2` · ลบ A1) · กลไก prod: **uvicorn 0.51 ส่ง `spec_version 2.3`** →
+Starlette 1.3.1 เดิน task-group path (cancel) เหมือน harness (spec 2.0) ⇒ เทสจำลอง prod ได้จริง · พบเพิ่ม: `delete_last_assistant_message` ไม่เคยกวาด `feedback`/`skill_shadow`
+**ทำ:**
+- ข้อ 2 `utils/history.py`: `pop_replies_after_last_user()` ลบเฉพาะ assistant ที่ `id > user ล่าสุด` + `_purge_message_side_tables` → คืน prompt · regenerate ไม่ `append(last_prompt)` ซ้ำ
+  · ถอด `delete_last_assistant_message`/`get_last_user_message` ออกจาก chat.py (`test_chat_router_concurrency` patch ชื่อใหม่)
+- ข้อ 1 `routers/chat.py`: **แผนแรก (sync wrapper `yield from` + `except GeneratorExit`) ใช้ไม่ได้** — handler ทำงานจริงแต่ตอน **cyclic GC** (traceback ของ CancelledError ถือเฟรม)
+  รอ 3 วิยังไม่มา ⇒ เปลี่ยนเป็น `_guard_disconnect(inner, on_cut)` = **async generator** ครอบ `iterate_in_threadpool` · จับ `CancelledError`/`GeneratorExit` · save ใต้ `CancelScope(shield=True)`
+  · ปิด inner (`_close_quietly`) ให้ LLM stream หยุดจริง · 🔑 **ต้อง `anyio.lowlevel.checkpoint()` ก่อน yield ทุกชิ้น** — `run_sync` รอ thread แบบ shield แล้วคืนค่าโดยไม่ผ่าน checkpoint
+  ⇒ ไม่มีบรรทัดนี้ CancelledError ไปโผล่ที่ `await send()` ของ starlette (นอกเฟรมเรา) แล้ว generator ถูกทิ้งจน GC เหมือนเดิม (เทสแดงซ้ำจนเจอ)
+  · `_save_crash` ย้ายขึ้นถัดจาก save user (คลุมสาขา agent ที่ yield ก่อนถึงนิยามเดิม) · flag `user_saved`/`assistant_saved` ทุกจุด save
+- **verify prod รอบ 1 (07:06):** ข้อ 2 ✅ (orphan U1,A1,U2 → regen แล้ว A1 รอด 4 ข้อความ) · ข้อ 1 ทำงานแต่ **ช้า 63 วิ** — anyio `abandon_on_cancel=False` รอ thread ที่ค้างรอ qwen คิด
+  ⇒ race: Stop → Regenerate ทันที → คำตอบใหม่ save ก่อน แล้ว "หยุดกลางคัน" ต่อท้าย → เพิ่ม `has_reply_after()` guard (`0526f8c`)
+- **verify รอบ 2 (08:06):** ตัดสาย → คู่ใน ~8 วิ ✅ · แต่ race **อีกลำดับ**: regenerate ตอบนาน (355 chunk) handler มาถึง*ก่อน* regen save ⇒ `U · หยุดกลางคัน · คำตอบใหม่`
+  → **`_REGEN_INFLIGHT`** set ในโปรเซส (Dockerfile CMD ไม่มี `--workers`) regenerate ประกาศก่อนแตะ DB ถอดใน `finally` · chat on_cut เช็คธงก่อน DB
+  · ครอบ **/api/regenerate** ด้วย `_guard_disconnect` ด้วย (เส้นนี้ตัดสาย = orphan เหมือนกัน แย่กว่าเพราะลบของเดิมแล้ว — ยังไม่เคยมีตัวกัน) (`97a6fcf`)
+- **verify รอบ 3 (08:20):** A ตัดสาย chat → คู่ใน 75 วิ ✅ · B Stop→Regenerate → log `regenerate ของ session นี้กำลังวิ่ง ไม่บันทึกซ้ำ` ✅ (history คู่เดียว) ·
+  C ตัดสาย regenerate → crash row มาที่ **08:24:02 = ~110 วิหลังตัด** ✅ แต่ผมลบ session ไปก่อน (08:23:43) → handler สร้าง session กลับมามี assistant เดี่ยว → ลบซ้ำแล้ว (เหลือ k6 = 0)
+- เทส: ถอด xfail 3 + เพิ่ม **7** (feedback ของ A2 หายตาม · ตัดสายหลัง save ไม่ซ้ำ · race regen-ตอบแล้ว · กลุ่มควบคุม session มี turn เก่า · regenerate ตัดสาย · regen จบถอดธง ·
+  chat ตัดสายระหว่าง regen วิ่ง (2 คำขอพร้อมกันบน harness ASGI ด้วย `asyncio.gather`) · LLM stream ถูกปิดทันที) · **mutation 14/14** (รอด 2 รอบแล้วเขียนเทสเพิ่มจนฆ่าได้: M9 guard ไม่กรอง `id > user` · M14 ไม่ปิด inner)
+  · ชุดเต็ม 2302 → **2314** · ruff · CI เขียว 3/3 · deploy `git reset --hard` + `docker restart` (แตะแค่ `routers/` `utils/`)
+**⚠️ ขีดจำกัดที่เหลือ (ไม่ใช่บั๊กใหม่ · เข้าก้อน 7 คู่กับ "backend ตอบต่อแม้กด Stop"):** handler ตัดสายมาถึง**ช้าเท่ากับเวลาที่ thread รอ LLM** (8–110 วิบน prod เพราะ qwen คิดนาน) —
+thread ที่ค้างใน HTTP read ยกเลิกไม่ได้ · ระหว่างนั้น LLM ยังเดินต่อ (รอบ 3 B: regenerate ชน LM Studio `Engine protocol predict stream` error เพราะ 2 stream พร้อมกัน) ·
+ทางแก้จริง = cooperative cancel ปิด httpx response จาก event loop (ให้ thread โยนทันที) — ทำได้ในก้อน 7 · `has_reply_after` + in-flight guard ทำให้ความช้านี้ **ไม่ทำข้อมูลเพี้ยน** แล้ว
+**🔑 บทเรียน:** (1) "handler ทำงาน" ≠ "ทำงานทันเวลา" — ดู timestamp ใน log เทียบเวลาตัดสาย ไม่ใช่แค่เห็นบรรทัด log (2) anyio: cancel ถูกส่งที่ checkpoint *ถัดไปในเฟรมไหนก็ได้* —
+ถ้าอยากจับเองต้องวาง checkpoint ในเฟรมตัวเอง (3) verify บน prod ต้องรอให้ handler ที่มาช้ายิงจบก่อนค่อยเก็บกวาด ไม่งั้นมันสร้าง session กลับมา (4) mutant ที่รอดแล้ว "เปลี่ยนพฤติกรรมจริง" → เขียนเทสเพิ่ม ไม่ใช่ตัดโค้ด
+
 ## [2026-09-25 ปิดเซสชัน] สรุปเซสชัน 09-24 ค่ำ → 09-25 เช้า — audit ก้อน 2-5 ปิดหมด (HIGH 14/14) · rebuild image · MEDIUM สำรวจ+พิสูจน์ 6 ข้อรอเซสชันหน้า
 | ลำดับ | งาน | ผล | commit | devlog |
 |---|---|---|---|---|

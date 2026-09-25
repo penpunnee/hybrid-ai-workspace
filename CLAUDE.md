@@ -703,18 +703,24 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-25 เช้า — ปิดเซสชัน · HIGH 14/14 ปิดหมด · เซสชันหน้า = MEDIUM ก้อน 6**)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-25 บ่าย — ก้อน 6 ข้อ 1-2 ปิดแล้ว · ถัดไป = ก้อน 6 ข้อ 3-6 (รอเคาะ ก/ข)**)
 
-> ## 🥇 งานแรกเซสชันหน้า: **audit MEDIUM ก้อน 6 — 6 ข้อที่พิสูจน์แล้ว** (devlog [2026-09-25 ปิดเซสชัน] มีหลักฐาน+บรรทัดครบ)
-> 1. client ตัดสายกลาง stream → user orphan (`chat.py generate()` ไม่มี `finally`/`except GeneratorExit`) + 2. regenerate ลบ A1 ทิ้ง/ส่ง U2 ซ้ำ (`chat.py:706,719-722`)
->    — **เทสแดงเขียนแล้ว** `tests/test_stream_disconnect_orphan.py` · `tests/test_regenerate_history_integrity.py` (ติด `xfail(strict=True)` → **ถอด marker ก่อนแก้**)
->    ⚠️ harness ASGI: `receive()` ต้องรอ event ก่อนคืน `http.disconnect` (คืนทันที = Starlette ยกเลิกก่อน generator เริ่ม)
+> ## 🥇 งานแรกเซสชันหน้า: **audit MEDIUM ก้อน 6 ต่อ — ข้อ 3-6** (ข้อ 1-2 ปิดแล้ว ดูบล็อกถัดไป · devlog [2026-09-25 ปิดเซสชัน] มีหลักฐาน+บรรทัดครบ)
 > 3. `websearch.py:290` log `f"{e}"` มี `?key=` ของ Google CSE (วัดจริง) 4. `ratelimit.py:66` `popitem()` ไล่ key ใหม่สุด 5. `agent.py:53` `max_steps` ไม่ clamp
 > 6. `utils/memory.py:137` `_get_client()` ถือ lock + `httpx timeout=None` (chromadb 1.5.9 hardcode) → TCP pre-check (`obsidian_sync._tcp_reachable`) + จำล้ม 15 วิ
 > **รอ user เคาะก่อนลงมือ:** (ก) CSE — redact key ใน log หรือถอดทั้งเส้น (backlog ง) (ข) response cache ข้าม session — แนวทาง ก/ข/ค หรือพักไว้ (แยกก้อน)
-> ทำแบบเดิม: /scrutinize แผน → ไล่ทุกส่วน+ความสัมพันธ์ → เทสแดง (ข้อ 3-6) → แก้ → mutation → ชุดเต็ม → deploy `docker restart` → verify prod
-> (ยิง disconnect จริงในคอนเทนเนอร์ · `max_steps=abc` → 200 · log ไม่มีคีย์) · MEDIUM ที่เหลือ 13 ข้อ → ก้อน 7-8 (รายการใน devlog ปิดเซสชัน)
-> ⚪ งานเล็กค้าง: CLAUDE.md ~176 KB — ย้ายบล็อก ▶️ เก่า (08-24/08-26) ลง devlog · backlog `dbId` ข้อความที่เพิ่งส่ง (กระทบ 🗑️/pin/feedback)
+> ทำแบบเดิม: ค้น 2 ชั้น → /scrutinize แผน → ไล่ทุกส่วน+ความสัมพันธ์ → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy `docker restart` → verify prod
+> (`max_steps=abc` → 200 · log ไม่มีคีย์) · MEDIUM ที่เหลือ 13 ข้อ → ก้อน 7-8 (รายการใน devlog ปิดเซสชัน) **+ เข้าก้อน 7: cooperative cancel ของ LLM stream** (ดูขีดจำกัดข้างล่าง)
+> ⚪ งานเล็กค้าง: CLAUDE.md ~180 KB — ย้ายบล็อก ▶️ เก่า (08-24/08-26) ลง devlog · backlog `dbId` ข้อความที่เพิ่งส่ง (กระทบ 🗑️/pin/feedback)
+>
+> ## ✅ ก้อน 6 ข้อ 1-2 **ปิดแล้ว 09-25 บ่าย (`b4e6d7a` `0526f8c` `97a6fcf` · devlog [ต่อ 16]) — อย่าทำซ้ำ**
+> `_guard_disconnect(inner, on_cut)` ใน `routers/chat.py` = async generator ครอบ `iterate_in_threadpool` จับ `CancelledError`/`GeneratorExit` · save ใต้ `CancelScope(shield=True)` · ปิด inner
+> · ครอบทั้ง `/api/chat` และ `/api/regenerate` · `pop_replies_after_last_user()` (ลบเฉพาะ assistant หลัง user ล่าสุด + กวาด feedback/skill_shadow) · regenerate ไม่ append U2 ซ้ำ
+> · race Stop→Regenerate ปิดทั้ง 2 ลำดับ: `has_reply_after()` (regen save ไปแล้ว) + `_REGEN_INFLIGHT` (regen กำลังวิ่ง) · verify prod 3 รอบ · mutation 14/14 · ชุดเต็ม 2314
+> 🔑 **กติกาใหม่จากก้อนนี้:** เส้น SSE ที่ save ลง DB ระหว่าง stream ต้องผ่าน `_guard_disconnect` (sync wrapper ดัก `GeneratorExit` **ไม่พอ** — close() มาตอน cyclic GC ช้าแบบสุ่ม) ·
+> ต้อง `anyio.lowlevel.checkpoint()` ก่อน yield ทุกชิ้น ไม่งั้น CancelledError ไปโผล่ที่ `await send()` ของ starlette นอกเฟรมเรา · verify บน prod ต้องรอ handler ที่มาช้ายิงจบก่อนเก็บกวาด
+> ⚠️ **ขีดจำกัดที่เหลือ (ก้อน 7):** handler มาถึงช้าเท่าเวลาที่ thread รอ LLM (วัด 8–110 วิ เพราะ qwen คิดนาน) — thread ค้างใน HTTP read ยกเลิกไม่ได้ · LLM เดินต่อ (= "backend ตอบต่อแม้กด Stop")
+> · guard ทั้งสองทำให้ความช้านี้**ไม่ทำข้อมูลเพี้ยน**แล้ว · ทางแก้จริง = ปิด httpx response จาก event loop ให้ thread โยนทันที
 >
 > ## ✅ audit ก้อน 5 **ปิดแล้ว 09-25 (`37a22cd` `d998d8c` · appscript.ui `2a87027` `ba576ae` · devlog [ต่อ 15]) — อย่าทำซ้ำ**
 > stream 4 เส้นใช้ `utils/sse.ts:sseEvents()` (throw `HttpError` เมื่อ `!res.ok`) + `utils/streamsettle.ts` (`settleStream` ใน finally · `streamFailureText` แยก
