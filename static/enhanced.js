@@ -2573,6 +2573,11 @@
   // 20. DELETE PAIR   — ลบ user message + AI response คู่นั้น
   // ─────────────────────────────────────────────────────────────────────────────
   (function () {
+    // ported เข้า React แล้วทั้งคู่ (✏️ submitEdit · 🗑️ deletePair ใน app.tsx + utils/deletepair.ts)
+    // ห้ามแตะ DOM ของ React จากที่นี่: `.remove()` node ที่ React เป็นเจ้าของ → state เปลี่ยน
+    // ครั้งถัดไป React throw NotFoundError → root unmount = จอขาวทั้งแอป (audit 2026-09-24 ข้อ 13)
+    // gate ทั้ง IIFE ไม่ใช่แค่ปุ่ม — ไม่งั้น wireUserBubble ยัง appendChild(actRow) เปล่าเข้า bubble
+    if (window.__hwReactChatBox) return;
     const css = `
       .enh-user-actions {
         display:none; gap:4px; margin-top:4px; justify-content:flex-end;

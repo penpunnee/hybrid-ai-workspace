@@ -47,13 +47,27 @@ test("§20 แนบปุ่ม '✏️ แก้ไข' เฉพาะ bundle
   );
 });
 
-// ── กลุ่มควบคุม ────────────────────────────────────────────────────────────────
-// ถ้าเผลอ gate §20 ทั้งก้อน หรือ gate ปุ่มลบตามไปด้วย เทสข้างบนจะผ่านฟรี
-// ทั้งที่ผู้ใช้เสียปุ่มลบ (ทางเดียวที่ลบข้อความได้) ไปเลย
-test("§20 ยังแนบปุ่ม '🗑️ ลบ' แบบไม่มีเงื่อนไข — React ไม่มีปุ่มลบข้อความ", () => {
+// ── §20 ทั้งก้อนต้อง gate เมื่อ React ChatBox อยู่ (audit 2026-09-24 ข้อ 13) ────────────
+// ปุ่ม 🗑️ ของ overlay `.remove()` DOM ที่ React เป็นเจ้าของ → state เปลี่ยนครั้งถัดไป
+// (ลบอีกตัว/สลับเซสชัน) React throw NotFoundError → root unmount = จอขาวทั้งแอป (พิสูจน์ใน jsdom)
+// และหา dbId ด้วยการเทียบข้อความ (ข้อความซ้ำ = ลบผิดตัว) · ปุ่มลบย้ายเข้า React แล้ว
+// (utils/deletepair.ts + app.tsx) · overlay คงไว้เป็น fallback ของ bundle เก่าเท่านั้น
+// ⚠️ gate ทั้ง IIFE ไม่ใช่แค่ปุ่ม — ไม่งั้น wireUserBubble ยัง appendChild(actRow) เปล่าเข้า bubble ของ React
+test("§20 ต้อง return ทันทีเมื่อ __hwReactChatBox (React มีปุ่มลบแล้ว — overlay ห้ามแตะ DOM ของ React)", () => {
+  const sec = slice("// 19. EDIT + RESEND", "// 21.");
+  const iife = sec.indexOf("(function () {");
+  const gate = sec.search(/if\s*\(\s*window\.__hwReactChatBox\s*\)\s*return;/);
+  assert.ok(iife > -1, "หา IIFE ของ §20 ไม่เจอ");
+  assert.ok(gate > iife, "ไม่มี `if (window.__hwReactChatBox) return;` ใน §20");
+  // gate ต้องมาก่อนจุดที่เริ่มแตะ DOM (ก่อน MutationObserver และก่อน wireUserBubble)
+  assert.ok(gate < sec.indexOf("function wireUserBubble"), "gate ต้องอยู่ก่อน wireUserBubble");
+});
+
+// กลุ่มควบคุม — fallback ของ bundle เก่ายังต้องมีปุ่มลบ (ไม่ได้ลบ §20 ทิ้งทั้งก้อน)
+test("§20 ยังมีปุ่ม '🗑️ ลบ' สำหรับ bundle เก่าที่ไม่ตั้ง __hwReactChatBox", () => {
   const sec = slice("// 19. EDIT + RESEND", "// 21.");
   assert.match(sec, /textContent\s*=\s*"🗑️ ลบ"/);
-  assert.match(sec, /^\s*actRow\.appendChild\(delBtn\);\s*$/m);
+  assert.match(sec, /actRow\.appendChild\(delBtn\)/);
 });
 
 test("slice() ตัดโค้ดออกมาได้จริง ไม่ใช่สตริงว่าง", () => {
