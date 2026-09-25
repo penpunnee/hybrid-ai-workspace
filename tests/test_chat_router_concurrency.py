@@ -104,8 +104,7 @@ def test_response_cache_lookup_ไม่บล็อกคำขออื่น(
 
 def test_regenerate_search_memory_ไม่บล็อกคำขออื่น(monkeypatch):
     """`/api/regenerate` เรียก `search_memory()` (embed + ChromaDB) ก่อน generator"""
-    monkeypatch.setattr(chat_router, "delete_last_assistant_message", lambda *a, **kw: None)
-    monkeypatch.setattr(chat_router, "get_last_user_message", lambda *a, **kw: "คำถามเดิม")
+    monkeypatch.setattr(chat_router, "pop_replies_after_last_user", lambda *a, **kw: "คำถามเดิม")
     monkeypatch.setattr(chat_router, "load_history", lambda *a, **kw: [])
     monkeypatch.setattr(chat_router, "save_message", lambda *a, **kw: 1)
     monkeypatch.setattr(chat_router, "search_memory", _slow(""))

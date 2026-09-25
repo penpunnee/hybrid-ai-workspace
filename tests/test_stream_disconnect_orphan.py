@@ -75,7 +75,6 @@ def _slow_stream(messages, **k):
         yield f"ท่อน{i} "
 
 
-@pytest.mark.xfail(strict=True, reason="audit MEDIUM ก้อน 6 — เทสแดงที่เขียนไว้ก่อน ยังไม่แก้ (devlog [2026-09-25 ปิดเซสชัน]) · ถอด marker นี้ตอนเริ่มแก้")
 @pytest.mark.asyncio
 async def test_client_ตัดสายกลาง_stream_ต้องไม่เหลือ_user_orphan(monkeypatch):
     monkeypatch.setattr(chatmod, "stream_response", _slow_stream)
@@ -101,3 +100,18 @@ async def test_กลุ่มควบคุม_stream_จบปกติ_ย�
     history = load_history("kwan", sid)
     assert [m["role"] for m in history] == ["user", "assistant"]
     assert "หยุดกลางคัน" not in history[1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_ตัดสายหลังคำตอบ_save_แล้ว_ต้องไม่บันทึกซ้ำ(monkeypatch):
+    """ตัดสายตอน chunk สุดท้าย: inner จะ save คำตอบเต็มก่อนถึง `done` แล้ว CancelledError
+    ค่อยมาถึง wrapper → ต้องเห็นว่า assistant ถูก save แล้ว ห้ามบันทึก "หยุดกลางคัน" ซ้ำอีกใบ"""
+    monkeypatch.setattr(chatmod, "stream_response", _slow_stream)
+    sid = "s_disconnect_after_save"
+    with patch.object(chatmod, "remember"), patch.object(chatmod, "teach", return_value=False):
+        await _post_then_drop(sid, drop_after_chunks=6)   # _slow_stream มี 6 chunk พอดี
+    history = load_history("kwan", sid)
+    roles = [m["role"] for m in history]
+    assert roles == ["user", "assistant"], f"ต้องมีคู่เดียว ไม่บันทึกซ้ำ ({roles})"
+    assert "หยุดกลางคัน" not in history[1]["content"]
+    assert "ท่อน5" in history[1]["content"]

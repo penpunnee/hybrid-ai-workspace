@@ -214,18 +214,39 @@ def search_messages(query: str, assistant: str = "", limit: int = 20) -> list[di
     return results
 
 
-def delete_last_assistant_message(assistant: str, session_id: str) -> bool:
-    """ลบ assistant message ล่าสุดของ session คืน True ถ้าลบได้"""
+def pop_replies_after_last_user(assistant: str, session_id: str) -> str:
+    """เตรียม regenerate: ลบเฉพาะคำตอบที่ตามหลัง user message ล่าสุด แล้วคืน prompt นั้น
+
+    คืน "" ถ้า session ไม่มี user message เลย (ไม่ลบอะไร)
+    ⚠️ เดิม `delete_last_assistant_message` ลบ assistant *ล่าสุดของ session* โดยไม่ดูว่ามัน
+    อยู่หลัง user ล่าสุดไหม → turn สุดท้ายที่เป็น orphan (U1,A1,U2 — client ตัดสายกลาง stream)
+    กด regenerate = ลบ **A1** ทิ้ง (audit 2026-09-24 MEDIUM · เทส test_regenerate_history_integrity)
+    และไม่เคยกวาด `feedback`/`skill_shadow` ที่ผูกกับ row ที่ลบ
+    """
     conn = _get_conn()
-    row = conn.execute(
-        "SELECT id FROM messages WHERE assistant = ? AND session_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1",
-        (assistant, session_id),
-    ).fetchone()
-    if row:
-        conn.execute("DELETE FROM messages WHERE id = ?", (row[0],))
-        conn.commit()
-    conn.close()
-    return bool(row)
+    try:
+        row = conn.execute(
+            "SELECT id, content FROM messages WHERE assistant = ? AND session_id = ? AND role = 'user' "
+            "ORDER BY id DESC LIMIT 1",
+            (assistant, session_id),
+        ).fetchone()
+        if not row:
+            return ""
+        last_user_id, prompt = row
+        doomed = [
+            r[0] for r in conn.execute(
+                "SELECT id FROM messages WHERE assistant = ? AND session_id = ? AND role = 'assistant' AND id > ?",
+                (assistant, session_id, last_user_id),
+            )
+        ]
+        if doomed:
+            _purge_message_side_tables(conn, doomed)
+            marks = ",".join("?" * len(doomed))
+            conn.execute(f"DELETE FROM messages WHERE id IN ({marks})", doomed)
+            conn.commit()
+        return prompt
+    finally:
+        conn.close()
 
 
 def _purge_message_side_tables(conn: sqlite3.Connection, message_ids: list[int]) -> None:

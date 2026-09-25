@@ -1,9 +1,11 @@
+import asyncio
 import json
 import logging
 import threading
+import anyio
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
-from starlette.concurrency import run_in_threadpool
+from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 
 from assistants.config import ASSISTANTS
 from core.env_registry import env_float
@@ -13,8 +15,7 @@ from utils.rag import inject_context_to_system, format_skill_files
 from utils.skills_select import select_skills
 from utils.skills_shadow import should_shadow_log as _shadow_should_log
 from utils.history import (
-    save_message, load_history, delete_last_assistant_message,
-    get_last_user_message,
+    save_message, load_history, pop_replies_after_last_user,
 )
 from utils.memory import save_lesson, save_preference, get_lessons, get_preferences, search_memory
 from memory.operations import remember, recall, teach, push_working
@@ -79,6 +80,14 @@ def _inject_web_context(messages: list, prompt: str, citations) -> bool:
     except Exception as e:
         logger.warning(f"[Chat] web search failed: {e}")
         return False
+
+
+def _close_quietly(gen) -> None:
+    """ปิด sync generator ที่ค้างอยู่หลัง client ตัดสาย — ValueError = thread ยังรันมันอยู่ ปล่อย GC"""
+    try:
+        gen.close()
+    except Exception as e:
+        logger.debug(f"[Chat] ปิด generator หลังตัดสายไม่ได้ (ปล่อยให้ GC): {e}")
 
 
 def persist_agent_turn(assistant: str, prompt: str, full_response: str, session_id: str,
@@ -193,7 +202,11 @@ async def chat(request: Request):
     # ก่อนหน้านี้ frontend เห็นแค่ "0 tokens" ค้างนิ่งช่วง 1-3 วิแรกทั้งที่ backend
     # กำลังทำงานอยู่จริง (คนหา context/routing model) เพราะ headers/body ยังไม่เริ่ม
     # ส่งเลยจนกว่างานทั้งหมดนี้จะเสร็จ (ดู utils/streamstatus.ts formatPhaseStatus)
-    def generate():
+    #
+    # `st` = สถานะที่ wrapper `generate()` ข้างล่างใช้ตัดสินตอน client ตัดสาย:
+    #   user_saved / assistant_saved — ตั้ง True ที่จุด save_message ทุกจุด
+    #   save_crash — ฟังก์ชัน `_save_crash` ของรอบนี้ (นิยามหลัง save user)
+    def _generate_inner(st: dict):
         import time as _time
         from core.observability import record_timing
         from utils.citations import CitationTracker
@@ -309,7 +322,9 @@ async def chat(request: Request):
             clarify = al_decision.clarify_message
             logger.info(f"[Chat/AL] {al_decision.reason} — short-circuit clarify (no LLM)")
             save_message(assistant, "user", prompt, provider, session_id)
+            st["user_saved"] = True
             clarify_aid = save_message(assistant, "assistant", clarify, "active_learning", session_id)
+            st["assistant_saved"] = True
             push_working(session_id, "user", prompt)
             push_working(session_id, "assistant", clarify)
 
@@ -326,6 +341,28 @@ async def chat(request: Request):
             logger.info("[Chat] plan_mode on — inject plan instruction (system prompt)")
 
         save_message(assistant, "user", prompt, provider, session_id)
+        st["user_saved"] = True
+
+        # ตั้งค่าตั้งต้นให้ `_save_crash` อ่านได้ตั้งแต่ตอนนี้ — สาขา agent/routing ข้างล่าง
+        # มี yield หลัง save user แล้ว ⇒ client ตัดสายตรงนั้นก็ต้องบันทึกคู่ได้
+        # (ตัวแปรเดียวกันถูก assign ทับอีกทีตอนเข้าเส้น stream ปกติ — closure อ่านค่าล่าสุดเสมอ)
+        full_response = ""
+        provider_used = provider
+
+        def _save_crash(err_text: str):
+            # stream พังกลางคัน / client ตัดสาย — user message ถูก save ไปแล้วข้างบน
+            # ถ้าไม่ save assistant reply คู่กันด้วย turn นี้จะกลายเป็น orphan (user
+            # ไม่มีคำตอบคู่ใน history) และคำตอบบางส่วนที่ user เห็น stream มาแล้วบนจอ
+            # จะหายไปทันทีที่ reload — ไม่เข้า remember()/teach()/push_working เพราะ
+            # เป็นคำตอบที่ไม่สมบูรณ์ ไม่ควรถูกเรียนรู้เป็นตัวอย่าง
+            text = (full_response + "\n\n" if full_response.strip() else "") + f"⚠️ การตอบหยุดกลางคัน: {err_text}"
+            try:
+                save_message(assistant, "assistant", text, provider_used or provider, session_id)
+                st["assistant_saved"] = True
+            except Exception as save_err:
+                logger.error(f"[Chat] save partial response after crash failed too: {save_err}")
+
+        st["save_crash"] = _save_crash
 
         messages = [{"role": "system", "content": system_prompt}]
         messages += [{"role": m["role"], "content": m["content"]} for m in history]
@@ -366,6 +403,7 @@ async def chat(request: Request):
             try:
                 agent_msg_id = persist_agent_turn(assistant, prompt, full_response, session_id,
                                                    is_test_request=is_test_request)
+                st["assistant_saved"] = True
             except Exception as e:
                 logger.warning(f"[Chat/agent] persist failed: {e}")
 
@@ -446,18 +484,6 @@ async def chat(request: Request):
                                       sources_sink=grounding_sources,
                                       usage_sink=usage_sink):
                 yield ck
-
-        def _save_crash(err_text: str):
-            # stream พังกลางคัน — user message ถูก save ไปแล้ว (บรรทัดก่อนหน้า generate())
-            # ถ้าไม่ save assistant reply คู่กันด้วย turn นี้จะกลายเป็น orphan (user
-            # ไม่มีคำตอบคู่ใน history) และคำตอบบางส่วนที่ user เห็น stream มาแล้วบนจอ
-            # จะหายไปทันทีที่ reload — ไม่เข้า remember()/teach()/push_working เพราะ
-            # เป็นคำตอบที่ไม่สมบูรณ์ ไม่ควรถูกเรียนรู้เป็นตัวอย่าง
-            text = (full_response + "\n\n" if full_response.strip() else "") + f"⚠️ การตอบหยุดกลางคัน: {err_text}"
-            try:
-                save_message(assistant, "assistant", text, provider_used or provider, session_id)
-            except Exception as save_err:
-                logger.error(f"[Chat] save partial response after crash failed too: {save_err}")
 
         try:
             for chunk in _try_stream(_provider, model_override):
@@ -559,6 +585,7 @@ async def chat(request: Request):
             full_response = notice
 
         message_id = save_message(assistant, "assistant", full_response, provider_used, session_id)
+        st["assistant_saved"] = True
 
         # ── Shadow logging ของ skills injection (backlog ข้อ 21) ────────────────
         # บันทึกว่าแต่ละ scorer *จะ* เลือกไฟล์ไหน โดยไม่แตะสิ่งที่ฉีดไปแล้วข้างบน
@@ -682,6 +709,37 @@ async def chat(request: Request):
         }
         yield f"data: {json.dumps(done_payload, ensure_ascii=False)}\n\n"
 
+    async def generate():
+        # client ตัดสายกลาง stream (กด Stop / ปิดแท็บ): starlette (spec < 2.4 ที่ uvicorn ส่ง)
+        # cancel task ที่กำลัง stream → CancelledError โผล่ที่ await ใน iterate_in_threadpool
+        # ไม่เข้า `except Exception` ใดๆ ใน `_generate_inner` ⇒ user message ที่ save ไปแล้ว
+        # กลายเป็น orphan (audit 2026-09-24 MEDIUM · เทส test_stream_disconnect_orphan.py)
+        #
+        # ⚠️ ทำไมต้องเป็น async generator ไม่ใช่ sync wrapper ที่ดัก GeneratorExit:
+        # sync generator ถูก close() ตอน **cyclic GC** (traceback ของ CancelledError ถือเฟรม
+        # ไว้) ไม่ใช่ตอนตัดสาย — วัดแล้วรอ 3 วิยังไม่มา ⇒ บันทึกช้าแบบสุ่ม regenerate ที่ตามมา
+        # จะเห็น orphan อยู่ดี · CancelledError มาถึง async generator ตัวนี้ทันทีที่ chunk ที่
+        # ค้างใน thread คืนค่า (anyio abandon_on_cancel=False) จึง deterministic
+        # · shield ไว้ไม่งั้น await ตัวแรกใน scope ที่ถูก cancel จะโยนซ้ำก่อนได้บันทึก
+        # · ปิด inner ให้เสร็จเลย (LLM stream หยุดจริง ไม่รอ GC) — ถ้า thread ยังถือมันอยู่
+        #   close() จะ ValueError → ปล่อยให้ GC ปิดเหมือนเดิม
+        # · ⚠️ ต้อง `checkpoint()` ก่อน yield ทุกชิ้น: run_sync รอ thread แบบ shield แล้วคืนค่า
+        #   โดยไม่ผ่าน checkpoint ⇒ ถ้าไม่มีบรรทัดนี้ CancelledError จะไปโผล่ที่ `await send()`
+        #   ของ starlette (นอกเฟรมเรา) แล้ว generator ตัวนี้ถูกทิ้งไว้จน GC = ช้าแบบสุ่มเหมือนเดิม
+        st = {"user_saved": False, "assistant_saved": False, "save_crash": None}
+        inner = _generate_inner(st)
+        try:
+            async for piece in iterate_in_threadpool(inner):
+                await anyio.lowlevel.checkpoint()
+                yield piece
+        except (asyncio.CancelledError, GeneratorExit):
+            if st["user_saved"] and not st["assistant_saved"] and st["save_crash"]:
+                logger.info("[Chat] client ตัดสายกลาง stream — บันทึกคำตอบบางส่วนคู่ user message")
+                with anyio.CancelScope(shield=True):
+                    await run_in_threadpool(st["save_crash"], "client ตัดสายกลางคัน (กด Stop / ปิดหน้า)")
+                    await run_in_threadpool(_close_quietly, inner)
+            raise
+
     return StreamingResponse(generate(), media_type="text/event-stream",
                              headers={
                                  "Cache-Control": "no-cache",
@@ -703,8 +761,8 @@ async def regenerate_response(request: Request):
     provider   = data.get("provider", "auto")
     agent_mode = bool(data.get("agent_mode", False))
 
-    await run_in_threadpool(delete_last_assistant_message, assistant, session_id)
-    last_prompt = await run_in_threadpool(get_last_user_message, assistant, session_id)
+    # ลบเฉพาะคำตอบที่ตามหลัง user ล่าสุด (turn orphan = ไม่ลบอะไร · A1 ของ turn ก่อนหน้ารอด)
+    last_prompt = await run_in_threadpool(pop_replies_after_last_user, assistant, session_id)
     if not last_prompt:
         async def _err():
             yield "data: " + json.dumps({'error': 'ไม่พบข้อความ'}) + "\n\n"
@@ -716,10 +774,11 @@ async def regenerate_response(request: Request):
         cfg["system_prompt"],
         "\n\n".join(filter(None, [mem_ctx])),
     )
+    # history หลังลบจบด้วย user ล่าสุด (= last_prompt) อยู่แล้ว — ห้าม append ซ้ำ
+    # (เดิม append อีกรอบ → โมเดลเห็น U2,U2 · audit 2026-09-24 MEDIUM)
     history = await run_in_threadpool(load_history, assistant, session_id)
     messages = [{"role": "system", "content": system_prompt}]
     messages += [{"role": m["role"], "content": m["content"]} for m in history]
-    messages.append({"role": "user", "content": last_prompt})
 
     def gen_regen():
         full_response = ""
@@ -731,7 +790,7 @@ async def regenerate_response(request: Request):
                 yield f"data: {json.dumps({'chunk': chunk})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
-            # delete_last_assistant_message() ลบคำตอบเก่าไปแล้วก่อนเริ่ม stream —
+            # pop_replies_after_last_user() ลบคำตอบเก่าไปแล้วก่อนเริ่ม stream —
             # ถ้าไม่ save อะไรเลยตอนนี้ turn จะไม่มีคำตอบคู่กับ user message เลย
             # (แย่กว่า chat() ปกติ เพราะที่นี่ลบของเดิมทิ้งไปแล้วด้วย)
             text = (full_response + "\n\n" if full_response.strip() else "") + f"⚠️ การตอบหยุดกลางคัน: {e}"
