@@ -2,6 +2,7 @@ import re
 import socket
 import logging
 import threading
+import time
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -66,6 +67,34 @@ RECALL_MIN_SCORE = env_float("RECALL_MIN_SCORE", 0.55, group="Memory", doc=(
 _client = None
 _collections = {}
 _lock = threading.Lock()
+
+# กัน `_get_client()` ถือ lock ค้างตอน ChromaDB ต่อไม่ถึง (audit 2026-09-24 MEDIUM ข้อ 6):
+# chromadb 1.5.9 สร้าง `httpx.Client(timeout=None)` hardcode (ไม่มี option) ⇒ host black-hole =
+# HttpClient()+heartbeat() ค้างใต้ lock ตาม TCP timeout ของ OS แล้วทุก thread ที่แตะ memory ต่อคิว
+# จน threadpool หมด · แก้: probe TCP สั้นๆ ก่อน + จำว่าล้มไว้ช่วงหนึ่ง (คืน None ทันที ไม่แตะ lock)
+# + ตั้ง timeout ให้ session ที่สร้างสำเร็จ (best-effort ผ่าน private attr · เทสตรึงสมมติฐานลิบไว้)
+_CONNECT_PROBE_SEC = 1.5
+_CONNECT_RETRY_SEC = 15.0
+_CHROMA_HTTP_TIMEOUT = 30.0
+_last_connect_fail = 0.0
+
+
+def _tcp_reachable(host: str, port: int, timeout: float) -> bool:
+    try:
+        socket.create_connection((host, port), timeout=timeout).close()
+        return True
+    except OSError:
+        return False
+
+
+def _apply_http_timeout(client) -> None:
+    """chromadb HttpClient → FastAPI server → httpx session: ตั้งเพดานเวลาให้ทุก request
+    (private attr — ถ้าโครงลิบเปลี่ยนแค่ log ไม่ทำให้ต่อไม่ได้ · `tests/test_memory_client_preflight.py`)"""
+    try:
+        import httpx
+        client._server._session.timeout = httpx.Timeout(_CHROMA_HTTP_TIMEOUT)
+    except Exception as e:
+        logger.warning(f"ChromaDB: ตั้ง http timeout ไม่ได้ (โครง chromadb เปลี่ยน?) — session ยังเป็น timeout=None: {e}")
 _embedding_function = None
 _embedding_function_attempted = False
 _ef_lock = threading.Lock()
@@ -134,22 +163,36 @@ def _safe_slug(name: str) -> str:
 
 
 def _get_client():
-    global _client
+    global _client, _last_connect_fail
+    if _client is not None:
+        return _client
+    # ล้มไปเมื่อกี้ → ไม่ต้องเข้า lock/แตะเน็ตซ้ำทุกครั้งที่ถูกเรียก (recall/remember เรียกหลายครั้งต่อ turn)
+    if time.monotonic() - _last_connect_fail < _CONNECT_RETRY_SEC:
+        return None
     with _lock:
         if _client is None:
+            if time.monotonic() - _last_connect_fail < _CONNECT_RETRY_SEC:
+                return None
+            if not _tcp_reachable(CHROMA_HOST, CHROMA_PORT, _CONNECT_PROBE_SEC):
+                _last_connect_fail = time.monotonic()
+                logger.error(f"ChromaDB ต่อไม่ถึง {CHROMA_HOST}:{CHROMA_PORT} (probe {_CONNECT_PROBE_SEC}s) — พัก {_CONNECT_RETRY_SEC:.0f}s")
+                return None
             try:
                 import chromadb
                 from chromadb.config import Settings
                 ssl = CHROMA_PORT == 443
-                _client = chromadb.HttpClient(
+                client = chromadb.HttpClient(
                     host=CHROMA_HOST,
                     port=CHROMA_PORT,
                     ssl=ssl,
                     settings=Settings(anonymized_telemetry=False),
                 )
-                _client.heartbeat()
+                _apply_http_timeout(client)
+                client.heartbeat()
+                _client = client
                 logger.info(f"ChromaDB connected to {CHROMA_HOST}:{CHROMA_PORT}")
             except Exception as e:
+                _last_connect_fail = time.monotonic()
                 logger.error(f"ChromaDB connection error: {str(e)}")
                 _client = None
         return _client

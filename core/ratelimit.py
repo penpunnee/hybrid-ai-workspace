@@ -61,10 +61,23 @@ class SlidingWindowLimiter:
             if not self._hits[k]:
                 del self._hits[k]
 
+    def _touch(self, key: str) -> deque:
+        """คืน deque ของ key และย้ายไปท้าย dict (= ใช้ล่าสุด) — dict รักษาลำดับ insert จึงใช้เป็น LRU ได้"""
+        dq = self._hits.pop(key, None)
+        if dq is None:
+            dq = deque()
+        self._hits[key] = dq
+        return dq
+
     def _cap(self) -> None:
-        """กัน burst โจมตี (many distinct keys ใน window เดียว) — drop จนต่ำกว่า cap"""
+        """กัน burst โจมตี (many distinct keys ใน window เดียว) — ไล่ตัวที่ *ไม่ได้ใช้นานสุด* จนต่ำกว่า cap
+
+        ⚠️ เดิม `popitem()` = LIFO (py3.7+) ⇒ ลบ key ที่เพิ่งใส่ใน hit()/record() ทิ้งทันที
+        → ตอน dict เต็ม IP ใหม่ทุกตัวไม่เคยถูกนับ = limiter ปิดตัวเองพอดีตอนถูก spoof (audit 2026-09-24 ข้อ 4)
+        key ที่เพิ่ง _touch อยู่ท้ายสุดเสมอ จึงไม่มีทางถูกไล่ในรอบเดียวกัน"""
         while len(self._hits) > self.max_keys:
-            self._hits.popitem()   # O(1), drop arbitrary — bound memory
+            oldest = next(iter(self._hits))
+            del self._hits[oldest]
 
     def hit(self, key: str) -> tuple[bool, int]:
         """บันทึก 1 hit → (allowed, retry_after_sec). allowed=True = "ผ่าน" (ยังไม่เกิน limit)
@@ -72,7 +85,7 @@ class SlidingWindowLimiter:
         now = time.time()
         with self._lock:
             self._maybe_sweep(now)
-            dq = self._hits[key]
+            dq = self._touch(key)
             self._prune(dq, now)
             if len(dq) >= self.limit:
                 return False, max(1, round(self.window - (now - dq[0])))
@@ -101,7 +114,7 @@ class SlidingWindowLimiter:
         now = time.time()
         with self._lock:
             self._maybe_sweep(now)
-            dq = self._hits[key]
+            dq = self._touch(key)
             self._prune(dq, now)
             dq.append(now)
             self._cap()

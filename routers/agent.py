@@ -44,13 +44,30 @@ def list_available_tools():
     }
 
 
+# เพดานรอบ tool-call ต่อคำขอ — เดิม `int(data["max_steps"])` ดิบ: `"abc"` = 500 · `500` = LLM 500 รอบ
+# (audit 2026-09-24 MEDIUM ข้อ 5) · default 4 เท่า run_agent()
+MAX_STEPS_CAP = 10
+_MAX_STEPS_DEFAULT = 4
+
+
+def _parse_max_steps(raw) -> int:
+    """ขยะ/ไม่ส่ง → default · แล้ว clamp เข้า [1, MAX_STEPS_CAP] (bool ก็ถือเป็นขยะ)"""
+    if raw is None or isinstance(raw, bool):
+        return _MAX_STEPS_DEFAULT
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return _MAX_STEPS_DEFAULT
+    return max(1, min(MAX_STEPS_CAP, n))
+
+
 @router.post("/agent")
 async def agent_chat(request: Request):
     data = await json_body_capped(request, MAX_BODY_BYTES)
     assistant = data.get("assistant", list(ASSISTANTS.keys())[0])
     session_id = data.get("session_id", "default")
     prompt = data.get("prompt", "")
-    max_steps = int(data.get("max_steps", 4))
+    max_steps = _parse_max_steps(data.get("max_steps"))
     provider = data.get("provider", "gemini")  # default Gemini (พร้อมใช้ทันที)
 
     config = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])

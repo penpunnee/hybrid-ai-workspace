@@ -251,6 +251,18 @@ def _brave_search(query: str, max_results: int = 5) -> list[dict]:
         return []
 
 
+_KEY_PARAM_RE = re.compile(r"(?i)\b(key|api_key|apikey|token)=([^&\s'\"]+)")
+
+
+def _redact_secrets(text: str, secrets: list[str]) -> str:
+    """บังค่าความลับก่อน log — ทั้งค่าดิบที่รู้จัก และรูปแบบ `key=<ค่า>` ใน URL/query ทุกตัว"""
+    out = text
+    for sec in secrets:
+        if sec:
+            out = out.replace(sec, "***")
+    return _KEY_PARAM_RE.sub(lambda m: f"{m.group(1)}=***", out)
+
+
 def _google_search(query: str, max_results: int = 5) -> list[dict]:
     """ค้นผ่าน Google Custom Search API"""
     import requests
@@ -259,9 +271,13 @@ def _google_search(query: str, max_results: int = 5) -> list[dict]:
     if not api_key or not cx:
         return []
     try:
+        # คีย์ส่งทาง header ไม่ใช่ `?key=` — URL โผล่ใน str() ของทุก exception ของ requests
+        # (ConnectionError/Timeout) แล้วเคยถูก log ทั้งดุ้น (audit 2026-09-24 MEDIUM ข้อ 3 · วัดจริงบน prod)
+        # Google Cloud docs: REST รับ API key ได้ทั้ง `?key=` และ header `X-goog-api-key`
         resp = requests.get(
             "https://www.googleapis.com/customsearch/v1",
-            params={"key": api_key, "cx": cx, "q": query, "num": min(max_results, 10)},
+            params={"cx": cx, "q": query, "num": min(max_results, 10)},
+            headers={"X-goog-api-key": api_key},
             timeout=8,
         )
         # ⚠️ ห้ามอ่าน items โดยไม่ดูสถานะก่อน — body ของ error ไม่มีคีย์ "items"
@@ -287,7 +303,8 @@ def _google_search(query: str, max_results: int = 5) -> list[dict]:
         logger.info(f"[Google] '{query}' → {len(results)} results")
         return results
     except Exception as e:
-        logger.warning(f"[Google] search failed: {e}")
+        # ชั้นที่สอง: ไม่ว่า error จะสะท้อนอะไรกลับมา ห้ามมีคีย์ใน log
+        logger.warning(f"[Google] search failed: {_redact_secrets(str(e), [api_key])}")
         return []
 
 
