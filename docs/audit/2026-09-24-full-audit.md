@@ -9,7 +9,9 @@
 · ✅ **ก้อน 3 ปิดแล้ว 09-24 ดึก (`82681d9` · HIGH 5, 6, 8)** — devlog [ต่อ 12] · ข้อ 5 พิสูจน์บน prod ว่าอ่าน `/proc/self/environ` ได้จริง ·
 มี 2 ทางเข้า (agent tool + `POST /api/fs/search`) ปิดที่ `search_files` จุดเดียว
 · ✅ **ก้อน 4 ปิดแล้ว 09-24 ดึก (`fdc269a` · HIGH 9, 10, 11, 12)** — devlog [ต่อ 13] · ข้อ 12 ยืนยัน image มี `.env`+`data` 605 MB จริง ·
-ข้อ 10 วัด prod = 0 hit (ประเมินแรงไป) · ✅ rebuild+prune image แล้ว (devlog [ต่อ 14] · image เก่าที่มี `.env` หายหมด) · ที่เหลือยังไม่แก้ (HIGH 13-14 + MEDIUM/LOW)
+ข้อ 10 วัด prod = 0 hit (ประเมินแรงไป) · ✅ rebuild+prune image แล้ว (devlog [ต่อ 14] · image เก่าที่มี `.env` หายหมด)
+· ✅ **ก้อน 5 ปิดแล้ว 09-25 (`37a22cd` `d998d8c` · HIGH 13, 14)** — devlog [ต่อ 15] · ทดสอบใน Chrome จริง (ลบ+สลับเซสชัน · Stop) · 413 พิสูจน์ด้วย unit test เท่านั้น
+· **HIGH ครบ 14/14 แล้ว** · ที่เหลือ = MEDIUM ~30 / LOW ~35 (หัวข้อ 2-3)
 
 ## 0. runtime บน prod — สะอาด (ยืนยันของจริง)
 - NAS HEAD = main · CI เขียว · `ai-backend-1` healthy restarts=0 · watchdog/cloudflared up 4 สัปดาห์ · ERROR 24 ชม. = 0
@@ -99,4 +101,4 @@ middleware order ตรง doc · `_BodyTooLarge` ถึง middleware (ยก�
 2. ✅ ~~truncate ข้าม session (3) + `bump_access_count` สลับ metadata (4)~~ ปิดแล้ว `e5223ef` (devlog [ต่อ 11])
 3. ✅ ~~fs glob (5) + calculator (6) + markdown backslash (8)~~ ปิดแล้ว `82681d9` (devlog [ต่อ 12]) · (7) ปิดไปกับก้อน 1
 4. ✅ ~~memory cleanup ลบ user_facts (9) + teach ซ้ำ/regex (10) + body-cap กลืน (11) + `.dockerignore` (12)~~ ปิดแล้ว `fdc269a` (devlog [ต่อ 13]) · ค้าง rebuild+prune image
-5. overlay 🗑️ จอขาว (13) + `res.ok` (14) → MEDIUM ตามลำดับในหัวข้อ 2
+5. ✅ ~~overlay 🗑️ จอขาว (13) + `res.ok` (14)~~ ปิดแล้ว `37a22cd`/`d998d8c` (devlog [ต่อ 15]) → ต่อไป MEDIUM ตามลำดับในหัวข้อ 2

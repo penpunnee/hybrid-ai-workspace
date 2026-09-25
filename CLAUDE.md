@@ -703,16 +703,25 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-24 ดึก — ปิด audit ก้อน 4 + rebuild image แล้ว**)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-25 เช้า — ปิด audit ก้อน 5 · HIGH ครบ 14/14**)
 
+> ## ✅ audit ก้อน 5 **ปิดแล้ว 09-25 (`37a22cd` `d998d8c` · appscript.ui `2a87027` `ba576ae` · devlog [ต่อ 15]) — อย่าทำซ้ำ**
+> stream 4 เส้นใช้ `utils/sse.ts:sseEvents()` (throw `HttpError` เมื่อ `!res.ok`) + `utils/streamsettle.ts` (`settleStream` ใน finally · `streamFailureText` แยก
+> HttpError/AbortError/อื่น · `STREAM_ENDED_EARLY`) · ปุ่ม 🗑️ ลบคู่ข้อความอยู่ใน React (`utils/deletepair.ts` · ขึ้นเมื่อมี dbId และไม่ streaming) · overlay §20 gate ทั้ง IIFE ·
+> bundle **`index-CzH7YEbY.js`** · `enhanced.js?v=20260925-561b5814` · ทดสอบใน Chrome จริงแล้ว: ลบ→สลับเซสชันไม่จอขาว · Stop ขึ้น "⏹ หยุดแล้ว" · **413 ยืนยันแค่ unit test**
+> 🔑 **กติกาใหม่จากก้อนนี้:** เส้น stream ใหม่ต้องใช้ `sseEvents()` + `settleStream()` ใน finally + `streamFailureText()` ใน catch — ห้ามเขียนลูป `getReader()` เอง ·
+> overlay ห้าม `.remove()`/แก้ DOM ที่ React เป็นเจ้าของ (ทำจอขาวตอน reconcile ถัดไป) · แก้ `enhanced.js` แล้ว `?v=` ต้องเป็น `YYYYMMDD-<md5 8 ตัว>` (เทส `overlayversion.test.ts`) ·
+> JS probe ใน Chrome: ห้ามอ่าน `innerText` ของ node ใหญ่วนซ้ำ · ลูปรอ < 45 วิ (CDP timeout) · ข้อความทดสอบต้องเก็บกวาด (session + memory) เพราะ UI ส่งโดยไม่มี `X-Test-Request`
+>
+> ## 🥇 งานถัดไป: **audit MEDIUM (หัวข้อ 2 ของ `docs/audit/2026-09-24-full-audit.md` ~30 ข้อ)** — เริ่มจากที่เกี่ยวข้อมูล/ความปลอดภัยก่อน (เช่น `_get_client` ไม่มี timeout · Gemini agent
+> history ผิดรูป 400) หรือ backlog `dbId` ข้างล่าง (ตอนนี้กระทบ 🗑️ ด้วย: ข้อความที่เพิ่งส่งไม่มีปุ่มลบจนรีโหลด) · ทำแบบเดิม: ค้น 2 ชั้น → รายงาน → /scrutinize → เทสแดง → แก้ → mutation → deploy → verify
+> ⚪ ค้างจากก้อน 4/5 ยังไม่แก้: EF conflict ใน `utils/memory.get_collection` ทำ cleanup ข้าม collection เงียบๆ · prune ยังใช้เงื่อนไข episodic inline (`dream.py:470`) ·
+> backend ตอบจบ+`remember()` แม้ client กด Stop (เห็นจริง 09-25)
+>
 > ## ✅ rebuild + prune image **ทำแล้ว 09-24 ดึก (devlog [ต่อ 14]) — อย่าทำซ้ำ**
 > image ใหม่ `1ce9d740…` 717 MB ไม่มี `.env`/`data`/`.git` · healthy · `<none>` 174→22 ใบ 48.65→14.71 GB · **ตอนนี้คอนเทนเนอร์ไม่มี `/app/.env`** (env จาก compose
 > `env_file:` — โค้ดไม่อ่านไฟล์ตรง) · วิธี rebuild ครั้งหน้า: `compose build hybrid-ai` แล้ว `compose up -d hybrid-ai` แยกคำสั่ง (ไม่ใช้ `--force-recreate`) · layer pip cache
 > อยู่ ⇒ ~30 วิ · **ห้าม `--no-cache`** ถ้าไม่จำเป็น · ⚠️ `docker image prune` รายงาน "reclaimed" ต่ำกว่าจริง (layer แชร์) ดู `system df` แทน
->
-> ## 🥇 งานถัดไป: **audit ก้อน 5 (หัวข้อ 5 ข้อ 5 ของ `docs/audit/2026-09-24-full-audit.md`)** — overlay 🗑️ จอขาว (13) · stream ไม่เช็ค `res.ok` (14) → แล้วต่อ MEDIUM
-> หรือ backlog `dbId` ข้างล่าง · ทำแบบเดิม: ค้น 2 ชั้น → รายงาน → /scrutinize → "ไล่ทุกส่วน+ความสัมพันธ์" → เทสแดง → แก้ → mutation → deploy → verify · ข้อ 13/14 เป็น
-> frontend (`enhanced.js` overlay + `app.tsx`) ⇒ เทส = `node --test` (overlay) / vitest (React) · deploy = ไฟล์ static ไม่ต้อง restart · overlay ต้อง bump `?v=` ใน `~/appscript.ui/index.html`
 >
 > ## ✅ audit ก้อน 4 **ปิดแล้ว 09-24 ดึก (`fdc269a` · devlog [ต่อ 13]) — อย่าทำซ้ำ**
 > body chunked เกินเพดานเคยตอบ 200 แล้วรัน cleanup/dream/unlock ด้วย body ว่าง (3 handler `except Exception` กลืน `_BodyTooLarge`) → ตัดออก + ratchet AST ·

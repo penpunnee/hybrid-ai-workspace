@@ -1,5 +1,34 @@
 ---
 
+## [2026-09-25 ต่อ 15] audit ก้อน 5 — overlay 🗑️ จอขาว · stream ไม่เช็ค `res.ok` (`37a22cd` `d998d8c` · appscript.ui `2a87027` `ba576ae`) ✅ deployed + ทดสอบใน Chrome จริง
+**ค้นก่อนลงมือ (ค้น → รายงาน → /scrutinize → user เคาะ + อนุญาต Chrome):**
+- ข้อ 13 **พิสูจน์ใน jsdom (React 18)**: overlay `.remove()` node ที่ React เป็นเจ้าของ → state เปลี่ยนครั้งถัดไป — ลบอีกตัว/`loadHistory` แทนที่ทั้งลิสต์ →
+  `NotFoundError: The node to be removed is not a child` → **root unmount = จอขาว** · append (ส่งข้อความใหม่) ไม่พัง ⇒ อาการดู "สุ่ม" · ไม่มี ErrorBoundary ·
+  `getMsgDbId()` เทียบ*ข้อความ*กับ history → ข้อความซ้ำ = ลบผิดตัว · เทส `overlay_gating.test.js:53` เดิม**ตรึงไว้ว่าห้าม gate** (เหตุผล "React ไม่มีปุ่มลบ")
+- ข้อ 14: `app.tsx` 4 เส้น (ส่งหลัก/regenerate/edit&resend/debate) `getReader()` ทันที ไม่เช็ค `res.ok` · backend non-2xx เป็น JSON (401 `error` · 413 `detail` · 429 `error`+`retry_after`) ·
+  ไม่มี `data:` → ลูปจบเงียบ → `finally setStreaming(false)` ปลด global แต่**ฟอง AI ยัง `streaming:true`** (ปลดเฉพาะ `done`/`error`) → ปุ่ม regenerate/feedback ไม่ขึ้น · edit&resend truncate ไปแล้ว
+- /scrutinize จับ 3: **(1) "Stop ค้าง" ไม่ได้มาจาก `res.ok`** — overlay `enhanced.js:101-107` กด Stop → คืน `Response` ปลอม 200 body ว่าง → จบโดยไม่มี done → ฟองค้าง →
+  poll ของ overlay รอ cursor `animate-pulse` หาย → Stop/typing ค้าง ⇒ ต้อง guard ใน `finally` ไม่ใช่แค่เช็ค `res.ok` (2) `HttpError` ตกลง catch เดิมที่เขียน "เชื่อมต่อไม่ได้" ตายตัว
+  (3) gate §20 **ทั้ง IIFE** ไม่ใช่แค่ปุ่ม (ไม่งั้น `wireUserBubble` ยัง `appendChild(actRow)` เปล่าเข้า bubble ของ React) · overlay ส่ง `status/headers` ต่อมาครบ (`:125-129`) ⇒ `res.ok` ฝั่ง React เชื่อถือได้
+
+**แก้:** `utils/sse.ts` `sseEvents()` generator (throw `HttpError` เมื่อ `!res.ok` · `describeHttpError` อ่าน error/detail/retry_after · HTML ไม่โชว์ทั้งก้อน · parse เท่าเดิมทุกไบต์
+รวม "ทิ้ง leftover ท้าย stream") · `utils/streamsettle.ts` `settleStream()` ใน finally ทั้ง 4 เส้น (ต่อท้าย ไม่ทับ · ฟองที่ปลดแล้วไม่แตะ) + `streamFailureText()` แยก
+HttpError/AbortError/อื่น · `utils/deletepair.ts` `deletePairPlan()` (dbId ตรง · null เมื่อไม่มี dbId/AI ยัง streaming) + ปุ่ม 🗑️ ใน user bubble (ซ่อนตอน streaming ·
+`loadPinned`+`refreshSessions` หลังลบ) · `enhanced.js` §20 `if (window.__hwReactChatBox) return;` + `?v=` = md5 (เทส `overlayversion.test.ts` บังคับ) · `overlay_gating.test.js` กลับด้าน
+· vitest **536** (+30) · tsc 0 · `node --test` 30 · **mutation 14/14** (helper 3 ไฟล์ + gate) · ⚠️ การ wiring ใน `app.tsx` ไม่มี unit test (component ใหญ่) — พิสูจน์ด้วย tsc + browser
+
+**ทดสอบใน Chrome จริง (user login ให้ · ผมไม่ใส่รหัส):**
+| เคส | ผล |
+|---|---|
+| หน้าแรก | bundle `index-DOr_2Tli.js` + `enhanced.js?v=…561b5814` โหลดถูก · `__hwReactChatBox` true |
+| **ลบ** (แชทใหม่ → ส่ง → รีโหลดให้มี dbId → 🗑️ → สลับเซสชัน) | 🗑️ ขึ้น · ลบแล้วเหลือ 0 · สลับไปเซสชัน 29 bubble render ครบ · root อยู่ **ไม่จอขาว** · console 0 error |
+| **Stop** รอบแรก | Stop หายทันที · ฟองปลด · ปุ่มขึ้น ✅ **แต่ข้อความ "❌ เชื่อมต่อ server ไม่ได้"** — abort *กลาง* stream ทำให้ `reader.read()` reject ด้วย `AbortError` (คนละเส้นกับ stream เปล่า 200) → เพิ่ม `streamFailureText` (mutation 3/3) → deploy รอบ 2 `index-CzH7YEbY.js` |
+| **Stop** รอบสอง | ฟองขึ้น **"⏹ หยุดแล้ว — ไม่ได้รับคำตอบจนจบจาก server"** ✅ |
+| **413** (prompt 10.5 MB ผ่าน JS) | ❌ **พิสูจน์ใน browser ไม่สำเร็จ**: origin ตอบ 413 ใน 1.1 ms (log 02:08:28) แต่ browser ค้างรอ >2 นาที (Cloudflare ไม่ส่ง response จนกว่า client upload body เสร็จ) และ probe ของผมอ่าน `innerText` ของ bubble 11 MB ซ้ำจน renderer ค้าง (CDP timeout) → เส้น `!res.ok` ยืนยันด้วย unit test 401/413/429/530 + catch→settle เส้นเดียวกับที่ Stop พิสูจน์แล้ว |
+- 🧹 เก็บกวาดร่องรอยเทส (ส่งโดยไม่มี `X-Test-Request`): ลบ session `s_20260925_021412_fc8e27` + memory `mem_20260925020750_f7a41e` ("ทดสอบระบบ…/โอเค" — **backend ตอบจบและ remember ทั้งที่ client กด Stop**) → `memory_kwan` กลับเป็น 30
+- 🔑 **บทเรียน:** (1) อาการ "ค้าง" 2 แบบ (non-2xx · abort) ต้องการตัวแก้คนละชั้น — `res.ok` ปิดได้แค่แบบเดียว (2) abort มี 2 เส้นเอง (ก่อน/หลัง header) ข้อความต้องแยก
+  (3) ทดสอบใน browser ด้วย JS probe ต้องไม่อ่าน `innerText` ของ node ใหญ่วนซ้ำ และลูปรอต้อง < 45 วิ (CDP timeout) (4) 413 ผ่าน Cloudflare ทดสอบจาก browser ไม่ได้ในทางปฏิบัติ — ใช้ unit test
+
 ## [2026-09-24 ต่อ 14] rebuild + prune image บน NAS — ล้าง `.env`/`data` ออกจาก layer เก่า ✅ (user สั่ง "ต่อดิ")
 - ก่อน: running image `1125abd9…` 1.37 GB (5 สัปดาห์) · `<none>` ค้าง **~150 ใบ** (หลายใบ 1–2 GB · ย้อน 5 เดือน) · `docker system df`: 174 image 48.65 GB reclaimable 35 GB
 - `compose build hybrid-ai`: layer base/apt/pip **CACHED** ทั้งหมด เปลี่ยนแค่ `COPY . .` (6.1 วิ) → **33 วิ** · image ใหม่ `1ce9d740…` **717 MB** (ถ้าไม่มี `.dockerignore` layer COPY = 660 MB)
