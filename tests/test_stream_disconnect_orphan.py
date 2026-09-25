@@ -115,3 +115,45 @@ async def test_ตัดสายหลังคำตอบ_save_แล้ว_�
     assert roles == ["user", "assistant"], f"ต้องมีคู่เดียว ไม่บันทึกซ้ำ ({roles})"
     assert "หยุดกลางคัน" not in history[1]["content"]
     assert "ท่อน5" in history[1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_ตัดสายแล้วมีคำตอบใหม่มาก่อน_ต้องไม่ต่อฟองซ้ำ(monkeypatch):
+    """เห็นจริงบน prod 09-25: CancelledError มาถึง wrapper ช้า 63 วิ (anyio รอ thread ที่ค้างรอ
+    qwen คิด) — ถ้าระหว่างนั้น user กด regenerate จนได้คำตอบใหม่แล้ว handler ต้องเห็นว่ามีคำตอบ
+    คู่ user message แล้วและข้าม ไม่บันทึก "หยุดกลางคัน" ต่อท้ายเป็นฟองเกิน
+    จำลอง: chunk ที่ 3 (ซึ่ง thread กำลังทำอยู่ตอนถูก cancel) แทรก assistant row เหมือน regenerate ตอบ"""
+    from utils.history import save_message
+    sid = "s_disconnect_regen_race"
+
+    def _stream_with_regen(messages, **k):
+        import time
+        yield "ท่อน0 "
+        yield "ท่อน1 "
+        save_message("kwan", "assistant", "คำตอบจาก regenerate", "ollama", sid)   # มาก่อน handler เสมอ
+        time.sleep(0.05)
+        yield "ท่อน2 "
+
+    monkeypatch.setattr(chatmod, "stream_response", _stream_with_regen)
+    with patch.object(chatmod, "remember"), patch.object(chatmod, "teach", return_value=False):
+        await _post_then_drop(sid, drop_after_chunks=2)
+    history = load_history("kwan", sid)
+    contents = [m["content"] for m in history]
+    assert contents == ["ยิงแล้วตัดสาย", "คำตอบจาก regenerate"], f"ห้ามต่อฟอง 'หยุดกลางคัน' ซ้ำ ({contents})"
+
+
+@pytest.mark.asyncio
+async def test_ตัดสายใน_session_ที่มี_turn_เก่า_ต้องยังบันทึกคู่(monkeypatch):
+    """กลุ่มควบคุมของ guard `has_reply_after`: คำตอบของ turn *ก่อนหน้า* (A1) ต้องไม่ถูกนับว่า
+    "ตอบ U2 แล้ว" — ไม่งั้น session ที่คุยมาก่อนจะกลับไปทิ้ง orphan เหมือนเดิม (mutation จับได้)"""
+    from utils.history import save_message
+    sid = "s_disconnect_prev_turn"
+    save_message("kwan", "user", "U1", "ollama", sid)
+    save_message("kwan", "assistant", "A1", "ollama", sid)
+    monkeypatch.setattr(chatmod, "stream_response", _slow_stream)
+    with patch.object(chatmod, "remember"), patch.object(chatmod, "teach", return_value=False):
+        await _post_then_drop(sid, drop_after_chunks=2)
+    history = load_history("kwan", sid)
+    roles = [m["role"] for m in history]
+    assert roles == ["user", "assistant", "user", "assistant"], f"turn ใหม่ต้องได้คู่ของตัวเอง ({roles})"
+    assert "หยุดกลางคัน" in history[3]["content"]

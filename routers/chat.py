@@ -15,7 +15,7 @@ from utils.rag import inject_context_to_system, format_skill_files
 from utils.skills_select import select_skills
 from utils.skills_shadow import should_shadow_log as _shadow_should_log
 from utils.history import (
-    save_message, load_history, pop_replies_after_last_user,
+    save_message, load_history, pop_replies_after_last_user, has_reply_after,
 )
 from utils.memory import save_lesson, save_preference, get_lessons, get_preferences, search_memory
 from memory.operations import remember, recall, teach, push_working
@@ -340,7 +340,7 @@ async def chat(request: Request):
             system_prompt += "\n\n[โหมดวางแผน] ผู้ใช้เปิดโหมด Plan: ช่วยวางแผนเป็นขั้นตอนสั้นๆ ก่อน แล้วค่อยลงรายละเอียด"
             logger.info("[Chat] plan_mode on — inject plan instruction (system prompt)")
 
-        save_message(assistant, "user", prompt, provider, session_id)
+        st["user_msg_id"] = save_message(assistant, "user", prompt, provider, session_id)
         st["user_saved"] = True
 
         # ตั้งค่าตั้งต้นให้ `_save_crash` อ่านได้ตั้งแต่ตอนนี้ — สาขา agent/routing ข้างล่าง
@@ -726,7 +726,10 @@ async def chat(request: Request):
         # · ⚠️ ต้อง `checkpoint()` ก่อน yield ทุกชิ้น: run_sync รอ thread แบบ shield แล้วคืนค่า
         #   โดยไม่ผ่าน checkpoint ⇒ ถ้าไม่มีบรรทัดนี้ CancelledError จะไปโผล่ที่ `await send()`
         #   ของ starlette (นอกเฟรมเรา) แล้ว generator ตัวนี้ถูกทิ้งไว้จน GC = ช้าแบบสุ่มเหมือนเดิม
-        st = {"user_saved": False, "assistant_saved": False, "save_crash": None}
+        # · ⚠️ มาถึงได้ *ช้า*: anyio รอ thread คืนค่าก่อน — ถ้า thread ค้างรอ LLM คิด (วัดบน prod
+        #   09-25: 63 วิ) ระหว่างนั้น user อาจกด regenerate จนได้คำตอบใหม่แล้ว ⇒ เช็ค DB ก่อน
+        #   (`has_reply_after`) ถ้ามีคำตอบคู่ user message นี้แล้วให้ข้าม ไม่ต่อฟอง "หยุดกลางคัน" ซ้ำ
+        st = {"user_saved": False, "assistant_saved": False, "save_crash": None, "user_msg_id": 0}
         inner = _generate_inner(st)
         try:
             async for piece in iterate_in_threadpool(inner):
@@ -734,9 +737,13 @@ async def chat(request: Request):
                 yield piece
         except (asyncio.CancelledError, GeneratorExit):
             if st["user_saved"] and not st["assistant_saved"] and st["save_crash"]:
-                logger.info("[Chat] client ตัดสายกลาง stream — บันทึกคำตอบบางส่วนคู่ user message")
                 with anyio.CancelScope(shield=True):
-                    await run_in_threadpool(st["save_crash"], "client ตัดสายกลางคัน (กด Stop / ปิดหน้า)")
+                    answered = await run_in_threadpool(has_reply_after, assistant, session_id, st["user_msg_id"])
+                    if answered:
+                        logger.info("[Chat] client ตัดสายกลาง stream — มีคำตอบคู่แล้ว (regenerate?) ไม่บันทึกซ้ำ")
+                    else:
+                        logger.info("[Chat] client ตัดสายกลาง stream — บันทึกคำตอบบางส่วนคู่ user message")
+                        await run_in_threadpool(st["save_crash"], "client ตัดสายกลางคัน (กด Stop / ปิดหน้า)")
                     await run_in_threadpool(_close_quietly, inner)
             raise
 

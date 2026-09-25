@@ -309,6 +309,24 @@ def delete_message_by_id(db_id: int):
         conn.close()
 
 
+def has_reply_after(assistant: str, session_id: str, user_msg_id: int) -> bool:
+    """มีคำตอบ (assistant) ที่ตามหลัง user message นี้อยู่แล้วไหม
+
+    ใช้โดย handler ตัดสายของ /api/chat: CancelledError มาถึงได้ช้า (anyio รอ thread ที่ค้างรอ
+    LLM คืนค่าก่อน — วัดบน prod 09-25 ช้า 63 วิตอน qwen คิดนาน) ถ้าระหว่างนั้น user กด
+    regenerate จนได้คำตอบใหม่แล้ว การบันทึก "หยุดกลางคัน" ซ้ำจะกลายเป็นฟองเกินต่อท้าย
+    """
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM messages WHERE assistant = ? AND session_id = ? AND role = 'assistant' AND id > ? LIMIT 1",
+            (assistant, session_id, user_msg_id),
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
 def get_last_user_message(assistant: str, session_id: str) -> str:
     """ดึง user message ล่าสุดของ session"""
     conn = _get_conn()
