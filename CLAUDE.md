@@ -703,16 +703,21 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-26 — ก้อน 6 ปิดครบ 6/6 · ถัดไป = MEDIUM ก้อน 7 · (ข) response cache ยังรอเคาะ**)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-26 — ก้อน 6+7 ปิดแล้ว · ถัดไป = MEDIUM ก้อน 8 · (ข) response cache ยังรอเคาะ**)
 
-> ## 🥇 งานแรกเซสชันหน้า: **audit MEDIUM ก้อน 7** (ก้อน 6 ปิดครบ 6/6 แล้ว — ดู 2 บล็อกถัดไป)
-> รายการ MEDIUM ที่เหลือ 13 ข้ออยู่ใน devlog [2026-09-25 ปิดเซสชัน] (Dream lock/provider · Ollama ReAct/Gemini adapter · llm error substring · embed lru failure · skills sync tx · dualvec keys · tts เงียบ ฯลฯ)
-> **+ 2 เรื่องที่ก้อน 6 ส่งต่อ:** (1) cooperative cancel ของ LLM stream — ปิด httpx response จาก event loop ให้ thread โยนทันที (= แก้ "backend ตอบต่อแม้กด Stop" และ handler ตัดสายมาช้า 8–110 วิ)
-> (2) EF conflict ใน `utils/memory.get_collection` + prune ใช้เงื่อนไข inline (`dream.py:470`) — ค้างจากก้อน 4/5
-> **รอ user เคาะ:** (ข) response cache ข้าม session — แนวทาง ก/ข/ค หรือพักไว้ (แยกก้อน · ยังไม่ตัดสินใจ 09-26)
-> ทำแบบเดิม: ค้น 2 ชั้น → /scrutinize แผน → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy → verify prod → devlog
-> 🔑 **ก่อน deploy เช็ค `ssh -o ConnectTimeout=10 nas-cf true` ก่อนเสมอ** — Cloudflare Access หมดอายุ = คำสั่งค้าง 4 นาทีแล้วล้มกลางทาง (เกิดจริง 09-25 ค่ำ · commit ถึง GitHub แต่ NAS ไม่ได้ reset)
+> ## 🥇 งานแรกเซสชันหน้า: **audit MEDIUM ก้อน 8** (ก้อน 7 ปิดแล้ว — ดูบล็อกถัดไป)
+> **backend ที่เหลือ:** Dream ซ้อน 2 ทาง + provider ไม่ใช่ auto (`core/scheduler.py:18,22` · `routers/dream.py:49-59`) · Ollama ReAct guard `ok_observations` (`orchestrator.py:635-651`) ·
+> Gemini adapter tool result ค้างใน `_pending` (`orchestrator.py:233-287,316-321`) · llm error substring `"model"`/`"401"` (`utils/llm.py:365,692,945,1111`) · `sync_skills_to_search` นอก tx (`utils/skills.py:327-347`)
+> · async-sync 6 จุด (reader/server.py/sessions/system) · **cooperative cancel ของ LLM stream** (ค้างจากก้อน 6 — ปิด httpx response จาก event loop) · EF conflict + prune inline (ค้างจากก้อน 4/5)
+> **frontend 9 ข้อ** (audit doc หัวข้อ 2 ท้าย): `_parseChatSSE` ซ้ำ · `AI_PALETTE.khim` · "จำไว้ว่า" fetch นอก try · prompt history ↑/↓ · paste รูปไม่ส่ง · `voicelive.ts onclose` · `bookreader` ไม่ disconnect · Ctrl+E ซ้ำ · latest-request guard
+> 🔒 reader/voice regen cap — ห้ามแตะ (เสียงถือว่าใช้ได้แล้ว) · **รอ user เคาะ:** (ข) response cache ข้าม session
+> ทำแบบเดิม: ค้น 2 ชั้น → /scrutinize แผน → เทสแดง → แก้ → mutation → ชุดเต็ม → `ssh nas-cf true` → deploy → verify prod → devlog
 > ⚪ งานเล็กค้าง: CLAUDE.md ~180 KB — ย้ายบล็อก ▶️ เก่า (08-24/08-26) ลง devlog · backlog `dbId` ข้อความที่เพิ่งส่ง (กระทบ 🗑️/pin/feedback)
+>
+> ## ✅ ก้อน 7 **ปิดแล้ว 09-26 (`93e9b3d` · devlog [ต่อ 18]) — อย่าทำซ้ำ**
+> embed `_embed_one_cached` ล้ม = raise (lru ไม่แคช exception) + `_embed_one()` wrapper · `/api/tts` log ERROR + 502 · `utils/reqparse.py` (`as_int`/`as_str`) ใน 6 router + `skills_delete` `.`/`..` → 400
+> · `memory/store._key_only_from_primary()` — key-only อ่าน doc+metadata จากตัวหลัก (zip กับ `res["ids"]`) แล้วกรอง `min_confidence`/`verified_only` · กุญแจกำพร้าไม่ฉีด · mutation 11/11 · ชุดเต็ม 2361
+> 🔑 **กติกาใหม่:** ฟิลด์จาก body ต้องผ่าน `utils/reqparse` (ห้าม `int()`/`.strip()` ดิบ) · `lru_cache` ห้ามคืน sentinel ตอนล้ม ให้ raise แล้วห่อ · ค่าจาก `__keys` เป็นแค่ตัวชี้ id — ทุกการตัดสินใจอ่านจากตัวหลัก
 >
 > ## ✅ ก้อน 6 ข้อ 3-6 **ปิดแล้ว 09-26 (`b3bc833` · devlog [ต่อ 17]) — อย่าทำซ้ำ**
 > CSE key → header `X-goog-api-key` + `_redact_secrets()` ก่อน log · ratelimit `_touch()` LRU + `_cap()` ไล่ตัวเก่าสุด (เดิม `popitem()` LIFO ทิ้ง IP ใหม่ทันที) · `/api/agent` `_parse_max_steps()` clamp [1,10]

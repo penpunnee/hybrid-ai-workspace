@@ -1,5 +1,26 @@
 ---
 
+## [2026-09-26 ต่อ 18] audit MEDIUM ก้อน 7 — embed LRU · tts เงียบ · input 500→400 · `__keys` เคารพ filter (`93e9b3d`) ✅ deployed + verify prod
+**เลือก 4 กลุ่มจาก 13 ข้อที่เหลือ** (backend ล้วน ขนาดใกล้ก้อน 6) · ที่เหลือไปก้อน 8: Dream ซ้อน/provider · Ollama ReAct guard · Gemini adapter pending tool result · llm error substring ·
+skills sync tx · async-sync 6 จุด · cooperative cancel (ค้างจากก้อน 6) · EF conflict/prune inline (ค้างจากก้อน 4/5) · frontend 9 ข้อ · 🔒 reader/voice regen cap (ห้ามแตะเสียง)
+**ค้นก่อนลงมือ:** เทสแดง 19/21 ด้วยเหตุผลตรง (`assert [] == [1.0, 2.0]` · `'dict' object has no attribute 'strip'` · `invalid literal for int()` · key-only ได้ 0.7 ตายตัว) ·
+`lru_cache` แคชค่าคืนแต่ไม่แคช exception (พฤติกรรม stdlib) · frontend `app.tsx:1135` เช็ค `!res.ok || content-type json` อยู่แล้ว → tts ตอบ 502 ได้ · `sync_key()` ก๊อป metadata ของตัวหลัก
+**ตอนเขียน** (stale ได้เมื่อ Dream ลด confidence) ⇒ ต้องอ่าน metadata จาก*ตัวหลัก*ตอน search ไม่ใช่จาก `__keys` · httpx/เบราว์เซอร์ normalize `/.`/`/..` ใน path — ถึง handler ได้ทาง `%2E` (และ curl `--path-as-is`)
+**ทำ:**
+1. `utils/embed.py`: `_embed_one_cached` (lru) ล้ม = **raise** · `_embed_one()` wrapper คืน `tuple()` · `embed_query` ใช้ wrapper — Ollama สะดุดครั้งเดียวไม่ค้างตลอดโปรเซสอีก
+2. `routers/system.py`: `/api/tts` `logger.error(exc_info)` + **502** · `/tts/stream` log ERROR ต่อ chunk (SSE error event เดิมคงไว้)
+3. `utils/reqparse.py` ใหม่: `as_int(v, default, lo, hi)` · `as_str(v)` (non-str → "" = เดิน path "ว่าง" ของ handler) · ใช้ใน documents(top_k 1..50) · sandbox(max_results 1..500 · max_per_file 1..100)
+   · system(tts text/slug) · memory(teach) · sessions(name) · skills(extract) · `skills_delete`: `.`/`..`/ว่าง/มี `/`,`\\` → **400** + ลบเฉพาะ `os.path.isfile`
+4. `memory/store.py` `_key_only_from_primary(col, ids, min_confidence, verified_only)`: `col.get(ids, include=[documents, metadatas])` **zip กับ `res["ids"]`** (กติกาก้อน 2) → กรองด้วยเกณฑ์เดียวกับฝั่งหลัก ·
+   กุญแจกำพร้า/อ่านไม่ได้ = ไม่ฉีด (fail-closed) · `dualvec.merge_max(..., key_metas=)` เติม confidence/verified/type/source/timestamp จากตัวหลัก · content = doc เต็ม
+   · เทสเก่า `test_key_only_hit_survives_ranking` คาด content = ข้อความกุญแจ + ค่าตายตัว → ปรับ fixture ให้ `col.get` คืน doc ของตัวหลัก (เจตนาเดิม "field ครบ กัน KeyError" ยังตรวจอยู่)
+- เทสใหม่ 4 ไฟล์ **26** · **mutation 11/11** (D4 "zip กับ ids ที่ขอ" รอด → เขียนเทส ids คืนไม่ครบ) · ชุดเต็ม 2338 → **2361** · ruff · CI เขียว
+- **verify prod (09-26):** `tts text=123` → 200 `{"error":"no text"}` (ไม่ 500) · `documents/search top_k=abc` → 200 count 5 · `sessions PATCH name=5` → ok:false ·
+  `DELETE /api/skills/%2E?delete_file=true` และ `%2E%2E` → **400** · skills ยังครบ 22 · `memory/teach text=[list]` → ok:false · `search_entries("kwan","NAS ที่บ้าน")` เส้นจริง 2 hits ·
+  ไม่มีบรรทัด ` 500 (` ใหม่ใน server.log · embed/tts-error/dualvec-filter วัดบน prod ไม่ได้โดยไม่ทำให้ Ollama ล่ม/โควตาหมด — ยืนยันด้วย unit+mutation
+**🔑 บทเรียน:** (1) `lru_cache` + `except → return sentinel` = แคชความล้มเหลวเสมอ — ให้ raise แล้วห่อชั้นนอก (2) metadata ที่ก๊อปไปตอนเขียน (`__keys`) stale ได้ ทุกการตัดสินใจต้องอ่านจากแหล่งจริง
+(3) เทส 500→400 ผ่าน TestClient ต้อง encode path segment เอง (`%2E`) ไม่งั้น client normalize แล้วไม่ถึง handler (4) mutant "zip กับ ids ที่ขอ" รอดจากเทสที่ ids ครบ — ต้องมีเคส ids คืนไม่ครบเสมอเมื่อแตะ `col.get`
+
 ## [2026-09-26 ต่อ 17] audit MEDIUM ก้อน 6 ข้อ 3-6 — CSE key ไม่ลง log · ratelimit cap · max_steps · ChromaDB connect (`b3bc833`) ✅ deployed + verify prod
 **user เคาะ (ก) redact key** · (ข) response cache ข้าม session **พักเป็นก้อนแยก** ยังไม่ตัดสินใจ
 **ค้นก่อนลงมือ:** เทสแดง 11 ตัวเห็นคีย์เต็มใน WARNING จริง · Google Cloud docs (`docs/authentication/api-keys-use`) ยืนยัน REST รับคีย์ทาง header `X-goog-api-key` แทน `?key=` ·
