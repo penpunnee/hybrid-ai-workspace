@@ -1,5 +1,33 @@
 ---
 
+## [2026-09-25 ปิดเซสชัน] สรุปเซสชัน 09-24 ค่ำ → 09-25 เช้า — audit ก้อน 2-5 ปิดหมด (HIGH 14/14) · rebuild image · MEDIUM สำรวจ+พิสูจน์ 6 ข้อรอเซสชันหน้า
+| ลำดับ | งาน | ผล | commit | devlog |
+|---|---|---|---|---|
+| 1 | **ก้อน 2** truncate ข้าม session + `bump_access_count` สลับ metadata | แก้+deploy · **กู้ metadata prod 28/30** (created_at จาก id · รีเซ็ตตัวนับ) · เส้นจริงหลังแก้ไม่สลับ | `e5223ef` | [ต่อ 11] |
+| 2 | **ก้อน 3** `fs_search` ทะลุ root (อ่าน `/proc/self/environ` ได้จริงบน prod) · calculator แขวน thread · markdown `/\evil.com` | แก้+deploy · verify ในคอนเทนเนอร์ | `82681d9` | [ต่อ 12] |
+| 3 | **ก้อน 4** body-cap ถูกกลืน · 🧹 ลบ `user_facts`/`lessons` · teach ซ้ำ/regex · `.dockerignore` | แก้+deploy · build local พิสูจน์ image ไม่มี `.env` | `fdc269a` | [ต่อ 13] |
+| 4 | **rebuild+prune image บน NAS** | image 1.37 GB→717 MB ไม่มี `.env` · `<none>` 174→22 · 48.65→14.71 GB · healthy | — | [ต่อ 14] |
+| 5 | **ก้อน 5** overlay 🗑️ จอขาว · stream ไม่เช็ค `res.ok`/Stop ค้าง | แก้ 2 รอบ · **ทดสอบใน Chrome จริง** (ลบ→สลับเซสชันไม่จอขาว · Stop ขึ้น ⏹) · 413 ยืนยันแค่ unit test | `37a22cd` `d998d8c` | [ต่อ 15] |
+| 6 | **MEDIUM สำรวจ 20 ข้อ · พิสูจน์ 6 ข้อ** (ดูข้างล่าง) | เทสแดง 2 ไฟล์เขียนแล้ว (xfail strict รอถอด) | commit ปิดเซสชัน | บล็อกนี้ |
+ทุกก้อน: ค้น 2 ชั้น → รายงาน → /scrutinize แผน (จับได้ 3+3+3+3 จุด) → ไล่ทุกส่วน+ความสัมพันธ์ → เทสแดง → แก้ → mutation (รวม **73/73 ถูกฆ่า** · mutant รอด 2 ตัวอ่านซ้ำแล้วถอดโค้ดซ้ำซ้อน) → deploy → verify prod
+· ชุดเต็ม 2248 → **2302** · vitest 509 → **536** · CI เขียวทุก commit · NAS HEAD = main · CLAUDE.md `~176 KB` (ยังไม่ได้ย้ายบล็อก ▶️ เก่าลง devlog)
+
+**MEDIUM ที่พิสูจน์แล้ว (= ก้อน 6 เซสชันหน้า · รอ user เคาะ 2 เรื่อง):**
+1. client ตัดสายกลาง stream → user orphan — `GeneratorExit` ไม่ผ่าน `except Exception` ไม่มี `finally` (`chat.py generate()`) · **พิสูจน์ที่ระดับ ASGI กับ app จริง**
+   (`tests/test_stream_disconnect_orphan.py` xfail) · ⚠️ harness: `receive()` ต้อง*รอ*ก่อนคืน `http.disconnect` — คืนทันที = Starlette ยกเลิกก่อน generator เริ่ม เทสแดงผิดเหตุ
+2. regenerate ลบ assistant ล่าสุดโดยไม่ดูว่าอยู่หลัง user ล่าสุด (orphan → **ลบ A1**) + ส่ง U2 ซ้ำ (`chat.py:706,719-722`) · เทส `tests/test_regenerate_history_integrity.py` xfail ยืนยันทั้งคู่
+3. `GOOGLE_SEARCH_API_KEY` ลง log — `websearch.py:290` `f"{e}"` · วัดจริง `str(ConnectionError)` มี `?key=...` เต็ม · **รอเคาะ: redact หรือถอด CSE ทั้งเส้น**
+4. rate-limit `_cap()` `popitem()` = ไล่ key ใหม่สุด (`ratelimit.py:66`) → dict เต็ม IP ใหม่ไม่ถูกนับ
+5. `/api/agent` `max_steps` ไม่ clamp/validate (`agent.py:53`) → `"abc"`=500 · `500`=LLM 500 รอบ
+6. `_get_client()` ถือ lock ระหว่างต่อ ChromaDB `httpx timeout=None` (chromadb 1.5.9 hardcode ไม่มี option) → host unreachable = threadpool ต่อคิวหมด · แก้ด้วย TCP pre-check (`obsidian_sync._tcp_reachable`) + จำล้ม 15 วิ
+- **แยกก้อน (ต้องตัดสินใจดีไซน์):** response cache key=(assistant, prompt) lookup ก่อน context → 👍 ของ "สรุปให้หน่อย" บนเอกสาร A เสิร์ฟ session อื่น · ทางเลือก ก) ข้ามเมื่อมีไฟล์/vault ข) กัน prompt สั้น/ทั่วไป ค) ผูก session
+- ที่เหลือ 13 ข้อ → ก้อน 7-8 (Dream lock/provider · Ollama ReAct/Gemini adapter · llm error substring · embed lru failure · skills sync tx · dualvec keys · tts เงียบ · reader/voice regen cap 🔒 · async-sync 6 จุด · `_parseChatSSE` ซ้ำ · `AI_PALETTE.khim`)
+
+**🔑 บทเรียนรวมของเซสชัน:** (1) snapshot ที่ทำ*หลัง*ความเสียหายเริ่มไม่ใช่ความจริง หาแหล่งที่เขียนตอนเกิด (doc id) (2) รีเซ็ตค่าที่งานกลางคืนใช้ต้องจำลองงานนั้นก่อน
+(3) บั๊กที่ถือ GIL ทดสอบด้วย thread ไม่ได้ ใช้ subprocess · macOS ไม่มี `timeout` (4) ทางเข้าต้อง grep ทั้ง registry+routers (5) ratchet ที่ CI พิสูจน์ไม่ได้ (checkout ไม่มี `.env`) ต้องพิสูจน์ที่มีของจริง
+(6) "ค้าง" 2 แบบ (non-2xx · abort) คนละชั้นแก้ · abort เองก็ 2 เส้น (7) `docker image prune` รายงานต่ำกว่าจริง ดู `system df` (8) JS probe ใน Chrome ห้ามอ่าน `innerText` node ใหญ่วนซ้ำ · ลูป < 45 วิ
+(9) เทสแดงที่ยังไม่แก้ → `xfail(strict=True)` เก็บไว้ได้โดย CI ไม่แดง
+
 ## [2026-09-25 ต่อ 15] audit ก้อน 5 — overlay 🗑️ จอขาว · stream ไม่เช็ค `res.ok` (`37a22cd` `d998d8c` · appscript.ui `2a87027` `ba576ae`) ✅ deployed + ทดสอบใน Chrome จริง
 **ค้นก่อนลงมือ (ค้น → รายงาน → /scrutinize → user เคาะ + อนุญาต Chrome):**
 - ข้อ 13 **พิสูจน์ใน jsdom (React 18)**: overlay `.remove()` node ที่ React เป็นเจ้าของ → state เปลี่ยนครั้งถัดไป — ลบอีกตัว/`loadHistory` แทนที่ทั้งลิสต์ →

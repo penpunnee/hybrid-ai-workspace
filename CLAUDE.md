@@ -703,8 +703,19 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-25 เช้า — ปิด audit ก้อน 5 · HIGH ครบ 14/14**)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-25 เช้า — ปิดเซสชัน · HIGH 14/14 ปิดหมด · เซสชันหน้า = MEDIUM ก้อน 6**)
 
+> ## 🥇 งานแรกเซสชันหน้า: **audit MEDIUM ก้อน 6 — 6 ข้อที่พิสูจน์แล้ว** (devlog [2026-09-25 ปิดเซสชัน] มีหลักฐาน+บรรทัดครบ)
+> 1. client ตัดสายกลาง stream → user orphan (`chat.py generate()` ไม่มี `finally`/`except GeneratorExit`) + 2. regenerate ลบ A1 ทิ้ง/ส่ง U2 ซ้ำ (`chat.py:706,719-722`)
+>    — **เทสแดงเขียนแล้ว** `tests/test_stream_disconnect_orphan.py` · `tests/test_regenerate_history_integrity.py` (ติด `xfail(strict=True)` → **ถอด marker ก่อนแก้**)
+>    ⚠️ harness ASGI: `receive()` ต้องรอ event ก่อนคืน `http.disconnect` (คืนทันที = Starlette ยกเลิกก่อน generator เริ่ม)
+> 3. `websearch.py:290` log `f"{e}"` มี `?key=` ของ Google CSE (วัดจริง) 4. `ratelimit.py:66` `popitem()` ไล่ key ใหม่สุด 5. `agent.py:53` `max_steps` ไม่ clamp
+> 6. `utils/memory.py:137` `_get_client()` ถือ lock + `httpx timeout=None` (chromadb 1.5.9 hardcode) → TCP pre-check (`obsidian_sync._tcp_reachable`) + จำล้ม 15 วิ
+> **รอ user เคาะก่อนลงมือ:** (ก) CSE — redact key ใน log หรือถอดทั้งเส้น (backlog ง) (ข) response cache ข้าม session — แนวทาง ก/ข/ค หรือพักไว้ (แยกก้อน)
+> ทำแบบเดิม: /scrutinize แผน → ไล่ทุกส่วน+ความสัมพันธ์ → เทสแดง (ข้อ 3-6) → แก้ → mutation → ชุดเต็ม → deploy `docker restart` → verify prod
+> (ยิง disconnect จริงในคอนเทนเนอร์ · `max_steps=abc` → 200 · log ไม่มีคีย์) · MEDIUM ที่เหลือ 13 ข้อ → ก้อน 7-8 (รายการใน devlog ปิดเซสชัน)
+> ⚪ งานเล็กค้าง: CLAUDE.md ~176 KB — ย้ายบล็อก ▶️ เก่า (08-24/08-26) ลง devlog · backlog `dbId` ข้อความที่เพิ่งส่ง (กระทบ 🗑️/pin/feedback)
+>
 > ## ✅ audit ก้อน 5 **ปิดแล้ว 09-25 (`37a22cd` `d998d8c` · appscript.ui `2a87027` `ba576ae` · devlog [ต่อ 15]) — อย่าทำซ้ำ**
 > stream 4 เส้นใช้ `utils/sse.ts:sseEvents()` (throw `HttpError` เมื่อ `!res.ok`) + `utils/streamsettle.ts` (`settleStream` ใน finally · `streamFailureText` แยก
 > HttpError/AbortError/อื่น · `STREAM_ENDED_EARLY`) · ปุ่ม 🗑️ ลบคู่ข้อความอยู่ใน React (`utils/deletepair.ts` · ขึ้นเมื่อมี dbId และไม่ streaming) · overlay §20 gate ทั้ง IIFE ·
@@ -713,9 +724,7 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > overlay ห้าม `.remove()`/แก้ DOM ที่ React เป็นเจ้าของ (ทำจอขาวตอน reconcile ถัดไป) · แก้ `enhanced.js` แล้ว `?v=` ต้องเป็น `YYYYMMDD-<md5 8 ตัว>` (เทส `overlayversion.test.ts`) ·
 > JS probe ใน Chrome: ห้ามอ่าน `innerText` ของ node ใหญ่วนซ้ำ · ลูปรอ < 45 วิ (CDP timeout) · ข้อความทดสอบต้องเก็บกวาด (session + memory) เพราะ UI ส่งโดยไม่มี `X-Test-Request`
 >
-> ## 🥇 งานถัดไป: **audit MEDIUM (หัวข้อ 2 ของ `docs/audit/2026-09-24-full-audit.md` ~30 ข้อ)** — เริ่มจากที่เกี่ยวข้อมูล/ความปลอดภัยก่อน (เช่น `_get_client` ไม่มี timeout · Gemini agent
-> history ผิดรูป 400) หรือ backlog `dbId` ข้างล่าง (ตอนนี้กระทบ 🗑️ ด้วย: ข้อความที่เพิ่งส่งไม่มีปุ่มลบจนรีโหลด) · ทำแบบเดิม: ค้น 2 ชั้น → รายงาน → /scrutinize → เทสแดง → แก้ → mutation → deploy → verify
-> ⚪ ค้างจากก้อน 4/5 ยังไม่แก้: EF conflict ใน `utils/memory.get_collection` ทำ cleanup ข้าม collection เงียบๆ · prune ยังใช้เงื่อนไข episodic inline (`dream.py:470`) ·
+> ⚪ ค้างจากก้อน 4/5 ยังไม่แก้ (อยู่ใน MEDIUM ก้อน 7-8): EF conflict ใน `utils/memory.get_collection` ทำ cleanup ข้าม collection เงียบๆ · prune ยังใช้เงื่อนไข episodic inline (`dream.py:470`) ·
 > backend ตอบจบ+`remember()` แม้ client กด Stop (เห็นจริง 09-25)
 >
 > ## ✅ rebuild + prune image **ทำแล้ว 09-24 ดึก (devlog [ต่อ 14]) — อย่าทำซ้ำ**

@@ -11,7 +11,9 @@
 · ✅ **ก้อน 4 ปิดแล้ว 09-24 ดึก (`fdc269a` · HIGH 9, 10, 11, 12)** — devlog [ต่อ 13] · ข้อ 12 ยืนยัน image มี `.env`+`data` 605 MB จริง ·
 ข้อ 10 วัด prod = 0 hit (ประเมินแรงไป) · ✅ rebuild+prune image แล้ว (devlog [ต่อ 14] · image เก่าที่มี `.env` หายหมด)
 · ✅ **ก้อน 5 ปิดแล้ว 09-25 (`37a22cd` `d998d8c` · HIGH 13, 14)** — devlog [ต่อ 15] · ทดสอบใน Chrome จริง (ลบ+สลับเซสชัน · Stop) · 413 พิสูจน์ด้วย unit test เท่านั้น
-· **HIGH ครบ 14/14 แล้ว** · ที่เหลือ = MEDIUM ~30 / LOW ~35 (หัวข้อ 2-3)
+· **HIGH ครบ 14/14 แล้ว** · ที่เหลือ = MEDIUM ~20 / LOW ~35 (หัวข้อ 2-3)
+· 🔍 **MEDIUM สำรวจแล้ว 09-25** — พิสูจน์ 6 ข้อ (disconnect orphan · regenerate ลบ A1/U2 ซ้ำ · CSE key ใน log · ratelimit popitem · max_steps · `_get_client` lock)
+= ก้อน 6 เซสชันหน้า (เทสแดง 2 ไฟล์ xfail) · response cache ข้าม session = แยกก้อน (ดีไซน์) · รายละเอียด devlog [2026-09-25 ปิดเซสชัน]
 
 ## 0. runtime บน prod — สะอาด (ยืนยันของจริง)
 - NAS HEAD = main · CI เขียว · `ai-backend-1` healthy restarts=0 · watchdog/cloudflared up 4 สัปดาห์ · ERROR 24 ชม. = 0
