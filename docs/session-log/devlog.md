@@ -1,5 +1,24 @@
 ---
 
+## [2026-09-26 ต่อ 17] audit MEDIUM ก้อน 6 ข้อ 3-6 — CSE key ไม่ลง log · ratelimit cap · max_steps · ChromaDB connect (`b3bc833`) ✅ deployed + verify prod
+**user เคาะ (ก) redact key** · (ข) response cache ข้าม session **พักเป็นก้อนแยก** ยังไม่ตัดสินใจ
+**ค้นก่อนลงมือ:** เทสแดง 11 ตัวเห็นคีย์เต็มใน WARNING จริง · Google Cloud docs (`docs/authentication/api-keys-use`) ยืนยัน REST รับคีย์ทาง header `X-goog-api-key` แทน `?key=` ·
+`dict.popitem()` LIFO ตั้งแต่ py3.7 (key ที่เพิ่งใส่ = ตัวที่ถูกลบ) · chromadb 1.5.9 `api/fastapi.py:87,92` `httpx.Client(timeout=None)` hardcode · uvicorn worker เดียว
+**ทำ:**
+- ข้อ 3 `utils/websearch.py`: คีย์ไป header (ไม่อยู่ใน URL ที่ `str(requests.ConnectionError)` สะท้อน = ปิดที่ต้นเหตุ) + `_redact_secrets(text, [key])` บังทั้งค่าดิบและรูปแบบ `key=…` ก่อน log
+- ข้อ 4 `core/ratelimit.py`: `_touch()` pop+ใส่ใหม่ = ย้ายไปท้าย dict (LRU) ทั้ง `hit()`/`record()` · `_cap()` ลบ `next(iter())` = ตัวไม่ได้ใช้นานสุด · key ปัจจุบันอยู่ท้ายเสมอไม่มีทางถูกไล่
+- ข้อ 5 `routers/agent.py`: `_parse_max_steps()` — None/bool/ขยะ → 4 · clamp [1, `MAX_STEPS_CAP`=10] (ไม่ลง env — ไม่มีเหตุให้ปรับต่อเครื่อง)
+- ข้อ 6 `utils/memory.py`: `_tcp_reachable` 1.5s ก่อนสร้าง client · `_last_connect_fail` จำ 15s **เช็คก่อนเข้า lock** (เทสถือ lock แล้วเรียก = ต้องคืน None ใน 1 วิ) ·
+  `_apply_http_timeout()` ตั้ง `client._server._session.timeout = 30s` (private attr · try/except · `test_สมมติฐานเรื่องลิบ_chromadb_ยังจริง` ratchet source ของลิบไว้)
+- เทสใหม่ 4 ไฟล์ **29** · **mutation 14/14** (รอด 2 → เขียนเทสเพิ่ม: `record()` ไม่ refresh LRU · ทางลัดนอก lock) · ชุดเต็ม **2338** · ruff · CI เขียว
+- **verify prod (09-26):** `/api/agent` `max_steps` `"abc"`/`500`/`-1` → **200** stream 4 event ทุกค่า · CSE ในคอนเทนเนอร์: URL = `?cx=…&q=…&num=5` (ไม่มีคีย์) และ Google ตอบ **403 PERMISSION_DENIED
+  project** เหมือนเดิม = header ถูกยอมรับ (ถ้าไม่ ต้องเป็น 400 คีย์หาย) · `grep -c "customsearch/v1?key="` ใน server.log = 0 · ChromaDB ต่อได้ `session timeout = Timeout(30.0)` · `/api/health` available 1,983 รายการ
+  · ข้อ 4 วัดจากภายนอกไม่ได้ (ต้องยิง 50,000 IP) — ยืนยันด้วย unit เท่านั้น · session ทดสอบ `k6-agent-*` ลบแล้ว (เหลือ 0)
+**⚠️ deploy สะดุด 1 รอบ:** `ssh nas-cf` ค้างรอ Cloudflare Access (token หมดอายุ) แล้ว "failed to run transfer service" หลัง ~4 นาที — commit ถึง GitHub แต่ NAS ไม่ได้ reset ·
+user ล็อกอินแล้วรันใหม่ผ่าน · 🔑 คำสั่ง deploy ที่มี ssh nas-cf ควรเช็ค `ssh nas-cf true` สั้นๆ ก่อน (ไม่งั้นค้าง 4 นาทีแล้วต้องเดาว่าถึงขั้นไหน)
+**🔑 บทเรียน:** (1) "redact ใน log" เป็นปลายเหตุ — ถ้าย้ายความลับออกจาก URL ได้ ทำก่อน แล้ว redact เป็นชั้นสอง (2) mutant ที่รอดเพราะ "เทสไม่ครอบ path" (record vs hit · ทางลัดนอก lock)
+= เทสยังไม่ตรึงคุณสมบัติที่ตั้งใจ ไม่ใช่โค้ดซ้ำซ้อน — อ่านซ้ำแล้วเขียนเทสเพิ่ม (3) เทส "ถือ lock แล้วเรียกใน thread + join(1s)" วัดคุณสมบัติ "ไม่รอ lock" ได้ตรงกว่าการนับ probe
+
 ## [2026-09-25 ต่อ 16] audit MEDIUM ก้อน 6 ข้อ 1-2 — client ตัดสายไม่ทิ้ง orphan · regenerate ไม่ลบ A1/ไม่ส่ง U2 ซ้ำ (`b4e6d7a` `0526f8c` `97a6fcf`) ✅ deployed + verify prod 3 รอบ
 **ค้น 2 ชั้นก่อนลงมือ:** เทสแดงทั้ง 3 (ถอด xfail) แดงด้วยเหตุผลถูก (`['user']` เดี่ยว · `U2,U2` · ลบ A1) · กลไก prod: **uvicorn 0.51 ส่ง `spec_version 2.3`** →
 Starlette 1.3.1 เดิน task-group path (cancel) เหมือน harness (spec 2.0) ⇒ เทสจำลอง prod ได้จริง · พบเพิ่ม: `delete_last_assistant_message` ไม่เคยกวาด `feedback`/`skill_shadow`

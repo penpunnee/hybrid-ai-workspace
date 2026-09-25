@@ -703,15 +703,21 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-25 บ่าย — ก้อน 6 ข้อ 1-2 ปิดแล้ว · ถัดไป = ก้อน 6 ข้อ 3-6 (รอเคาะ ก/ข)**)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-26 — ก้อน 6 ปิดครบ 6/6 · ถัดไป = MEDIUM ก้อน 7 · (ข) response cache ยังรอเคาะ**)
 
-> ## 🥇 งานแรกเซสชันหน้า: **audit MEDIUM ก้อน 6 ต่อ — ข้อ 3-6** (ข้อ 1-2 ปิดแล้ว ดูบล็อกถัดไป · devlog [2026-09-25 ปิดเซสชัน] มีหลักฐาน+บรรทัดครบ)
-> 3. `websearch.py:290` log `f"{e}"` มี `?key=` ของ Google CSE (วัดจริง) 4. `ratelimit.py:66` `popitem()` ไล่ key ใหม่สุด 5. `agent.py:53` `max_steps` ไม่ clamp
-> 6. `utils/memory.py:137` `_get_client()` ถือ lock + `httpx timeout=None` (chromadb 1.5.9 hardcode) → TCP pre-check (`obsidian_sync._tcp_reachable`) + จำล้ม 15 วิ
-> **รอ user เคาะก่อนลงมือ:** (ก) CSE — redact key ใน log หรือถอดทั้งเส้น (backlog ง) (ข) response cache ข้าม session — แนวทาง ก/ข/ค หรือพักไว้ (แยกก้อน)
-> ทำแบบเดิม: ค้น 2 ชั้น → /scrutinize แผน → ไล่ทุกส่วน+ความสัมพันธ์ → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy `docker restart` → verify prod
-> (`max_steps=abc` → 200 · log ไม่มีคีย์) · MEDIUM ที่เหลือ 13 ข้อ → ก้อน 7-8 (รายการใน devlog ปิดเซสชัน) **+ เข้าก้อน 7: cooperative cancel ของ LLM stream** (ดูขีดจำกัดข้างล่าง)
+> ## 🥇 งานแรกเซสชันหน้า: **audit MEDIUM ก้อน 7** (ก้อน 6 ปิดครบ 6/6 แล้ว — ดู 2 บล็อกถัดไป)
+> รายการ MEDIUM ที่เหลือ 13 ข้ออยู่ใน devlog [2026-09-25 ปิดเซสชัน] (Dream lock/provider · Ollama ReAct/Gemini adapter · llm error substring · embed lru failure · skills sync tx · dualvec keys · tts เงียบ ฯลฯ)
+> **+ 2 เรื่องที่ก้อน 6 ส่งต่อ:** (1) cooperative cancel ของ LLM stream — ปิด httpx response จาก event loop ให้ thread โยนทันที (= แก้ "backend ตอบต่อแม้กด Stop" และ handler ตัดสายมาช้า 8–110 วิ)
+> (2) EF conflict ใน `utils/memory.get_collection` + prune ใช้เงื่อนไข inline (`dream.py:470`) — ค้างจากก้อน 4/5
+> **รอ user เคาะ:** (ข) response cache ข้าม session — แนวทาง ก/ข/ค หรือพักไว้ (แยกก้อน · ยังไม่ตัดสินใจ 09-26)
+> ทำแบบเดิม: ค้น 2 ชั้น → /scrutinize แผน → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy → verify prod → devlog
+> 🔑 **ก่อน deploy เช็ค `ssh -o ConnectTimeout=10 nas-cf true` ก่อนเสมอ** — Cloudflare Access หมดอายุ = คำสั่งค้าง 4 นาทีแล้วล้มกลางทาง (เกิดจริง 09-25 ค่ำ · commit ถึง GitHub แต่ NAS ไม่ได้ reset)
 > ⚪ งานเล็กค้าง: CLAUDE.md ~180 KB — ย้ายบล็อก ▶️ เก่า (08-24/08-26) ลง devlog · backlog `dbId` ข้อความที่เพิ่งส่ง (กระทบ 🗑️/pin/feedback)
+>
+> ## ✅ ก้อน 6 ข้อ 3-6 **ปิดแล้ว 09-26 (`b3bc833` · devlog [ต่อ 17]) — อย่าทำซ้ำ**
+> CSE key → header `X-goog-api-key` + `_redact_secrets()` ก่อน log · ratelimit `_touch()` LRU + `_cap()` ไล่ตัวเก่าสุด (เดิม `popitem()` LIFO ทิ้ง IP ใหม่ทันที) · `/api/agent` `_parse_max_steps()` clamp [1,10]
+> · `utils/memory._get_client()` probe TCP 1.5s + จำล้ม 15s ก่อนเข้า lock + ตั้ง httpx timeout 30s ให้ session ของ chromadb (private attr · เทสตรึงสมมติฐานลิบ) · verify prod ครบ (ข้อ 4 unit เท่านั้น) · mutation 14/14 · ชุดเต็ม 2338
+> 🔑 **กติกาใหม่:** ความลับห้ามอยู่ใน query string ของ URL (exception ของ requests สะท้อน URL ทั้งดุ้น) — ใช้ header · log ของ error จาก HTTP client ต้องผ่าน `_redact_secrets` · โค้ดที่แตะ ChromaDB ก่อน connect ต้องผ่าน `_get_client()` เท่านั้น (มี fail memory)
 >
 > ## ✅ ก้อน 6 ข้อ 1-2 **ปิดแล้ว 09-25 บ่าย (`b4e6d7a` `0526f8c` `97a6fcf` · devlog [ต่อ 16]) — อย่าทำซ้ำ**
 > `_guard_disconnect(inner, on_cut)` ใน `routers/chat.py` = async generator ครอบ `iterate_in_threadpool` จับ `CancelledError`/`GeneratorExit` · save ใต้ `CancelScope(shield=True)` · ปิด inner
