@@ -18,7 +18,14 @@ skills sync tx · async-sync 6 จุด · cooperative cancel (ค้างจ�
 - **verify prod (09-26):** `tts text=123` → 200 `{"error":"no text"}` (ไม่ 500) · `documents/search top_k=abc` → 200 count 5 · `sessions PATCH name=5` → ok:false ·
   `DELETE /api/skills/%2E?delete_file=true` และ `%2E%2E` → **400** · skills ยังครบ 22 · `memory/teach text=[list]` → ok:false · `search_entries("kwan","NAS ที่บ้าน")` เส้นจริง 2 hits ·
   ไม่มีบรรทัด ` 500 (` ใหม่ใน server.log · embed/tts-error/dualvec-filter วัดบน prod ไม่ได้โดยไม่ทำให้ Ollama ล่ม/โควตาหมด — ยืนยันด้วย unit+mutation
-**🔑 บทเรียน:** (1) `lru_cache` + `except → return sentinel` = แคชความล้มเหลวเสมอ — ให้ raise แล้วห่อชั้นนอก (2) metadata ที่ก๊อปไปตอนเขียน (`__keys`) stale ได้ ทุกการตัดสินใจต้องอ่านจากแหล่งจริง
+**🔴 ผิดขั้นตอน (user ตำหนิ 09-26 "แล้วไม่เช็คก่อนทำ … บอกทุกครั้งให้ค้นข้อมูล"):** ก้อนนี้ทำชั้น 1 (พิสูจน์บั๊กด้วยเทสแดง) แล้ว**ข้ามชั้น 2** (ค้นวิธีแก้ที่ถูกต้องจากเอกสาร/ซอร์ส lib)
+และ**ไม่ได้รายงานแผนก่อนแตะไฟล์** — "ต่อเลย" ของ user ไม่ใช่การอนุญาตให้ข้ามขั้น · ค้นชั้น 2 ย้อนหลังแล้ว **ทั้ง 4 ข้อยืนอยู่ ไม่ต้องแก้โค้ด**:
+- (1) `lru_cache` ไม่แคช exception — ซอร์ส `functools.py:563-564` ของ python ที่ใช้: `result = user_function(...)` แล้วค่อย `cache[key] = result` (raise = ไม่ถึงบรรทัดเก็บ) + ทดลองจริง: ล้มครั้งแรก ครั้งสองเรียกใหม่ `misses=2`
+- (2) 502 ตรงสเปก [RFC 9110 §15.6.3](https://www.rfc-editor.org/rfc/rfc9110#section-15.6.3) "server acting as a gateway received an invalid response from an inbound server" (เราเป็น gateway ของ Gemini TTS) · frontend `app.tsx:1135` `!res.ok || content-type json` รับ 502 ได้
+- (3) `%2E` ถึง handler จริง: uvicorn `h11_impl.py:205` `path = unquote(raw_path)` → Starlette `get_route_path` ไม่ normalize dot-segment (`_utils.py:96`) ⇒ `skill_id="."` · httpx/เบราว์เซอร์ต่างหากที่ normalize (`.`→405 `..`→404 ในเทสรอบแรก)
+  · `chromadb` `Collection.get(ids=…, include=["metadatas","documents"])` ตรง signature ที่ติดตั้ง (`api/models/Collection.py:129-149`)
+- (4) claim "metadata ใน `__keys` stale ได้" **ยืนยันจากซอร์ส**: `memory_decay` (`utils/dream.py:357-407`) `col.update` เฉพาะตัวหลักและข้าม `is_keys_collection` (`:378`) · `sync_key` ถูกเรียกตอน `save_entry` (`store.py:59`) เท่านั้น ⇒ อ่านจากตัวหลักคือถูก
+**🔑 บทเรียน:** (0) **ค้นชั้น 2 + รายงานแผน ต้องมาก่อนแตะไฟล์เสมอ ไม่ว่า user จะสั่ง "ต่อเลย" ก็ตาม** — ครั้งนี้ผลลัพธ์ยืนอยู่ แต่เป็นการเดาที่บังเอิญถูก (1) `lru_cache` + `except → return sentinel` = แคชความล้มเหลวเสมอ — ให้ raise แล้วห่อชั้นนอก (2) metadata ที่ก๊อปไปตอนเขียน (`__keys`) stale ได้ ทุกการตัดสินใจต้องอ่านจากแหล่งจริง
 (3) เทส 500→400 ผ่าน TestClient ต้อง encode path segment เอง (`%2E`) ไม่งั้น client normalize แล้วไม่ถึง handler (4) mutant "zip กับ ids ที่ขอ" รอดจากเทสที่ ids ครบ — ต้องมีเคส ids คืนไม่ครบเสมอเมื่อแตะ `col.get`
 
 ## [2026-09-26 ต่อ 17] audit MEDIUM ก้อน 6 ข้อ 3-6 — CSE key ไม่ลง log · ratelimit cap · max_steps · ChromaDB connect (`b3bc833`) ✅ deployed + verify prod
