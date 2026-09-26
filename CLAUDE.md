@@ -703,16 +703,23 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-26 — ก้อน 6+7 ปิดแล้ว · ถัดไป = MEDIUM ก้อน 8 · (ข) response cache ยังรอเคาะ**)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-26 บ่าย — ก้อน 6/7/8 ปิดแล้ว · ถัดไป = MEDIUM ก้อน 9 · (ข) response cache ยังรอเคาะ**)
 
-> ## 🥇 งานแรกเซสชันหน้า: **audit MEDIUM ก้อน 8** (ก้อน 7 ปิดแล้ว — ดูบล็อกถัดไป)
-> **backend ที่เหลือ:** Dream ซ้อน 2 ทาง + provider ไม่ใช่ auto (`core/scheduler.py:18,22` · `routers/dream.py:49-59`) · Ollama ReAct guard `ok_observations` (`orchestrator.py:635-651`) ·
-> Gemini adapter tool result ค้างใน `_pending` (`orchestrator.py:233-287,316-321`) · llm error substring `"model"`/`"401"` (`utils/llm.py:365,692,945,1111`) · `sync_skills_to_search` นอก tx (`utils/skills.py:327-347`)
-> · async-sync 6 จุด (reader/server.py/sessions/system) · **cooperative cancel ของ LLM stream** (ค้างจากก้อน 6 — ปิด httpx response จาก event loop) · EF conflict + prune inline (ค้างจากก้อน 4/5)
+> ## 🥇 งานแรกเซสชันหน้า: **audit MEDIUM ก้อน 9** (ก้อน 8 ปิดแล้ว — ดูบล็อกถัดไป)
+> **backend ที่เหลือ:** Ollama ReAct guard `ok_observations` (`orchestrator.py:635-651`) + Gemini adapter tool result ค้างใน `_pending` (`orchestrator.py:233-287,316-321`) — คู่กัน ·
+> async-sync 6 จุด (reader/server.py/sessions/system) · **cooperative cancel ของ LLM stream** (ค้างจากก้อน 6 — ปิด httpx response จาก event loop) · EF conflict แฝง (ตอนนี้ไม่มี collection ที่ EF ต่าง — ทำเมื่อมี)
 > **frontend 9 ข้อ** (audit doc หัวข้อ 2 ท้าย): `_parseChatSSE` ซ้ำ · `AI_PALETTE.khim` · "จำไว้ว่า" fetch นอก try · prompt history ↑/↓ · paste รูปไม่ส่ง · `voicelive.ts onclose` · `bookreader` ไม่ disconnect · Ctrl+E ซ้ำ · latest-request guard
-> 🔒 reader/voice regen cap — ห้ามแตะ (เสียงถือว่าใช้ได้แล้ว) · **รอ user เคาะ:** (ข) response cache ข้าม session
-> ทำแบบเดิม: ค้น 2 ชั้น → /scrutinize แผน → เทสแดง → แก้ → mutation → ชุดเต็ม → `ssh nas-cf true` → deploy → verify prod → devlog
+> **Dream ที่จดแยก:** วัด REM ด้วย `auto` ตอนมี memory ≥ 5 ในหน้าต่าง (เทียบ themes กับ gemini — 8 คืนล่าสุดวัดไม่ได้) · REM log raw ตอน `themes=0`
+> 🔒 reader/voice regen cap — ห้ามแตะ · **รอ user เคาะ:** (ข) response cache ข้าม session
+> ทำแบบเดิม: ค้น 2 ชั้น → **รายงานแผนให้ user เห็นก่อน** → /scrutinize → หาข้อมูลเพิ่มถ้าแผนอิงการอนุมาน → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → `ssh nas-cf true` → deploy → verify prod → devlog
 > ⚪ งานเล็กค้าง: CLAUDE.md ~180 KB — ย้ายบล็อก ▶️ เก่า (08-24/08-26) ลง devlog · backlog `dbId` ข้อความที่เพิ่งส่ง (กระทบ 🗑️/pin/feedback)
+>
+> ## ✅ ก้อน 8 **ปิดแล้ว 09-26 (`9c2ebd2` · devlog [ต่อ 19]) — อย่าทำซ้ำ**
+> `sync_from_db` ตัดสิน stale ด้วย snapshot ∪ ไฟล์ที่ reload ใต้ `_db_transaction` (lock แค่ตอนลบ · upsert นอก lock) · `save_skill` upsert เดี่ยว · Dream: `utils.dream._run_lock` (threading) ตัวเดียว
+> `run_dream_cycle()` ถือเอง → `DreamBusy` → router 409 / scheduler ข้าม+LINE ℹ️ · ถอด `core/state.dream_lock` · provider **คงเดิม** (gemini) · `utils/llm._classify_api_error()` ชนิด/status ก่อน substring ใช้ 4 provider ·
+> `dream.py` ใช้ `is_episodic_collection()` + เทส AST · mutation 12/12 · ชุดเต็ม 2386 · verify prod: dream ซ้อน → 409 ใน 1 วิ · skills 22=22
+> 🔑 **กติกาใหม่:** ห้ามถือ `_db_transaction` ระหว่าง embed/Chroma upsert (วัดแล้ว cold 6.73s > timeout 5s) · ห้ามส่ง mapping บางส่วนเข้า `sync_from_db` (ลบทุกอย่างที่ไม่อยู่ใน mapping) — upsert เดี่ยวใช้ `add_skill` ·
+> error ของ LLM client ห้ามจัดประเภทด้วย substring ก่อน type/status — ผ่าน `_classify_api_error()` · ทางเข้า Dream ทุกทางต้องผ่าน `run_dream_cycle()` (lock อยู่ในนั้น) · เทสที่โยน exception ให้ router ใช้คลาสที่ router ผูกไว้ (`rd.X`) เพราะมีไฟล์เทสที่ reload โมดูล
 >
 > ## ✅ ก้อน 7 **ปิดแล้ว 09-26 (`93e9b3d` · devlog [ต่อ 18]) — อย่าทำซ้ำ**
 > embed `_embed_one_cached` ล้ม = raise (lru ไม่แคช exception) + `_embed_one()` wrapper · `/api/tts` log ERROR + 502 · `utils/reqparse.py` (`as_int`/`as_str`) ใน 6 router + `skills_delete` `.`/`..` → 400

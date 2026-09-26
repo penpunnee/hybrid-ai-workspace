@@ -1,5 +1,32 @@
 ---
 
+## [2026-09-26 ต่อ 19] audit MEDIUM ก้อน 8 — skills sync race · Dream lock เดียว · llm error ตามชนิด · dream allowlist (`9c2ebd2`) ✅ deployed + verify prod
+**ทำตามลำดับใหม่ (ข้อ 12 ใน memory): ค้น 2 ชั้น → รายงานแผน → user สั่ง /scrutinize → หาข้อมูลเพิ่ม → ปรับแผน → เคาะ → ลงมือ**
+**ค้นชั้น 1+2 (ก่อนแผน):** `core/state.py:41` asyncio.Lock · `scheduler.py:14-21` เรียก `run_dream_cycle` ตรงจาก thread · `routers/dream.py:44-52` ปล่อย lock ตอน timeout ·
+apscheduler ที่ติดตั้ง `schedulers/base.py:913` `max_instances=1` กันแค่ job ชนตัวเอง · openai 2.44 `_exceptions.py:106-161` (`APITimeoutError` สืบทอด `APIConnectionError`) ·
+google-genai `errors.py:79` `APIError.code` · ข้อความ OOM จริงของ Ollama `model requires more system memory (11.3 GiB)…` (issue bolt.diy #558) มีคำว่า model → ตกสาขา "ollama pull" ·
+`skills_search.py:116-125` `sync_from_db` ลบ id ที่ไม่มีใน snapshot · `is_episodic_collection` ≡ เงื่อนไข inline 3 จุด · prod: 14 collection EF=`ollama` ทั้งหมดยกเว้น `documents` (ใช้ client ตัวเอง ส่ง vector เอง) ⇒ EF conflict **ไม่ live** → ทำแค่ consolidation
+**/scrutinize จับ 2 blocker (แผนเดิมจะแย่ลง):**
+- ข้อ 3 แผนเดิม "ย้าย full-sync เข้า `_db_transaction`" — trace: `sync_from_db` → `add_skills_from_db` → `add_skill` **ทุก topic** → Chroma embed ผ่าน Ollama · **วัด prod: 22 skill = 0.56s warm / 6.73s cold** > `SKILLS_DB_LOCK_TIMEOUT` 5s
+  ⇒ writer อื่นได้ `SkillsDbLocked` → `save_skill` คืน False = **บันทึกหาย** (แย่กว่า race เดิมที่แค่ index ตกหล่น) · full-sync มี 4 call sites (`save_skill:345` · `dream:584` · `accept_proposal:340` · admin) 3 จุดนอก tx ⇒ แก้ที่ `sync_from_db` จุดเดียว
+- ข้อ 1 แผนเดิม "scheduler → provider auto" — `rem_sleep(auto)` → router → lmstudio → `LMSTUDIO_REASON_MODEL` = qwen3.5-9b ที่รู้อยู่ว่าตอบงานโครงสร้างด้วย `content=''` (08-03) ·
+  **รายงาน 8 คืนล่าสุด: 7 คืน `no memories in window` · คืน 09-18 gemini 6 memory → parse สำเร็จแต่ `themes: []`** ⇒ เปลี่ยนแล้ววัดไม่ได้ → ตัดออก แก้เฉพาะ lock
+**ทำ:**
+3. `skills_search.sync_from_db`: `existing = get()` → `with _db_transaction(): fresh = _load_skills_db(); stale = existing − (snapshot ∪ fresh); delete(stale)` (lock แค่ ms) → upsert นอก lock ·
+   airtight เพราะ writer save ไฟล์*ก่อน* upsert เสมอ และ sync อ่าน existing *ก่อน* reload เสมอ · `save_skill` → `add_skill` รายการเดียว (1 embed แทน 22 · ไม่มีขั้นลบ) · เทสเดิม `test_skills_sync_delete` ยังผ่าน (union ไม่ทำให้ ghost รอด)
+1. `utils/dream`: `_run_lock = threading.Lock()` · `run_dream_cycle()` `acquire(blocking=False)` → `DreamBusy` · `is_running()` · impl เดิมเป็น `_run_dream_cycle_impl` (ไม่ย้าย indent) ·
+   router: ถอด `dream_lock` · `is_running()` → 409 `JSONResponse ok:false` (frontend `app.tsx:599-602` อ่าน body ไม่ดู status) · `except DreamBusy` ก่อน generic · timeout log ว่า thread ยังถือ lock ·
+   scheduler: `except DreamBusy` → WARNING "ข้ามคืนนี้" + LINE ℹ️ (ไม่ใช่ ⚠️ ล้มเหลว) · provider คงเดิม · `core/state.py` ถอด `dream_lock` + `import asyncio`
+2. `utils/llm._classify_api_error()` → `timeout|connection|oom|not_found|auth|rate|other`: isinstance/status ก่อน · OOM ก่อน not_found · **status ของ SDK ชี้ขาด ไม่ให้ substring เดาต่อ** (400 "not found in tools" ≠ ไม่พบโมเดล) ·
+   fallback substring สำหรับ exception ธรรมดา (เทสเดิม `Exception("model 'llama3' not found")` ยังผ่าน) · Ollama: OOM ไม่ retry · `APITimeoutError` ("Request timed out." ไม่มีคำว่า timeout) เข้า retry แล้ว · Gemini/Kimi ใช้ตัวเดียวกัน · ตัดเงื่อนไขซ้ำ (`API_KEY_INVALID`/`quota`) ที่ classifier คลุมแล้ว · `_is_transient` ไม่แตะ
+4. `utils/dream.py:173,379,465` → `is_episodic_collection()` + เทส AST ว่าไม่มี `startswith("memory_")` เหลือ
+- เทสใหม่ 4 ไฟล์ **27** · **mutation 12/12** (มี D1 lock แบบ blocking = ตัวที่สองรอ 12 วิแล้วผ่าน — เทสจับด้วยเวลา <1 วิ) · ชุดเต็ม 2361 → **2386** · ruff · CI
+- 🔴 **ชุดเต็มรอบแรกแดง 1**: router 409 ได้ 200 `DREAM_ERROR` เพราะ `test_dream_promotion_gate.py:103` `importlib.reload(utils.dream)` → `utils.dream.DreamBusy` ที่เทสโยนเป็นคนละ object กับที่ router ผูกตอน import (บทเรียน 09-24 เรื่อง reload+exception class เกิดซ้ำ) → เทสใช้ `rd.DreamBusy` แทน
+- **verify prod (09-26 10:48):** ยิง `/api/dream` 2 ครั้งซ้อน → ครั้งแรก 200 (`skipped: no memories` 2 วิ) · ครั้งสอง **409 ภายใน 1 วิ** (log `POST /api/dream → 409 (1.3ms)`) · skills_db 22 = index 22 · ` 500 (` ใน log = 0 · llm classify/skills race วัดบน prod ไม่ได้ (ต้องทำ Ollama OOM/ชนกันจริง) — unit+mutation
+**จดแยก (ไม่ทำ):** REM ด้วย auto ต้องวัดตอนมี memory ≥ 5 ในหน้าต่าง (เทียบ themes กับ gemini) · REM ควร log raw response ตอน `themes=0` (คืน 09-18 ไม่รู้ว่าโมเดลตอบอะไร) · EF conflict แฝงเฉพาะ collection ที่สร้างด้วย EF อื่น (ตอนนี้ไม่มี)
+**🔑 บทเรียน:** (1) แผนที่ "ดูถูกต้อง" 2 ข้อ พังตอน trace ถึง call ที่ลึกกว่า diff (`add_skill` embed ต่อ upsert · `rem_sleep(auto)` ไปโมเดลที่รู้ว่าตอบว่าง) — scrutinize ก่อนลงมือคุ้มกว่าแก้ทีหลัง
+(2) ตัวเลขจากการวัดจริง (0.56/6.73 วิ vs timeout 5 วิ) ตัดสินได้ในบรรทัดเดียวว่าแผนใช้ไม่ได้ — ที่ "อ่านโค้ด" ตัดสินไม่ได้ (3) reload โมดูลที่มี exception class ในเทสไฟล์หนึ่ง ทำให้ `except` ของ router ในเทสอีกไฟล์ไม่จับ — เกิดซ้ำจาก 09-24
+
 ## [2026-09-26 ต่อ 18] audit MEDIUM ก้อน 7 — embed LRU · tts เงียบ · input 500→400 · `__keys` เคารพ filter (`93e9b3d`) ✅ deployed + verify prod
 **เลือก 4 กลุ่มจาก 13 ข้อที่เหลือ** (backend ล้วน ขนาดใกล้ก้อน 6) · ที่เหลือไปก้อน 8: Dream ซ้อน/provider · Ollama ReAct guard · Gemini adapter pending tool result · llm error substring ·
 skills sync tx · async-sync 6 จุด · cooperative cancel (ค้างจากก้อน 6) · EF conflict/prune inline (ค้างจากก้อน 4/5) · frontend 9 ข้อ · 🔒 reader/voice regen cap (ห้ามแตะเสียง)
