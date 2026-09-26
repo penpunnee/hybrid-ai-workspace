@@ -339,12 +339,15 @@ def save_skill(topic: str, summary: str, source: str = "auto", sync: bool = True
     if not sync:
         return True
 
-    # Sync to semantic search (sync=False เพื่อข้ามเมื่อบันทึกหลายรายการพร้อมกัน)
+    # upsert **รายการเดียว** เข้า index (sync=False เพื่อข้ามเมื่อบันทึกหลายรายการพร้อมกัน)
+    # ⚠️ ห้ามเรียก full sync (`sync_skills_to_search`) ที่นี่: มัน embed ทุก skill (22 รายการ · 0.6-6.7s) และมี
+    # ขั้น "ลบของที่ไม่มีใน snapshot" ซึ่งเคยลบ skill ที่คนอื่นเพิ่งบันทึกทิ้ง (audit 2026-09-24 MEDIUM ·
+    # เทส test_skills_sync_race.py) · การลบ stale เป็นหน้าที่ของ cleanup_junk_skills/dream/admin sync เท่านั้น
     try:
-        from utils.skills_search import sync_skills_to_search
-        sync_skills_to_search(db)
+        from utils.skills_search import get_skills_search
+        get_skills_search().add_skill(topic=topic, summary=summary, category="learned", source=source)
     except Exception as e:
-        logger.warning(f"sync_skills_to_search failed: {e}")
+        logger.warning(f"[Skills] upsert {topic!r} เข้า index ไม่ได้ (จะถูกเก็บตกตอน full sync): {e}")
 
     return True
 

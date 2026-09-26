@@ -113,19 +113,27 @@ class SkillsSearch:
         if not self.available or not self.collection:
             logger.warning("Skills search not available, skipping sync_from_db")
             return
-        wanted = {self._skill_id(t) for t in skills_db}
         try:
             existing = set(self.collection.get().get("ids", []) or [])
         except Exception as e:
             logger.warning(f"sync_from_db: อ่าน id เดิมไม่ได้ ({e}) — ทำแค่ upsert")
             existing = set()
-        stale = sorted(existing - wanted)
-        if stale:
-            try:
-                self.collection.delete(ids=stale)
-                logger.info(f"sync_from_db: ลบ skill ที่ไม่มีใน db แล้ว {len(stale)} รายการ")
-            except Exception as e:
-                logger.error(f"sync_from_db: ลบ stale ids ล้มเหลว: {e}")
+        # ⚠️ race (audit 2026-09-24 MEDIUM): ผู้เรียกส่ง snapshot ที่อ่านไว้ก่อน — writer ที่บันทึกระหว่างนั้น
+        # จะไม่อยู่ใน `skills_db` แล้วถูกลบออกจาก index ทั้งที่ไฟล์มี ⇒ ตัดสิน "stale" ด้วย snapshot ∪ **ไฟล์จริง
+        # ที่ reload ใต้ `_db_transaction`** (ถือ lock แค่ช่วงลบ = ms) · ห้ามเอา upsert เข้า lock: embed ผ่าน Ollama
+        # วัด prod 09-26 = 0.56s warm / 6.73s cold > SKILLS_DB_LOCK_TIMEOUT 5s → writer อื่นจะได้ SkillsDbLocked
+        # · ลำดับนี้ airtight เพราะ writer save ไฟล์ *ก่อน* upsert เสมอ และที่นี่อ่าน `existing` *ก่อน* reload เสมอ
+        from utils.skills import _db_transaction, _load_skills_db
+        with _db_transaction():
+            fresh = _load_skills_db()
+            wanted = {self._skill_id(t) for t in skills_db} | {self._skill_id(t) for t in fresh}
+            stale = sorted(existing - wanted)
+            if stale:
+                try:
+                    self.collection.delete(ids=stale)
+                    logger.info(f"sync_from_db: ลบ skill ที่ไม่มีใน db แล้ว {len(stale)} รายการ")
+                except Exception as e:
+                    logger.error(f"sync_from_db: ลบ stale ids ล้มเหลว: {e}")
         self.add_skills_from_db(skills_db)
     
     def _space(self) -> Optional[str]:

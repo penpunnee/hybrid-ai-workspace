@@ -1,10 +1,10 @@
 import logging
 from fastapi import APIRouter, Request, HTTPException
+from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from core.env_registry import env_int
-from core.state import dream_lock
-from utils.dream import run_dream_cycle, get_latest_report, list_reports
+from utils.dream import DreamBusy, is_running, run_dream_cycle, get_latest_report, list_reports
 from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 
 router = APIRouter(prefix="/api/dream", tags=["dream"])
@@ -21,9 +21,9 @@ def _default_dream_provider() -> str:
 
 @router.post("")
 async def trigger_dream(request: Request):
-    """Trigger dream cycle — ป้องกัน concurrent run ด้วย lock"""
-    if dream_lock.locked():
-        return {"ok": False, "error": "Dream Cycle กำลังรันอยู่แล้ว กรุณารอให้เสร็จก่อน"}
+    """Trigger dream cycle — lock อยู่ใน `utils.dream.run_dream_cycle` (ตัวเดียวกับ job กลางคืน)"""
+    if is_running():
+        return JSONResponse({"ok": False, "error": "Dream Cycle กำลังรันอยู่แล้ว กรุณารอให้เสร็จก่อน"}, status_code=409)
 
     try:
         data = await json_body_capped(request, MAX_BODY_BYTES)
@@ -42,21 +42,23 @@ async def trigger_dream(request: Request):
     # ⚠️ `.result(timeout=...)` เป็น call แบบบล็อก — เรียกตรงๆ ใน async def จะแช่
     # event loop ได้ถึง _DREAM_TIMEOUT (10 นาที) = ทั้งแอปหยุดตอบ · ต้องรอผ่าน threadpool
     from concurrent.futures import ThreadPoolExecutor
-    async with dream_lock:
-        ex = ThreadPoolExecutor(max_workers=1)
-        fut = ex.submit(run_dream_cycle, provider, hours)
-        try:
-            result = await run_in_threadpool(fut.result, timeout=_DREAM_TIMEOUT)
-        except TimeoutError:
-            logger.error(f"Dream cycle timed out after {_DREAM_TIMEOUT}s")
-            return {"ok": False, "error": {"code": "DREAM_TIMEOUT", "message": f"Dream Cycle ใช้เวลานานเกิน {_DREAM_TIMEOUT//60} นาที"}}
-        except Exception as e:
-            logger.error(f"Dream cycle error: {e}")
-            return {"ok": False, "error": {"code": "DREAM_ERROR", "message": str(e)}}
-        finally:
-            # wait=False เสมอ — `with ThreadPoolExecutor` เดิม shutdown(wait=True) ตอนออก
-            # ซึ่งบนเส้น timeout แปลว่ากลับไปแช่ event loop รอ dream ที่เพิ่งบอกว่าไม่รอ
-            ex.shutdown(wait=False)
+    ex = ThreadPoolExecutor(max_workers=1)
+    fut = ex.submit(run_dream_cycle, provider, hours)
+    try:
+        result = await run_in_threadpool(fut.result, timeout=_DREAM_TIMEOUT)
+    except TimeoutError:
+        # thread ยังวิ่งและยังถือ lock ของ utils.dream อยู่ — คำขอถัดไปจะได้ 409 จนกว่ามันจะจบเอง
+        logger.error(f"Dream cycle timed out after {_DREAM_TIMEOUT}s — thread ยังวิ่งต่อ (ถือ lock) จนกว่าจะเสร็จ")
+        return {"ok": False, "error": {"code": "DREAM_TIMEOUT", "message": f"Dream Cycle ใช้เวลานานเกิน {_DREAM_TIMEOUT//60} นาที"}}
+    except DreamBusy as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=409)
+    except Exception as e:
+        logger.error(f"Dream cycle error: {e}")
+        return {"ok": False, "error": {"code": "DREAM_ERROR", "message": str(e)}}
+    finally:
+        # wait=False เสมอ — `with ThreadPoolExecutor` เดิม shutdown(wait=True) ตอนออก
+        # ซึ่งบนเส้น timeout แปลว่ากลับไปแช่ event loop รอ dream ที่เพิ่งบอกว่าไม่รอ
+        ex.shutdown(wait=False)
 
     return {"ok": True, "report": result}
 

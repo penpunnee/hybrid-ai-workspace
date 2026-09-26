@@ -15,6 +15,7 @@ Logic Flow:
 import os
 import json
 import logging
+import threading
 from datetime import datetime, timedelta
 from collections import Counter
 from pathlib import Path
@@ -57,7 +58,7 @@ def classify_theme(name: str, summary: str) -> str:
 
 # Configure logging for dream cycle
 # 🔑 collection เงา `<name>__keys` ก็ขึ้นต้นด้วย `memory_` — ตัวกวาดทุกตัวต้องกรองออก
-from memory.dualvec import is_keys_collection
+from memory.dualvec import is_episodic_collection
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +170,7 @@ def light_sleep(hours: int = 24) -> list[dict]:
 
     for col_info in collections:
         name = col_info.name if hasattr(col_info, "name") else str(col_info)
-        if not name.startswith("memory_") or is_keys_collection(name):
+        if not is_episodic_collection(name):   # allowlist เดียวกับ 🧹 cleanup (memory/dualvec)
             continue
         # per-collection try/except (เหมือน memory_decay/memory_prune) — กัน collection
         # เดียวพังแล้วลาก Light Sleep ทั้งเฟสร่วง (เจอจริง 2026-07-09: collection backup
@@ -375,7 +376,7 @@ def memory_decay(decay_rate: float = 0.05, min_confidence: float = 0.2) -> dict:
         collections = client.list_collections()
         for col_info in collections:
             name = col_info.name if hasattr(col_info, "name") else str(col_info)
-            if not name.startswith("memory_") or is_keys_collection(name):
+            if not is_episodic_collection(name):   # allowlist เดียวกับ 🧹 cleanup (memory/dualvec)
                 continue
             try:
                 col = get_collection(client, name)
@@ -461,7 +462,7 @@ def memory_prune(cap: int = None, max_age_days: int = 30, min_confidence: float 
     try:
         for col_info in client.list_collections():
             name = col_info.name if hasattr(col_info, "name") else str(col_info)
-            if not name.startswith("memory_") or is_keys_collection(name):
+            if not is_episodic_collection(name):   # allowlist เดียวกับ 🧹 cleanup (memory/dualvec)
                 continue
             try:
                 col = get_collection(client, name)
@@ -619,7 +620,32 @@ def deep_sleep(memories: list[dict], themes: list[dict]) -> dict:
 
 
 # ---------- Main Dream Cycle ----------
+# ── Dream ต้องวิ่งทีละตัวเดียวทั้งโปรเซส (audit 2026-09-24 MEDIUM) ─────────────────────
+# เดิม `core/state.dream_lock` เป็น asyncio.Lock ซึ่ง (1) ใช้จาก thread ของ APScheduler ไม่ได้ → job กลางคืน
+# ไม่เคยผ่าน lock (2) router ปล่อย lock ตอน timeout ทั้งที่ thread ยังวิ่ง ⇒ ทุกทางเข้า (router/scheduler/CLI)
+# ต้องเดินผ่าน `run_dream_cycle()` ที่ถือ lock นี้เอง · ถือจนจบจริง (timeout ของ router ไม่ปล่อย)
+_run_lock = threading.Lock()
+
+
+class DreamBusy(RuntimeError):
+    """มี Dream cycle วิ่งอยู่แล้ว — ผู้เรียกควรตอบ 409/ข้าม ไม่ใช่รอคิว"""
+
+
+def is_running() -> bool:
+    return _run_lock.locked()
+
+
 def run_dream_cycle(provider: str = "auto", hours: int = 24) -> dict:
+    """ทางเข้าเดียวของ Dream cycle — ปฏิเสธทันทีถ้ามีตัวอื่นวิ่งอยู่ (ไม่รอคิว)"""
+    if not _run_lock.acquire(blocking=False):
+        raise DreamBusy("Dream Cycle กำลังรันอยู่แล้ว กรุณารอให้เสร็จก่อน")
+    try:
+        return _run_dream_cycle_impl(provider=provider, hours=hours)
+    finally:
+        _run_lock.release()
+
+
+def _run_dream_cycle_impl(provider: str = "auto", hours: int = 24) -> dict:
     """
     รันวงจรฝันเต็มรูปแบบ
     

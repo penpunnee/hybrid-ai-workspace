@@ -16,6 +16,7 @@ Configuration:
 - OLLAMA_RETRY_DELAY: Initial retry delay in seconds (default: 2)
 """
 import base64, time, logging
+import openai
 from openai import OpenAI
 from google import genai
 from google.genai import types
@@ -356,19 +357,59 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
                 yield delta
         logger.info(f"LM Studio stream OK (model={model}, vision={'yes' if image_b64 else 'no'})")
     except Exception as e:
-        err = str(e).lower()
-        if "connection" in err or "refused" in err or "connect" in err:
+        kind = _classify_api_error(e)
+        if kind == "connection":
             # raise แทน yield → ให้ caller (stream_response) cascade ไป Ollama ได้
             # connection error เกิดที่ create() ก่อน yield chunk แรกเสมอ → cascade ปลอดภัย
             logger.warning(f"LM Studio connection failed ({_LMSTUDIO_BASE_URL}): {e}")
             raise LMStudioUnavailable(str(e)) from e
-        elif "model" in err or "not found" in err:
-            yield f"❌ ไม่พบ model `{model}` ใน LM Studio — ตรวจสอบว่าโหลดแล้ว"
-        elif "resources" in err or "memory" in err:
+        elif kind == "oom":
             yield f"❌ RAM/VRAM ไม่พอสำหรับ `{model}` — ลอง quantization ต่ำกว่านี้"
+        elif kind == "not_found":
+            yield f"❌ ไม่พบ model `{model}` ใน LM Studio — ตรวจสอบว่าโหลดแล้ว"
         else:
-            logger.error(f"LM Studio error: {e}")
+            logger.error(f"LM Studio error ({kind}): {e}")
             yield f"❌ LM Studio error: {e}"
+
+
+def _classify_api_error(e: BaseException) -> str:
+    """จัดประเภท error ของ LLM client → timeout | connection | oom | not_found | auth | rate | other
+
+    ตัดสินด้วย **ชนิด exception / status code ก่อน** (openai SDK: `_exceptions.py` · google-genai: `APIError.code`)
+    แล้วค่อย substring เป็น fallback สำหรับ exception ธรรมดา (audit 2026-09-24 MEDIUM · เทส
+    test_llm_error_classification.py) — เดิม `"model" in err` ทำให้ OOM ของ Ollama
+    (`model requires more system memory …`) กลายเป็น "ไม่พบโมเดล ให้ ollama pull" และ
+    `APITimeoutError` (str = "Request timed out.") ไม่เข้าสาขา retry เพราะไม่มีคำว่า timeout
+    ⚠️ ลำดับสำคัญ: `APITimeoutError` สืบทอด `APIConnectionError` → เช็ค timeout ก่อน · OOM ก่อน not_found
+    """
+    if isinstance(e, openai.APITimeoutError):
+        return "timeout"
+    if isinstance(e, openai.APIConnectionError):
+        return "connection"
+    status = getattr(e, "status_code", None) or getattr(e, "code", None)
+    s = str(e).lower()
+    if any(k in s for k in ("system memory", "insufficient", "out of memory", "resources", "vram")):
+        return "oom"
+    if isinstance(e, openai.NotFoundError) or status == 404:
+        return "not_found"
+    if isinstance(e, openai.AuthenticationError) or status == 401:
+        return "auth"
+    if isinstance(e, openai.RateLimitError) or status == 429:
+        return "rate"
+    if isinstance(e, openai.APIStatusError):
+        return "other"                      # status อื่นจาก SDK (400/500…) — ห้ามให้ substring เดาต่อ
+    # fallback สำหรับ exception ธรรมดา (ConnectionError/TimeoutError/ข้อความจาก server)
+    if "timeout" in s or "timed out" in s:
+        return "timeout"
+    if "connection" in s or "refused" in s or "connect" in s:
+        return "connection"
+    if "not found" in s or "no such model" in s:
+        return "not_found"
+    if "api_key_invalid" in s or "unauthorized" in s or "api key" in s or "authentication" in s:
+        return "auth"
+    if "429" in s or "quota" in s or "rate limit" in s or "resource_exhausted" in s:
+        return "rate"
+    return "other"
 
 
 def _stream_lmstudio_or_ollama(messages: list[dict], model: str = "",
@@ -686,10 +727,16 @@ def _stream_ollama(messages: list[dict], model: str = "", usage_sink: dict | Non
             logger.info(f"Ollama stream successful (model: {model})")
             return  # Success - exit retry loop
         except Exception as e:
-            err_str = str(e).lower()
+            kind = _classify_api_error(e)
+
+            # RAM/VRAM ไม่พอ = deterministic — retry ไม่ช่วย (เดิมข้อความนี้มีคำว่า model → ถูกบอกให้ ollama pull)
+            if kind == "oom":
+                logger.error(f"Ollama out of memory for {model}: {str(e)}")
+                yield f"❌ RAM/VRAM ไม่พอสำหรับ `{model}` — ลอง quantization ต่ำกว่านี้ หรือปิดโมเดลอื่นก่อน"
+                return
 
             # ถ้าเป็น model not found error ไม่ต้อง retry (จะไม่สำเร็จอยู่ดี)
-            if "model" in err_str or "not found" in err_str:
+            if kind == "not_found":
                 logger.error(f"Ollama model not found: {model} - {str(e)}")
                 yield (
                     f"❌ Model `{model}` ไม่พบใน Ollama\n\n"
@@ -701,7 +748,7 @@ def _stream_ollama(messages: list[dict], model: str = "", usage_sink: dict | Non
                 return
             
             # ถ้าเป็น timeout error และยังมี retry อยู่ ให้ retry
-            if "timeout" in err_str and attempt < max_retries - 1:
+            if kind == "timeout" and attempt < max_retries - 1:
                 logger.warning(f"Ollama timeout (attempt {attempt + 1}/{max_retries}), retrying...")
                 if attempt == 0:
                     yield f"⏳ Ollama timeout กำลังลองใหม่ ({attempt + 1}/{max_retries})...\n"
@@ -710,7 +757,7 @@ def _stream_ollama(messages: list[dict], model: str = "", usage_sink: dict | Non
                 continue
             
             # ถ้าเป็น connection error และยังมี retry อยู่ ให้ retry
-            if ("connection" in err_str or "refused" in err_str or "connect" in err_str) and attempt < max_retries - 1:
+            if kind == "connection" and attempt < max_retries - 1:
                 logger.warning(f"Ollama connection error (attempt {attempt + 1}/{max_retries}), retrying... - {str(e)}")
                 if attempt == 0:
                     yield f"⏳ ไม่สามารถเชื่อมต่อ Ollama ได้ กำลังลองใหม่ ({attempt + 1}/{max_retries})...\n"
@@ -719,7 +766,7 @@ def _stream_ollama(messages: list[dict], model: str = "", usage_sink: dict | Non
                 continue
             
             # ถ้า retry ครบแล้วหรือ error อื่นๆ ให้แสดง error message
-            if "connection" in err_str or "refused" in err_str or "connect" in err_str:
+            if kind == "connection":
                 logger.error(f"Ollama connection failed after {max_retries} retries: {str(e)}")
                 yield (
                     f"❌ ไม่สามารถเชื่อมต่อ Ollama ได้ (ลอง {max_retries} ครั้งแล้ว)\n\n"
@@ -727,7 +774,7 @@ def _stream_ollama(messages: list[dict], model: str = "", usage_sink: dict | Non
                     f"```bash\nollama serve\n```\n"
                     f"หรือตรวจสอบ OLLAMA_BASE_URL ใน .env: {OLLAMA_BASE_URL}"
                 )
-            elif "timeout" in err_str:
+            elif kind == "timeout":
                 logger.error(f"Ollama timeout after {max_retries} retries: {str(e)}")
                 yield (
                     f"❌ Ollama timeout - การตอบสนองช้าเกินไป (ลอง {max_retries} ครั้งแล้ว)\n\n"
@@ -942,10 +989,11 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
 
     except Exception as e:
         err = str(e)
-        if "API_KEY_INVALID" in err or "401" in err:
+        kind = _classify_api_error(e)          # google-genai: APIError.code (401/429) ก่อน substring
+        if kind == "auth":
             logger.error(f"Gemini API key invalid: {err}")
             raise GeminiUnavailable("API key invalid") from e
-        elif "429" in err or "quota" in err.lower() or "resource_exhausted" in err.lower():
+        elif kind == "rate":
             logger.error(f"Gemini quota exceeded: {err}")
             raise GeminiQuotaExhausted("quota exhausted") from e
         else:
@@ -1107,11 +1155,11 @@ def _stream_kimi(messages: list[dict], model: str = "",
                 yield delta
         logger.info(f"Kimi stream OK (model={use_model}, thinking={thinking})")
     except Exception as e:
-        err = str(e).lower()
-        if "401" in err or "auth" in err or "api key" in err or "invalid" in err:
+        kind = _classify_api_error(e)
+        if kind == "auth":
             logger.error(f"Kimi auth error: {e}")
             yield "❌ MOONSHOT_API_KEY ไม่ถูกต้อง — ตรวจสอบใน .env"
-        elif "429" in err or "rate" in err or "quota" in err:
+        elif kind == "rate":
             logger.error(f"Kimi rate/quota: {e}")
             yield "⏳ Kimi โดน rate limit / quota — รอสักครู่หรือสลับ provider"
         else:

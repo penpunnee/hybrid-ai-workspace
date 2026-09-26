@@ -1,5 +1,4 @@
 """Shared in-memory state สำหรับทั้งระบบ"""
-import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -37,5 +36,4 @@ def share_store_delete_by_session(assistant: str, session_id: str) -> list[str]:
     return hits
 
 
-# ── Dream Cycle lock — ป้องกัน concurrent run ────────────────────────────────
-dream_lock = asyncio.Lock()
+# (Dream Cycle lock ย้ายไป `utils.dream._run_lock` — threading.Lock ที่ทุกทางเข้าถือเอง · 2026-09-26)

@@ -13,7 +13,7 @@ scheduler = BackgroundScheduler(timezone="Asia/Bangkok")
 
 
 def _scheduled_dream():
-    from utils.dream import run_dream_cycle
+    from utils.dream import DreamBusy, run_dream_cycle
     from utils.notify import send_line_notify
     provider = "gemini" if GEMINI_API_KEY else "ollama"
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -21,6 +21,13 @@ def _scheduled_dream():
     try:
         run_dream_cycle(provider=provider)
         logger.info("[Scheduler] Dream Cycle เสร็จ")
+    except DreamBusy:
+        # มี run ค้าง (เช่น กดมือแล้ว timeout ของ router ผ่านไปแต่ thread ยังวิ่ง) — ข้าม ไม่ใช่ล้มเหลว
+        logger.warning(f"[Scheduler] Dream Cycle ({ts}) ข้ามคืนนี้ — มี run อื่นวิ่งอยู่")
+        try:
+            send_line_notify(f"ℹ️ Dream Cycle ({ts}) ข้ามคืนนี้ — มี run อื่นวิ่งอยู่")
+        except Exception:
+            pass
     except Exception as e:
         logger.error(f"[Scheduler] Dream error: {e}")
         try:
