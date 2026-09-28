@@ -5,12 +5,13 @@ import threading
 import anyio
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
+from starlette._utils import create_collapsing_task_group
 from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 
 from assistants.config import ASSISTANTS
 from core.env_registry import env_float
 from core.config import SKILLS_DIR
-from utils.llm import stream_response
+from utils.llm import StreamCancel, stream_response
 from utils.rag import inject_context_to_system, format_skill_files
 from utils.skills_select import select_skills
 from utils.skills_shadow import should_shadow_log as _shadow_should_log
@@ -100,7 +101,44 @@ def _regen_key(assistant: str, session_id: str) -> str:
     return f"{assistant}:{session_id}"
 
 
-async def _guard_disconnect(inner, on_cut):
+class _CancellableStreamingResponse(StreamingResponse):
+    """StreamingResponse ที่ยิง `on_disconnect()` **ทันที** ที่ client ตัดสาย (ก้อน 10)
+
+    ⚠️ ทำไมไม่อยู่ใน `_guard_disconnect`: ตอน client ตัด coroutine ของเราค้างใน `run_sync` แบบ shield (รอ worker thread)
+    จึงสั่งยกเลิกเองไม่ได้จนกว่า thread คืน = ไก่กับไข่ · ต้องมี task "เฝ้า" แยกที่ถูก cancel พร้อม scope ของ starlette
+    แล้วเป็นคนสั่ง `StreamCancel.cancel()` (ตัด socket → thread หลุด) · และห้ามเปิด task group ข้าม `yield` ใน async
+    generator (ข้อจำกัดของ anyio) จึงวางที่ `stream_response()` ซึ่งเป็น coroutine ธรรมดา · ทดลอง anyio 4.14.1:
+    task เฝ้าทำงานทันทีที่ scope ถูก cancel และ thread ที่ค้างอ่าน socket คืนในอีก ~1 ms
+    """
+
+    def __init__(self, content, *, on_disconnect, **kw):
+        super().__init__(content, **kw)
+        self._on_disconnect = on_disconnect
+
+    async def stream_response(self, send) -> None:
+        state = {"finished": False}
+
+        async def _watch():
+            try:
+                await anyio.sleep_forever()
+            except anyio.get_cancelled_exc_class():
+                if not state["finished"]:          # ถูก cancel จากภายนอก = client ตัดสาย (ไม่ใช่เราปิดเองตอนจบ)
+                    try:
+                        self._on_disconnect()
+                    except Exception as e:
+                        logger.warning(f"[Chat] ยกเลิก LLM stream ไม่สำเร็จ: {e}")
+                raise
+
+        async with create_collapsing_task_group() as tg:
+            tg.start_soon(_watch)
+            try:
+                await super().stream_response(send)
+            finally:
+                state["finished"] = True
+                tg.cancel_scope.cancel()
+
+
+async def _guard_disconnect(inner, on_cut, cancel=None):
     """ครอบ sync generator ของ SSE ให้จับ "client ตัดสาย" ได้แบบ deterministic
 
     client ตัดสายกลาง stream (กด Stop / ปิดแท็บ): starlette (spec < 2.4 ที่ uvicorn ส่ง) cancel
@@ -128,6 +166,10 @@ async def _guard_disconnect(inner, on_cut):
             await run_in_threadpool(on_cut)
             await run_in_threadpool(_close_quietly, inner)
         raise
+    # inner จบเงียบเพราะเห็นธงยกเลิก (ก้อน 10) — ไม่มี CancelledError มาถึงที่นี่ ⇒ ต้องบันทึกคู่เองตรงนี้
+    if cancel is not None and cancel.is_set():
+        with anyio.CancelScope(shield=True):
+            await run_in_threadpool(on_cut)
 
 
 def persist_agent_turn(assistant: str, prompt: str, full_response: str, session_id: str,
@@ -522,7 +564,8 @@ async def chat(request: Request):
                                       thinking=req_thinking, effort=req_effort,
                                       web_grounding=gemini_grounding,
                                       sources_sink=grounding_sources,
-                                      usage_sink=usage_sink):
+                                      usage_sink=usage_sink,
+                                      cancel=st["cancel"]):
                 yield ck
 
         try:
@@ -530,6 +573,8 @@ async def chat(request: Request):
                 full_response += chunk
                 yield f"data: {json.dumps({'chunk': chunk})}\n\n"
         except Exception as e:
+            if st["cancel"].is_set():
+                return                      # client ตัดสาย — _guard_disconnect บันทึกคู่เอง ห้าม fallback/บันทึกซ้ำ
             from utils.llm import GeminiQuotaExhausted, GeminiUnavailable
             # Gemini ล้ม → fallback ไป local model + web search (ถ้าเป็น internet query)
             # เลือก local provider: LM Studio ถ้าตั้งค่าไว้ ไม่งั้นใช้ Ollama
@@ -590,6 +635,8 @@ async def chat(request: Request):
                         full_response += chunk
                         yield f"data: {json.dumps({'chunk': chunk})}\n\n"
                 except Exception as e2:
+                    if st["cancel"].is_set():
+                        return
                     yield f"data: {json.dumps({'error': f'Fallback ล้มด้วย: {e2}'})}\n\n"
                     _save_crash(f"Fallback ล้มด้วย: {e2}")
                     return
@@ -597,6 +644,11 @@ async def chat(request: Request):
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
                 _save_crash(str(e))
                 return
+
+        # ถูกยกเลิกกลางคัน (ก้อน 10): stream คืนเงียบๆ — ห้ามบันทึกคำตอบครึ่งๆ เป็นคำตอบสมบูรณ์/remember()
+        # คู่ "หยุดกลางคัน" บันทึกโดย _guard_disconnect → _on_cut
+        if st["cancel"].is_set():
+            return
 
         record_timing("llm_stream", (_time.perf_counter() - llm_start) * 1000)
 
@@ -753,7 +805,8 @@ async def chat(request: Request):
     # save user แล้วแต่ยังไม่มีคำตอบคู่ → save คำตอบบางส่วน + "หยุดกลางคัน" · ยกเว้นระหว่างที่ handler
     # มาถึงช้า user กด regenerate ไปแล้ว — เช็คทั้ง "regenerate กำลังวิ่ง" (`_REGEN_INFLIGHT`) และ
     # "มีคำตอบใน DB แล้ว" (`has_reply_after`) ไม่งั้นได้ฟอง "หยุดกลางคัน" เกินมาคั่น (เห็นจริง prod 09-25)
-    st = {"user_saved": False, "assistant_saved": False, "save_crash": None, "user_msg_id": 0}
+    cancel = StreamCancel()
+    st = {"user_saved": False, "assistant_saved": False, "save_crash": None, "user_msg_id": 0, "cancel": cancel}
 
     def _on_cut():
         if not (st["user_saved"] and not st["assistant_saved"] and st["save_crash"]):
@@ -767,7 +820,8 @@ async def chat(request: Request):
         logger.info("[Chat] client ตัดสายกลาง stream — บันทึกคำตอบบางส่วนคู่ user message")
         st["save_crash"]("client ตัดสายกลางคัน (กด Stop / ปิดหน้า)")
 
-    return StreamingResponse(_guard_disconnect(_generate_inner(st), _on_cut), media_type="text/event-stream",
+    return _CancellableStreamingResponse(_guard_disconnect(_generate_inner(st), _on_cut, cancel=cancel),
+                                         on_disconnect=cancel.cancel, media_type="text/event-stream",
                              headers={
                                  "Cache-Control": "no-cache",
                                  "X-Accel-Buffering": "no",
@@ -814,6 +868,7 @@ async def regenerate_response(request: Request):
 
     # สถานะแชร์กับ on_cut: text = คำตอบที่ stream ไปแล้ว · saved = มีคำตอบคู่ใน DB แล้ว
     st = {"text": "", "saved": False}
+    cancel = StreamCancel()
 
     def _save_regen_crash(err_text: str):
         # pop_replies_after_last_user() ลบคำตอบเก่าไปแล้วก่อนเริ่ม stream —
@@ -831,13 +886,17 @@ async def regenerate_response(request: Request):
         try:
             try:
                 for chunk in stream_response(messages, provider=provider, agent_mode=agent_mode,
-                                             usage_sink=usage_sink):
+                                             usage_sink=usage_sink, cancel=cancel):
                     st["text"] += chunk
                     yield f"data: {json.dumps({'chunk': chunk})}\n\n"
             except Exception as e:
+                if cancel.is_set():
+                    return
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
                 _save_regen_crash(str(e))
                 return
+            if cancel.is_set():
+                return                      # ถูกยกเลิก — on_cut บันทึก "หยุดกลางคัน" ไม่บันทึกคำตอบครึ่งๆ เป็นคำตอบเต็ม
             # ⚠️ ต้องส่ง message_id ใน done เหมือนเส้น /api/chat — FE ใช้ตั้ง dbId
             # ของข้อความ (เดิมทิ้งค่า return → ปุ่ม 👍/👎/📌 หายทุกครั้งหลัง regenerate)
             mid = save_message(assistant, "assistant", st["text"], provider, session_id)
@@ -854,5 +913,6 @@ async def regenerate_response(request: Request):
             logger.info("[Regenerate] client ตัดสายกลาง stream — บันทึกคำตอบบางส่วนคู่ user message")
             _save_regen_crash("client ตัดสายกลางคัน (กด Stop / ปิดหน้า)")
 
-    return StreamingResponse(_guard_disconnect(gen_regen(), _on_cut), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return _CancellableStreamingResponse(_guard_disconnect(gen_regen(), _on_cut, cancel=cancel),
+                                         on_disconnect=cancel.cancel, media_type="text/event-stream",
+                                         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

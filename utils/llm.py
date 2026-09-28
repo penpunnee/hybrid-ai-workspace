@@ -15,7 +15,7 @@ Configuration:
 - OLLAMA_MAX_RETRIES: Number of retries (default: 2)
 - OLLAMA_RETRY_DELAY: Initial retry delay in seconds (default: 2)
 """
-import base64, time, logging
+import base64, time, logging, socket, threading
 import openai
 from openai import OpenAI
 from google import genai
@@ -57,6 +57,59 @@ class GeminiQuotaExhausted(Exception):
 class GeminiUnavailable(Exception):
     """Raised เมื่อ Gemini ไม่พร้อมใช้ (key ผิด, network, etc.)"""
     pass
+
+
+class StreamCancel:
+    """สัญญาณยกเลิก LLM stream ข้าม thread (ก้อน 10 · ค้างจากก้อน 6)
+
+    ผู้ใช้กด Stop/ปิดหน้า → task เฝ้า (`routers/chat._CancellableStreamingResponse`) เรียก `cancel()` จาก event loop
+    ขณะที่ worker thread ยังวนอยู่ในลูป stream · วัด prod 09-28: qwen คิดส่ง `reasoning_content` ทุก ~24 ms
+    แต่ `content` = 0 นานหลายสิบวินาที ⇒ ลูปไม่ yield → handler ตัดสายมาช้า 8–110 วิ · ช่วงก่อน chunk แรกเงียบ 10.7 วิ
+    สองชั้น: (1) ธง — ทุก provider เช็คทุก raw chunk (2) `socket.shutdown` ของ stream ที่ลงทะเบียน — ปลดตัวอ่านที่ค้าง
+    ใน recv ช่วงเงียบ · ⚠️ ห้ามใช้ `Stream.close()` จาก thread อื่น: ทดลองแล้วตัวอ่านไม่หลุดทั้ง macOS และ Linux
+    (shutdown หลุดใน 6–13 ms) · การตัด connection ทำให้ LM Studio หยุดคิดเอง ("Client disconnected. Stopping generation")
+    """
+
+    def __init__(self):
+        self._event = threading.Event()
+        self._lock = threading.Lock()
+        self._streams: list = []
+
+    def is_set(self) -> bool:
+        return self._event.is_set()
+
+    def register(self, stream):
+        """ลงทะเบียน openai `Stream` · ถ้ายกเลิกไปแล้ว (create() คืนหลัง cancel) ตัดทันที"""
+        with self._lock:
+            self._streams.append(stream)
+            already = self._event.is_set()
+        if already:
+            _sever_stream(stream)
+        return stream
+
+    def cancel(self) -> None:
+        with self._lock:
+            if self._event.is_set():
+                return
+            self._event.set()
+            streams = list(self._streams)
+        for s in streams:
+            _sever_stream(s)
+
+
+def _sever_stream(stream) -> None:
+    """shutdown socket ใต้ openai `Stream` (httpx 0.28: response.extensions["network_stream"]) — เงียบเมื่อหาไม่เจอ"""
+    try:
+        ns = stream.response.extensions.get("network_stream")
+        sock = ns.get_extra_info("socket") if ns is not None else None
+        if sock is not None:
+            sock.shutdown(socket.SHUT_RDWR)
+    except Exception as e:
+        logger.debug(f"[LLM] ตัด stream ไม่ได้ (ปล่อยให้ธงหยุดแทน): {e}")
+
+
+def _cancelled(cancel) -> bool:
+    return cancel is not None and cancel.is_set()
 
 
 class LMStudioUnavailable(Exception):
@@ -185,9 +238,10 @@ def stream_response(messages: list[dict], provider: str = "auto",
                     agent_mode: bool = False, model_override: str = "",
                     thinking: bool | None = None, effort: str = "",
                     web_grounding: bool = False, sources_sink: list | None = None,
-                    usage_sink: dict | None = None):
+                    usage_sink: dict | None = None, cancel: "StreamCancel | None" = None):
     """
     Stream response จาก LLM ที่เลือก
+    cancel: `StreamCancel` — ผู้ใช้ตัดสาย → หยุดทันที · ถูกยกเลิกแล้วห้าม cascade ไป provider อื่น
     provider: 'ollama' | 'gemini' | 'lmstudio' | 'kimi' | 'claude' | 'auto'
     model_override: ใช้ model นี้แทน default (per-request จาก dropdown / router)
     thinking: เปิด/ปิดโหมดคิด (None = ใช้ค่า default ของ provider — ไม่ override)
@@ -200,7 +254,7 @@ def stream_response(messages: list[dict], provider: str = "auto",
         _last_failover["active"] = False
         yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=True,
                                   model=model_override, thinking=thinking, effort=effort,
-                                  usage_sink=usage_sink)
+                                  usage_sink=usage_sink, cancel=cancel)
         return
 
     # Claude ต้องมาก่อน gemini catch-all — Claude จัดการ vision ของตัวเอง
@@ -208,14 +262,14 @@ def stream_response(messages: list[dict], provider: str = "auto",
         _last_failover["active"] = False
         yield from _stream_claude(messages, image_b64, image_mime,
                                   model=model_override, thinking=thinking, effort=effort,
-                                  usage_sink=usage_sink)
+                                  usage_sink=usage_sink, cancel=cancel)
         return
 
     if provider == "kimi":
         _last_failover["active"] = False
         yield from _stream_kimi(messages, model=model_override, thinking=thinking,
                                 effort=effort, image_b64=image_b64, image_mime=image_mime,
-                                usage_sink=usage_sink)
+                                usage_sink=usage_sink, cancel=cancel)
         return
 
     if provider == "gemini" or agent_mode or (image_b64 and provider not in ("lmstudio", "auto", "claude", "claude_agent")):
@@ -223,14 +277,14 @@ def stream_response(messages: list[dict], provider: str = "auto",
         yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=agent_mode,
                                   model=model_override, thinking=thinking, effort=effort,
                                   web_grounding=web_grounding, sources_sink=sources_sink,
-                                  usage_sink=usage_sink)
+                                  usage_sink=usage_sink, cancel=cancel)
         return
 
     if provider in ("lmstudio", "lmstudio_web"):
         _last_failover["active"] = False
         yield from _stream_lmstudio_or_ollama(messages, model=model_override,
                                               image_b64=image_b64, image_mime=image_mime,
-                                              usage_sink=usage_sink)
+                                              usage_sink=usage_sink, cancel=cancel)
         return
 
     # provider == "ollama" → ใช้ Ollama เสมอ (ไม่ redirect ไป LM Studio อีกต่อไป)
@@ -246,30 +300,34 @@ def stream_response(messages: list[dict], provider: str = "auto",
             logger.info(f"[AutoRoute] {decision.reason} | model={decision.model}")
             if decision.provider in ("gemini", "gemini_agent"):
                 use_agent = agent_mode or decision.provider == "gemini_agent"
-                yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=use_agent)
+                yield from _stream_gemini(messages, image_b64, image_mime, agent_mode=use_agent, cancel=cancel)
             elif decision.provider == "lmstudio":
                 show = SHOW_THINKING
                 try:
                     raw_chunks = _stream_lmstudio(messages, model=decision.model,
-                                                  image_b64=image_b64, image_mime=image_mime)
+                                                  image_b64=image_b64, image_mime=image_mime, cancel=cancel)
                     yield from stream_with_thinking(raw_chunks, show_thinking=show)
                 except LMStudioUnavailable as e:
+                    if _cancelled(cancel):
+                        return
                     if image_b64:
                         yield (f"❌ เชื่อมต่อ LM Studio ไม่ได้ ({_LMSTUDIO_BASE_URL}) — "
                                f"โหมดรูปภาพใช้ Ollama แทนไม่ได้ กรุณาเปิด PC + Start Server")
                     else:
                         logger.warning(f"LM Studio ต่อไม่ได้ → cascade ไป Ollama ({e})")
                         yield "⚠️ LM Studio ต่อไม่ได้ — สลับไป Ollama ให้อัตโนมัติ\n\n"
-                        yield from _stream_ollama(messages)
+                        yield from _stream_ollama(messages, cancel=cancel)
             else:
-                yield from _stream_ollama(messages)
+                yield from _stream_ollama(messages, cancel=cancel)
         except Exception as e:
+            if _cancelled(cancel):
+                return
             logger.warning(f"Auto-route failed ({e}), fallback ollama")
-            yield from _stream_ollama(messages)
+            yield from _stream_ollama(messages, cancel=cancel)
         return
 
     _last_failover["active"] = False
-    yield from _stream_ollama(messages, model=model_override, usage_sink=usage_sink)
+    yield from _stream_ollama(messages, model=model_override, usage_sink=usage_sink, cancel=cancel)
 
 
 # ── token usage จริงจาก provider (2026-08-12) ────────────────────────────────
@@ -307,7 +365,7 @@ def _create_stream_with_usage(completions_create, create_kwargs: dict, want_usag
 
 def _stream_lmstudio(messages: list[dict], model: str = "",
                      image_b64: str = "", image_mime: str = "",
-                     usage_sink: dict | None = None):
+                     usage_sink: dict | None = None, cancel: "StreamCancel | None" = None):
     """Stream จาก LM Studio (OpenAI-compatible API) รองรับ vision"""
     if not model:
         model = _CFG_LMSTUDIO_CHAT_MODEL
@@ -348,7 +406,12 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
             {"model": model, "messages": msgs, "stream": True, "temperature": temperature},
             want_usage=usage_sink is not None,
         )
+        if cancel is not None:
+            cancel.register(stream)
         for chunk in stream:
+            if _cancelled(cancel):          # เช็คทุก raw chunk — รวม reasoning ที่ไม่ yield อะไรออกไป
+                logger.info("[LLM] LM Studio stream ถูกยกเลิก (client ตัดสาย)")
+                return
             _capture_openai_usage(chunk, usage_sink)
             if not chunk.choices:
                 continue  # chunk ท้ายจาก include_usage — มีแต่ตัวเลข ไม่มีข้อความ
@@ -357,6 +420,9 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
                 yield delta
         logger.info(f"LM Studio stream OK (model={model}, vision={'yes' if image_b64 else 'no'})")
     except Exception as e:
+        if _cancelled(cancel):              # ReadError จาก socket ที่เราตัดเอง — ห้ามจัดเป็น "ต่อไม่ได้" แล้ว cascade
+            logger.info("[LLM] LM Studio stream ถูกยกเลิก (client ตัดสาย)")
+            return
         kind = _classify_api_error(e)
         if kind == "connection":
             # raise แทน yield → ให้ caller (stream_response) cascade ไป Ollama ได้
@@ -414,7 +480,7 @@ def _classify_api_error(e: BaseException) -> str:
 
 def _stream_lmstudio_or_ollama(messages: list[dict], model: str = "",
                                image_b64: str = "", image_mime: str = "",
-                               usage_sink: dict | None = None):
+                               usage_sink: dict | None = None, cancel: "StreamCancel | None" = None):
     """LM Studio ก่อน; ถ้า server ต่อไม่ได้ (connection) → cascade ไป Ollama อัตโนมัติ
 
     ยกเว้นโหมดรูปภาพ — Ollama (llama3) ดูรูปไม่ได้ → แจ้ง error ตรงๆ ดีกว่า cascade เงียบๆ
@@ -422,8 +488,10 @@ def _stream_lmstudio_or_ollama(messages: list[dict], model: str = "",
     try:
         yield from _stream_lmstudio(messages, model=model,
                                     image_b64=image_b64, image_mime=image_mime,
-                                    usage_sink=usage_sink)
+                                    usage_sink=usage_sink, cancel=cancel)
     except LMStudioUnavailable as e:
+        if _cancelled(cancel):
+            return
         if image_b64:
             yield (f"❌ เชื่อมต่อ LM Studio ไม่ได้ ({_LMSTUDIO_BASE_URL}) — "
                    f"โหมดรูปภาพใช้ Ollama แทนไม่ได้ (ดูรูปไม่ได้) "
@@ -431,7 +499,7 @@ def _stream_lmstudio_or_ollama(messages: list[dict], model: str = "",
             return
         logger.warning(f"LM Studio ต่อไม่ได้ → cascade ไป Ollama อัตโนมัติ ({e})")
         yield "⚠️ LM Studio ต่อไม่ได้ — สลับไป Ollama ให้อัตโนมัติ\n\n"
-        yield from _stream_ollama(messages, usage_sink=usage_sink)
+        yield from _stream_ollama(messages, usage_sink=usage_sink, cancel=cancel)
 
 
 def check_ollama_health(force: bool = False) -> tuple[bool, str]:
@@ -669,7 +737,8 @@ def check_lmstudio_health(force: bool = False) -> tuple[bool, str]:
         return _save(False, msg)
 
 
-def _stream_ollama(messages: list[dict], model: str = "", usage_sink: dict | None = None):
+def _stream_ollama(messages: list[dict], model: str = "", usage_sink: dict | None = None,
+                   cancel: "StreamCancel | None" = None):
     """
     Stream จาก Ollama local พร้อม retry mechanism และ error handling ที่ละเอียด
     
@@ -717,7 +786,12 @@ def _stream_ollama(messages: list[dict], model: str = "", usage_sink: dict | Non
                 },
                 want_usage=usage_sink is not None,
             )
+            if cancel is not None:
+                cancel.register(stream)
             for chunk in stream:
+                if _cancelled(cancel):
+                    logger.info("[LLM] Ollama stream ถูกยกเลิก (client ตัดสาย)")
+                    return
                 _capture_openai_usage(chunk, usage_sink)
                 if not chunk.choices:
                     continue  # chunk ท้ายจาก include_usage
@@ -727,6 +801,8 @@ def _stream_ollama(messages: list[dict], model: str = "", usage_sink: dict | Non
             logger.info(f"Ollama stream successful (model: {model})")
             return  # Success - exit retry loop
         except Exception as e:
+            if _cancelled(cancel):          # ห้าม retry/แจ้ง error — เราตัดเอง
+                return
             kind = _classify_api_error(e)
 
             # RAM/VRAM ไม่พอ = deterministic — retry ไม่ช่วย (เดิมข้อความนี้มีคำว่า model → ถูกบอกให้ ollama pull)
@@ -835,7 +911,7 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
                    agent_mode: bool = False, model: str = "",
                    thinking: bool | None = None, effort: str = "",
                    web_grounding: bool = False, sources_sink: list | None = None,
-                   usage_sink: dict | None = None):
+                   usage_sink: dict | None = None, cancel: "StreamCancel | None" = None):
     """
     Stream จาก Gemini Cloud ด้วย google-genai SDK ใหม่
 
@@ -947,6 +1023,9 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
                             config=config,
                         )
                         for chunk in response:
+                            if _cancelled(cancel):
+                                logger.info("[LLM] Gemini stream ถูกยกเลิก (client ตัดสาย)")
+                                return
                             if chunk.text:
                                 yielded = True
                                 yield chunk.text
@@ -988,6 +1067,8 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
                 raise  # non-transient / yield ไปแล้ว / หมดเชน → ให้ except ชั้นนอก classify
 
     except Exception as e:
+        if _cancelled(cancel):
+            return
         err = str(e)
         kind = _classify_api_error(e)          # google-genai: APIError.code (401/429) ก่อน substring
         if kind == "auth":
@@ -1003,7 +1084,7 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
 
 def _stream_claude(messages: list[dict], image_b64: str = "", image_mime: str = "",
                    model: str = "", thinking: bool | None = None, effort: str = "",
-                   usage_sink: dict | None = None):
+                   usage_sink: dict | None = None, cancel: "StreamCancel | None" = None):
     """Stream จาก Claude (Anthropic) ด้วย official SDK + prompt caching
 
     - system prompt → cached block (cache_control ephemeral, stable-first) ลด cost เมื่อ context ซ้ำ
@@ -1068,6 +1149,9 @@ def _stream_claude(messages: list[dict], image_b64: str = "", image_mime: str = 
     try:
         with anthropic_client.messages.stream(**kwargs) as stream:
             for text in stream.text_stream:
+                if _cancelled(cancel):
+                    logger.info("[LLM] Claude stream ถูกยกเลิก (client ตัดสาย)")
+                    return
                 yield text
             # log cache hit เพื่อ verify prompt caching ทำงาน (cache_read > 0 = ประหยัด)
             try:
@@ -1102,7 +1186,7 @@ def _stream_claude(messages: list[dict], image_b64: str = "", image_mime: str = 
 def _stream_kimi(messages: list[dict], model: str = "",
                  thinking: bool | None = None, effort: str = "",
                  image_b64: str = "", image_mime: str = "",
-                 usage_sink: dict | None = None):
+                 usage_sink: dict | None = None, cancel: "StreamCancel | None" = None):
     """Stream จาก Kimi (Moonshot, OpenAI-compatible) — provider="kimi"
 
     - model: default KIMI_MODEL (kimi-k2.6)
@@ -1146,7 +1230,12 @@ def _stream_kimi(messages: list[dict], model: str = "",
             kimi_client.chat.completions.create, create_kwargs,
             want_usage=usage_sink is not None,
         )
+        if cancel is not None:
+            cancel.register(stream)
         for chunk in stream:
+            if _cancelled(cancel):
+                logger.info("[LLM] Kimi stream ถูกยกเลิก (client ตัดสาย)")
+                return
             _capture_openai_usage(chunk, usage_sink)
             if not chunk.choices:
                 continue  # chunk ท้ายจาก include_usage
