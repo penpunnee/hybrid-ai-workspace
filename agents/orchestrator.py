@@ -19,6 +19,7 @@ from typing import Generator, Any
 from .tools import execute_tool, get_openai_tools, get_gemini_tools, list_tools
 
 logger = logging.getLogger(__name__)
+_monotonic = time.monotonic   # นาฬิกาของเพดานเวลารวม LM Studio step — แยกชื่อไว้ให้เทสแทนได้โดยไม่แตะ time ทั้งระบบ
 
 _FORCE_SYNTH_PROMPT = (
     "ตอบคำถามจากข้อมูล tools ที่ได้มาให้ครบถ้วน — เก็บรายละเอียดสำคัญ ตัวเลข "
@@ -118,6 +119,7 @@ class _MarkerFilter:
         return out if self._emitted else out.lstrip()
 
 from utils.llm import GEMINI_MODEL  # ที่เดียว (ดู utils/llm.py:GEMINI_MODEL_DEFAULT)
+from utils.llm import _stop_if_cancelled  # ธงยกเลิกของ request (ก้อน 10/12)
 # ⬇️ env ทุกตัวของไฟล์นี้มีเจ้าของอยู่ที่ core/config.py — import ค่า ห้ามอ่านซ้ำ
 # (ก้อน 4 · 2026-09-23 · ตัวกัน: tests/test_env_registry.py + test_orchestrator_config.py)
 # ชื่อระดับโมดูลคงไว้เหมือนเดิม — เทสใช้ patch("agents.orchestrator.GEMINI_API_KEY") ฯลฯ
@@ -191,6 +193,7 @@ def run_agent(
     provider: str = "gemini",
     image_b64: str = "",
     image_mime: str = "",
+    cancel=None,
 ) -> Generator[tuple[str, Any], None, None]:
     """รัน agent loop
 
@@ -201,13 +204,16 @@ def run_agent(
         provider: "gemini" | "lmstudio" | "ollama"
         image_b64/image_mime: รูปแนบ — ต่อเข้า user message ล่าสุดของ provider
             ที่มองรูปได้ · provider ที่ไม่มี vision ต้อง **บอก** ไม่ใช่ทิ้งเงียบ
+        cancel: `utils.llm.StreamCancel` ของ request (ก้อน 12) — ผู้ใช้กด Stop แล้วตัด LM Studio ทันที
+            ใช้เฉพาะ lmstudio: เส้นอื่นหยุดที่ yield ถัดไปอยู่แล้ว (`_guard_disconnect` ปิด generator)
+            ส่วน LM Studio step เดิมเป็น non-stream ที่ค้างได้ถึง LMSTUDIO_TIMEOUT และ GPU คิดต่อทิ้งเปล่า
     """
     if provider == "gemini":
         yield from _run_agent_gemini(messages, model or GEMINI_MODEL, max_steps,
                                      image_b64=image_b64, image_mime=image_mime)
     elif provider == "lmstudio":
         yield from _run_agent_lmstudio(messages, model, max_steps,
-                                       image_b64=image_b64, image_mime=image_mime)
+                                       image_b64=image_b64, image_mime=image_mime, cancel=cancel)
     elif provider == "ollama":
         if image_b64:
             # ReAct/llama3 ไม่มี vision — เงียบไปเฉยๆ = user ไม่รู้ว่ารูปไม่ถูกอ่าน
@@ -236,7 +242,10 @@ def _run_agent_fc(adapter, max_steps: int) -> Generator[tuple[str, Any], None, N
     """loop กลาง provider-agnostic: thinking → generate → ถ้ามี tool call รัน
     แล้ววนต่อ, ไม่มี = คำตอบสุดท้าย (stream). ครบ max_steps → บังคับ synthesize.
     adapter ต้องมี: .name, .step()→yield ('text',str)|('call',ToolCall),
-    .add_tool_results(list[(ToolCall,str)]), .synthesize()→yield ('text',str)"""
+    .add_tool_results(list[(ToolCall,str)]), .synthesize()→yield ('text',str)
+    · adapter.cancel (ถ้ามี) = ธงยกเลิก — ถูกตัดกลางคันแล้วจบเงียบ ห้าม yield ข้อความ error/"ไม่มีคำตอบ"
+      (router บันทึกคำตอบบางส่วน + "หยุดกลางคัน" เอง · ข้อความ error จะไปปนในคำตอบที่บันทึก)"""
+    cancel = getattr(adapter, "cancel", None)
     for step in range(max_steps):
         yield ("event", {"type": "thinking", "step": step + 1})
         logger.info(f"[Agent/{adapter.name}] step {step+1}/{max_steps}")
@@ -252,9 +261,15 @@ def _run_agent_fc(adapter, max_steps: int) -> Generator[tuple[str, Any], None, N
                         answered = True
                     yield ("chunk", payload)
         except Exception as e:
+            if _stop_if_cancelled(cancel):      # exception จาก socket ที่เราตัดเอง ไม่ใช่ error จริง
+                logger.info(f"[Agent/{adapter.name}] ถูกยกเลิก (client ตัดสาย) — หยุดที่ step {step+1}")
+                return
             logger.exception(f"[Agent/{adapter.name}] step failed")
             yield ("event", {"type": "error", "message": str(e)})
             yield ("chunk", f"❌ {adapter.name} agent error: {e}")
+            return
+        if cancel is not None and cancel.aborted:
+            logger.info(f"[Agent/{adapter.name}] ถูกยกเลิก (client ตัดสาย) — หยุดที่ step {step+1}")
             return
 
         if not calls:
@@ -283,9 +298,15 @@ def _run_agent_fc(adapter, max_steps: int) -> Generator[tuple[str, Any], None, N
             if kind == "text" and payload:
                 answered = True
                 yield ("chunk", payload)
+        if cancel is not None and cancel.aborted:
+            logger.info(f"[Agent/{adapter.name}] ถูกยกเลิก (client ตัดสาย) — หยุดระหว่างสรุป")
+            return
         if not answered:
             yield ("chunk", "(ไม่มีคำตอบ)")
     except Exception as e:
+        if _stop_if_cancelled(cancel):
+            logger.info(f"[Agent/{adapter.name}] ถูกยกเลิก (client ตัดสาย) — หยุดระหว่างสรุป")
+            return
         yield ("chunk", f"❌ Final synthesis failed: {e}")
 
 
@@ -348,39 +369,72 @@ class _GeminiAdapter:
 class _LMStudioAdapter:
     name = "LM Studio"
 
-    def __init__(self, client, model, messages, tools_schema):
+    def __init__(self, client, model, messages, tools_schema, cancel=None):
         self.client = client
         self.model = model
         self.messages = messages
         self.tools = tools_schema
+        self.cancel = cancel
+
+    def _open(self, **kw):
+        """เปิด stream แล้วลงทะเบียนกับธงยกเลิก — `cancel()` จะ shutdown socket ให้ตัวอ่านที่ค้างหลุดทันที
+        (ลงทะเบียนหลังยกเลิกไปแล้ว = ตัดทันที เช่นยกเลิกระหว่างโหลดโมเดลที่ header ยังไม่มา)"""
+        stream = self.client.chat.completions.create(model=self.model, messages=self.messages, stream=True, **kw)
+        if self.cancel is not None:
+            self.cancel.register(stream)
+        return stream
 
     def step(self):
-        # non-stream ตอน detect tool (OpenAI stream tool_call args เป็นชิ้น ยุ่ง)
-        response = self.client.chat.completions.create(
-            model=self.model, messages=self.messages, tools=self.tools,
-            tool_choice="auto", temperature=0.3, stream=False,
-        )
-        msg = response.choices[0].message
-        tool_calls = getattr(msg, "tool_calls", None) or []
+        # ⚠️ stream ไม่ใช่เพื่อแสดงผลทีละคำ (ยังประกอบให้ครบก่อน yield เหมือนเดิม) — non-stream ตัดกลางทางไม่ได้
+        # ประกอบเอง ห้ามใช้ openai ChatCompletionStreamState: โยน LengthFinishReasonError เมื่อ finish=length
+        # ซึ่งเดิมได้ "(agent ไม่มีคำตอบ)" · timeout ของ httpx เป็นต่อการอ่านหนึ่งครั้ง ⇒ ต้องมีเพดานรวมเอง
+        # (non-stream เดิมถูกคุมที่ LMSTUDIO_TIMEOUT โดยปริยาย) · probe LM Studio จริง: tests/test_agent_stream_cancel.py
+        deadline = _monotonic() + LMSTUDIO_TIMEOUT
+        stream = self._open(tools=self.tools, tool_choice="auto", temperature=0.3)
+        content: list[str] = []
+        acc: dict = {}                 # index → {"id","name","args"} ตามลำดับที่มาถึง
+        for chunk in stream:
+            if _stop_if_cancelled(self.cancel):   # เช็คทุก raw chunk — รวม reasoning ที่ไม่มี content
+                stream.close()                    # เผื่อ cancel() หา socket ไม่เจอ — ปิดเองใน thread นี้ให้ LM Studio หยุด
+                return
+            if _monotonic() > deadline:
+                stream.close()
+                raise TimeoutError(f"LM Studio ตอบเกิน {LMSTUDIO_TIMEOUT} วินาที")
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta.content:
+                content.append(delta.content)
+            for tc in (getattr(delta, "tool_calls", None) or []):
+                e = acc.setdefault(tc.index, {"id": "", "name": "", "args": ""})
+                if tc.id:                  # บาง server ส่ง id/name ซ้ำทุกชิ้น — แทนที่ ไม่ต่อ
+                    e["id"] = tc.id
+                fn = tc.function
+                if fn is not None and fn.name:
+                    e["name"] = fn.name
+                if fn is not None and fn.arguments:
+                    e["args"] += fn.arguments
+        text = "".join(content)
+        tool_calls = [acc[k] for k in acc]
         if not tool_calls:
             mf = _MarkerFilter()
-            final = (mf.feed(msg.content or "") + mf.flush()).strip()
+            final = (mf.feed(text) + mf.flush()).strip()
             yield ("text", final or "(agent ไม่มีคำตอบ)")
             return
         self.messages.append({
-            "role": "assistant", "content": msg.content or "",
+            "role": "assistant", "content": text,
             "tool_calls": [
-                {"id": tc.id, "type": "function",
-                 "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                {"id": tc["id"], "type": "function",
+                 "function": {"name": tc["name"], "arguments": tc["args"]}}
                 for tc in tool_calls
             ],
         })
         for tc in tool_calls:
             try:
-                args = json.loads(tc.function.arguments or "{}")
+                args = json.loads(tc["args"] or "{}")
             except json.JSONDecodeError:
                 args = {}
-            yield ("call", ToolCall(name=tc.function.name, args=args, id=tc.id))
+            yield ("call", ToolCall(name=tc["name"], args=args, id=tc["id"]))
 
     def add_tool_results(self, results):
         for call, result in results:
@@ -389,10 +443,12 @@ class _LMStudioAdapter:
 
     def synthesize(self):
         self.messages.append({"role": "user", "content": _FORCE_SYNTH_PROMPT})
-        stream = self.client.chat.completions.create(
-            model=self.model, messages=self.messages, temperature=0.3, stream=True)
+        stream = self._open(temperature=0.3)      # เส้นนี้เป็น stream มาแต่เดิม — ไม่มีเพดานรวม คงไว้เหมือนเดิม
         mf = _MarkerFilter()
         for chunk in stream:
+            if _stop_if_cancelled(self.cancel):
+                stream.close()
+                return
             delta = chunk.choices[0].delta.content
             if delta:
                 out = mf.feed(delta)
@@ -501,6 +557,7 @@ def _run_agent_lmstudio(
     max_steps: int,
     image_b64: str = "",
     image_mime: str = "",
+    cancel=None,
 ) -> Generator[tuple[str, Any], None, None]:
     if not LMSTUDIO_BASE_URL:
         yield ("event", {"type": "error", "message": "LMSTUDIO_BASE_URL ไม่ได้ตั้งค่า"})
@@ -531,7 +588,7 @@ def _run_agent_lmstudio(
     tools_schema = get_openai_tools()
 
     # loop กลาง (item E) — provider quirks (role:tool, MarkerFilter) อยู่ใน _LMStudioAdapter
-    yield from _run_agent_fc(_LMStudioAdapter(client, model, messages, tools_schema), max_steps)
+    yield from _run_agent_fc(_LMStudioAdapter(client, model, messages, tools_schema, cancel=cancel), max_steps)
 
 
 def _attach_image_openai(messages: list[dict], image_b64: str, image_mime: str) -> list[dict]:

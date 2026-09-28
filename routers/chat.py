@@ -468,7 +468,8 @@ async def chat(request: Request):
             try:
                 agent_provider = provider if provider in ("gemini", "lmstudio", "ollama") else "gemini"
                 for kind, payload in run_agent(messages, provider=agent_provider,
-                                               image_b64=image_b64, image_mime=image_mime):
+                                               image_b64=image_b64, image_mime=image_mime,
+                                               cancel=st["cancel"]):
                     if kind == "event":
                         # SSE agent event → React parse เป็น AgentTimeline (utils/agentsteps.ts, 2026-06-16)
                         yield f"data: {json.dumps({'agent': payload}, ensure_ascii=False)}\n\n"
@@ -476,8 +477,14 @@ async def chat(request: Request):
                         full_response += payload
                         yield f"data: {json.dumps({'chunk': payload}, ensure_ascii=False)}\n\n"
             except Exception as e:
+                if st["cancel"].aborted:
+                    return                  # client ตัดสาย — _guard_disconnect บันทึกคู่เอง
                 logger.exception("[Chat/agent] run failed")
                 yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+                return
+            # ก้อน 12: agent หยุดกลางคันเพราะผู้ใช้กด Stop → ห้ามบันทึกเป็นคำตอบเต็ม/remember · ตัดสินด้วย `aborted`
+            # ไม่ใช่ `is_set()` (ธงอาจถูกตั้งหลัง agent ตอบครบแล้ว — ต้องบันทึกคำตอบเต็ม · บทเรียน CI 09-28)
+            if st["cancel"].aborted:
                 return
 
             # persist เหมือน /api/chat ปกติ (gate remember ด้วย should_auto_learn)

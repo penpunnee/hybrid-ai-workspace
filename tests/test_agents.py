@@ -161,6 +161,28 @@ def _stream_chunk(text):
     return SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=text))])
 
 
+def _as_stream(resp):
+    """คำตอบแบบ non-stream (`_resp`) → ชิ้น stream ตามรูปที่ LM Studio ส่งจริง (probe 2026-09-29):
+    id+name มาในชิ้นแรกของแต่ละ index · arguments แบ่งหลายชิ้น · content แยกชิ้น"""
+    msg = resp.choices[0].message
+    chunks = []
+    if msg.content:
+        chunks += [SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=c, tool_calls=None),
+                                                            finish_reason=None)])
+                   for c in (msg.content[:3], msg.content[3:]) if c]
+    for i, tc in enumerate(msg.tool_calls or []):
+        args = tc.function.arguments or ""
+        parts = [(tc.id, tc.function.name, args[:2]), (None, None, args[2:])]
+        for cid, name, a in parts:
+            d = SimpleNamespace(index=i, id=cid, function=SimpleNamespace(name=name, arguments=a))
+            chunks.append(SimpleNamespace(choices=[SimpleNamespace(
+                delta=SimpleNamespace(content=None, tool_calls=[d]), finish_reason=None)]))
+    chunks.append(SimpleNamespace(choices=[SimpleNamespace(
+        delta=SimpleNamespace(content=None, tool_calls=None),
+        finish_reason="tool_calls" if msg.tool_calls else "stop")]))
+    return chunks
+
+
 class FakeClient:
     def __init__(self, responses):
         self.responses = list(responses)
@@ -171,6 +193,8 @@ class FakeClient:
         r = self.responses.pop(0)
         if isinstance(r, Exception):
             raise r
+        if kwargs.get("stream") and hasattr(r, "choices"):
+            return _as_stream(r)          # step ของ LM Studio ขอ stream ตั้งแต่ก้อน 12 — แปลงคำตอบชุดเดิมเป็นชิ้น
         return r
 
     @property
