@@ -1,5 +1,18 @@
 ---
 
+## [2026-09-28 ต่อ 22] ก้อน 11 — async handler ของ reader/admin memory/sessions ไม่บล็อก event loop (`d638c72`) ✅ deployed + verify prod
+**ค้น + วัดก่อนลงมือ (รายงานแผน → user เคาะ):** AST สแกน async handler ที่เรียกฟังก์ชันไม่ await ใน 3 router · **log prod:** `POST /api/reader/seek` **833 ms** (n=2) ·
+`PATCH /api/sessions` 2.3 ms · **วัดในคอนเทนเนอร์ (อ่านอย่างเดียว):** `_books.text()` เล่ม 20.3 ล้านตัวอักษร 94 ms · 4.6 ล้าน 23 ms (cache อุ่น) · `next_block` ~0 ms ·
+`_ingest` = ซ่อมข้อความ 3 ขั้น + นับท่อนทั้งเล่ม (audit 0.35 วิ/4.2 ล้าน) · ความถี่จริงต่ำ (`seek` 2 · `next` 0 ใน 40 วัน · frontend เรียกแค่ `/books` ซึ่งเป็น `def`)
+**ทำ:** reader `add` → `run_in_threadpool(_ingest)` · `add_from_disk`/`next`/`seek` → `_add_from_disk_impl`/`_next_impl`/`_seek_impl` ใน threadpool (ตรรกะเดิม · HTTPException ทะลุตามเดิม) ·
+system admin list/delete memory · sessions rename/pin/share persist → `run_in_threadpool` · **ไม่แตะ `server.py`** (WS อ่าน/เสียง โซน 🔒 — โหลดเล่มตอนเริ่มอ่าน 23–94 ms)
+- เทส 10 (`_race` แบบ test_chat_router_concurrency: `/api/config` ต้องตอบ < 0.48 วิ ระหว่าง route ที่ช้า 0.6 วิ) — แดงรอบแรก 0.61 วิทุกตัว · **mutation 9/9** · ชุดเต็ม **2420** · ruff
+- **verify prod 09-28:** อ่านที่คั่น perfectworld = 49619 ก่อน → `seek` ค่าเดิม **1,458 ms** (cache เย็นหลัง restart) · ระหว่างนั้น `/api/config` 51 ครั้ง p50 **15 ms** max **59 ms** ·
+  ที่คั่นหลัง = 49619 (ไม่ขยับ ตามกติกาอ่านก่อนเขียน)
+**🔑 บทเรียน:** log duration ของ route (`→ 200 (Xms)`) แยก "ผิดกติกาแต่ไม่มีผล" (2.3 ms) ออกจาก "บล็อกจริง" (833 ms) ได้ทันที — ใช้จัดลำดับก่อนเขียนเทส
+
+---
+
 ## [2026-09-28 ต่อ 21] ก้อน 10 — กด Stop/ปิดหน้าแล้ว LLM stream หยุดทันที (`7ba04e9`) ✅ deployed + verify prod
 **ค้น + วัดก่อนลงมือ (รายงานแผน → user เคาะ · user ถามว่าจะย้าย LM Studio ไป NAS ไหม → ไม่ ย้าย แผนแตะแค่โค้ด backend):**
 - **วัด prod (qwen3.5-9b · probe 25 วิ ยิงตรง LM Studio):** ช่วงคิดส่ง `reasoning_content` **1,051 chunk ทุก ~24 ms** (gap สูงสุด 30 ms) · `content` = 0 ⇒ thread ไม่ได้ค้างที่ socket แต่วนในลูป
