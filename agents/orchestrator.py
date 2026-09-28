@@ -55,14 +55,16 @@ def _is_retryable_gemini(e: Exception) -> bool:
                                 "try again", "resource_exhausted", "503", "502", "504"))
 
 
-def _gemini_stream_with_retry(chat, message, max_retries: int = 2, base_delay: float = 1.0):
+def _gemini_stream_with_retry(chat, message, max_retries: int = 2, base_delay: float = 1.0, config=None):
     """Generator stream chunks — retry เฉพาะ error ชั่วคราวที่เกิด *ก่อน* chunk แรก
-    ออกมา (กัน duplicate ครึ่งคำตอบ ถ้า fail กลางทาง)"""
+    ออกมา (กัน duplicate ครึ่งคำตอบ ถ้า fail กลางทาง) · `config` = ต่อคำขอ (SDK แทนที่ config ของ chat ทั้งก้อน)"""
     attempt = 0
     while True:
         produced = False
         try:
-            for chunk in chat.send_message_stream(message):
+            stream = (chat.send_message_stream(message, config=config) if config is not None
+                      else chat.send_message_stream(message))
+            for chunk in stream:
                 produced = True
                 yield chunk
             return
@@ -290,11 +292,14 @@ def _run_agent_fc(adapter, max_steps: int) -> Generator[tuple[str, Any], None, N
 class _GeminiAdapter:
     name = "Gemini"
 
-    def __init__(self, chat, last_user):
+    def __init__(self, chat, last_user, base_config=None):
         self.chat = chat
         self._pending = last_user      # str (step1/synth) | list[Part] (หลัง tool)
+        self._unsent_results = False   # add_tool_results แล้วแต่ step ยังไม่ได้ส่ง
+        self._base_config = base_config
 
     def step(self):
+        self._unsent_results = False
         for chunk in _gemini_stream_with_retry(self.chat, self._pending):
             for part in _chunk_parts(chunk):
                 fc = getattr(part, "function_call", None)
@@ -312,9 +317,28 @@ class _GeminiAdapter:
             genai_types.Part.from_function_response(name=c.name, response={"result": r})
             for c, r in results
         ]
+        self._unsent_results = True
+
+    def _synth_config(self):
+        """config ต่อคำขอของรอบสรุป: ของเดิม + ห้ามเรียก tool + คำสั่งสรุปอยู่ใน system_instruction
+        (ไม่ยัด text part ปนกับ function_response — SDK 2.10 เองประกอบเทิร์นตอบ tool เป็น function_response ล้วน)"""
+        if self._base_config is None:
+            return None
+        from google.genai import types as genai_types
+        sys_text = (self._base_config.system_instruction or "")
+        return self._base_config.model_copy(update={
+            "system_instruction": f"{sys_text}\n\n{_FORCE_SYNTH_PROMPT}" if sys_text else _FORCE_SYNTH_PROMPT,
+            "tool_config": genai_types.ToolConfig(function_calling_config=genai_types.FunctionCallingConfig(
+                mode=genai_types.FunctionCallingConfigMode.NONE)),
+        })
 
     def synthesize(self):
-        for chunk in _gemini_stream_with_retry(self.chat, _FORCE_SYNTH_PROMPT):
+        # ⚠️ ครบ max_steps ตอนเพิ่ง add_tool_results → ผลของ tool ยังไม่ถึงโมเดล (audit 2026-09-24 MEDIUM)
+        # เดิมส่ง _FORCE_SYNTH_PROMPT (text) ตรงนี้ = history model(function_call)→user(text) ไม่มี function_response
+        # คั่น (API 400 · ข้อมูลที่เพิ่งค้นมาหาย) ⇒ ส่ง function responses ที่ค้าง + config ห้ามเรียก tool
+        message = self._pending if self._unsent_results else _FORCE_SYNTH_PROMPT
+        self._unsent_results = False
+        for chunk in _gemini_stream_with_retry(self.chat, message, config=self._synth_config()):
             for part in _chunk_parts(chunk):
                 txt = getattr(part, "text", None)
                 if txt:
@@ -409,21 +433,18 @@ def _run_agent_gemini(
     system_text, history, last_user = _split_messages_for_gemini(messages)
     system_text = (system_text or "") + AGENT_SYSTEM_HINT
 
-    chat = client.chats.create(
-        model=model,
-        config=genai_types.GenerateContentConfig(
-            system_instruction=system_text,
-            tools=[gemini_tool],
-            temperature=0.3,
-        ),
-        history=history,
+    gen_config = genai_types.GenerateContentConfig(
+        system_instruction=system_text,
+        tools=[gemini_tool],
+        temperature=0.3,
     )
+    chat = client.chats.create(model=model, config=gen_config, history=history)
 
     # รูปต้องไปกับ user message ล่าสุด (เส้นเดียวกับ _stream_gemini ใน utils/llm.py)
     pending = _gemini_pending_with_image(last_user, image_b64, image_mime)
 
     # loop กลาง (item E) — streaming (A) + retry (F) + Content-fix อยู่ใน _GeminiAdapter
-    yield from _run_agent_fc(_GeminiAdapter(chat, pending), max_steps)
+    yield from _run_agent_fc(_GeminiAdapter(chat, pending, base_config=gen_config), max_steps)
 
 
 def _gemini_pending_with_image(last_user: str, image_b64: str, image_mime: str):
@@ -572,6 +593,17 @@ def _parse_react(content: str) -> tuple[str, Any]:
     return "plain", content
 
 
+_UNINFORMATIVE_RE = re.compile(r"^(❌|(Memory|Skills|Vault) error\b|ไม่พบ)")
+
+
+def _is_informative(result: str) -> bool:
+    """ผลของ tool ที่ "ได้ข้อมูลจริง" — ว่าง/ขึ้นต้น ❌/รายงาน error ของตัวเอง/"ไม่พบ…" = ไม่นับ
+    ⚠️ `execute_tool` ขึ้นต้น ❌ เมื่อล้มก็จริง แต่ tool บางตัวรายงานล้มหรือว่างเองโดยไม่มี ❌
+    (`agents/tools.py`: `Memory error:` · `Skills error:` · `Vault error:` · `ไม่พบโน้ต…` · `ไม่พบ entity…`)"""
+    s = (result or "").strip()
+    return bool(s) and not _UNINFORMATIVE_RE.match(s)
+
+
 def _build_react_system(tool_names: list[str]) -> str:
     tool_list = "\n".join(f"- {name}" for name in tool_names)
     return _REACT_SYSTEM.format(tool_list=tool_list)
@@ -632,6 +664,13 @@ def _run_agent_ollama(
         logger.debug(f"[Agent/Ollama] raw output: {content[:300]}")
 
         kind, parsed = _parse_react(content)
+        if kind in ("answer", "plain") and step > 0 and ok_observations == 0:
+            # 🔴 เรียก tool ไปแล้วแต่ไม่ได้ข้อมูลจริงสักครั้ง แล้วโมเดลตอบ = ตอบจากการเดา (audit 2026-09-24 MEDIUM)
+            # เดิม guard นี้อยู่เฉพาะตอนครบ max_steps → web_search ล้มครั้งเดียวแล้วโมเดลแต่ง "ราคาทอง ~$1,825" หลุดได้
+            logger.warning("[Agent/Ollama] โมเดลตอบหลัง tool ไม่ได้ข้อมูลจริง — ไม่ปล่อยคำตอบ")
+            yield ("chunk", "❌ เครื่องมือไม่ได้ข้อมูลจริงเลยสักครั้ง จึงไม่ตอบจากการเดา — "
+                            "ลองถามใหม่ หรือใช้ Gemini/LM Studio agent")
+            return
         if kind in ("answer", "plain"):
             # plain = โมเดลไม่ทำตาม format → ถือว่าเป็นคำตอบตรง (ไม่มี Action ให้แต่งต่อ)
             yield ("event", {"type": "answering"})
@@ -648,7 +687,7 @@ def _run_agent_ollama(
 
         yield ("event", {"type": "tool_call", "name": tool_name, "args": args})
         result = execute_tool(tool_name, args)
-        if not result.startswith("❌"):
+        if _is_informative(result):
             ok_observations += 1
         yield ("event", {
             "type": "tool_result",
