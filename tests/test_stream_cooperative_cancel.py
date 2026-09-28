@@ -248,3 +248,47 @@ def test_LMStudioUnavailable_หลังยกเลิก_ห้าม_cascade
     monkeypatch.setattr(llm, "_stream_ollama", lambda *a, **k: called.append(1) or iter(["x"]))
     assert list(llm._stream_lmstudio_or_ollama([{"role": "user", "content": "x"}], cancel=tok)) == []
     assert not called
+
+
+# ── stream จบเองครบแล้ว แต่ผู้ใช้ตัดสายพอดี (CI Linux จับได้ 09-28: test_ตัดสายหลังคำตอบ_save_แล้ว...) ──
+def _complete_then_cancel(messages, cancel=None, **k):
+    """ส่งครบทุกท่อน (LLM จบเอง) แล้วธงยกเลิกถูกตั้งหลังท่อนสุดท้าย — จำลองกด Stop ตรงจังหวะนั้นพอดี"""
+    for i in range(3):
+        yield f"ท่อน{i} "
+    if cancel is not None:
+        cancel.cancel()
+
+
+def test_stream_จบครบแล้วถูกยกเลิกทีหลัง_ต้องบันทึกคำตอบเต็ม_ไม่ใช่หยุดกลางคัน(monkeypatch):
+    from fastapi.testclient import TestClient
+    import server
+    monkeypatch.setattr(chatmod, "stream_response", _complete_then_cancel)
+    sid = "s_cancel_after_complete"
+    with patch.object(chatmod, "remember"), patch.object(chatmod, "teach", return_value=False):
+        r = TestClient(server.app).post("/api/chat", json={**CHAT, "session_id": sid, "provider": "ollama"})
+    assert r.status_code == 200
+    hist = load_history("kwan", sid)
+    assert [m["role"] for m in hist] == ["user", "assistant"], hist
+    assert "ท่อน2" in hist[1]["content"] and "หยุดกลางคัน" not in hist[1]["content"], hist[1]["content"]
+
+
+def test_regenerate_stream_จบครบแล้วถูกยกเลิกทีหลัง_ต้องบันทึกคำตอบเต็ม(monkeypatch):
+    from fastapi.testclient import TestClient
+    import server
+    monkeypatch.setattr(chatmod, "stream_response", _complete_then_cancel)
+    monkeypatch.setattr(chatmod, "search_memory", lambda *a, **k: "")
+    sid = "s_regen_cancel_after_complete"
+    save_message("kwan", "user", "U1", "ollama", sid)
+    r = TestClient(server.app).post("/api/regenerate", json={"assistant": "kwan", "session_id": sid, "provider": "ollama"})
+    assert r.status_code == 200
+    hist = load_history("kwan", sid)
+    assert "ท่อน2" in hist[-1]["content"] and "หยุดกลางคัน" not in hist[-1]["content"], hist
+
+
+def test_provider_ที่หยุดเพราะธง_ต้องบอกว่า_aborted():
+    tok = llm.StreamCancel()
+    assert tok.aborted is False
+    tok.cancel()
+    assert tok.aborted is False, "ตั้งธงเฉยๆ ≠ stream ถูกตัด — ต้องให้ provider เป็นคนบอก"
+    assert llm._stop_if_cancelled(tok) is True and tok.aborted is True
+    assert llm._stop_if_cancelled(None) is False

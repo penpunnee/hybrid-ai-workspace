@@ -74,6 +74,10 @@ class StreamCancel:
         self._event = threading.Event()
         self._lock = threading.Lock()
         self._streams: list = []
+        # True = provider หยุด stream **กลางคัน** เพราะธงนี้ (คำตอบไม่ครบ) · ต่างจาก is_set() ที่อาจถูกตั้ง
+        # หลัง LLM ตอบครบแล้ว (ผู้ใช้กด Stop ตรงจังหวะจบ) — ผู้เรียกต้องใช้ตัวนี้ตัดสินว่าจะบันทึกคำตอบเต็มไหม
+        # (CI Linux 09-28 จับได้: เดิมเช็ค is_set() แล้วทิ้งคำตอบที่ครบแล้ว)
+        self.aborted = False
 
     def is_set(self) -> bool:
         return self._event.is_set()
@@ -108,8 +112,12 @@ def _sever_stream(stream) -> None:
         logger.debug(f"[LLM] ตัด stream ไม่ได้ (ปล่อยให้ธงหยุดแทน): {e}")
 
 
-def _cancelled(cancel) -> bool:
-    return cancel is not None and cancel.is_set()
+def _stop_if_cancelled(cancel) -> bool:
+    """provider เรียกก่อน return กลางคัน — True = หยุดเพราะผู้ใช้ตัดสาย และบันทึกว่า stream ไม่ครบ (`aborted`)"""
+    if cancel is not None and cancel.is_set():
+        cancel.aborted = True
+        return True
+    return False
 
 
 class LMStudioUnavailable(Exception):
@@ -308,7 +316,7 @@ def stream_response(messages: list[dict], provider: str = "auto",
                                                   image_b64=image_b64, image_mime=image_mime, cancel=cancel)
                     yield from stream_with_thinking(raw_chunks, show_thinking=show)
                 except LMStudioUnavailable as e:
-                    if _cancelled(cancel):
+                    if _stop_if_cancelled(cancel):
                         return
                     if image_b64:
                         yield (f"❌ เชื่อมต่อ LM Studio ไม่ได้ ({_LMSTUDIO_BASE_URL}) — "
@@ -320,7 +328,7 @@ def stream_response(messages: list[dict], provider: str = "auto",
             else:
                 yield from _stream_ollama(messages, cancel=cancel)
         except Exception as e:
-            if _cancelled(cancel):
+            if _stop_if_cancelled(cancel):
                 return
             logger.warning(f"Auto-route failed ({e}), fallback ollama")
             yield from _stream_ollama(messages, cancel=cancel)
@@ -409,7 +417,7 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
         if cancel is not None:
             cancel.register(stream)
         for chunk in stream:
-            if _cancelled(cancel):          # เช็คทุก raw chunk — รวม reasoning ที่ไม่ yield อะไรออกไป
+            if _stop_if_cancelled(cancel):          # เช็คทุก raw chunk — รวม reasoning ที่ไม่ yield อะไรออกไป
                 logger.info("[LLM] LM Studio stream ถูกยกเลิก (client ตัดสาย)")
                 return
             _capture_openai_usage(chunk, usage_sink)
@@ -420,7 +428,7 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
                 yield delta
         logger.info(f"LM Studio stream OK (model={model}, vision={'yes' if image_b64 else 'no'})")
     except Exception as e:
-        if _cancelled(cancel):              # ReadError จาก socket ที่เราตัดเอง — ห้ามจัดเป็น "ต่อไม่ได้" แล้ว cascade
+        if _stop_if_cancelled(cancel):              # ReadError จาก socket ที่เราตัดเอง — ห้ามจัดเป็น "ต่อไม่ได้" แล้ว cascade
             logger.info("[LLM] LM Studio stream ถูกยกเลิก (client ตัดสาย)")
             return
         kind = _classify_api_error(e)
@@ -490,7 +498,7 @@ def _stream_lmstudio_or_ollama(messages: list[dict], model: str = "",
                                     image_b64=image_b64, image_mime=image_mime,
                                     usage_sink=usage_sink, cancel=cancel)
     except LMStudioUnavailable as e:
-        if _cancelled(cancel):
+        if _stop_if_cancelled(cancel):
             return
         if image_b64:
             yield (f"❌ เชื่อมต่อ LM Studio ไม่ได้ ({_LMSTUDIO_BASE_URL}) — "
@@ -789,7 +797,7 @@ def _stream_ollama(messages: list[dict], model: str = "", usage_sink: dict | Non
             if cancel is not None:
                 cancel.register(stream)
             for chunk in stream:
-                if _cancelled(cancel):
+                if _stop_if_cancelled(cancel):
                     logger.info("[LLM] Ollama stream ถูกยกเลิก (client ตัดสาย)")
                     return
                 _capture_openai_usage(chunk, usage_sink)
@@ -801,7 +809,7 @@ def _stream_ollama(messages: list[dict], model: str = "", usage_sink: dict | Non
             logger.info(f"Ollama stream successful (model: {model})")
             return  # Success - exit retry loop
         except Exception as e:
-            if _cancelled(cancel):          # ห้าม retry/แจ้ง error — เราตัดเอง
+            if _stop_if_cancelled(cancel):          # ห้าม retry/แจ้ง error — เราตัดเอง
                 return
             kind = _classify_api_error(e)
 
@@ -1023,7 +1031,7 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
                             config=config,
                         )
                         for chunk in response:
-                            if _cancelled(cancel):
+                            if _stop_if_cancelled(cancel):
                                 logger.info("[LLM] Gemini stream ถูกยกเลิก (client ตัดสาย)")
                                 return
                             if chunk.text:
@@ -1067,7 +1075,7 @@ def _stream_gemini(messages: list[dict], image_b64: str = "", image_mime: str = 
                 raise  # non-transient / yield ไปแล้ว / หมดเชน → ให้ except ชั้นนอก classify
 
     except Exception as e:
-        if _cancelled(cancel):
+        if _stop_if_cancelled(cancel):
             return
         err = str(e)
         kind = _classify_api_error(e)          # google-genai: APIError.code (401/429) ก่อน substring
@@ -1149,7 +1157,7 @@ def _stream_claude(messages: list[dict], image_b64: str = "", image_mime: str = 
     try:
         with anthropic_client.messages.stream(**kwargs) as stream:
             for text in stream.text_stream:
-                if _cancelled(cancel):
+                if _stop_if_cancelled(cancel):
                     logger.info("[LLM] Claude stream ถูกยกเลิก (client ตัดสาย)")
                     return
                 yield text
@@ -1233,7 +1241,7 @@ def _stream_kimi(messages: list[dict], model: str = "",
         if cancel is not None:
             cancel.register(stream)
         for chunk in stream:
-            if _cancelled(cancel):
+            if _stop_if_cancelled(cancel):
                 logger.info("[LLM] Kimi stream ถูกยกเลิก (client ตัดสาย)")
                 return
             _capture_openai_usage(chunk, usage_sink)

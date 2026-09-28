@@ -647,7 +647,8 @@ async def chat(request: Request):
 
         # ถูกยกเลิกกลางคัน (ก้อน 10): stream คืนเงียบๆ — ห้ามบันทึกคำตอบครึ่งๆ เป็นคำตอบสมบูรณ์/remember()
         # คู่ "หยุดกลางคัน" บันทึกโดย _guard_disconnect → _on_cut
-        if st["cancel"].is_set():
+        # ⚠️ ใช้ `aborted` ไม่ใช่ is_set(): ผู้ใช้กด Stop ตรงจังหวะที่ LLM ตอบครบแล้ว = คำตอบเต็ม ต้องบันทึกปกติ
+        if st["cancel"].aborted:
             return
 
         record_timing("llm_stream", (_time.perf_counter() - llm_start) * 1000)
@@ -895,8 +896,8 @@ async def regenerate_response(request: Request):
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
                 _save_regen_crash(str(e))
                 return
-            if cancel.is_set():
-                return                      # ถูกยกเลิก — on_cut บันทึก "หยุดกลางคัน" ไม่บันทึกคำตอบครึ่งๆ เป็นคำตอบเต็ม
+            if cancel.aborted:
+                return                      # stream ถูกตัดกลางคัน — on_cut บันทึก "หยุดกลางคัน" (ครบแล้ว = บันทึกปกติ)
             # ⚠️ ต้องส่ง message_id ใน done เหมือนเส้น /api/chat — FE ใช้ตั้ง dbId
             # ของข้อความ (เดิมทิ้งค่า return → ปุ่ม 👍/👎/📌 หายทุกครั้งหลัง regenerate)
             mid = save_message(assistant, "assistant", st["text"], provider, session_id)
