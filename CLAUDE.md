@@ -703,16 +703,21 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-26 บ่าย — ก้อน 6/7/8 ปิดแล้ว · ถัดไป = MEDIUM ก้อน 9 · (ข) response cache ยังรอเคาะ**)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-28 — ก้อน 6-9 ปิดแล้ว · ถัดไป = MEDIUM ก้อน 10 · (ข) response cache ยังรอเคาะ**)
 
-> ## 🥇 งานแรกเซสชันหน้า: **audit MEDIUM ก้อน 9** (ก้อน 8 ปิดแล้ว — ดูบล็อกถัดไป)
-> **backend ที่เหลือ:** Ollama ReAct guard `ok_observations` (`orchestrator.py:635-651`) + Gemini adapter tool result ค้างใน `_pending` (`orchestrator.py:233-287,316-321`) — คู่กัน ·
-> async-sync 6 จุด (reader/server.py/sessions/system) · **cooperative cancel ของ LLM stream** (ค้างจากก้อน 6 — ปิด httpx response จาก event loop) · EF conflict แฝง (ตอนนี้ไม่มี collection ที่ EF ต่าง — ทำเมื่อมี)
+> ## 🥇 งานแรกเซสชันหน้า: **audit MEDIUM ก้อน 10** (ก้อน 9 ปิดแล้ว — ดูบล็อกถัดไป)
+> **backend ที่เหลือ:** **cooperative cancel ของ LLM stream** (ค้างจากก้อน 6 — ปิด httpx response จาก event loop · handler ตัดสายมาช้า 8–110 วิ) · async-sync 6 จุด (reader/server.py/sessions/system) ·
+> EF conflict แฝง (ตอนนี้ไม่มี collection ที่ EF ต่าง — ทำเมื่อมี)
 > **frontend 9 ข้อ** (audit doc หัวข้อ 2 ท้าย): `_parseChatSSE` ซ้ำ · `AI_PALETTE.khim` · "จำไว้ว่า" fetch นอก try · prompt history ↑/↓ · paste รูปไม่ส่ง · `voicelive.ts onclose` · `bookreader` ไม่ disconnect · Ctrl+E ซ้ำ · latest-request guard
-> **Dream ที่จดแยก:** วัด REM ด้วย `auto` ตอนมี memory ≥ 5 ในหน้าต่าง (เทียบ themes กับ gemini — 8 คืนล่าสุดวัดไม่ได้) · REM log raw ตอน `themes=0`
+> **Dream ที่จดแยก:** วัด REM ด้วย `auto` ตอนมี memory ≥ 5 ในหน้าต่าง · REM log raw ตอน `themes=0` · **agent ที่จดแยก:** guard "ไม่มีข้อมูลจริง" ในเส้น `_run_agent_fc` (Gemini/LM Studio) — ยังไม่ทำเพราะ log ไม่มีหลักฐาน
 > 🔒 reader/voice regen cap — ห้ามแตะ · **รอ user เคาะ:** (ข) response cache ข้าม session
-> ทำแบบเดิม: ค้น 2 ชั้น → **รายงานแผนให้ user เห็นก่อน** → /scrutinize → หาข้อมูลเพิ่มถ้าแผนอิงการอนุมาน → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → `ssh nas-cf true` → deploy → verify prod → devlog
+> ทำแบบเดิม: ค้น 2 ชั้น (**รวม log prod**) → รายงานแผน → /scrutinize → หาข้อมูลเพิ่ม → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → `ssh nas-cf true` → deploy → verify prod → devlog
 > ⚪ งานเล็กค้าง: CLAUDE.md ~180 KB — ย้ายบล็อก ▶️ เก่า (08-24/08-26) ลง devlog · backlog `dbId` ข้อความที่เพิ่งส่ง (กระทบ 🗑️/pin/feedback)
+>
+> ## ✅ ก้อน 9 **ปิดแล้ว 09-28 (`06763dd` · devlog [ต่อ 20]) — อย่าทำซ้ำ**
+> `_GeminiAdapter.synthesize()` ส่ง function responses ที่ค้าง + config ต่อคำขอ (`model_copy` ของ config เดิม · `tool_config` NONE · คำสั่งสรุปใน system_instruction) · Ollama ReAct `_is_informative()` +
+> guard ตอนตอบ (step>0 และยังไม่ได้ข้อมูล → ไม่ปล่อย) · mutation 13/13 · ชุดเต็ม 2401 · **verify Gemini API จริง** max_steps=1 → calculator → คำตอบ 7,006,652 ไม่มี error
+> 🔑 **กติกาใหม่:** venv ทดสอบสร้างจาก `requirements.lock` เท่านั้น · Gemini chat ส่ง config ต่อคำขอ = แทนที่ทั้งก้อน ต้อง `model_copy` ของเดิม ห้ามสร้างใหม่ · ผล tool ที่ "ไม่ได้ข้อมูล" ตัดสินด้วย `_is_informative()` ไม่ใช่ `startswith("❌")`
 >
 > ## ✅ ก้อน 8 **ปิดแล้ว 09-26 (`9c2ebd2` · devlog [ต่อ 19]) — อย่าทำซ้ำ**
 > `sync_from_db` ตัดสิน stale ด้วย snapshot ∪ ไฟล์ที่ reload ใต้ `_db_transaction` (lock แค่ตอนลบ · upsert นอก lock) · `save_skill` upsert เดี่ยว · Dream: `utils.dream._run_lock` (threading) ตัวเดียว
@@ -1336,7 +1341,9 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > ## 🔴 กติกาที่ได้บทเรียนมาแล้ว — อ่านก่อนลงมือ
 > - ✅ **รันชุดเต็มบนเครื่องได้ ~45 วินาที — ทำทุกครั้งก่อน push**
 >   ```bash
->   uv venv /tmp/uivenv --python 3.12 && VIRTUAL_ENV=/tmp/uivenv uv pip install -r requirements.txt
+>   uv venv /tmp/uivenv --python 3.12 && VIRTUAL_ENV=/tmp/uivenv uv pip install -r requirements.lock
+>   # 🔴 ต้องเป็น **lock** — requirements.txt ได้ lib ใหม่กว่า prod (วัด 09-28: genai 2.25 vs 2.10 · openai 3.19 vs 2.44)
+>   # ⚠️ macOS ล้าง /tmp เป็นระยะ → venv พังครึ่งๆ (ModuleNotFoundError) ให้ rm -rf แล้วสร้างใหม่
 >   LOG_FILE=/tmp/test.log /tmp/uivenv/bin/python -m pytest -q     # 1640 passed / 15 skipped
 >   uvx ruff check .
 >   cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noEmit  # 397 passed

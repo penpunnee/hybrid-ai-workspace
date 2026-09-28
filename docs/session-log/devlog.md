@@ -1,5 +1,29 @@
 ---
 
+## [2026-09-28 ต่อ 20] audit MEDIUM ก้อน 9 — Gemini ส่ง tool result ก่อนสรุป · Ollama ReAct guard (`06763dd`) ✅ deployed + verify Gemini API จริง
+**ค้น 2 ชั้น + log prod ก่อนลงมือ (รายงานแผน 09-27 → user "ทำต่อ" 09-28):**
+- ชั้น 1 trace: `_run_agent_fc` step สุดท้ายจบด้วย `add_tool_results` → `_GeminiAdapter._pending` = function responses → ลูปหลุด → `synthesize()` ส่ง `_FORCE_SYNTH_PROMPT` (text) **ไม่ใช่ `_pending`**
+  ⇒ history model(function_call)→user(text) · LM Studio adapter ไม่เป็น (append role=tool ก่อน synth) · Ollama ReAct guard `ok_observations==0` อยู่แค่หลังลูป + นับด้วย `startswith("❌")`
+  แต่ `agents/tools.py` มี 5 จุดรายงานล้ม/ว่างโดยไม่มี ❌ (`Memory error` :85 · `Skills error` :164 · `Vault error` :180 · `ไม่พบโน้ต` :177 · `ไม่พบ entity` :321)
+- ชั้น 2 (ซอร์สที่ติดตั้ง = prod): google-genai 2.10.0 `models.py` AFC ประกอบเทิร์นตอบ tool เป็น `Content(role='user', parts=func_response_parts)` ล้วน · `chats.py` `config if config else self._config`
+  (ต่อคำขอ = แทนที่ทั้งก้อน) · `FunctionCallingConfigMode.NONE` "model will not predict any function calls" · เอกสาร function-calling: mode `none` · 400 "function call turn…" (pydantic-ai #3692 · audit 4.5)
+- **log prod 08-18→09-28 (3 ไฟล์ rotate):** Gemini agent 10 run สูงสุด 2/4 · LM Studio 18 run สูงสุด 3/4 · **ไม่มี run ไหนถึง max_steps** · ไม่มี warning ใน run ใดเลย · Ollama agent มีแต่ probe ของผม 09-23
+  ⇒ **ทั้งสองบั๊กแฝง ไม่เคยเกิดกับ traffic จริง** · ไม่มีหลักฐานว่า Gemini/LM Studio ตอบแต่งหลัง tool ล้ม ⇒ **ไม่ขยาย guard ไป `_run_agent_fc`** (จดแยก) · บรรทัด 400 ใน log = ของเทส rid=- 08-21
+- 🔴 **เจอระหว่างทาง: venv ทดสอบไม่ตรง prod** — `/tmp/uivenv` ถูก macOS ล้างครึ่งๆ (ModuleNotFoundError) · สร้างใหม่จาก `requirements.txt` ได้ **genai 2.25 / openai 3.19** แต่ prod (lock) = **2.10.0 / 2.44.0**
+  → สร้างจาก `requirements.lock` แล้ว local = prod ทุกตัว (genai/openai/chromadb 1.5.9/starlette 1.3.1) · **ยืนยันข้อเท็จจริงที่ก้อน 8/9 อิงในคอนเทนเนอร์ prod ตรงๆ** (APITimeoutError ⊂ APIConnectionError ·
+  genai APIError มี code · NONE · model_copy · config แทนที่ · `str(APITimeoutError)`="Request timed out.") = จริงทั้งหมด ⇒ ก้อน 8 ไม่ต้องแก้ · แก้คำสั่งใน CLAUDE.md ให้ใช้ lock
+**ทำ:**
+1. `_GeminiAdapter`: ธง `_unsent_results` (ตั้งใน `add_tool_results` · ล้างใน `step`) · `synthesize()` ส่ง `_pending` ถ้าค้าง ไม่งั้น prompt เดิม · `_synth_config()` = `base_config.model_copy(system_instruction=เดิม+สั่งสรุป, tool_config=NONE)` ·
+   `_gemini_stream_with_retry(config=)` ส่ง config เฉพาะเมื่อไม่ใช่ None (step ปกติเรียกแบบเดิมเป๊ะ) · `_run_agent_gemini` ใช้ `gen_config` ก้อนเดียวกันทั้ง chat และ adapter
+2. Ollama ReAct: `_is_informative()` (regex `^(❌|(Memory|Skills|Vault) error\b|ไม่พบ)` + strip ว่าง) แทน `startswith("❌")` · guard ตอน `answer`/`plain` เมื่อ `step>0 and ok_observations==0` → ข้อความ refuse เดิม
+- เทส 25 (`test_agent_synth_and_react_guard.py`) · **mutation 13/13** · ชุดเต็ม 2386 → **2401** (บน lock) · ruff · CI
+- **verify prod 09-28 05:32:** `/api/agent` provider gemini `max_steps=1` "ใช้ calculator คำนวณ 1234*5678" → events `thinking→tool_call→tool_result→max_steps_reached→chunk×4→done` · คำตอบ **7,006,652** (มาจาก tool) ·
+  ไม่มี error · session `k9-agent-*` ลบแล้ว · ⚠️ ไม่ได้พิสูจน์ว่าโค้ดเดิม 400 บนโมเดลนี้ (ต้อง revert บน prod) — อ้างจาก forum/SDK · Ollama guard ยืนยันด้วย unit+mutation เท่านั้น
+**🔑 บทเรียน:** (1) venv ที่ติดตั้งจาก spec กว้าง ≠ prod — ซอร์ส lib ที่อ้างเป็นหลักฐานต้องมาจาก lock หรือคอนเทนเนอร์ (2) log prod ตัดสินขอบเขตได้ดีกว่าการคาด: บั๊กจริงแต่แฝง + ไม่ขยายไปเส้นที่ไม่มีหลักฐาน
+(3) config ต่อคำขอของ genai chat แทนที่ทั้งก้อน — สร้างใหม่ = system prompt/temperature หาย ต้อง `model_copy`
+
+---
+
 ## [2026-09-26 ต่อ 19] audit MEDIUM ก้อน 8 — skills sync race · Dream lock เดียว · llm error ตามชนิด · dream allowlist (`9c2ebd2`) ✅ deployed + verify prod
 **ทำตามลำดับใหม่ (ข้อ 12 ใน memory): ค้น 2 ชั้น → รายงานแผน → user สั่ง /scrutinize → หาข้อมูลเพิ่ม → ปรับแผน → เคาะ → ลงมือ**
 **ค้นชั้น 1+2 (ก่อนแผน):** `core/state.py:41` asyncio.Lock · `scheduler.py:14-21` เรียก `run_dream_cycle` ตรงจาก thread · `routers/dream.py:44-52` ปล่อย lock ตอน timeout ·
