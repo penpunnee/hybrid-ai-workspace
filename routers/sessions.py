@@ -2,6 +2,7 @@ import secrets
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 
 from core.state import share_store_set, share_store_get
 from utils.reqparse import as_str
@@ -36,7 +37,7 @@ async def patch_session(assistant: str, session_id: str, request: Request):
     name = as_str(data.get("name"))
     if not name:
         return {"ok": False, "error": "ชื่อว่างไม่ได้"}
-    rename_session(assistant, session_id, name)
+    await run_in_threadpool(rename_session, assistant, session_id, name)   # sqlite (ก้อน 11 · กติกา async handler)
     return {"ok": True, "session_id": session_id, "name": name}
 
 
@@ -55,7 +56,7 @@ def get_history(assistant: str, session_id: str):
 async def toggle_pin(db_id: int, request: Request):
     data = await json_body_capped(request, MAX_BODY_BYTES)
     pinned = data.get("pinned", True)
-    pin_message(db_id, pinned)
+    await run_in_threadpool(pin_message, db_id, pinned)                     # sqlite (ก้อน 11)
     return {"ok": True, "db_id": db_id, "pinned": pinned}
 
 
@@ -97,7 +98,8 @@ async def create_share(request: Request):
     token = secrets.token_urlsafe(16)   # 128-bit (เดิม uuid.hex[:10] = 40-bit · OWASP ≥64) · audit 09-24
     created = datetime.now().isoformat()
     share_store_set(token, {"assistant": assistant, "session_id": session_id, "created": created})
-    try:
+
+    def _persist():
         from utils.history import _get_conn
         conn = _get_conn()
         conn.execute("CREATE TABLE IF NOT EXISTS share_links (token TEXT PRIMARY KEY, assistant TEXT, session_id TEXT, created TEXT)")
@@ -105,6 +107,8 @@ async def create_share(request: Request):
                      (token, assistant, session_id, created))
         conn.commit()
         conn.close()
+    try:
+        await run_in_threadpool(_persist)                                  # sqlite (ก้อน 11)
     except Exception as e:
         logger.warning(f"Share link persist failed: {e}")
     return {"ok": True, "token": token}

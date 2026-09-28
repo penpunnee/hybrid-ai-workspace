@@ -388,7 +388,7 @@ async def admin_list_memory(assistant: str, request: Request, q: str = "", limit
     if not is_local_request(request):
         return JSONResponse({"error": "forbidden — LAN only"}, status_code=403)
     from memory.store import list_entries
-    items = list_entries(assistant, query=q, limit=limit)
+    items = await run_in_threadpool(list_entries, assistant, query=q, limit=limit)   # ChromaDB ผ่านเน็ต (ก้อน 11)
     return {"assistant": assistant, "query": q, "count": len(items), "items": items}
 
 
@@ -399,5 +399,5 @@ async def admin_delete_memory(assistant: str, entry_id: str, request: Request):
     if not is_local_request(request):
         return JSONResponse({"error": "forbidden — LAN only"}, status_code=403)
     from memory.store import delete_entry
-    ok = delete_entry(assistant, entry_id)
+    ok = await run_in_threadpool(delete_entry, assistant, entry_id)                 # ChromaDB ผ่านเน็ต (ก้อน 11)
     return {"deleted": ok, "id": entry_id}

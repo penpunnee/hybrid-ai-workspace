@@ -19,6 +19,7 @@ import logging
 import os
 
 from fastapi import APIRouter, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 
 from core.config import READER_DB_PATH as _CFG_READER_DB_PATH
 from core.env_registry import env_int
@@ -116,7 +117,9 @@ async def add(request: Request):
     (ที่จริง `fix_thai_pua` แทนที่แบบตัวต่อตัวจึงยาวเท่าเดิม แต่ไม่ควรพึ่งคุณสมบัตินั้น)
     """
     data = await json_body_capped(request, MAX_BODY_BYTES)
-    return _ingest((data.get("source") or "").strip(), data.get("content") or "")
+    # ⚠️ `_ingest` = ซ่อมข้อความ 3 ขั้น + นับท่อนทั้งเล่ม + เขียน sqlite (0.35 วิ/4.2 ล้านตัวอักษร) — ห้ามรันบน event loop
+    # (ก้อน 11 · audit 2026-09-24 · เทส test_async_handlers_not_blocking.py)
+    return await run_in_threadpool(_ingest, (data.get("source") or "").strip(), data.get("content") or "")
 
 
 @router.post("/add-from-disk")
@@ -132,6 +135,11 @@ async def add_from_disk(request: Request):
       ระดับนาที ทำใน request = timeout + ยึด worker)
     """
     data = await json_body_capped(request, MAX_BODY_BYTES)  # body มีแค่ path — เล็กเสมอ
+    # อ่านไฟล์ถึง 200 MB + `_ingest` ทั้งเล่ม — ทั้งก้อนอยู่ใน threadpool (ก้อน 11) · HTTPException จาก thread ทะลุออกมาตามเดิม
+    return await run_in_threadpool(_add_from_disk_impl, data)
+
+
+def _add_from_disk_impl(data: dict) -> dict:
     path = (data.get("path") or "").strip()
     if not path:
         raise HTTPException(400, "ต้องมี path")
@@ -182,7 +190,11 @@ async def next_(request: Request):
     เพื่อให้ client แยก "อ่านจบ" ออกจาก "พัง" ได้
     """
     data = await json_body_capped(request, MAX_BODY_BYTES)
-    source = (data.get("source") or "").strip()
+    # `_require_book` โหลดทั้งเล่มจาก sqlite (prod 09-28: 94 ms เล่ม 20 ล้านตัวอักษรแม้ cache อุ่น · log 833 ms) — ก้อน 11
+    return await run_in_threadpool(_next_impl, (data.get("source") or "").strip())
+
+
+def _next_impl(source: str) -> dict:
     text = _require_book(source)
 
     pos = _marks.get(source)
@@ -201,6 +213,10 @@ async def next_(request: Request):
 @router.post("/seek")
 async def seek(request: Request):
     data = await json_body_capped(request, MAX_BODY_BYTES)
+    return await run_in_threadpool(_seek_impl, data)     # โหลดทั้งเล่มจาก sqlite — ดู _next_impl (ก้อน 11)
+
+
+def _seek_impl(data: dict) -> dict:
     source = (data.get("source") or "").strip()
     text = _require_book(source)
     try:
