@@ -1,5 +1,36 @@
 ---
 
+## [2026-09-29 ต่อ 25] ก้อน 12 ข้อ 1 — โหมด agent (LM Studio) กด Stop แล้วหยุดทันที (`3ad9767`) ✅ deployed + verify prod + CI เขียว
+**อาการ:** ก้อน 10 ทำให้แชทปกติตัด LM Studio ได้ทันที แต่ `run_agent` ไม่รับ `StreamCancel` · `_LMStudioAdapter.step()` เรียกแบบ non-stream
+⇒ ตัดกลางทางไม่ได้ (ยังไม่มี response ให้ตัด socket) · handler มาช้าเท่าที่ step ใช้ (log prod 7–23 วิ/step · เพดาน `LMSTUDIO_TIMEOUT` 180) · GPU คิดต่อทิ้งเปล่า
+**สิ่งที่วัดก่อนลงมือ (ค้น 2 ชั้น + probe LM Studio จริง qwen3.5-9b · payload agent จริง 23 tools):**
+- stream: header 0.03–0.40 วิ (ครั้งแรกหลังเปิด LM Studio 27.8 วิ = โหลดโมเดล) ⇒ ตัดได้ตั้งแต่ prefill · ตัดที่ 0.5/1/3/5 วิ หยุดทันที (`RemoteProtocolError`)
+- LM Studio หยุดคิดจริง: งานใหม่ 42.3 tok/s → 36.1 ระหว่างงานเก่าค้าง → ตัดแล้ว 42.2 · ❌ **"งานใหม่ต้องรอคิว" ที่ผมบอกตอนแรกผิด** — LM Studio รับขนานได้ (0.27 วิ)
+- tool call แบบ stream = non-stream (1 ตัว · 2 ตัวในรอบเดียว 3/3) · ไม่มี `<think>`/marker หลุด · รูป+tools+stream ใช้ได้
+- `finish_reason=length` → content '' ทั้งสองแบบ ⇒ **ห้ามใช้ openai `ChatCompletionStreamState`** (`_parsing/_completions.py:99` โยน `LengthFinishReasonError` เสมอ = เปลี่ยน "(agent ไม่มีคำตอบ)" เป็น error)
+- timeout ของ httpx = ต่อการอ่าน: non-stream `timeout=3` → `APITimeoutError` 3.45 วิ · stream วิ่งถึง 19.3 วิ ⇒ ต้องมีเพดานรวมเองเพื่อคงพฤติกรรมเดิม
+- ทดลองผ่านแอปจริง (ASGI) ก่อนแก้: กด Stop ระหว่างโมเดลคิด → tool ไม่ทำงาน + บันทึกคู่ครบ · ⚠️ ผลแรกที่ว่า "orphan/ไม่ปิด" **ผิดเพราะผมตรวจเร็วไป** (บันทึกมาถึง 0.1–0.6 วิหลัง) — ถอนแล้ว
+**แก้:** step เป็น stream + `register` + เช็คธงทุก raw chunk (เห็นธงแล้ว `stream.close()` เองด้วย เผื่อหา socket ไม่เจอ) · ประกอบ tool call เอง (id/name แทนที่ · args ต่อ) ·
+เพดานรวม `LMSTUDIO_TIMEOUT` เฉพาะ step (synthesize เป็น stream มาแต่เดิมไม่มีเพดาน — คงไว้) · `_run_agent_fc` อ่าน `adapter.cancel` (ไม่เปลี่ยน signature — fake ในเทสเดิมรับ 2 อาร์กิวเมนต์) ·
+ถูกตัดแล้วจบเงียบทั้ง step/synthesize/except ห้าม yield error หรือ "(ไม่มีคำตอบ)" · router ส่ง `cancel=st["cancel"]` + หลังลูป/except ตัดสินด้วย `aborted` · Gemini/Ollama ไม่แตะ
+**เทส:** `tests/test_agent_stream_cancel.py` 20 ตัว (router ใช้ `_SSEServer` ของก้อน 10 · ตัดสายเมื่อ LM Studio ปลอม*รับ request แล้ว* — ตัดตอนส่ง event `thinking` ไม่ได้วัดอะไร
+เพราะการยกเลิกไปตกที่ `await send` ก่อน step เริ่ม) · `test_agents.py` fake แปลงคำตอบเดิมเป็นชิ้น (`_as_stream`) assertion เดิมไม่แตะ · แดงบนโค้ดเดิม (worktree แยก: handler ไม่คืนใน 30 วิ)
+· mutation **21/21** (รอบแรก 5 ตัวถูกจับด้วยการ*แขวน* >150 วิ ไม่ใช่แดง → ตั้ง `LMSTUDIO_TIMEOUT=5` ในเทส router ให้แดงเร็ว · M6 รอดเพราะไม่มีเทส "ยกเลิกก่อนสรุปมีข้อความ" → เพิ่มแล้ว) · ชุดเต็ม **2442**
+**verify prod:** ตัดสาย 2 วิหลัง `thinking` (19:37:28 UTC) → `[Agent/LM Studio] ถูกยกเลิก — หยุดที่ step 1` + บันทึกคู่ **วินาทีเดียวกัน** · ไม่มี tool ทำงาน ·
+กลุ่มควบคุมไม่ตัด: 3 step · `web_search` → `fetch_url` → ตอบ · session ทดสอบ 3 อันลบแล้ว (`X-Test-Request` → ไม่เข้า memory)
+· ⚠️ ครั้งแรกสคริปต์ verify ตัดสาย*เมื่อมีบรรทัดใหม่มา* = รอจนได้ event `tool_call` (step จบแล้ว) → เคส "ข้อมูลไหลเร็ว": web_search ทำงานก่อน server รู้ตัว (ข้อจำกัดความหน่วงเน็ต ตามที่คาด) → เขียนใหม่ให้ตัดตามเวลา
+· ⚠️ หลัง restart ครั้งแรก 19 วิก่อน step 1 = job sync skills ตอนบูตแย่ง (backlog เดิม)
+
+**🐛 เจอบั๊กเดิมที่ใหญ่กว่าที่คิด (ไม่ใช่ regression):** หลังได้ผลจาก tool, qwen3.5 ผ่าน LM Studio ใส่คำตอบใน `reasoning_content` ส่วน `content` ว่าง ⇒ ผู้ใช้เห็น **"(agent ไม่มีคำตอบ)"**
+· กลุ่มควบคุมบน prod รอบนี้ก็ได้ข้อความนี้ · A/B payload จริงหลังผล tool: **stream 4/5 · non-stream 5/5 ว่าง** = เหมือนกัน (งานนี้ไม่ได้ทำให้แย่ลง)
+· DB prod: "(agent ไม่มีคำตอบ)" 3/96 (09-18 ×2 · 09-23 ×1) แต่คำตอบ agent LM Studio ของ 09-18 หลายอันมีเนื้อหาจริง ⇒ **ยังไม่รู้ว่าอะไรเปลี่ยน** (ตั้งค่า reasoning ของ LM Studio? รุ่น? prompt?) — ต้องไล่ก่อนแก้
+**เก็บตก:** `/api/agent` (ไม่มี frontend เรียก · probe 13 ครั้ง) ไม่มี `_guard_disconnect` ⇒ กด Stop = user orphan · ไม่ได้แก้ (นอกขอบเขต)
+**🔑 บทเรียน:** (1) คำอธิบายที่ "ฟังดูถูก" ต้องวัด — 2 ข้อที่พูดไปผิดทั้งคู่ (คิว · Gemini/Ollama "หยุดทันที") (2) กลุ่มควบคุมใน probe ช่วยจับข้อสรุปผิด (คิว 0.27 วิ)
+(3) เทสที่ตัดสายตามเหตุการณ์ SSE อาจไม่ได้วัดสิ่งที่ตั้งใจ — ต้องยืนยันว่าเธรดค้างอยู่จริงตอนตัด (4) mutation ที่ "ถูกฆ่าด้วยการแขวน" ไม่พอ ต้องแดงเร็ว
+(5) ใช้ git stash ทดสอบโค้ดเดิม + คำสั่งที่อาจแขวน = เสี่ยงงานค้างใน stash → ใช้ `git worktree` แยกแทน
+
+---
+
 ## [2026-09-28 ต่อ 24] ย้ายบล็อก ▶️ เก่าทั้งหมดออกจาก CLAUDE.md (ยกมาทั้งดุ้น ไม่แก้)
 **ทำไม:** CLAUDE.md ถูกฉีดเข้า context ทุกเซสชัน โตถึง ~197 KB โดย ~115 KB เป็นบล็อก ▶️/backlog ที่ปิดแล้ว · ที่ CLAUDE.md เหลือ ▶️ ใหม่ (งานเปิด + กติกาที่ยังมีผลที่กลั่นจากบล็อกข้างล่าง) · ข้างล่างคือข้อความเดิม ตั้งแต่ "## ⏭️ งานค้าง ณ 2026-08-05/06" ถึงก่อน "## ✅ Admin unlock" ตามที่อยู่ใน CLAUDE.md ณ `1b7c4e3`
 

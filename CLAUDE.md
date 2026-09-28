@@ -701,7 +701,7 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ⚠️ **fine-tune ≠ memorization** — use RAG/memory for "remembering" things; fine-tune is for style/format/behavior that prompting can't fix. Try Modelfile persona → skills/RAG first; fine-tune is the last resort. Currently gated on accumulating ~200-500 👍 (`GET /api/feedback/stats`).
 
-## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-09-28 · **ที่เดียว**)
+## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-09-29 · **ที่เดียว**)
 
 > บล็อก ▶️ ทั้งหมดจนถึง 09-28 (ก้อน 1–11 · config ก้อน 1–4 · reader/voice 08-17→09-22 · ไมค์ 08-24/26)
 > ถูกยก**ทั้งดุ้นไม่แก้**ไปไว้ที่ devlog **[2026-09-28 ต่อ 24]** — ที่นี่เหลือแค่งานเปิด + กติกาที่ยังมีผล
@@ -720,7 +720,10 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรก: ก้อน 12
-- **backend:** agent path (`run_agent`) ยังไม่รับ `StreamCancel` · EF conflict ใน `utils/memory.get_collection`
+- ✅ **ข้อ 1 ปิดแล้ว 09-29 (`3ad9767` · devlog [ต่อ 25]):** agent (LM Studio) กด Stop แล้วหยุดทันที — step เป็น stream + register + เพดานรวม
+- 🐛 **ถัดไปก่อนอย่างอื่น:** หลังผล tool qwen3.5 ตอบใน `reasoning_content` → `content` ว่าง → ผู้ใช้เห็น "(agent ไม่มีคำตอบ)"
+  (A/B หลังผล tool: stream 4/5 · non-stream 5/5 ว่าง · กลุ่มควบคุมบน prod 09-29 ก็เจอ) · 09-18 เคยตอบได้ ⇒ **ไล่ก่อนว่าอะไรเปลี่ยน** อย่าเพิ่งเดาแก้
+- **backend:** EF conflict ใน `utils/memory.get_collection`
   ทำ cleanup ข้าม collection เงียบๆ · `server.py` WS อ่าน/เสียงยังมีงาน sync บน loop (🔒 ทำเมื่อ user สั่ง + วัดเสียงก่อน/หลัง)
 - **frontend 9 ข้อ** (`docs/audit/2026-09-24-full-audit.md` หัวข้อ 2 ท้าย): `_parseChatSSE` ซ้ำ · `AI_PALETTE.khim` ·
   "จำไว้ว่า" fetch นอก try · prompt history ↑/↓ · paste รูปไม่ส่ง · `voicelive.ts onclose` · `bookreader` ไม่ disconnect ·
@@ -747,7 +750,7 @@ Low Power/ความร้อน) — `underruns` อ่านแล้ว = �
 `pythainlp` ไม่มีในอิมเมจ ⇒ เทส `utils/thaiscatter.py` 14 ตัวถูกข้ามทุกที่ · `enhanced.js` map สีตามตระกูลเฉด ·
 ป้าย "กำลังค้น" ในโหมดเสียง · turn ที่โดน `go_away` ตัดไม่นับเป็นความล้มเหลว (ยังไม่มีเทสตรึง) ·
 คอมเมนต์ `utils/bookreader.ts:114` เรื่อง rAF ตกรุ่น · citations ราคาเกมอาจเป็นแหล่งรอง (Steam age-check) ·
-ตัวอย่าง curl ใน "Admin unlock" ยังใช้ `:8000` (= ChromaDB · แอปคือ `:8080`) ·
+`/api/agent` ไม่มี `_guard_disconnect` (กด Stop = user orphan · ไม่มี frontend เรียก) · ตัวอย่าง curl ใน "Admin unlock" ยังใช้ `:8000` (= ChromaDB · แอปคือ `:8080`) ·
 บล็อก env ใน "Environment Variables" ยังเขียน `GEMINI_MODEL=gemini-2.5-flash` (retired แล้ว · prod ใช้ `gemini-3.5-flash-lite`)
 
 ### ⛔ พักไว้ (user เคาะแล้ว อย่าเสนอซ้ำ)
@@ -763,6 +766,8 @@ seek ต้อง**อ่านค่าก่อนเขียน** (user อ�
 
 ### 🔑 กติกาที่ยังมีผล (กลั่นจากก้อนที่ปิดแล้ว — ที่มาอยู่ใน devlog)
 **backend**
+- LM Studio agent step เป็น **stream** แล้ว (ก้อน 12) — ประกอบ tool call เอง ห้าม `ChatCompletionStreamState` (โยนตอน finish=length) ·
+  fake ในเทสต้องส่งเป็นชิ้น (`tests/test_agents.py:_as_stream`) · เทสตัดสาย router ต้องตัดตอนเธรด*ค้างรอ LLM อยู่จริง* (`_SSEServerSeen`)
 - เส้น SSE ที่ save ลง DB ระหว่าง stream → `_guard_disconnect` + `anyio.lowlevel.checkpoint()` ก่อน yield ทุกชิ้น ·
   เส้นที่เรียก LLM → `_CancellableStreamingResponse` + `_guard_disconnect(cancel=)` + ส่ง `cancel=` ให้ `stream_response`
 - หลังลูป stream ตัดสินด้วย **`cancel.aborted`** ไม่ใช่ `cancel.is_set()` · provider ใหม่ต้องลงทะเบียน stream + เช็คธงทุก raw chunk
