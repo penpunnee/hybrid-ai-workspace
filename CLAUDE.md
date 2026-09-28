@@ -710,7 +710,8 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > **frontend 9 ข้อ** (audit doc หัวข้อ 2 ท้าย): `_parseChatSSE` ซ้ำ · `AI_PALETTE.khim` · "จำไว้ว่า" fetch นอก try · prompt history ↑/↓ · paste รูปไม่ส่ง · `voicelive.ts onclose` · `bookreader` ไม่ disconnect · Ctrl+E ซ้ำ · latest-request guard
 > **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 · REM log raw ตอน `themes=0` · guard "ไม่มีข้อมูลจริง" ใน `_run_agent_fc` (ไม่มีหลักฐานใน log) · job sync skills ตอนบูต embed ทีละรายการแย่ง recall หลัง restart
 > 🔒 reader/voice regen cap — ห้ามแตะ · **รอ user เคาะ:** (ข) response cache ข้าม session
-> ทำแบบเดิม: ค้น 2 ชั้น (**รวม log/วัด prod**) → รายงานแผน → /scrutinize → หาข้อมูลเพิ่ม → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → `ssh nas-cf true` → deploy → verify prod (ยืนยันว่าเส้นที่แก้ถูกวิ่งจริง) → devlog
+> ทำแบบเดิม: **เช็ค CI ของ commit ล่าสุดเขียวก่อนเริ่ม** → ค้น 2 ชั้น (**รวม log/วัด prod**) → รายงานแผน → /scrutinize → หาข้อมูลเพิ่ม → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → `ssh nas-cf true` → deploy → verify prod (ยืนยันว่าเส้นที่แก้ถูกวิ่งจริง) → **รอ CI เขียว** → devlog
+> 🔴 09-28: CI แดง 4 run จากก้อน 10 โดยผมเดินต่อก้อน 11 (Mac เขียวแต่ Linux แดงตามจังหวะ) — แก้แล้ว `2653bd5` · ดู devlog [ต่อ 23]
 > ⚪ งานเล็กค้าง: CLAUDE.md ~180 KB — ย้ายบล็อก ▶️ เก่า (08-24/08-26) ลง devlog · backlog `dbId` ข้อความที่เพิ่งส่ง (กระทบ 🗑️/pin/feedback)
 >
 > ## ✅ ก้อน 11 **ปิดแล้ว 09-28 (`d638c72` · devlog [ต่อ 22]) — อย่าทำซ้ำ**
@@ -720,7 +721,7 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 > ## ✅ ก้อน 10 **ปิดแล้ว 09-28 (`7ba04e9` · devlog [ต่อ 21]) — อย่าทำซ้ำ**
 > `utils/llm.StreamCancel` (ธง + `socket.shutdown` ของ openai Stream ที่ลงทะเบียน) · `stream_response(cancel=)` ทุก provider · `routers/chat._CancellableStreamingResponse` task เฝ้าระดับ response ·
 > ใช้ทั้ง chat/regenerate · ถูกยกเลิกแล้วห้าม cascade/บันทึกคำตอบครึ่งๆ/remember · verify prod: ตัดระหว่าง qwen คิด → ยกเลิก + บันทึกคู่ในวินาทีเดียวกัน (เดิม 8–110 วิ) · mutation 14/14 · ชุดเต็ม 2410
-> 🔑 **กติกาใหม่:** เส้น SSE ใหม่ที่เรียก LLM ต้องใช้ `_CancellableStreamingResponse` + `_guard_disconnect(cancel=)` + ส่ง `cancel=` ให้ `stream_response` · ปลดตัวอ่านข้าม thread ใช้ `shutdown` ไม่ใช่ `close()` ·
+> 🔑 **กติกาใหม่:** หลังลูป stream ตัดสินด้วย `cancel.aborted` (provider หยุดกลางคันจริง) **ไม่ใช่** `cancel.is_set()` (อาจถูกตั้งหลัง LLM ตอบครบ) · เส้น SSE ใหม่ที่เรียก LLM ต้องใช้ `_CancellableStreamingResponse` + `_guard_disconnect(cancel=)` + ส่ง `cancel=` ให้ `stream_response` · ปลดตัวอ่านข้าม thread ใช้ `shutdown` ไม่ใช่ `close()` ·
 > provider ใหม่ต้องลงทะเบียน stream + เช็คธงทุก raw chunk + ห้าม cascade เมื่อ `_cancelled(cancel)` · fake ของ provider ในเทสต้องรับ `cancel=`
 >
 > ## ✅ ก้อน 9 **ปิดแล้ว 09-28 (`06763dd` · devlog [ต่อ 20]) — อย่าทำซ้ำ**
