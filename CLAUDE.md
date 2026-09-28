@@ -703,9 +703,10 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
 
-### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-28 เย็น — ก้อน 6-11 ปิดแล้ว · ถัดไป = ก้อน 12 · (ข) response cache ยังรอเคาะ**)
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-28 ปิดเซสชัน — MEDIUM ก้อน 6-11 ปิดครบ · ถัดไป = ก้อน 12 · (ข) response cache ยังรอเคาะ** · สรุปทั้งเซสชัน: devlog [2026-09-28 ปิดเซสชัน])
 
 > ## 🥇 งานแรกเซสชันหน้า: **ก้อน 12** (ก้อน 11 ปิดแล้ว — ดูบล็อกถัดไป)
+> 🔧 **ก่อนเริ่ม:** `gh run list --limit 3` ต้องเขียว · venv ทดสอบต้องสร้างจาก `requirements.lock` (`/tmp/uivenv` ถูก macOS ล้างได้ — พังครึ่งๆ ให้ rm แล้วสร้างใหม่) · `ssh -o ConnectTimeout=10 nas-cf true` ก่อนงานที่ต้องใช้ prod
 > **backend ที่เหลือ:** agent path (`run_agent`) ยังไม่รับ `StreamCancel` · `server.py` WS อ่าน/เสียงยังมีงาน sync บน loop (โซน 🔒 — ทำเมื่อ user สั่ง + วัดเสียงก่อน/หลัง) · EF conflict แฝง
 > **frontend 9 ข้อ** (audit doc หัวข้อ 2 ท้าย): `_parseChatSSE` ซ้ำ · `AI_PALETTE.khim` · "จำไว้ว่า" fetch นอก try · prompt history ↑/↓ · paste รูปไม่ส่ง · `voicelive.ts onclose` · `bookreader` ไม่ disconnect · Ctrl+E ซ้ำ · latest-request guard
 > **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 · REM log raw ตอน `themes=0` · guard "ไม่มีข้อมูลจริง" ใน `_run_agent_fc` (ไม่มีหลักฐานใน log) · job sync skills ตอนบูต embed ทีละรายการแย่ง recall หลัง restart

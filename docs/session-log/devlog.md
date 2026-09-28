@@ -1,5 +1,29 @@
 ---
 
+## [2026-09-28 ปิดเซสชัน] สรุปเซสชัน 09-25 เช้า → 09-28 — MEDIUM ก้อน 6-11 ปิดครบ + regression จากก้อน 10 แก้แล้ว
+| ก้อน | งาน | ผลบน prod | commit | devlog |
+|---|---|---|---|---|
+| 6 (1-2) | client ตัดสายไม่ทิ้ง user orphan · regenerate ไม่ลบ A1/ไม่ส่ง U2 ซ้ำ · race Stop→Regenerate | verify 3 รอบ | `b4e6d7a` `0526f8c` `97a6fcf` | [ต่อ 16] |
+| 6 (3-6) | CSE key ไม่ลง log · ratelimit LRU · max_steps clamp · ChromaDB connect ไม่ถือ lock ค้าง | verify | `b3bc833` | [ต่อ 17] |
+| 7 | embed LRU ไม่แคชความล้มเหลว · tts ไม่พังเงียบ · input 500→400 · `__keys` เคารพ filter | verify | `93e9b3d` | [ต่อ 18] |
+| 8 | skills sync race · Dream lock เดียว · llm error ตามชนิด exception · dream allowlist | verify (dream ซ้อน → 409) | `9c2ebd2` | [ต่อ 19] |
+| 9 | Gemini ส่ง tool result ก่อนสรุป · Ollama ReAct guard | verify Gemini API จริง | `06763dd` | [ต่อ 20] |
+| 10 | กด Stop แล้ว LLM stream หยุดทันที (StreamCancel + task เฝ้า) | ตัดสาย → หยุดในวินาทีเดียว (เดิม 8–110 วิ) | `7ba04e9` + แก้ `2653bd5` | [ต่อ 21] [ต่อ 23] |
+| 11 | reader/admin memory/sessions ไม่บล็อก event loop | seek 1.5 วิ ระหว่างนั้น `/api/config` p50 15 ms | `d638c72` | [ต่อ 22] |
+ชุดเต็ม 2302 → **2423** · mutation ทุกก้อนครบ (รวม ~90 mutant) · CI เขียว (หลังแก้ regression) · NAS HEAD = main · vault: [[llm-stream-cancel-on-disconnect]] (`86bcb67`)
+
+**🔴 ผิดขั้นตอน 3 ครั้งในเซสชันนี้ (จดไว้ใน devlog แต่ละก้อนแล้ว):** (1) ก้อน 7 ข้ามค้นชั้น 2 + ไม่รายงานแผนก่อนแตะไฟล์ (ตีความ "ต่อเลย" ผิด · ค้นย้อนหลังทั้ง 4 ข้อยืนอยู่) →
+memory feedback ข้อ 12 · (2) venv ทดสอบสร้างจาก `requirements.txt` ได้ lib ใหม่กว่า prod (genai 2.25 vs 2.10 · openai 3.19 vs 2.44) → สร้างจาก lock + ยืนยันข้อเท็จจริงในคอนเทนเนอร์ ·
+(3) เริ่มก้อน 11 ตอน CI ของก้อน 10 ยังไม่ขึ้นผล → CI แดง 4 run · prod รัน regression ~40 นาที → ขั้นตอนใหม่: เช็ค CI เขียวก่อนเริ่มและก่อนปิดก้อน
+
+**🔑 บทเรียนรวม:** (1) วัด prod ก่อนออกแบบ เปลี่ยนต้นเหตุได้ (ก้อน 10: คิดว่าค้างที่ socket จริงๆ วนในลูป reasoning · ก้อน 8: embed 22 skill cold 6.73 วิ > lock timeout 5 วิ ตัดแผนทิ้ง)
+(2) /scrutinize ก่อนลงมือจับแผนที่จะทำให้แย่ลงได้ 2 ครั้ง (ก้อน 8) (3) log duration ของ route แยก "ผิดกติกาแต่ไม่มีผล" ออกจาก "บล็อกจริง" (4) verify prod ต้องยืนยันว่าเส้นที่แก้ถูกวิ่งจริง
+(5) เทสที่ผ่าน/แดงตามจังหวะ ต้องมีคู่ที่บังคับลำดับได้ (6) ธงจากภายนอกต้องแยก "ขอหยุด" กับ "หยุดแล้ว" (7) reload โมดูลที่มี exception class ทำ `except` ของไฟล์อื่นพลาด (เกิดซ้ำจาก 09-24)
+
+**⏭️ เซสชันหน้า:** ดู CLAUDE.md หัวข้อ ▶️ (ก้อน 12: agent path รับ StreamCancel · frontend 9 ข้อ · server.py WS 🔒 ทำเมื่อ user สั่ง · (ข) response cache ยังรอเคาะ)
+
+---
+
 ## [2026-09-28 ต่อ 23] 🔴 CI แดง 4 run จากก้อน 10 — คำตอบที่ครบแล้วถูกบันทึกเป็น "หยุดกลางคัน" (`2653bd5`) ✅ CI เขียว + deployed + verify
 **อาการ:** `test_ตัดสายหลังคำตอบ_save_แล้ว_ต้องไม่บันทึกซ้ำ` แดงบน CI (Linux · อิมเมจจริง) ตั้งแต่ `7ba04e9` ต่อเนื่อง 4 run (ก้อน 10 code+docs · ก้อน 11 code+docs) — ทุก run เป็นเทสตัวนี้ตัวเดียว ·
 บน Mac ผ่านเพราะจังหวะ thread ต่างกัน · เทสตัดสายตอน chunk สุดท้าย คาดว่าคำตอบครบต้องบันทึกเป็นคำตอบเต็ม แต่ได้ "⚠️ การตอบหยุดกลางคัน" ต่อท้าย
