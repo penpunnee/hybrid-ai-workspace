@@ -1,5 +1,33 @@
 ---
 
+## [2026-09-28 ต่อ 21] ก้อน 10 — กด Stop/ปิดหน้าแล้ว LLM stream หยุดทันที (`7ba04e9`) ✅ deployed + verify prod
+**ค้น + วัดก่อนลงมือ (รายงานแผน → user เคาะ · user ถามว่าจะย้าย LM Studio ไป NAS ไหม → ไม่ ย้าย แผนแตะแค่โค้ด backend):**
+- **วัด prod (qwen3.5-9b · probe 25 วิ ยิงตรง LM Studio):** ช่วงคิดส่ง `reasoning_content` **1,051 chunk ทุก ~24 ms** (gap สูงสุด 30 ms) · `content` = 0 ⇒ thread ไม่ได้ค้างที่ socket แต่วนในลูป
+  `_stream_lmstudio` ที่ไม่ yield เพราะยังไม่มี content = ต้นเหตุ handler ตัดสายมาช้า 8–110 วิในก้อน 6 · ช่วงก่อน chunk แรกเงียบ **10.73 วิ** (ธงอย่างเดียวไม่พอ)
+- **ทดลอง lib เวอร์ชัน lock (openai 2.44 · httpx 0.28.1 · httpcore 1.0.9) ทั้ง macOS และ Linux container:** `Stream.close()` จาก thread อื่น → ตัวอ่าน**ไม่หลุด**เกิน 5 วิ ·
+  `socket.shutdown(SHUT_RDWR)` (ผ่าน `response.extensions["network_stream"].get_extra_info("socket")`) → หลุดใน 6–13 ms (`httpx.ReadError` บน Linux)
+- **หลังตัดกลางการคิด** คำขอใหม่ไปที่ LM Studio TTFB **0.16 วิ** · LM Studio log "Client disconnected. Stopping generation" (lmstudio `lms` #460 · reddit) · Ollama/llama-server หยุดเมื่อตัด (abstractcore docs)
+  ⚠️ ถ้า LM Studio เปิด parallel slot ตัวเลข TTFB แยก "หยุดจริง" ออกจาก "ช่องว่างอีกช่อง" ไม่ขาด
+- **ไก่กับไข่:** ตอน client ตัด coroutine ค้างใน `run_sync` แบบ shield → ต้องมี task เฝ้าแยก · **ห้ามเปิด task group ข้าม `yield` ใน async generator** (ข้อจำกัด anyio) → วางที่
+  `StreamingResponse.stream_response()` · ทดลอง anyio 4.14.1: task เฝ้าทำงานทันทีที่ scope ถูก cancel (1.001 วิ) thread ค้างอ่าน socket คืนอีก ~1 ms
+- **จุดที่ต้องกัน side effect:** ReadError จาก socket ที่ตัดเองถูกจัดเป็น "connection" → `_stream_lmstudio_or_ollama` **cascade ไป Ollama** · `_generate_inner` จะบันทึกคำตอบครึ่งๆ + `remember()`
+**ทำ:**
+- `utils/llm.StreamCancel` (Event + ลงทะเบียน openai Stream · `cancel()` = ตั้งธง + shutdown · ลงทะเบียนหลังยกเลิก = ตัดทันที) · `stream_response(cancel=)` ส่งต่อทุก provider ·
+  LM Studio/Ollama/Kimi ลงทะเบียน + เช็คธงทุก raw chunk · Gemini/Claude เช็คธงทุก chunk · ทุก except เช็คธงก่อน classify · ห้าม cascade/retry/แปลงเป็น error เมื่อถูกยกเลิก
+- `routers/chat._CancellableStreamingResponse` (task เฝ้าใน `create_collapsing_task_group` ของ starlette · ไม่ยิงตอนจบปกติ) ใช้ทั้ง `/api/chat` `/api/regenerate` ·
+  `_generate_inner`/`gen_regen` เห็นธง → `return` ไม่บันทึก · `_guard_disconnect(cancel=)` บันทึกคู่ "หยุดกลางคัน" เมื่อ inner จบเงียบ (ไม่มี CancelledError มาถึง)
+- เทส 9 — SSE server ปลอมบน **socket จริง** (reasoning ต่อเนื่อง · เงียบ · จบปกติ) ผ่าน OpenAI client จริง · ชุดเดียวกันจาก **105 วิ → 6 วิ** · ปรับ fake 5 ตัว (grounding/model_picker) ให้รับ `cancel=`
+- **mutation 14/14** — รอบแรกรอด 3: L3 ลูปไม่เช็คธง (socket ถูกตัดเสมอในเทส) · L4/L5 ค้ำกันเอง → เพิ่มเทสชั้นป้องกันซ้อน (ตัด socket ไม่ได้ ธงต้องหยุดเอง · ReadError ว่างหลังยกเลิกห้ามเป็นข้อความ error ·
+  LMStudioUnavailable หลังยกเลิกห้าม cascade) · ชุดเต็ม **2410** · ruff
+- **verify prod 09-28:** รอบแรกตัดที่ 12 วิ ติดอยู่ `phase: recall` เพราะ job sync skills ตอนบูต (embed ผ่าน Ollama ~2 วิ/รายการ) แย่ง recall หลัง restart — ยังไม่ถึง LLM ไม่มีอะไรต้องบันทึก (ถูกต้อง)
+  · รอบสอง (หลัง sync เงียบ) client ในคอนเทนเนอร์ตัด 3 วิหลัง `generating` → log `LM Studio stream ถูกยกเลิก` และ `บันทึกคำตอบบางส่วน` **07:03:03 วินาทีเดียวกับที่ตัด** (เดิม 8–110 วิ) ·
+  history = user + "⚠️ การตอบหยุดกลางคัน" · session `k10-*` ลบแล้ว
+**ไม่แตะ:** agent path (`run_agent`) · async-sync 6 จุด · Gemini/Claude ช่วงเงียบก่อน chunk แรก (ไม่มี socket ให้ตัด — ธงอย่างเดียว)
+**🔑 บทเรียน:** (1) วัดก่อนออกแบบเปลี่ยนต้นเหตุ: คิดว่าค้างที่ socket จริงๆ ค้างในลูปที่ไม่ yield · (2) `close()` ≠ ปลดตัวอ่านข้าม thread — ต้อง `shutdown` (ทดลองทั้ง 2 OS)
+(3) ห้ามเปิด task group ข้าม yield ใน async generator — วาง task เฝ้าที่ response แทน (4) verify ต้องยืนยันว่าเส้นที่แก้ถูกวิ่งจริง (รอบแรกค้างที่ recall ไม่ได้ทดสอบอะไร)
+
+---
+
 ## [2026-09-28 ต่อ 20] audit MEDIUM ก้อน 9 — Gemini ส่ง tool result ก่อนสรุป · Ollama ReAct guard (`06763dd`) ✅ deployed + verify Gemini API จริง
 **ค้น 2 ชั้น + log prod ก่อนลงมือ (รายงานแผน 09-27 → user "ทำต่อ" 09-28):**
 - ชั้น 1 trace: `_run_agent_fc` step สุดท้ายจบด้วย `add_tool_results` → `_GeminiAdapter._pending` = function responses → ลูปหลุด → `synthesize()` ส่ง `_FORCE_SYNTH_PROMPT` (text) **ไม่ใช่ `_pending`**
