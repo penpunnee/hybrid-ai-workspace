@@ -1,5 +1,807 @@
 ---
 
+## [2026-09-28 ต่อ 24] ย้ายบล็อก ▶️ เก่าทั้งหมดออกจาก CLAUDE.md (ยกมาทั้งดุ้น ไม่แก้)
+**ทำไม:** CLAUDE.md ถูกฉีดเข้า context ทุกเซสชัน โตถึง ~197 KB โดย ~115 KB เป็นบล็อก ▶️/backlog ที่ปิดแล้ว · ที่ CLAUDE.md เหลือ ▶️ ใหม่ (งานเปิด + กติกาที่ยังมีผลที่กลั่นจากบล็อกข้างล่าง) · ข้างล่างคือข้อความเดิม ตั้งแต่ "## ⏭️ งานค้าง ณ 2026-08-05/06" ถึงก่อน "## ✅ Admin unlock" ตามที่อยู่ใน CLAUDE.md ณ `1b7c4e3`
+
+<details><summary>ข้อความเดิม (~115 KB)</summary>
+
+## ⏭️ งานค้าง ณ 2026-08-05/06 (ล่าสุดสุด — อ่านอันนี้ก่อน)
+
+### ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต **2026-09-28 ปิดเซสชัน — MEDIUM ก้อน 6-11 ปิดครบ · ถัดไป = ก้อน 12 · (ข) response cache ยังรอเคาะ** · สรุปทั้งเซสชัน: devlog [2026-09-28 ปิดเซสชัน])
+
+> ## 🥇 งานแรกเซสชันหน้า: **ก้อน 12** (ก้อน 11 ปิดแล้ว — ดูบล็อกถัดไป)
+> 🔧 **ก่อนเริ่ม:** `gh run list --limit 3` ต้องเขียว · venv ทดสอบต้องสร้างจาก `requirements.lock` (`/tmp/uivenv` ถูก macOS ล้างได้ — พังครึ่งๆ ให้ rm แล้วสร้างใหม่) · `ssh -o ConnectTimeout=10 nas-cf true` ก่อนงานที่ต้องใช้ prod
+> **backend ที่เหลือ:** agent path (`run_agent`) ยังไม่รับ `StreamCancel` · `server.py` WS อ่าน/เสียงยังมีงาน sync บน loop (โซน 🔒 — ทำเมื่อ user สั่ง + วัดเสียงก่อน/หลัง) · EF conflict แฝง
+> **frontend 9 ข้อ** (audit doc หัวข้อ 2 ท้าย): `_parseChatSSE` ซ้ำ · `AI_PALETTE.khim` · "จำไว้ว่า" fetch นอก try · prompt history ↑/↓ · paste รูปไม่ส่ง · `voicelive.ts onclose` · `bookreader` ไม่ disconnect · Ctrl+E ซ้ำ · latest-request guard
+> **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 · REM log raw ตอน `themes=0` · guard "ไม่มีข้อมูลจริง" ใน `_run_agent_fc` (ไม่มีหลักฐานใน log) · job sync skills ตอนบูต embed ทีละรายการแย่ง recall หลัง restart
+> 🔒 reader/voice regen cap — ห้ามแตะ · **รอ user เคาะ:** (ข) response cache ข้าม session
+> ทำแบบเดิม: **เช็ค CI ของ commit ล่าสุดเขียวก่อนเริ่ม** → ค้น 2 ชั้น (**รวม log/วัด prod**) → รายงานแผน → /scrutinize → หาข้อมูลเพิ่ม → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → `ssh nas-cf true` → deploy → verify prod (ยืนยันว่าเส้นที่แก้ถูกวิ่งจริง) → **รอ CI เขียว** → devlog
+> 🔴 09-28: CI แดง 4 run จากก้อน 10 โดยผมเดินต่อก้อน 11 (Mac เขียวแต่ Linux แดงตามจังหวะ) — แก้แล้ว `2653bd5` · ดู devlog [ต่อ 23]
+> ⚪ งานเล็กค้าง: CLAUDE.md ~180 KB — ย้ายบล็อก ▶️ เก่า (08-24/08-26) ลง devlog · backlog `dbId` ข้อความที่เพิ่งส่ง (กระทบ 🗑️/pin/feedback)
+>
+> ## ✅ ก้อน 11 **ปิดแล้ว 09-28 (`d638c72` · devlog [ต่อ 22]) — อย่าทำซ้ำ**
+> reader `add`/`add_from_disk`/`next`/`seek` · admin memory list/delete · sessions rename/pin/share → งาน sync อยู่ใน `run_in_threadpool` · verify prod: seek 1,458 ms ระหว่างนั้น `/api/config` p50 15 ms ·
+> mutation 9/9 · ชุดเต็ม 2420 · เทสแบบเดียวกันใช้ `_race` ใน `tests/test_async_handlers_not_blocking.py`
+>
+> ## ✅ ก้อน 10 **ปิดแล้ว 09-28 (`7ba04e9` · devlog [ต่อ 21]) — อย่าทำซ้ำ**
+> `utils/llm.StreamCancel` (ธง + `socket.shutdown` ของ openai Stream ที่ลงทะเบียน) · `stream_response(cancel=)` ทุก provider · `routers/chat._CancellableStreamingResponse` task เฝ้าระดับ response ·
+> ใช้ทั้ง chat/regenerate · ถูกยกเลิกแล้วห้าม cascade/บันทึกคำตอบครึ่งๆ/remember · verify prod: ตัดระหว่าง qwen คิด → ยกเลิก + บันทึกคู่ในวินาทีเดียวกัน (เดิม 8–110 วิ) · mutation 14/14 · ชุดเต็ม 2410
+> 🔑 **กติกาใหม่:** หลังลูป stream ตัดสินด้วย `cancel.aborted` (provider หยุดกลางคันจริง) **ไม่ใช่** `cancel.is_set()` (อาจถูกตั้งหลัง LLM ตอบครบ) · เส้น SSE ใหม่ที่เรียก LLM ต้องใช้ `_CancellableStreamingResponse` + `_guard_disconnect(cancel=)` + ส่ง `cancel=` ให้ `stream_response` · ปลดตัวอ่านข้าม thread ใช้ `shutdown` ไม่ใช่ `close()` ·
+> provider ใหม่ต้องลงทะเบียน stream + เช็คธงทุก raw chunk + ห้าม cascade เมื่อ `_cancelled(cancel)` · fake ของ provider ในเทสต้องรับ `cancel=`
+>
+> ## ✅ ก้อน 9 **ปิดแล้ว 09-28 (`06763dd` · devlog [ต่อ 20]) — อย่าทำซ้ำ**
+> `_GeminiAdapter.synthesize()` ส่ง function responses ที่ค้าง + config ต่อคำขอ (`model_copy` ของ config เดิม · `tool_config` NONE · คำสั่งสรุปใน system_instruction) · Ollama ReAct `_is_informative()` +
+> guard ตอนตอบ (step>0 และยังไม่ได้ข้อมูล → ไม่ปล่อย) · mutation 13/13 · ชุดเต็ม 2401 · **verify Gemini API จริง** max_steps=1 → calculator → คำตอบ 7,006,652 ไม่มี error
+> 🔑 **กติกาใหม่:** venv ทดสอบสร้างจาก `requirements.lock` เท่านั้น · Gemini chat ส่ง config ต่อคำขอ = แทนที่ทั้งก้อน ต้อง `model_copy` ของเดิม ห้ามสร้างใหม่ · ผล tool ที่ "ไม่ได้ข้อมูล" ตัดสินด้วย `_is_informative()` ไม่ใช่ `startswith("❌")`
+>
+> ## ✅ ก้อน 8 **ปิดแล้ว 09-26 (`9c2ebd2` · devlog [ต่อ 19]) — อย่าทำซ้ำ**
+> `sync_from_db` ตัดสิน stale ด้วย snapshot ∪ ไฟล์ที่ reload ใต้ `_db_transaction` (lock แค่ตอนลบ · upsert นอก lock) · `save_skill` upsert เดี่ยว · Dream: `utils.dream._run_lock` (threading) ตัวเดียว
+> `run_dream_cycle()` ถือเอง → `DreamBusy` → router 409 / scheduler ข้าม+LINE ℹ️ · ถอด `core/state.dream_lock` · provider **คงเดิม** (gemini) · `utils/llm._classify_api_error()` ชนิด/status ก่อน substring ใช้ 4 provider ·
+> `dream.py` ใช้ `is_episodic_collection()` + เทส AST · mutation 12/12 · ชุดเต็ม 2386 · verify prod: dream ซ้อน → 409 ใน 1 วิ · skills 22=22
+> 🔑 **กติกาใหม่:** ห้ามถือ `_db_transaction` ระหว่าง embed/Chroma upsert (วัดแล้ว cold 6.73s > timeout 5s) · ห้ามส่ง mapping บางส่วนเข้า `sync_from_db` (ลบทุกอย่างที่ไม่อยู่ใน mapping) — upsert เดี่ยวใช้ `add_skill` ·
+> error ของ LLM client ห้ามจัดประเภทด้วย substring ก่อน type/status — ผ่าน `_classify_api_error()` · ทางเข้า Dream ทุกทางต้องผ่าน `run_dream_cycle()` (lock อยู่ในนั้น) · เทสที่โยน exception ให้ router ใช้คลาสที่ router ผูกไว้ (`rd.X`) เพราะมีไฟล์เทสที่ reload โมดูล
+>
+> ## ✅ ก้อน 7 **ปิดแล้ว 09-26 (`93e9b3d` · devlog [ต่อ 18]) — อย่าทำซ้ำ**
+> embed `_embed_one_cached` ล้ม = raise (lru ไม่แคช exception) + `_embed_one()` wrapper · `/api/tts` log ERROR + 502 · `utils/reqparse.py` (`as_int`/`as_str`) ใน 6 router + `skills_delete` `.`/`..` → 400
+> · `memory/store._key_only_from_primary()` — key-only อ่าน doc+metadata จากตัวหลัก (zip กับ `res["ids"]`) แล้วกรอง `min_confidence`/`verified_only` · กุญแจกำพร้าไม่ฉีด · mutation 11/11 · ชุดเต็ม 2361
+> 🔑 **กติกาใหม่:** ฟิลด์จาก body ต้องผ่าน `utils/reqparse` (ห้าม `int()`/`.strip()` ดิบ) · `lru_cache` ห้ามคืน sentinel ตอนล้ม ให้ raise แล้วห่อ · ค่าจาก `__keys` เป็นแค่ตัวชี้ id — ทุกการตัดสินใจอ่านจากตัวหลัก
+>
+> ## ✅ ก้อน 6 ข้อ 3-6 **ปิดแล้ว 09-26 (`b3bc833` · devlog [ต่อ 17]) — อย่าทำซ้ำ**
+> CSE key → header `X-goog-api-key` + `_redact_secrets()` ก่อน log · ratelimit `_touch()` LRU + `_cap()` ไล่ตัวเก่าสุด (เดิม `popitem()` LIFO ทิ้ง IP ใหม่ทันที) · `/api/agent` `_parse_max_steps()` clamp [1,10]
+> · `utils/memory._get_client()` probe TCP 1.5s + จำล้ม 15s ก่อนเข้า lock + ตั้ง httpx timeout 30s ให้ session ของ chromadb (private attr · เทสตรึงสมมติฐานลิบ) · verify prod ครบ (ข้อ 4 unit เท่านั้น) · mutation 14/14 · ชุดเต็ม 2338
+> 🔑 **กติกาใหม่:** ความลับห้ามอยู่ใน query string ของ URL (exception ของ requests สะท้อน URL ทั้งดุ้น) — ใช้ header · log ของ error จาก HTTP client ต้องผ่าน `_redact_secrets` · โค้ดที่แตะ ChromaDB ก่อน connect ต้องผ่าน `_get_client()` เท่านั้น (มี fail memory)
+>
+> ## ✅ ก้อน 6 ข้อ 1-2 **ปิดแล้ว 09-25 บ่าย (`b4e6d7a` `0526f8c` `97a6fcf` · devlog [ต่อ 16]) — อย่าทำซ้ำ**
+> `_guard_disconnect(inner, on_cut)` ใน `routers/chat.py` = async generator ครอบ `iterate_in_threadpool` จับ `CancelledError`/`GeneratorExit` · save ใต้ `CancelScope(shield=True)` · ปิด inner
+> · ครอบทั้ง `/api/chat` และ `/api/regenerate` · `pop_replies_after_last_user()` (ลบเฉพาะ assistant หลัง user ล่าสุด + กวาด feedback/skill_shadow) · regenerate ไม่ append U2 ซ้ำ
+> · race Stop→Regenerate ปิดทั้ง 2 ลำดับ: `has_reply_after()` (regen save ไปแล้ว) + `_REGEN_INFLIGHT` (regen กำลังวิ่ง) · verify prod 3 รอบ · mutation 14/14 · ชุดเต็ม 2314
+> 🔑 **กติกาใหม่จากก้อนนี้:** เส้น SSE ที่ save ลง DB ระหว่าง stream ต้องผ่าน `_guard_disconnect` (sync wrapper ดัก `GeneratorExit` **ไม่พอ** — close() มาตอน cyclic GC ช้าแบบสุ่ม) ·
+> ต้อง `anyio.lowlevel.checkpoint()` ก่อน yield ทุกชิ้น ไม่งั้น CancelledError ไปโผล่ที่ `await send()` ของ starlette นอกเฟรมเรา · verify บน prod ต้องรอ handler ที่มาช้ายิงจบก่อนเก็บกวาด
+> ⚠️ **ขีดจำกัดที่เหลือ (ก้อน 7):** handler มาถึงช้าเท่าเวลาที่ thread รอ LLM (วัด 8–110 วิ เพราะ qwen คิดนาน) — thread ค้างใน HTTP read ยกเลิกไม่ได้ · LLM เดินต่อ (= "backend ตอบต่อแม้กด Stop")
+> · guard ทั้งสองทำให้ความช้านี้**ไม่ทำข้อมูลเพี้ยน**แล้ว · ทางแก้จริง = ปิด httpx response จาก event loop ให้ thread โยนทันที
+>
+> ## ✅ audit ก้อน 5 **ปิดแล้ว 09-25 (`37a22cd` `d998d8c` · appscript.ui `2a87027` `ba576ae` · devlog [ต่อ 15]) — อย่าทำซ้ำ**
+> stream 4 เส้นใช้ `utils/sse.ts:sseEvents()` (throw `HttpError` เมื่อ `!res.ok`) + `utils/streamsettle.ts` (`settleStream` ใน finally · `streamFailureText` แยก
+> HttpError/AbortError/อื่น · `STREAM_ENDED_EARLY`) · ปุ่ม 🗑️ ลบคู่ข้อความอยู่ใน React (`utils/deletepair.ts` · ขึ้นเมื่อมี dbId และไม่ streaming) · overlay §20 gate ทั้ง IIFE ·
+> bundle **`index-CzH7YEbY.js`** · `enhanced.js?v=20260925-561b5814` · ทดสอบใน Chrome จริงแล้ว: ลบ→สลับเซสชันไม่จอขาว · Stop ขึ้น "⏹ หยุดแล้ว" · **413 ยืนยันแค่ unit test**
+> 🔑 **กติกาใหม่จากก้อนนี้:** เส้น stream ใหม่ต้องใช้ `sseEvents()` + `settleStream()` ใน finally + `streamFailureText()` ใน catch — ห้ามเขียนลูป `getReader()` เอง ·
+> overlay ห้าม `.remove()`/แก้ DOM ที่ React เป็นเจ้าของ (ทำจอขาวตอน reconcile ถัดไป) · แก้ `enhanced.js` แล้ว `?v=` ต้องเป็น `YYYYMMDD-<md5 8 ตัว>` (เทส `overlayversion.test.ts`) ·
+> JS probe ใน Chrome: ห้ามอ่าน `innerText` ของ node ใหญ่วนซ้ำ · ลูปรอ < 45 วิ (CDP timeout) · ข้อความทดสอบต้องเก็บกวาด (session + memory) เพราะ UI ส่งโดยไม่มี `X-Test-Request`
+>
+> ⚪ ค้างจากก้อน 4/5 ยังไม่แก้ (อยู่ใน MEDIUM ก้อน 7-8): EF conflict ใน `utils/memory.get_collection` ทำ cleanup ข้าม collection เงียบๆ · prune ยังใช้เงื่อนไข episodic inline (`dream.py:470`) ·
+> backend ตอบจบ+`remember()` แม้ client กด Stop (เห็นจริง 09-25)
+>
+> ## ✅ rebuild + prune image **ทำแล้ว 09-24 ดึก (devlog [ต่อ 14]) — อย่าทำซ้ำ**
+> image ใหม่ `1ce9d740…` 717 MB ไม่มี `.env`/`data`/`.git` · healthy · `<none>` 174→22 ใบ 48.65→14.71 GB · **ตอนนี้คอนเทนเนอร์ไม่มี `/app/.env`** (env จาก compose
+> `env_file:` — โค้ดไม่อ่านไฟล์ตรง) · วิธี rebuild ครั้งหน้า: `compose build hybrid-ai` แล้ว `compose up -d hybrid-ai` แยกคำสั่ง (ไม่ใช้ `--force-recreate`) · layer pip cache
+> อยู่ ⇒ ~30 วิ · **ห้าม `--no-cache`** ถ้าไม่จำเป็น · ⚠️ `docker image prune` รายงาน "reclaimed" ต่ำกว่าจริง (layer แชร์) ดู `system df` แทน
+>
+> ## ✅ audit ก้อน 4 **ปิดแล้ว 09-24 ดึก (`fdc269a` · devlog [ต่อ 13]) — อย่าทำซ้ำ**
+> body chunked เกินเพดานเคยตอบ 200 แล้วรัน cleanup/dream/unlock ด้วย body ว่าง (3 handler `except Exception` กลืน `_BodyTooLarge`) → ตัดออก + ratchet AST ·
+> ปุ่ม 🧹 allowlist episodic (`dualvec.is_episodic_collection` — เคยจะลบ `user_facts` 1/1 + `lessons` 8/8) · `teach()` ไม่ save ซ้ำ (`taught` gate ใน `chat.py`) +
+> anchor `^` ให้ `note/remember/prefer` · `.dockerignore` · mutation 12/12 · ชุดเต็ม 2302 · **build local: image ไม่มี `.env`/`data`/`.git` + pytest ในอิมเมจ 2302 ผ่าน**
+> 🔑 **กติกาใหม่จากก้อนนี้:** handler ที่เรียก `json_body_capped` ดัก `HTTPException` เฉพาะ 400 พอ **ห้าม `except Exception`** (exception ของ middleware ต้องทะลุ) ·
+> collection ที่ "ลบได้" ตัดสินด้วย `is_episodic_collection()` ที่เดียว (prune ยังใช้เงื่อนไข inline ที่ `dream.py:470` — ควรย้ายมาใช้ตัวเดียวกัน) ·
+> `.dockerignore` ห้าม `.env.*` (พา `.env.example` หาย) · ⚪ EF conflict ใน `utils/memory.get_collection` ทำ cleanup ข้าม collection เงียบๆ ยังไม่แก้
+> ⏭️ ถัดจาก rebuild: audit ก้อน 5 (หัวข้อ 5 ข้อ 5: overlay 🗑️ จอขาว (13) + `res.ok` (14) → MEDIUM) หรือ backlog `dbId` ข้างล่าง
+>
+> ## ✅ audit ก้อน 3 **ปิดแล้ว 09-24 ดึก (`82681d9` · appscript.ui `b09252b` · devlog [ต่อ 12]) — อย่าทำซ้ำ**
+> `fs_tools.search_files` 2 ชั้น (ปฏิเสธ glob `..`/absolute · ทุก match ผ่าน `_resolve_safe`) — เคยอ่าน `/proc/self/environ` ได้จริงบน prod ผ่าน agent tool
+> **และ** `POST /api/fs/search` · `_t_calculator` = regex เดิม + AST whitelist + เพดาน `bit_length(base)*exp ≤ 100k` (`9**9**9` เคยแขวน thread ถาวร ·
+> เทสต้องใช้ subprocess เพราะถือ GIL) · `markdown.tsx` regex `(?![\/\\])` + code fence/inline เป็น placeholder · bundle **`index-CEy6xRyw.js`** (md5 ตรง public)
+> · mutation 14/14 · ชุดเต็ม 2265 · vitest 509
+> 🔑 **กติกาใหม่จากก้อนนี้:** ผลจาก `rglob`/glob ใดๆ ต้องผ่าน `_resolve_safe` ต่อไฟล์เหมือน read/write · เทสที่อาจแขวน (GIL) ให้ `_calc_in_subprocess` ใน `test_agents.py`
+> · **macOS ไม่มี `timeout`** — รัน pytest ที่เสี่ยงค้างแบบ background+kill เสมอ (ครั้งนี้ค้างจริง ต้อง pkill)
+>
+> ## ✅ audit ก้อน 2 **ปิดแล้ว 09-24 ดึก (`e5223ef` · devlog [ต่อ 11]) — อย่าทำซ้ำ**
+> `bump_access_count` จับคู่ด้วย `res["ids"]` (Chroma คืนเรียงตาม insert ไม่ใช่ที่ขอ — ซอร์ส `sqlite.py .orderby(embeddings_t.id)` + วัดจริง prod server) ·
+> `truncate_from_db_id` หา assistant/session จาก row เอง + 404 เมื่อ id ไม่มี · helper กวาด `skill_shadow`/`feedback` ใช้ทั้ง truncate และ delete เดี่ยว
+> · **กู้ข้อมูล prod แล้ว**: created_at/timestamp จาก id (writer เดียว `store.py:51`) 28 รายการ + `last_accessed=created_at` + `access_count=0`
+> (จำลอง prune ก่อน = ลบ 0) → `backfill_keys.py` resync → probe 0/30 · 🔴 **`confidence` ของ episodic ทั้ง 30 อาจเป็นของคนอื่นมา 4 เดือน กู้ไม่ได้**
+> · mutation 15/15 · ชุดเต็ม 2248 · CI เขียว · `scripts/restore_memory_created_at.py` ใช้ซ้ำได้ (idempotent · dry-run default)
+> 🔑 **กติกาใหม่จากก้อนนี้:** ผลจาก `col.get(ids=…)` ห้าม zip กับ ids ที่ขอ — zip กับ `res["ids"]` เสมอ (เทส `test_bump_access_count_order.py` ตรึง)
+>
+> ## 🐛 backlog ใหม่ (เจอระหว่างก้อน 2 · ยังไม่แก้ · คนละก้อน): **ข้อความที่เพิ่งส่งไม่มี `dbId`**
+> เส้นส่งหลัก `app.tsx:1308/1324/1344` สร้าง user message ไม่มี `dbId` และ `done` ที่ `app.tsx:1399` ไม่ตั้ง `dbId` ให้ AI (ต่างจาก regenerate/edit 760/810)
+> · `dbId` มาจาก `loadHistory` ตอนสลับเซสชัน/ออกจากหน้าเสียงเท่านั้น ⇒ ในหน้าเดียวกันหลังส่ง: แก้ข้อความ = ไม่ยิง truncate (DB ซ้อนคู่เก่า+ใหม่) ·
+> ปุ่มที่ gate ด้วย `msg.dbId &&` (`1967/1979` pin/feedback) ไม่ขึ้นจนรีโหลด (ยืนยันจากโค้ด **ยังไม่ดูใน browser** — เช็คก่อนแก้)
+> · แก้ = backend ส่ง `user_message_id` ใน `done` (`routers/chat.py:741` + short-circuit 150/175/314/368) + `app.tsx` ตั้ง dbId ทั้ง user/AI
+>
+> 🔒 กติกา user ที่ยังมีผล: ค้นข้อมูล 2 ชั้น (เป็นบั๊ก? · วิธีแก้?) ก่อนลงมือ · ไม่ชัวร์ค้นเน็ต/ซอร์สที่ติดตั้ง · **scrutinize แผนตัวเองก่อนลงมือ** (ก้อน 2 จับได้ 3 จุด) · จดทุกอย่างลง devlog
+>
+> ## ✅ config ก้อน 4 **ปิดแล้วทั้งชุด 09-24** — `os.getenv` ดิบนอก registry ในโค้ด prod = **0** (จาก 195 จุด/40 ไฟล์ ตอน 09-02)
+> ก้อนสุดท้าย `reasoning/router` 4 · `utils/tts` 3 · `utils/ha_client` 3 → `f9b638b` (devlog [2026-09-24 ต่อ 7])
+> · registry บน prod **124 ชื่อ** · ชุดเต็ม **2210** · mutation 13/13 · deploy + probe ค่าก่อน=หลัง ตรงทุกค่า
+> 🔑 **สิ่งที่ต้องรู้ต่อไป:** `core.config.LMSTUDIO_API_KEY_RAW` = ค่าดิบ (`""` = ไม่ตั้ง/ว่าง) ·
+> `LMSTUDIO_API_KEY` = `RAW or "lmstudio"` (ทุก client ใช้ตัวนี้) — **router แนบ Authorization จาก RAW เท่านั้น**
+> (เทสตรึง 3 เคส: ไม่ตั้ง/ว่าง/ตั้ง) · default ที่ลงทะเบียน = `""` ⇒ `.env.example` เป็น `LMSTUDIO_API_KEY=`
+> · `TTS_MAX_*` = `env_str` literal ที่ call site แล้ว `_positive_int` parse (ไม่ raise = กัน crashloop) —
+> **ratchet เอกสารมองไม่เห็นชื่อที่ส่งผ่าน wrapper** (`_positive_env("TTS_MAX_CHARS", …)` = env ผี 2 ชื่อ · ชุดเต็มจับได้)
+>
+> ## 🥇 งานแรกเซสชันหน้า: **รอ user เคาะ** — คิวที่เหลือ (ไม่มีอะไรบล็อกกัน · แนะนำ ก เพราะเล็กและปิด backlog ได้ 2 ข้อ)
+> | | งาน | ขนาด | ที่มา |
+> |---|---|---|---|
+> | ก | ถอด `CHROMA_PATH` dead config + กวาด collection กำพร้า `memory_a` · `memory_logic(__keys)` บน prod | เล็ก | งานเล็กข้อ 10 |
+> | ข | voice idle 1008-loop ตอนคุยธรรมดา (keepalive frame เงียบ — ยังไม่เคาะแนวทาง) | กลาง | 🥇 เดิม |
+> | ค | ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน (`core/scheduler.py`) | เล็ก | งานเล็กข้อ 12 |
+> | ง | ถอด Google CSE ออกจาก chain (`utils/websearch.py`) ถ้าไม่คิดแก้ Cloud project | เล็ก | 🥇 เดิม |
+> 🧪 ยังรอ user ทดสอบด้วยมือ (ไม่ต้องเขียนโค้ด): โหมดอ่าน **พัก → อ่านต่อ** (บล็อก 09-21/22) · กดลิงก์ `export_file` · ChatBox pills
+> ✅ **ก้อน 1 ของ audit ปิดแล้ว 09-24 ค่ำ (`ff1ce17` · devlog [ต่อ 10])**: session token (cookie HttpOnly 30 วัน) แทนรหัสดิบ ·
+> `/shared` XSS · `/auth/check` 401 · WS เข้า lockout · uvicorn log ตัด query · share token 128-bit · **header รับเฉพาะ session token**
+> (`scripts/probe_live.sh` login ก่อนแล้ว) · ⚠️ **ทุกเครื่องต้อง login ใหม่ 1 ครั้ง + รีเฟรช** (bundle `index-S1X6MYpW.js` · enhanced `v=20260924-ebe7d45f`)
+> 🔑 กติกา user 09-24: **ค้นข้อมูล 2 ชั้นก่อนแก้ทุกก้อน** — (1) เป็นบั๊กจริงไหม (2) วิธีแก้ที่ถูกต้องของเรื่องนั้น (เอกสาร/สเปก/ซอร์ส lib ที่ติดตั้ง) แล้วรายงานก่อนลงมือ
+> ⏭️ **งานถัดไป = ก้อน 2 ของ audit (หัวข้อ 5 ข้อ 2): truncate ข้าม session + `bump_access_count` สลับ metadata** — เริ่มด้วยขั้นค้นเหมือนก้อน 1
+> 🩺 **ตรวจทั้งระบบแบบไม่เว้น 09-24 บ่าย → `docs/audit/2026-09-24-full-audit.md`** (devlog [ต่อ 9]) — runtime สะอาด แต่โค้ดเจอ
+> **HIGH 14** (XSS `/shared` ขโมยรหัส · truncate ข้าม session · metadata สลับทุก recall · fs glob หลุด root · calculator DoS ·
+> auth/check+WS ไม่เข้า lockout · markdown `/\` bypass · cleanup ลบ user_facts · teach ซ้ำ · body-cap ถูกกลืน · ไม่มี .dockerignore ·
+> overlay 🗑️ จอขาว · stream ไม่เช็ค res.ok) + MEDIUM ~30 + LOW ~35 · ก้อน 1 (ข้อ 1,2,7) ปิดแล้ว — ที่เหลือตามหัวข้อ 5 ของไฟล์นั้น
+> 🔴 **1008→1007 ถอนแล้ว**: 1007 เกิดบนสายสด (go_away 0 ครั้ง) ทั้ง "handle พาบริบท" และ "โซ่ go_away" ผิด · ต้นเหตุยังไม่รู้ ·
+> สายเสียงต้อง log `usage=` ก่อน (reader มีแล้ว) · ที่แน่คือ 1008-loop = client reconnect วน ไม่มี idle cutoff
+> 🔑 **กติกา user: "เช็คข้อมูล ก่อนจะลงมือให้ชัวร์ก่อนทุกครั้ง"** — ทั้งสองฝั่งของสัญญา + log/คำสั่งจริง
+> · **09-23 ค่ำ user เพิ่ม: "เช็คข้อมูลระบบจริงก่อน อย่าเชื่อ log ถ้าข้อมูลยังไม่ครอบคลุมให้ค้นเน็ตก่อน"**
+> ⇒ ก่อนย้ายไฟล์ไหน probe ในคอนเทนเนอร์ว่า env ตั้งจริงไหม + ค่าที่ resolve (ไม่ใช่อ่านจาก `.env.example`)
+> · 🔒 **เสียงถือว่าใช้ได้แล้ว (user ยืนยัน 09-23) — ห้ามปรับ/ห้ามเสนอปรับ** (ดู memory)
+> ✅ เสร็จแล้ว 09-23 — **อย่าทำซ้ำ**: `utils/llm.py` (`0f5844b`) · `agents/orchestrator.py` (`cbddc04`)
+> · `utils/summarize.py` (`2dcd501`) · `utils/home_tools.py` (`28b038b`) · `utils/voice.py` (`16e0b83`)
+> · `fs_tools`/`embed`/`code_sandbox` (`cbd7b1a`) · `websearch`/`response_cache`/`memory` (`e8844bc`)
+> · ชั้น core `ratelimit`/`observability`/`scheduler` (`641617d`) — `LOG_*` เจ้าของ = config
+> · `reflection`/`query_rewrite`/`ocr` (`7ccd25a`) — registry **ปฏิเสธชื่อที่ลงจากคนละโมดูลแล้ว**
+> (fail-loud ตอน import · แม้ default เท่ากัน) ⇒ ไฟล์ที่ย้ายต้อง import ค่าจากเจ้าของจริงๆ ไม่งั้นแอปไม่ขึ้น
+> · `dream`/`routers/dream`/`heartbeat`/`notify` (`1e69399`) — ส่วนเขียนมือของ `.env.example` **ว่างแล้ว**
+> · ตระกูล skills 5 ไฟล์ (`55fa487`) · **`memory/correction`/`lexical`/`obsidian_sync`/`db_backup` (`b24fd84`)**
+> · **ก้อนง่าย `routers/system`/`reader`/`chat` + `image_gen`/`file_export`/`history` (`f101186`)**
+> · **ก้อนปิดท้าย `reasoning/router`/`tts`/`ha_client` (`f9b638b`)** — เหลือ **0 จุด** (นับด้วย AST ไม่รวม
+> tests/scripts/legacy และ `core/env_registry.py` ที่เป็นที่เดียวที่แตะ `os.environ`)
+> 🔴 **reload `core.config` ในเทส = ต้องมี teardown reload กลับเสมอ** — fixture ที่ไม่คืนสภาพทำให้
+> tmp path รั่วให้เทสอื่น · ชุดเต็มเขียวเพราะลำดับไฟล์ (ครั้งที่ 3) · ตัวจับคือ baseline gate ของ mutation
+> ที่รันชุดย่อย ⇒ **รันชุดย่อยของไฟล์ที่แตะ + เทสของ config ก่อนเชื่อชุดเต็ม**
+> 🔑 **อยู่นอก LAN → ใช้ `nas-cf` ได้ทั้ง probe และ deploy** (ยืนยัน 09-24) · แยก "NAS ดับ" ออกจาก
+> "เราอยู่นอกวง" ด้วย `curl https://ai.pawinhome.com/api/config` + `route -n get default` ก่อนสรุป ·
+> macOS ไม่มี `timeout` — guard ด้วย background + kill
+> 🔑 **mutant ที่ "รอด" ต้องอ่านซ้ำว่ามันเปลี่ยนพฤติกรรมจริงไหม** (`"" or x` = no-op) ก่อนไปแก้เทส
+> 🔑 **default ซ้อน** (`os.getenv("X", os.getenv("Y", ...))`) ลงทะเบียนเป็นตัวเลขไม่ได้ → ลง `""` +
+> `or <ค่า Y จาก config>` (ทำแล้ว: `REFLECTION_MODEL` · `QUERY_REWRITE_MODEL`)
+> 🔴 **ทุกก้อนต้องเช็ค `grep -c /app` ในส่วน generate ของ `.env.example` = 0 ก่อน push** — เกือบชน
+> CI guard ซ้ำรอบที่ 2 ที่ doc ของ `LOG_FILE` (จับได้จากเช็คนี้เอง ไม่ใช่จาก CI)
+> 🔑 **env ที่อ่าน *ในฟังก์ชัน* (runtime read) → ย้ายเป็นระดับโมดูล** (ทำแล้ว 6 จุดใน `e8844bc`):
+> env ใน prod นิ่ง · ที่พึ่ง runtime read มีแต่เทสที่ `setenv` → เปลี่ยนเป็น `monkeypatch.setattr`
+> ค่าในโมดูล · **ก่อนย้ายต้อง grep ว่าไม่มีโค้ด prod เขียน `os.environ[...]` ชื่อนั้น** ·
+> registry ไม่มี helper อ่านตอนเรียกโดยตั้งใจ (ลงทะเบียนในฟังก์ชัน = ไม่เข้า `.env.example`)
+> 🔑 **ค่าที่มี parser/guard เดิม (`off` · ค่าไม่บวก → default+warning) ลงเป็น `env_str` แล้วคง parser**
+> — `env_float`/`env_int` จะ raise ตอน import แทน (ทำแล้ว: `VOICE_LEVEL_LOG` · `WEB_SEARCH_MIN_SCORE` ·
+> `BRAVE_MIN_INTERVAL` · `TTS_MAX_CHARS`/`TTS_MAX_CHUNKS`) — **ต้องเป็น `env_str("NAME"` literal ที่ call site**
+> ไม่ใช่ส่งชื่อผ่าน wrapper ไม่งั้น ratchet เอกสารนับเป็น env ผี (เจอจริง 09-24)
+> 🔴 **doc ที่ลงทะเบียนห้ามมี path ในคอนเทนเนอร์ (`/app/...`)** — `test_ไม่มี_path_เฉพาะเครื่องหลุดเข้าไฟล์`
+> ใช้ repo root ของเครื่องที่รันเป็น needle และในอิมเมจ CI root = `/app` ⇒ **Mac เขียวแต่ CI แดง**
+> (เกิดจริง `cbd7b1a` → แก้ `a8dc550`) · ให้ชี้ `docker-compose.yml` แทน
+> 🔴 **เทส semantics ห้าม `importlib.reload` โมดูลที่มีคลาส exception** (`FSError` ตัวใหม่ ⇒
+> `pytest.raises` ของไฟล์เทสอื่นไม่จับ · รันเดี่ยวเขียว รันตามหลังแดง) — ใช้ `_fresh_module()` /
+> `_reload_with()` ใน `tests/test_env_registry.py` (exec เข้า namespace ใหม่ + สลับ `core.config`
+> ใน `sys.modules` ชั่วคราว) · และอ่าน config ที่ `sys.modules["core.config"]` ไม่ใช่ `import core.config as`
+> **voice.py ปิดแล้ว (devlog [09-23 ค่ำ]):** เป็น "ลบ 1 + ย้าย 5" ไม่ใช่ย้าย 6 — `GEMINI_LIVE_MODEL` ใน
+> voice เป็น dead code (server import จาก config) ⇒ ~~circular import~~ ไม่มีตั้งแต่แรก ·
+> `VOICE_LEVEL_LOG` = `env_str("on")` + parser เดิม **ห้ามเปลี่ยนเป็น `env_bool`** (on/1 จะดับ meter) ·
+> sha `build_live_config`/`build_reader_config` ก่อน=หลัง (`dbff1a358e00ef03` / `8c5dbf9603eb3630`)
+> 🔑 **กับดักที่จดไว้ล่วงหน้า ("ระวัง circular import") ต้องเช็คว่าสมมติฐานยังจริงก่อนเชื่อ**
+> ถัดจากนี้: `fs_tools`/`embed`/`code_sandbox` (6) → `websearch`/`response_cache`/`memory` (5) → ที่เหลือ
+> 🔑 `.env.example` เรียงตาม (ลำดับใน `MODULES`, บรรทัดในซอร์ส) — **ไม่ขึ้นกับลำดับ import** ·
+> default ที่คำนวณจาก env อื่น → ลงทะเบียน `""` แล้วคำนวณเมื่อว่าง (ดู `ROUTER_IP`)
+> วิธีทำ: เทสแดงก่อน → ย้าย → **เติมชื่อโมดูลใน `core/env_registry.MODULES`** →
+> `python scripts/gen_env_example.py --write` → ชุดเต็ม + ruff + mutation → deploy + เทียบค่า
+> ที่ prod resolve ได้ก่อน/หลัง (probe ในคอนเทนเนอร์)
+> ⚠️ **ชื่อที่มีเจ้าของแล้ว ให้ import ค่า ห้ามลงทะเบียนซ้ำ** (มีเทสบังคับ)
+> ⚠️ **ไม่เติม `MODULES` = ชื่อไม่เข้า `.env.example` เงียบๆ** (REGISTRY เติมตอน import)
+> ✅ ~~`reasoning/router.py` อ่าน `LMSTUDIO_API_KEY` เองโดยไม่มี default~~ ปิดแล้ว 09-24: config ให้
+> **ค่าดิบ** `LMSTUDIO_API_KEY_RAW` แยกจากค่าหลักที่ถอยไป placeholder — router ยังไม่แนบ Authorization เมื่อ
+> ไม่ตั้ง/ว่าง (เทสตรึง) · ถ้าจะเพิ่มผู้บริโภคที่ต้องแยก "ไม่ตั้ง" ออกจาก placeholder ให้ใช้ RAW ตัวเดียวกัน
+> 🔑 mutation: ดูด้วยว่า **แดงกี่ตัว** — fixture พังทำให้ได้ "killed" ปลอม 10/10 มาแล้ว
+> 🐛 **บั๊กที่ยังเปิด (ตรวจด้วยหลักฐานแล้ว · devlog [2026-09-23 ต่อ 4/5]):**
+> ✅ ~~(1) Ollama ReAct ส่งคำตอบกุ~~ แก้แล้ว `47d94e5` · ✅ ~~(2) `LMSTUDIO_API_KEY=` ว่าง ⇒ แอปล้ม~~
+> แก้แล้ว (ค่าว่าง = ไม่ตั้ง → placeholder ที่ `core/config.py` ที่เดียว · devlog [ต่อ 8])
+> ✅ (3) vault sync ปิดครบ: ~~ช้า 22 นาที~~ `0329561` · ~~ซ้อนกัน~~ `c51f86b` · ~~ไม่ retry~~ `f3a4e9d`
+> (job `vault_catchup` ทุก 5 นาทีเฉพาะตอนค้าง · devlog [ต่อ 9/10/11])
+> (❌ ~~"UI ขึ้น ✅ ทั้งที่มี errors"~~ **ผิด ถอนแล้ว** — UI ขึ้น ❌ ถูกต้องมาตั้งแต่ `df8e018` · devlog [ต่อ 7])
+> ✅ ~~(4) web_search ล้มทั้งก้อนเพราะหน้าเว็บช้า~~ แก้แล้ว `3bb1803` (`fetch_url_safe(deadline=)`
+> \+ ดัก `FuturesTimeout`) · devlog [2026-09-23 ต่อ 6]
+>
+> ## ✅ 09-23 ทำเสร็จ 3 ก้อน (devlog [2026-09-23] ×3 · **อย่าทำซ้ำ**)
+> | ก้อน | ได้อะไร |
+> |---|---|
+> | 1 | ปิด default ขัดกัน **6 ชื่อ 27 จุด** — `LMSTUDIO_BASE_URL` 4 ไฟล์เคย default เป็น **IP เครื่อง PC** · `GEMINI_MODEL` 3 ไฟล์เคยเป็นรุ่นที่ **retired (404)** · เทส `test_env_default_consistency.py` (AST · ผูกกับคุณสมบัติ) |
+> | 2 | `core/env_registry.py` — `core/config.py` อ่าน env ผ่าน helper (**27 ชื่อ 6 กลุ่ม** · doc บังคับ) · ไฟล์อื่นไม่ต้องแก้ |
+> | 3 | `.env.example` ส่วนบน **generate จากโค้ด** · เพิ่ม env แล้วไม่ regenerate = **CI แดง** |
+> mutation รวม 18/18 · ทั้งหมด deploy + verify บน prod + CI เขียว
+> 🔑 **บทเรียนซ้ำ 2 รอบในวันเดียว: ตัวกันที่ผูกกับ *รูปแบบการเขียน* พังตอนรูปแบบเปลี่ยน**
+> (regex `getenv(` ของ ratchet · เกณฑ์ "คำเตือนต้องอยู่บรรทัดเดียวกับ `NAME=`")
+> 🔑 **เทสที่อ่าน global state ต้อง assert ว่า state ถูกเติมแล้ว** — mutation จับได้ว่า
+> `test_ทุกรายการมีคำอธิบาย` วนลิสต์เปล่าแล้วผ่านฟรี
+>
+
+> ## 🧩 09-23: config ก้อน 1 เสร็จ — env ชื่อเดียวกัน default ต้องตรงกัน (devlog [2026-09-23])
+> ตัวกันใหม่ `tests/test_env_default_consistency.py` (AST · ผูกกับคุณสมบัติ ไม่ใช่รายชื่อ · mutation 5/5)
+> ปิด 6 ชื่อ/27 จุด — ตัวหนัก: `LMSTUDIO_BASE_URL` 4 ไฟล์ default เป็น **IP เครื่อง PC** แทนที่จะเป็น
+> `""` (opt-in ปิด) · `GEMINI_MODEL` 3 ไฟล์ default เป็น `gemini-2.5-flash` ที่ **retired แล้ว (404)**
+> ✅ deploy+verify บน prod (IP ค้าง 0 จุด · `GEMINI_MODEL` ตรงกัน 3 จุด · `/api/config` 200)
+> ✅ **ก้อน 2 เสร็จ 09-23:** `core/env_registry.py` — `core/config.py` อ่าน env ผ่าน
+> `env_str/env_int/env_float/env_bool` แล้ว (**27 ชื่อ 6 กลุ่ม** · ทุกตัวมีคำอธิบายบังคับ) ·
+> ย้ายท่อล้วน ค่าไม่เปลี่ยน · ไฟล์อื่นไม่ต้องแก้ · mutation 7/7 · deployed
+> ⚠️ **`test_env_docs_ratchet` regex ต้องรู้จัก helper ด้วย** ไม่งั้น env ของ config
+> กลายเป็น "ไม่มีโค้ดอ่าน" แล้วเทสสั่งให้ลบเอกสารของ env ที่ยังใช้จริง (เติมแล้ว)
+> ✅ **ก้อน 3 เสร็จ 09-23:** `.env.example` ส่วนบน **generate จาก registry**
+> (`scripts/gen_env_example.py --write`) · เพิ่ม env แล้วไม่ regenerate = **CI แดง** ·
+> ส่วนล่างยังเขียนมือ (env ~95 ชื่อจากไฟล์อื่น) · mutation 6/6
+> 🔴 default ที่คำนวณจากตำแหน่งรีโปต้องเขียนเป็น `./data` ไม่งั้น dev/CI ได้คนละ path
+> ⏭️ **ก้อน 4 รอ user เคาะ:** ย้าย env ~95 ชื่อที่เหลือเข้า registry ทีละโดเมน
+> (`utils/llm.py` 28 จุด → `agents/orchestrator.py` 11 → ที่เหลือ)
+> ⛔ **ไม่เอา `pydantic-settings`** (มีใน lock แต่ไม่มีใน `requirements.txt` · ไม่มีใครใช้ ·
+> บังคับเปลี่ยนวิธี import ทุกไฟล์โดยไม่ได้อะไรเพิ่ม)
+> 📌 ช่องที่ยังเปิด: default ที่ *คำนวณ* เทียบไม่ได้ ⇒ `DB_PATH` relative-vs-absolute ยังหลุด
+
+> ## ✅ 09-21/22: อ่านนิยายเสียงเบาบน iPhone — **ปิดคดีเส้นเริ่มอ่านแล้ว** (devlog [2026-09-21 ดึก])
+> ต้นเหตุ: Web Audio ล้วน (ไมค์ปิดตอนอ่าน) → Safari เลือก `ambient` · A/B บนเครื่อง user: `playback` ดังเท่า `<audio>`
+> แก้ `bookreader.ts` ตั้ง `navigator.audioSession.type` (`4263cf0` · bundle **`index-BpLfIzAR.js`**)
+> ✅ **user ฟังจริง 09-22 13:08 น. แล้วยืนยันว่าเสียงดังปกติ** (log: xianni @43975 อ่านครบ 39.1 วิ/40.5 วิ ·
+> ไม่มี "ท่อนไม่ครบ" · ท่อนนี้เคยได้เสียงเปล่า 2 ครั้งเมื่อ 09-21) → ลบหน้าทดสอบ `static/audio_ab.html`
+> \+ `static/ab_sample.wav` แล้ว
+> ⏳ **เหลือเส้นเดียวที่ยังไม่พิสูจน์: พัก → อ่านต่อ** (ตั้ง `playback` *หลัง* AudioContext ถูกสร้างแล้ว)
+> — รอบ 09-22 user กดพักแล้ว**กดปิด** (`stop=True`) จึงไม่ได้เดินเส้นนี้
+
+> ## ✅ 09-18: turn เปล่า/เสียงไม่ครบ — แก้+deployed+ถอยที่คั่นแล้ว **อย่าทำซ้ำ** (devlog [2026-09-18])
+> `ab0bc8d` server · `85dbd22` bundle **`index-Bc6lGo2-.js`** · appscript.ui `7152f8d` · inode 253849 ตรง
+> · ท่อน < **5.0 วิ/100 ตัว** ไม่เลื่อนที่คั่น → ซ้ำสายเดิม 1 → session ใหม่ · หน่วง 1/2/4 · เพดาน 3 → พักเอง
+> · ถอยที่คั่นแล้ว (อ่านค่าก่อนเขียน): perfectworld **34467→24549** · xianni **48001→42807**
+> · ข้อสันนิษฐาน "เกิดเพราะ 1011/โควตา" **ผิด** (ห่าง 3 ชม. คนละ session) · ต้นเหตุยังไม่รู้ (python-genai #2117)
+> · ⚠️ `nas-cf` ค้างรอ Cloudflare Access ใน browser — อยู่ LAN ใช้ `ssh nas` แทน
+
+> ## 🥇 09-18 ค่ำ: ฟังจริงแล้ว — ผลดี **แต่ค้างกลางทาง** (devlog [2026-09-18 ค่ำ] · จดย้อนหลัง 09-21)
+> ✅ ช่วงที่เคยหาย 28678→33955 อ่านครบ 9 ท่อน · ✅ เกณฑ์ 5.0 ของ user จับถูก (ท่อนเดิม 09-03 ได้ 29.7 วิ
+> รอบนี้ 42.9 วิ = หายจริง ~13 วิ) · 🔁 ลองซ้ำเกิดจริง 4 ท่อน (3 รอด · @49619 ชนเพดาน → พักเอง)
+> 🔴 **`turn_complete_reason` = `None` ทุกครั้ง ⇒ ฟิลด์นี้ใช้หาต้นเหตุไม่ได้ ปิดทางนี้**
+> 🐛 **บั๊กที่ยังไม่แก้:** เส้น "ต่อ session ใหม่" (ลองซ้ำครั้ง 2–3) **ยังส่ง `resume_handle` เดิม**
+> ⇒ ไม่ได้เริ่มสดตามที่ตกลง (token โต 57,761→58,000→58,239 ข้าม session) · `server.py:~687` ทิ้ง handle
+> เฉพาะตอนพัก · เทส 12 ตัวจับไม่ได้เพราะ Live ปลอมไม่ตรวจ *ค่า config*
+> ✅ 09-21 อ่าน log ดิบแล้ว: "@49619 ลอง 5 รอบ" **ไม่ใช่บั๊ก** — ป้อน 5 ครั้ง แต่ตัดสิน 4 (เพดาน 3 ถูก)
+> บรรทัดที่ 2 ถูก `go_away` ตัดกลางจึงไม่ถูกตัดสิน ⇒ **turn ที่โดน go_away ตัด ไม่นับเป็นความล้มเหลว**
+> (ยังไม่มีเทสตรึงพฤติกรรมนี้) · prompt token 57,004→57,761→58,000→58,239 = บริบทไม่เคยเริ่มสด
+> 🧪 **09-21 ทดลองบน prod แล้ว:** @49619 เปิด session ใหม่ไม่มี handle → **อ่านครบ 3/3** (37.6–38.7 วิ)
+> ⇒ เนื้อหาไม่ผิด · ข้อแก้ "ทิ้ง handle" ได้ผลกับท่อนนี้จริง · ⚠️ "บริบทยาว = ตัวการ" ยังพิสูจน์ไม่ได้
+> (กลุ่มควบคุมพบว่าวิธีใส่ประวัติเป็นข้อความเองทำให้ได้ 0 ไบต์) — devlog [2026-09-21]
+> 🔴 **09-21 บ่าย ทดสอบจริง:** session ที่ต่อด้วย handle **อ่านท่อนก่อนหน้าซ้ำแทนท่อนที่ป้อน** (ถอดเสียงแล้ว
+> ได้ @48427 ทั้งท่อน · เสียงยาวเกือบ 2 เท่า 4/5 รอบ) · handle พาบริบทไปจริง (958–2,524 vs สด 733 token)
+> · session สดอ่านถูก 5/5 — devlog [2026-09-21 บ่าย]
+> ✅ **แก้แล้ว + deployed 09-21 (`b295465`)** — โหมดอ่าน**ไม่ใช้ `resume_handle` เลย** ทุกกรณี
+> (ลองซ้ำ/go_away/พัก/error) · เทส `tests/test_reader_no_resume.py` ตรวจ config ตอน connect จริง
+> (แดงก่อนแก้) · ชุดเต็ม 1830 · CI เขียว · inode 255143 ตรง · โหมดคุยไม่แตะ (ยังใช้ handle)
+> 🧪 **รอฟังจริง:** รีเฟรชหน้าเว็บ → เปิด perfectworld (ค้างที่ **49619**) → กดอ่านต่อ · ท่อนแรกต้องขึ้นต้น
+> "วิ๋นเฟิงกล่าว “โครม!”" · อ่าน log: `grep -aE "Reader WS|ท่อนไม่ครบ" /app/logs/server.log | tail -40`
+> — ดูว่า ⚠️ ท่อนไม่ครบ ลดลงไหม และ `usage=prompt=` หลัง go_away **ต้องตกกลับหลักพัน** (เดิมโตถึง 58k)
+
+> ## ✅ ปิดคดีแล้วในเซสชัน 09-01/09-02 — **อย่ารื้อ อย่าทำซ้ำ** (รายละเอียดเต็มใน devlog)
+> | เรื่อง | สถานะ | commit |
+> |---|---|---|
+> | `reader.db` 130 MB ไม่เคยเข้า backup 23 วัน | ✅ รอบ **scheduled จริง** 09-02 03:30 ได้ **4 ใบ 19.6 MB** (ของเก่า 3 ใบ 6.2 MB) | `d2c76cb` `508aa08` |
+> | env ผีในเอกสาร + ทิศ fallback embeddings กลับหัว | ✅ + ratchet 2 ชั้น | `7ca7c52` `4a32c80` |
+> | เงา `__keys` ไม่ถูกลบตามตัวหลัก (ของที่ลบแล้วโผล่กลับมาได้) | ✅ cascade รวมศูนย์ + `scripts/reconcile_keys.py` · กวาดกำพร้าบน prod แล้ว | `20b299f` |
+> | `/api/health` รายงาน `documents: 0` ทั้งที่มี 1,740 chunk | ✅ นับผ่าน client ดิบ + `unreadable` | `6bf9513` |
+>
+> ### 🔑 บทเรียนที่ยังใช้ได้ต่อ (ตกผลึกจาก 4 เรื่องข้างบน)
+> - **ตัวกันที่ผูกกับ *ชื่อ* กันได้แค่คนที่ตั้งชื่อตามแบบ — ต้องผูกกับ *คุณสมบัติ***
+>   (ratchet backup จับตามชื่อตัวแปร → มองไม่เห็น `DB_PATH` เอง)
+> - **"อ่านไม่ได้" ต้องไม่มีหน้าตาเหมือน "ว่าง"** — เจอ 2 ครั้ง (`_google_search`
+>   403→"0 ผล" · `get_memory_stats` EF conflict→`0`) · ครั้งหลังหลอกผมเองจนรายงานว่า
+>   ข้อมูลหาย 1,740 รายการ
+> - **helper + เทสที่ถูกต้อง แต่วางไว้ใน `scripts/` = ไม่มีผลกับ production**
+>   (`TestDeletionStaysInSync` เขียนอาการไว้ถูกตั้งแต่แรก แต่เส้นจริงไม่เคยรับไปใช้)
+> - **ของที่เพิ่มทีหลังต้องไปไล่ดูว่าใครเคยกวาดด้วยเงื่อนไขกว้างๆ** — `__keys` ใช้ prefix
+>   `memory_` เดิม ⇒ ตัวกวาด 4 ตัวที่เขียนก่อนหน้ารับมันเข้าไปเงียบๆ
+> - **mutation ต้อง fail-loud** — ไดรเวอร์ shell เคยรายงาน "รอด" ครบทั้งที่ pytest
+>   ไม่ได้รันเลย (`no tests ran` ไม่มีทั้ง `failed`/`error`) ⇒ ต้องมี baseline gate
+>   \+ แยก `INVALID` ออกจาก `SURVIVED`
+>
+> ## 🩺 ผลตรวจทั้งโปรเจกต์ 09-02 — 8 ชั้นสะอาด (ยืนยันบน prod)
+> router wiring 14/14 · auth 89 endpoint เปิด 9 ตรงเจตนา + fail-closed ยิงจริงได้ 401 ·
+> async discipline 0 จุด · body cap · scheduler timezone · backup 4/4 + chroma รายวัน ·
+> bundle git = prod · skills git = mount = chroma = 22
+> 🟡 ที่ยังเปิดอยู่ → ดู "งานเล็กที่ค้าง" ข้อ 9-12 ข้างล่าง
+
+> ## 🧪 รอ user ทดสอบด้วยมือ (ค้างจากเซสชัน 09-02 ค่ำ — **อย่าเพิ่งถือว่าปิด**)
+> 🆕 **09-03 สาย: ฟังจริงรอบแรก 10:58–11:09 แล้ว แต่ไม่ได้กดพัก** ⇒ ด่านนี้ยังเปิด · รอบนั้นจบด้วย
+> **`1011 quota` ปิดหนังสือ** เพราะสายเสียงเปิดคู่ + วน 1008 ทุก 152 วิ = 8 Live session/11 นาที
+> → **ปิดสายเสียงตอนอ่านแล้ว** (`23f98d0` · devlog [09-03 สาย]) · ✅ **14:25–14:30 ฟังจริงผ่านทั้ง
+> พัก/อ่านต่อ (`df8656b`) และปิดสายเสียง — ด่านนี้ปิดได้** · scrutinize เจอสายผี (disconnect กลาง
+> connect) → ปิดแล้ว `3fd6c2e` · bundle ปัจจุบัน **`index-B2TsZKVj.js`** · devlog [09-03 บ่าย]
+> ✅ ~~turn เปล่า 8 ท่อน~~ → ปิดแล้ว 09-18 ดูบล็อกบนสุด
+> ▶️ **รอบหน้า: รีเฟรชหน้าเว็บก่อน** (เอา bundle ใหม่) → เปิดอ่าน → ป้ายต้องขึ้น
+> '📖 ปิดสายเสียงระหว่างอ่าน' → **กดพัก** → ป้ายกลับเป็นฟังอยู่ (สายเสียงเปิดคืน) → รอ 1-2 นาที
+> → กดอ่านต่อ → ⏹ · แล้วอ่าน log 2 อย่าง: `grep -aE "Reader WS|Voice WS\] เปิดสาย|1011"`
+> — **ระหว่างท่อนอ่าน ต้องไม่มี `[Voice WS] เปิดสาย` เลย** และไม่มี `1011` · ถ้ายังมี 1011
+> ทั้งที่ไม่มีสายเสียง = โควตาไม่ใช่เรื่อง concurrent → ทำข้อ ข (regen+backoff)
+> โค้ด deploy + verify ด้วย probe แล้ว แต่ **ยังไม่มีใครฟังนิยายจริงหลังแก้**
+> (เล่มล่าสุดถูกเปิด 2026-08-27 · หลังจากนั้นมีแต่ probe ของผมเอง)
+>
+> **สิ่งที่ต้องลอง** (โหมดอ่าน 📖 บน iPhone): เปิดอ่าน → **กดพัก** → รอสัก 1-2 นาที →
+> **กดอ่านต่อ** → ฟังว่าอ่านท่อนเดิมต่อได้ไหม (ควรเริ่มช้าลง ~1-2 วิเพราะต่อ session ใหม่)
+> → กด ⏹ ปิด · แล้วอ่าน log:
+> ```bash
+> ssh nas-cf 'sudo -n /usr/local/bin/docker exec ai-backend-1 \
+>   sh -c "grep -aE \"Reader WS\" /app/logs/server.log | tail -20"'
+> ```
+> | เห็นอะไร | แปลว่า |
+> |---|---|
+> | `พัก … — ปิด Live session ระหว่างพัก` ตามด้วย `เลิกพัก … หลัง Ns` | ✅ ทำงานถูก |
+> | `เลิกพัก` แล้ว**ไม่มี** `ป้อนท่อน` ตามมา | ต่อ session ใหม่ไม่สำเร็จ — ดู error ถัดไป |
+> | ไม่มีบรรทัด `พัก …` เลยทั้งที่กดพัก | ธง `paused` ไม่ถึง server (ปัญหาฝั่ง client) |
+> | `ปิดสาย — cancel ลูปที่ค้าง N ตัว (… regen=True)` | เคสเสี่ยงที่เคยเตือน — เฟรมคำสั่งอาจหาย |
+>
+> 🔑 **ที่คั่นต้องไม่ขยับตอนพัก** — กดพักกลางท่อนแล้วอ่านต่อ ต้องได้ยินท่อนเดิม**ตั้งแต่ต้น**
+> (ตั้งใจ: ฟังซ้ำดีกว่าเนื้อหาหาย) ถ้าเนื้อหา**ข้าม** = บั๊กใหม่ ให้รายงานทันที
+> · ⚪ **ยกเว้น** พักใน ~1-2 วิสุดท้ายของท่อนแล้วหายแค่ท้ายท่อน = ของเดิม 08-15 (client flush
+>   jitter หลัง server ได้ `turn_complete` แล้ว) ไม่ใช่บั๊ก `df8656b` · หายทั้งท่อนถึงนับ
+> · ✅ 09-03 scrutinize `df8656b`: โค้ดถูก · เทสตัวชี้ขาดเคยผูกจังหวะ 40ms → แก้ `b02c195`
+>   (fake ที่คั่นจริง + assert invariant · mutation 4/4) — devlog [2026-09-03 เช้า]
+>
+> ## 🥇 งานเซสชันหน้า
+> - ✅ **agent mode ทิ้งรูปเงียบๆ — ปิดแล้ว 2026-09-02** (`6ffdfad`) `run_agent()` รับ
+>   `image_b64`/`image_mime` แล้วส่งถึง adapter จริงทั้ง gemini (list[Part] + inline_data)
+>   และ lmstudio (content-parts `image_url`) · ollama ReAct ไม่มี vision → **yield event
+>   warning บอก user** ไม่ทิ้งเงียบ · `tests/test_agent_vision.py` (8) มีกลุ่มควบคุม
+>   "ไม่มีรูป = ของเดิมเป๊ะ" ทั้งสอง provider · mutation 8/8 · **verify บน prod จริง**
+>   (แนบ PNG แดง 16×16 + `tool_agent:true` → ตอบ "แดง")
+>   ⚠️ frontend ไม่ต้องแก้ — `app.tsx:1299` ส่ง `image_b64` มาพร้อม `tool_agent` อยู่แล้ว
+> - **เสียงเบา** — บล็อกที่ user: เกิดตอนไม่แตะจอเลยไหม + Low Power Mode/แบต/ความร้อน
+>   🔒 ห้ามแตะค่าเสียงก่อนมีตัวเลข
+> - **voice idle 1008-loop** — 1008 ที่ 151 วิเป๊ะนับจากต่อติด ไม่มี `go_away` มาก่อน
+>   ⇒ client เป็นตัว reconnect วน · ✅ **09-03 ปิดสายเสียงตอนโหมดอ่านทำงานแล้ว** (`23f98d0`)
+>   เหลือเคส idle ตอนคุยธรรมดา — ทางแก้ (keepalive frame เงียบ) ยังไม่เคาะ
+> - ✅ **โหมดอ่าน: พักแล้วปล่อย Live session — ปิดแล้ว 2026-09-02** (`df8656b`)
+>   เดิมกดพักแล้ว `feed_loop` วน `sleep(0.3)` **ข้างใน** `async with live.connect(...)`
+>   ⇒ session เปิดค้าง (วัดจาก log 08-27: **2 ชม. 33 นาที**) · ตอนนี้ "wait" =
+>   `regen.set(); return` แล้วรอ resume ที่ `wait_while_paused()` ซึ่งอยู่**นอก** session
+>   (ยังอ่าน WS ต่อ ไม่งั้นกดอ่านต่อแล้วค้างถาวร) · คำสั่งทั้งหมดผ่าน `apply_cmd()` ที่เดียว
+>   · ทิ้ง `resume_handle` ก่อนต่อใหม่หลังพัก (handle อาจหมดอายุ · โหมดอ่านป้อนท่อนเอง
+>   ไม่ต้องการความต่อเนื่อง) · เทสขับ handler ทั้งเส้นด้วย Live session ปลอม + mutation 5/5
+>   🟢 **verify บน prod จริง 12:55–12:56**: `พัก … — ปิด Live session ระหว่างพัก` ที่ +1 วิ
+>   · `เลิกพัก … หลัง 3s (stop=True)` = ตัวรอรับคำสั่ง close ได้จริง · **ที่คั่น 48001 ไม่ขยับ**
+> - ✅ **โหมดอ่าน: `asyncio.gather` → `run_until_both_done()` — ปิดแล้ว 2026-09-02**
+>   (`fed8b6e`) Live session ของ `/ws/reader` เคยค้างได้ถึง 45 วิหลังผู้ใช้ปิด
+>   (recv_loop จบก่อน · feed_loop ยังค้างใน `wait_for(rx.__anext__(), 45s)` · gather รอครบ)
+>   · เส้น go_away/regen เดินทางเดิม (recv_loop ตื่นทุก 1.0s < grace 1.5s = ไม่ถูก cancel
+>   — มีเทสตรึง) · deploy ด้วย `--force-recreate` + **inode host = container ตรง (250085)**
+>   ⚠️ **ชื่อเดิม "ไม่มี watchdog" ตกรุ่น** — watchdog กัน Gemini ตายเงียบกลางท่อนมีตั้งแต่
+>   `fe0279c` (08-23) และเอามาแบบไม่มี pacing ตามข้อห้ามแล้ว
+>   ⛔ **ห้ามเอา `reader_pacing_wait` กลับ** (ยังมีผล)
+> - 🔊 **`underruns` อ่านแล้ว (09-02): ไม่ใช่ต้นเหตุ "เสียงเบา"** — ทั้ง log
+>   `underruns=0` **8,533 ตัวอย่าง** · `=1` เพียง 76 (= เหตุการณ์เดียวที่ค้างค่าไว้)
+>   ⇒ ตามเกณฑ์ที่วางไว้เอง "0 ตลอด = ไม่ใช่ underrun" ต้องไปดู audio session ของ iOS แทน
+> - **citations เป็นแหล่งรอง** (ตกค้าง 08-31) — หน้า Steam เป็น age-check ดึงได้แต่
+>   หน้ายืนยันอายุ → คะแนนตกถูกตัด ⇒ ตัวเลขราคาอาจเป็นเซลรอบเก่า
+> - ⚪ ถอด Google CSE ออกจาก chain (`utils/websearch.py:291`) ถ้าไม่คิดแก้ Cloud project
+>
+> ## 📋 งานเล็กที่ค้าง
+> 1. ✅ **ล้าง env ผี — ปิดแล้ว 2026-09-01/02** ถอด `LMSTUDIO_EMBED_MODEL` /
+>    `OLLAMA_EMBED_MODEL` + แก้ทิศ fallback ของ embeddings ที่เขียนกลับหัว +
+>    มาร์ก 3 ตัวที่ **compose `environment:` ทับ `env_file:`** (`DB_PATH` ·
+>    `OBSIDIAN_VAULT_PATH` · `LOG_FILE`) ว่าตั้งใน `.env` ไม่มีผล
+>    · กัน 2 ชั้นด้วย `tests/test_env_docs_ratchet.py`
+>    ⚠️ **ขอบเขตที่ ratchet จับได้จริง = เฉพาะบรรทัดทรง `NAME=` ในบล็อก env**
+>    — **จับการกล่าวถึงในเนื้อความไม่ได้** (ลองขยายไป backtick แล้ว: 20 hit
+>    ~18 เป็น false alarm เพราะค่าคงที่ python ใช้ naming เดียวกัน) ⇒ อย่าเชื่อว่าปิดหมด
+> 2. `GEMINI_LIVE_MODEL` ไม่มีใน `.env` = ใช้ค่า hardcode `utils/voice.py` — จะยกขึ้น `.env` ไหม
+> 3. **AnythingLLM ตกรุ่น 4 ตัว** (v1.14.0 → 1.16.0) หรือปิดทิ้งถ้าไม่ได้ใช้ (image 3.34 GB)
+> 4. โมเดล local 5/8 ตัวไม่มี env อ้างถึง ~14 GB · `llama3` ที่ผูกไว้เป็น Q4_0 ทั้งที่มี
+>    `llama3.1:8b` Q4_K_M นอนอยู่ข้างๆ
+> 5. 🧪 verify ด้วยตาบน browser จริง: File Manager drag&drop / กล้อง / index toast ·
+>    ChatBox pills (Plan/Code · สลับผู้ช่วย · status dot · Shift+Enter)
+> 6. 🧪 **voice retry ยังไม่เคยถูกกระตุ้นจริงบน prod** — ยืนยันได้แค่ unit test
+> 7. user ยังไม่ได้กดลิงก์ `export_file` บนเครื่องจริง (ต้องรีเฟรช bundle ก่อน)
+> 8. 🎨 `enhanced.js` map สีตามตระกูลเฉด ยังไม่ได้ไล่ความหมายรายจุด
+> 9. ✅ **`get_memory_stats` รายงาน 0 ทั้งที่อ่านไม่ได้ — แก้แล้ว 2026-09-02**
+>    `/api/health` เคยขึ้น `documents: 0` ทั้งที่มี 1,740 chunk ครบ · ตอนนี้นับผ่าน
+>    **client ดิบ ไม่ฉีด embedding_function** (การนับไม่ต้องใช้ EF) และของที่อ่านไม่ได้
+>    ไปอยู่ `unreadable` แทนการใส่ 0 · mutation 4/4
+> 10. ⚪ **`CHROMA_PATH` เป็น dead config** — `core/config.py:33` อ่านจาก env แต่
+>    ไม่มีผู้บริโภคสักที่ (ChromaDB เป็นคอนเทนเนอร์แยกที่มี volume ของตัวเอง)
+> 10. ⚪ **collection กำพร้าบน prod**: `memory_a` · `memory_logic` ·
+>     `memory_logic__keys` (ว่างทั้งหมด · slug จริงมีแค่ `kwan`)
+> 11. ⚪ **`pythainlp` ไม่มีทั้งใน requirements และในคอนเทนเนอร์** ⇒ เทส 14 ตัวของ
+>     `utils/thaiscatter.py` (เครื่องมือแก้ข้อความหนังสือใน `reader.db`) **ถูกข้าม
+>     ทุกที่รวม CI** — skip ที่มีเหตุผลเขียนไว้ ก็ยังเป็น skip
+> 12. ⚪ ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน — ตอนนี้เป็นเครื่องมือรันมือ
+>     (คู่มือ Qdrant: reconciliation คือตัวที่จับเศษที่ cascade พลาด)
+> 9. ✅ **config single source of truth — ปิดแล้ว 2026-09-24** (`core/env_registry.py` · `.env.example`
+>    generate จากโค้ด · `os.getenv` ดิบในโค้ด prod = **0** · registry 124 ชื่อ · devlog 09-23/24) ~~เดิม:~~
+>    ~~`os.getenv` **195 จุดใน 40 ไฟล์**~~
+>    (`core/config.py` ถือแค่ 28 = 14% · `utils/llm.py` อ่านเอง 28 จุด) ⇒ `.env.example`
+>    / `CLAUDE.md` / `docker-compose.yml` ดริฟต์จากกันได้เงียบๆ · ทางมาตรฐาน (ตรวจ
+>    2026-09-02): Symfony นับ `Used` ตอน resolve จริง *ไม่ใช่* สแกนข้อความ ·
+>    IBM mcp-context-forge #3778 auto-gen `.env.example` จาก pydantic config
+>    ⇒ **งานก้อนใหญ่ ไม่ใช่งานเล็ก** — ยกมาที่นี่เพื่อไม่ให้หาย
+>
+> ## ✅ ปิดไปแล้ว — ลบออกจาก backlog (ตรวจจริง 2026-09-01)
+> - **`AI_PALETTE` ซาก `fa`/`khim`** — ถอดแล้ว คอมเมนต์ `app.tsx:58` เขียนไว้เองว่า
+>   "`fa`/`khim` ถอดออกแล้ว" เหลือแค่ `kwan`
+> - **DSM task `db_backup.sh` ตาย 36 วัน** — ถูกแทนที่ด้วย in-app job 03:30
+>   (`core/scheduler.py:65`) ที่เดินจริงทุกวัน ⇒ ประเด็นแคบลงเหลือ "เก็บผิดใบ" ซึ่งปิดแล้ว
+>
+> ⛔ **พักไว้ (user เคาะแล้ว อย่าเสนอซ้ำ):** `ANTHROPIC_API_KEY`/`MOONSHOT_API_KEY`
+> ใน NAS `.env` · Image Gen (free tier limit=0) · fine-tune (รอ 👍 ~200-500) ·
+> Telegram สำหรับ EWS · TypeScript 5.9→6/7
+
+### ▶️ (บล็อกเดิม 2026-08-26 เย็น — ย้าย Gemini key + โมเดล)
+
+> ## ⚡ อ่านก่อน: โปรเจกต์ Gemini เปลี่ยนแล้ว (2026-08-26 เย็น)
+> เครดิต prepay ของโปรเจกต์เดิม**หมด** ⇒ ทั้งแชทและเสียงยิงไม่ออกเลย (429 / Live 1011)
+> · ย้ายไปโปรเจกต์ **free tier** แล้ว พร้อมเปลี่ยน `GEMINI_MODEL` → **`gemini-3.5-flash`**
+> (ต้องเปลี่ยนคู่กัน — `gemini-2.5-flash` คืน 404 "no longer available to new users"
+> บนโปรเจกต์ใหม่) · verify ครบวงบน prod แล้ว (แชท 200 + Live ได้เสียง 7,682 ไบต์)
+> · rollback = สลับ key กลับจาก `.env.bak-20260826` · รายละเอียดเต็มใน devlog "08-26 เย็น"
+>
+> 🔴 **โควตา ≠ เครดิต** — หน้าโควตา AI Studio แถบยังไม่เต็มทั้งที่ยิงไม่ออกสักครั้ง
+> ⇒ ห้ามใช้แถบโควตาเป็นหลักฐานว่า "ยังใช้ได้"
+> 🔴 **ผลข้างเคียงที่ยอมรับไปแล้ว:** วาดรูปพัง (429 image quota) · เสียงเข้าชุดข้อมูล Google
+> (free tier) — แชทข้อความไม่กระทบ เพราะ `route()` ส่งไป LM Studio ในบ้านอยู่แล้ว
+> 🟡 **TTS ยังไม่พิสูจน์** ว่าใช้ได้บนโปรเจกต์ใหม่
+>
+> ## ✅ ตัวกู้ไมค์ **สำเร็จจริงแล้ว** (2026-08-26 14:59 · `sig=1`)
+> `signal=0 → 61` หลังกดปุ่ม · ตัวจุดชนวนที่ยิงคือ **`zeros`** ไม่ใช่ `ended`
+> · รูที่เจอตามมา (`recover-result` หายเพราะ WS ยังไม่ OPEN) **ปิดแล้ว** (`a5bfc93`)
+> · bundle ปัจจุบัน **`index-D_Yv5ltW.js`**
+>
+> ## ⚡ โมเดลแชทเปลี่ยนแล้ว (2026-08-27)
+> `GEMINI_MODEL=gemini-3.5-flash-lite` · `GEMINI_FALLBACK_MODEL=gemini-3.1-flash-lite`
+> — ตัว `gemini-3.5-flash` บนโปรเจกต์นี้ **โควตาเต็ม + กะพริบ** (OK 5s / OK 6.8s /
+> timeout 25s) ส่วน Lite ตอบ 0.8 วิเสมอ
+> 🔑 **โควตา Gemini เป็นรายโมเดล ไม่ใช่รายโปรเจกต์** — วัดแล้ว: flash 429 แต่ Lite OK
+> และสายเสียงได้เสียง 8,642 ไบต์ในนาทีเดียวกัน ⇒ อย่าเหมาว่า "Gemini ล่ม"
+>
+> ## 🥇 งานแรก: **อ่าน `underruns` จาก heartbeat หลังใช้เสียงจริงอีกรอบ**
+> เพิ่งใส่ตัวนับ worklet underrun เพื่อตอบอาการ "เสียงดังบ้างเบาบ้าง"
+> · `[VoiceLevel]` พิสูจน์แล้วว่า**ต้นทางนิ่ง** (-15.8 ถึง -17.8 dBFS ทุกตัวอย่าง)
+> ⇒ ถ้า `underruns>0` ตรงกับช่วงที่หูได้ยินว่าเบา = เจอตัวการ · ถ้าเป็น 0 ตลอด
+> = **ไม่ใช่ underrun** ต้องไปดู audio session ของ iOS แทน
+> ```bash
+> ssh nas 'sudo -n /usr/local/bin/docker exec ai-backend-1 \
+>   sh -c "grep -a underruns /app/logs/server.log | tail -30"'
+> ```
+> ⚠️ ห้ามแตะค่าเสียง/จังหวะก่อนมีตัวเลข (ของต้องห้ามเดิม)
+> ตัวกู้ไมค์ (ก1) **deployed + verified บน prod แล้ว** (`e97c9ac` appscript.ui ·
+> `80cfe69` ui · bundle **`index-DZsRgW3D.js`** md5 ตรง host=container)
+> แต่ **ยังไม่เคยมีใครกดปุ่มนี้บนเครื่องจริง** ⇒ ยังไม่มีข้อมูลของรอบกู้สักบรรทัด
+>
+> 🎁 **repro:** เปิดโหมดคุยด้วยเสียงบน iPhone (รีเฟรชเอา bundle ใหม่) →
+> **ปัดขอบบนลงจนสุด** (ตัวจุดชนวนที่พิสูจน์แล้ว) → กลับมา → ปุ่ม "🔄 แตะเพื่อกู้ไมค์"
+> ต้องขึ้น → กด → อ่านผล
+> ```bash
+> ssh nas-cf 'sudo -n /usr/local/bin/docker exec ai-backend-1 \
+>   sh -c "grep -aE \"recover-|mic_probe\" /app/logs/server.log | tail -40"'
+> ```
+> **สิ่งที่ต้องอ่านให้ออก:** `recover-attempt n=1 reason=…` → `recover-result n=1 ok/fail
+> ready= sig=` (+250ms) → `recover-health n=1 … sig=1` (+10 วิ) ·
+> 🔑 **`sig=1` ใน `recover-health` คือบรรทัดเดียวที่แปลว่า "กู้สำเร็จจริง"**
+> — `ready=live` ไม่ใช่ (โหมด `zeros` เกิดบน track ที่ live ทุกประการ)
+>
+> ## ✅ ตัวกู้ไมค์ (ก1) — ทำอะไรไปแล้ว (อย่ารื้อ)
+> - ตัวจุดชนวน **3 ทางครบ**: `no-callback` (2 วิ) · `zeros` (10 วิ) · **`ended`** (ใหม่ ·
+>   แน่นอนที่สุด ไม่ต้องรอนับ) — ทั้งสามใช้ `micSilentReported` เป็น edge-trigger ตัวเดียวกัน
+> - `micHealth()` คืน 2 ค่า **ห้ามยุบเป็นค่าเดียว**: `ready` (เร็ว/ไม่ชี้ขาด) ·
+>   `sigSeen` (ช้า/ชี้ขาด — เฟรมศูนย์ล้วนไม่นับ)
+> - `utils/micrecover.ts` เพดาน **3 รอบ** · 🔴 **`end(true)` ไม่ล้างตัวนับ** มีแต่
+>   `reset()` ตอน `sigSeen` ที่ล้างได้ ⇒ กันลูป "กู้แล้วตายแล้วกู้"
+> - `recoverMic()` เดิน `stopVoice()`+`startVoice()` (เส้นทางที่ทุกสายเดินอยู่แล้ว) ·
+>   `getUserMedia` ถูกเรียกก่อน await ตัวแรก ⇒ ยังอยู่ใน gesture task
+> - mutation **8/8 ถูกฆ่า** · เทส 442/442 · รายละเอียดเต็มใน devlog "2026-08-26 บ่าย"
+>
+> ## 🔜 งานถัดไปหลัง repro
+> - ✅ **ปิดแล้วทั้งสองข้อ (`0c8e331`)**: default โมเดล → `GEMINI_MODEL_DEFAULT`
+>   (`gemini-3.5-flash`) + `RETIRED_GEMINI_MODELS` มีเทสตรึง · `/api/status` มี
+>   **`gemini_ok` / `gemini_message`** ที่ยิง `:generateContent` จริง แยก "เครดิตหมด"
+>   ออกจาก "โควตาเต็ม" (cache 5 นาที) · พิสูจน์กับ key เก่าที่เครดิตหมดบน prod แล้ว
+>   ✅ **ขึ้นจอแล้วด้วย** (`e3be2bb`/`95f32cb` · bundle `index-CWv847Pl.js` md5 ตรง) —
+>   แถบเหนือ ChatBox จาก `utils/cloudstatus.ts` (มีเทส · mutation 8/8)
+>   🔴 **ต้องเป็นแถบข้อความ ไม่ใช่ tooltip** — เครื่องหลักคือ iPhone ไม่มี hover
+> - 💡 **`ssh nas-cf` ค้าง/timeout ทั้งที่ tunnel healthy = Cloudflare Access หมดอายุ**
+>   (มันพยายามเปิดเบราว์เซอร์ให้ล็อกอินแล้วรอค้าง) — แก้ด้วย
+>   `cloudflared access login https://ssh.pawinhomelab.com` · อยู่ในบ้านใช้ **`ssh nas`** ได้เลย
+>   🔴 อาการที่เห็น ("timed out during banner exchange") ไม่ได้บอกสาเหตุ — ต้องดู output
+>   ของคำสั่งที่ค้างจริง ๆ ถึงจะเห็นบรรทัด "If the browser failed to open…" 
+> - **ก2** (`getUserMedia` ใหม่ ไม่แตะ WS ⇒ ความจำอยู่ครบ) — ยกระดับเมื่อ user รำคาญ
+>   ว่าขวัญลืมเรื่องที่คุยทุกครั้งที่กู้ · ก1 เป็นฐานที่วัดผลได้แล้ว
+> - เสียงลำโพงแตกตอนปัดจอลง (ของเก่า ไม่ใช่ regression · ยังไม่มีตัวเลขวัด — ดูข้างล่าง)
+>
+> ## 📦 (ปิดแล้ว) ทางเลือกตอนยังไม่เคาะ — เก็บไว้อ้างอิงราคาของ ก1/ก2
+>
+> | | วิธี | ราคา |
+> |---|---|---|
+> | **ก1** | ตรวจเจอ → ขึ้นปุ่ม "แตะเพื่อกู้ไมค์" → รีสตาร์ตสายเสียงทั้งเส้น (ใช้เส้นทาง `stopVoice()`+`startVoice()` ที่รันทุกสายอยู่แล้ว = พิสูจน์แล้วด้วยการใช้งาน) | 🔴 **ความจำบทสนทนาหาย** (`resume_handle` เป็น local ของ WS handler `server.py:287`) |
+> | **ก2** | `getUserMedia` ใหม่ + สร้าง graph ใหม่ **ไม่แตะ WS** | ✅ ความจำอยู่ครบ · ผิวสัมผัสใหม่ ต้องเทสหนัก |
+>
+> **จุดชนวนต้องครอบ 3 ทาง** (มี 2 โหมดความล้มเหลว พิสูจน์แล้วทั้งคู่):
+> `silent reason=no-callback` (เร็ว 2 วิ) · `silent reason=zeros` (10 วิ) · `track.onended` (แน่นอน)
+> - ⚠️ **ยังไม่เคยเห็น "กู้สำเร็จในหน้าเดิม" สักครั้ง** — ใส่ probe `recover-attempt`/
+>   `recover-result` ตั้งแต่แรก ไม่งั้นเคสแรกก็ต้องเดาอีก
+> - ต้องคัด constraint เดิม (`echoCancellation`/`noiseSuppression`/`autoGainControl`
+>   `voicelive.ts:154`) + **เทสตรึง** · เพดาน 3 รอบ + ตรวจซ้ำ 250ms · ล้มแล้วโชว์ error จริง
+> - 🔴 `getUserMedia` รอบใหม่บน iOS ต้องมี **user gesture** ⇒ ปุ่มคือทางที่ปลอดภัยที่สุด
+>
+> ## ✅ พิสูจน์แล้วทั้งหมด (อย่ารื้อ อย่าไล่ซ้ำ)
+> - **อาการมี 2 โหมด ไม่ใช่โหมดเดียว**
+>   | | `no-callback` | `zeros` |
+>   |---|---|---|
+>   | เห็นอะไร | `frames=0 armed_ms≈5000` | `frames=59 **signal=0**` |
+>   | เกิดเมื่อ | 08:32 · 10:08 น. | 12:53 น. |
+>   | `resume-failed` | ✅ มี | ❌ ไม่มี |
+> - **จบที่ `MediaStreamTrack.readyState === 'ended'` ทั้งคู่** — iOS ฆ่า track เอง
+>   (`track.stop()` ของเรามีที่เดียวใน `disconnect()`) ⇒ ปลุกไม่ได้ตามสเปก
+>   **ต้อง `getUserMedia()` ใหม่เท่านั้น**
+> - **`resume()` ตอนจอถูกซ่อน ไม่ใช่ต้นเหตุ** — `8ae9785` กันได้จริง (`resume-failed` 0 ครั้ง
+>   ทั้งที่ `vis=hidden` เกิดจริง) **แต่ไมค์ยังตาย** ⇒ สหสัมพันธ์ 3/3 ก่อนหน้าเป็นตัวแปรกวน
+>   · **เก็บ gate ไว้** ไม่มีผลเสีย แต่ป้องกันไม่พอ
+> - **การแก้ ticker (`0f3b17d`) ไม่ใช่ตัวแก้อาการนี้** — WS ไม่เคยหลุด · เก็บไว้ ไม่ revert
+> - **ธง `muted`/`enabled`/`cap` ไม่เคยชี้ขาด** มีแค่ `readyState` + `signal_frames`
+> - **ตัวจุดชนวนฝั่งผู้ใช้ = ปัดขอบบนลงจนสุด** ไม่ใช่สายโทรเข้าอย่างที่เข้าใจมา 5 วัน
+>
+> ## 🔬 ชั้นวัดที่มีแล้ว (bundle **`index-BYJck1po.js`**) — ใช้อ่านผลได้เลย
+> ```bash
+> ssh nas-cf 'sudo -n /usr/local/bin/docker exec ai-backend-1 \
+>   sh -c "grep -a mic_probe /app/logs/server.log | tail -40"'
+> ```
+> `heartbeat` ทุก 5 วิ (`frames`/`signal`/`armed_ms`) · `vis=` · `user-mute`/`user-unmute` ·
+> `resume-failed` แยกรายขา · `[Voice WS] เปิดสาย` (นับครั้ง + ระยะห่าง)
+> 🔑 **`armed_ms` คือตัวหาร**: `frames=0 armed_ms=5069` = ไมค์ตาย · `frames=0 armed_ms=0` = ประตูปิด
+> 🔑 **`signal_frames` คือตัวชี้ขาดโหมด `zeros`** — `frames=59 signal=0` ดูเหมือนปกติถ้าดูแค่ `frames`
+> 🔑 `ready=ended` แต่ `frames>0` **ไม่ขัดกัน** — ScriptProcessor ขับด้วย AudioContext ไม่ใช่ track
+>
+> ## 🔊 เสียงลำโพงแตกตอนปัดจอลง — **ของเก่า ไม่ใช่ regression**
+> user รายงานคำเดียวกันตั้งแต่ 08-24 ก่อนแตะโค้ด · vault `ios-web-audio-playback-distortion.md`
+> ⚠️ **ยังไม่เคยมีตัวเลขวัด** — ไอเดียที่ถูกที่สุด: เด้งจำนวน underrun ของ worklet
+> (`primed=false` ตอนคิวหมด `WORKLET_SRC`) กลับมาแบบเดียวกับ heartbeat
+> ⚖️ ข้อสรุปเดิม: ย้าย playback ไป ManagedMediaSource = **ไม่คุ้ม**
+>
+> ## 🔴 บทเรียนของเซสชันนี้
+> - **ถอดของที่ "ไม่มีประโยชน์" ต้องถามว่ามันเคยกัน *อะไร* ไว้โดยบังเอิญ** — ถอด rAF
+>   ออกจาก ticker ด้วยเหตุผลที่ถูก แต่มันเคยกันการเรียก `resume()` ตอน hidden ไว้
+> - **สรุปจาก "ความเงียบใน log" ผิด 2 รอบ** — `[VoiceLevel]` วัดเสียง**ขวัญ** ไม่ใช่ไมค์
+> - **สรุปโหมดความล้มเหลวจากตัวอย่างโหมดเดียว ผิด** — ประกาศว่า "`zeros` ไม่ใช่อาการนี้"
+>   แล้ววันเดียวกันก็เจอ `zeros` ของจริง
+> - **`toBeDefined()` ปล่อย `null` ผ่าน** · **เทสที่เรียกเมธอดตรงไม่เคยตรวจว่ามีใครเรียกมัน**
+>   (mutation จับได้ 3 รอบในเซสชันเดียว: M6 · H1 · เทส rAF ที่ผ่านด้วย tick เดียว)
+> - **mutation ต้อง fail-loud** — regex ที่ไม่ match รายงาน "pass" ครบ
+>
+> 📋 งานเล็กที่ค้าง (ยังเหมือนเดิม) ดูบล็อกเก่าข้างล่าง ·
+> 🆕 `utils/bookreader.ts:114` คอมเมนต์อ้าง "ห้ามใช้ rAF แบบ voicelive.ts" — **ตกรุ่นแล้ว**
+
+---
+
+### ▶️ (บล็อกเดิม 2026-08-24 — ตารางอ่านผล mic_probe ตกรุ่นแล้ว ดูข้างบนแทน)
+
+> ## 🥇 งานแรก: **ถามผล `mic_probe` จาก user ก่อน**
+>
+> ชั้นวัดสภาพไมค์ deploy แล้ว (`2fa1cbd` · bundle **`index-Bmuq8taZ.js`**) **แต่ยังไม่มี
+> ใครทำ repro** ⇒ ยังไม่มีข้อมูลสักบรรทัด
+>
+> 🎁 **repro:** เปิดโหมดคุยด้วยเสียงบน iPhone (รีเฟรชเอา bundle ใหม่) → **เรียก Siri
+> กลางสาย → ปัดออก → พูดต่อ** (หรือรอสายเข้าจริง)
+>
+> ```bash
+> ssh nas-cf 'sudo -n /usr/local/bin/docker exec ai-backend-1 \
+>   sh -c "grep -ah mic_probe /app/logs/server.log | tail -30"'
+> ```
+>
+> **อ่านผลยังไง — นี่คือทางแยกของงาน ค. ทั้งก้อน:**
+> | เห็นอะไร | แปลว่า | ทำอะไรต่อ |
+> |---|---|---|
+> | `muted=?` หรือ `muted=False` และ**ไม่มี**บรรทัด `mic_probe unmute` | iOS ไม่ตั้งธง (Twilio #941 ถูก) | ใช้เกณฑ์นับศูนย์เป็นตัวจุดชนวนต่อไป — ยอมรับ 10 วิ |
+> | `muted=True` + มีบรรทัด `mic_probe unmute` | ธง+event ใช้ได้ (Twilio/LiveKit/Chime ถูก) | **เปลี่ยนตัวจุดชนวนเป็น `unmute` → ไวขึ้นจาก 10 วิเหลือทันที** + debounce 5000ms แบบ LiveKit |
+> | `cap=interrupted` ตอนป้ายขึ้น | context ค้างด้วย (คนละอาการ) | ไล่ `wakeAudio()` ก่อน อย่าเพิ่งไป ค. |
+> | `reason=no-callback` (ขึ้นใน ~2 วิ) | callback หยุดยิง ไม่ใช่ track ตาย | **คนละบั๊ก** ต้องแยกไล่ |
+>
+> ---
+>
+> ## 🔵 งาน ค. ปุ่ม/ตัวกู้ไมค์ — **แบบตกผลึกแล้ว รอแค่ตัวจุดชนวน**
+>
+> 3 SDK ใหญ่ (Twilio · LiveKit · Amazon Chime) ทำเหมือนกันหมด — ไม่ต้องคิดเอง:
+> ```
+> จุดชนวน:  ← รอผล mic_probe ตัดสิน (ตารางข้างบน)
+>    ↓  ถ้านิยายเล่นอยู่ → ไม่ทำอัตโนมัติ ขึ้นปุ่มอย่างเดียว
+> กู้:      track.stop() → capCtx.close() → getUserMedia(constraint ชุดเดิม) → สร้าง graph ใหม่
+>    ↓
+> ตรวจซ้ำ:  200–250ms ว่าไม่เงียบจริง → ยังเงียบ? ทำซ้ำ **เพดาน 3 รอบ**
+>    ↓
+> ล้ม/error/เด้ง prompt → ขึ้นปุ่ม "แตะเพื่อกู้ไมค์" + **โชว์ error จริง**
+> ```
+> - 🔴 **`stop()` ก่อน `getUserMedia` เสมอ** — คอมเมนต์ใน production ของ Twilio ยืนยัน
+>   *"ไม่งั้นเสียงที่ได้กลับมาจะยังเงียบอยู่ดี"*
+> - 🔴 **ต้องคัด constraint เดิมมาด้วย** (`echoCancellation`/`noiseSuppression`/
+>   `autoGainControl` — `voicelive.ts:153`) · `{audio:true}` เปล่าๆ = AEC หาย = บั๊กที่
+>   ปิดไป 3 ชั้นกลับมาทันที ⇒ **ต้องมีเทสตรึง constraint**
+> - 🥇 **ตรวจซ้ำ + เพดาน 3 รอบคือคำตอบของความกลัว "infinite retry loop"** — ทางแก้ไม่ใช่
+>   "ห้าม retry" แต่คือ "ตรวจให้แน่ว่าตัวใหม่ใช้ได้ + ใส่เพดาน" (`workaround180748.js`)
+> - ⚠️ **ปิดปุ่มระหว่างนิยายเล่น** — `getUserMedia` บน iOS บังคับ output ไปลำโพงในตัว
+>   + attenuate เสียงที่เล่นอยู่ · (แต่ Khim เล่นผ่าน AudioWorklet ล้วน ไม่มี `<audio>`
+>   ⇒ ความเสี่ยงต่ำกว่าที่เคยเตือน) · โหมดแชท user เคาะแล้ว: **หยุดเสียงขวัญก่อนแล้วกู้**
+> - ⚠️ **iOS 26.1 beta: `getUserMedia` พังทั้งดุ้น** (`No AVAudioSessionCaptureDevice
+>   device`) ⇒ ตัวกู้ต้องโชว์ error จริง ห้ามเงียบแล้ว retry
+> 🔑 วิธีทำทั้งหมด + แหล่งอ้างอิง 20 กว่ารายการ: vault
+> `wiki/concepts/ios-audio-interruption-recovery.md` (368 บรรทัด · **อ่านก่อนลงมือ**)
+>
+> ## ⏳ งาน ก. ยังไม่ verify — ต้องเปิดอ่านนิยายจริงสัก 1 ตอน
+> `grep -c "ป้อนท่อน|ท่อนจบ|ที่คั่น"` ทั้ง `server.log` = **0 ตั้งแต่ 18 ส.ค.**
+> ⇒ ยังไม่มีใครใช้โหมดนี้เลย · repro: ฟังนิยาย → Siri → ปัดออก → เสียงกลับมาเองใน ~1 วิไหม
+>
+> ## 📋 งานเล็กที่ค้างอยู่
+> 1. **ล้าง env ผีในเอกสาร 4 จุด** — โค้ดไม่อ่านแล้วแต่เอกสารยังโฆษณา:
+>    `CLAUDE.md:313` `LMSTUDIO_EMBED_MODEL` · `CLAUDE.md:307` `OLLAMA_EMBED_MODEL`
+>    (+ ชวนให้ `ollama pull nomic-embed-text` = ตัวที่มีบั๊กไทย!) ·
+>    `CLAUDE.md:165` อธิบายทิศทาง fallback **กลับหัวกลับหาง** (ของจริง Ollama = ตัวหลัก) ·
+>    `skills/env-variables-reference.md:32`
+> 2. `GEMINI_LIVE_MODEL` ไม่มีใน `.env` เลย = ใช้ค่า hardcode `utils/voice.py:62`
+>    (`gemini-3.1-flash-live-preview`) — จะยกขึ้น `.env` ไหม
+> 3. **AnythingLLM ตกรุ่น 4 ตัว** (v1.14.0 → 1.16.0) — หรือจะปิดทิ้งถ้าไม่ได้ใช้ (image 3.34 GB)
+> 4. โมเดล local 5 ใน 8 ตัวไม่มี env อ้างถึง ~14 GB · `llama3` ที่ผูกไว้เป็น Q4_0
+>    ทั้งที่มี `llama3.1:8b` Q4_K_M นอนอยู่ข้างๆ
+>
+> ---
+>
+> ## ✅ ปิดคดีแล้ว 08-21 → 08-24 (อย่ารื้อ)
+> - **"คำตอบหลังค้นเว็บหาย"** (เปิดมาตั้งแต่ 08-14) — 08-24 เช้ามีสายจริง 12 นาที
+>   ค้น 5 ครั้ง `ค้นเสร็จ ตอบกลับ 1 ตัว` **5/5** · interrupt 5 ครั้งไม่มีอันไหนที่จังหวะค้นเสร็จ
+>   (ตัวชี้ขาดคือ field `เสร็จเมื่อ N ก่อน` — อันเดียวที่แตะการค้นคือ 41.4s = สลับตาพูดปกติ)
+> - **ธง ⚠️ over-fire** · **watchdog Gemini ตายเงียบ** · **`sync_vault` ไม่ prune** · `fe0279c` `c1a10aa`
+> - **ก. ปลุก AudioContext ของ reader** `4a77c9c` — deploy แล้ว ⏳ ยังไม่ verify
+> - **ข. ป้ายไมค์เงียบ** `ef4ea7b` — ✅ **verify ผ่าน 08-24 ด้วยสายเข้าจริง**
+> - 🆕 **บั๊ก embedding พิษ** `61ca0bf` + `81ef69d` — deploy + verify บน prod แล้ว ·
+>   ตรวจย้อนหลังครบทุกแถว **ไม่มีของเสียปน**
+> รายละเอียดทั้งหมด: `docs/session-log/devlog.md` หัวข้อ [2026-08-24]
+>
+> ## 🔴 กติกาที่ได้บทเรียนมาแล้ว — อ่านก่อนลงมือ
+> - ✅ **รันชุดเต็มบนเครื่องได้ ~45 วินาที — ทำทุกครั้งก่อน push**
+>   ```bash
+>   uv venv /tmp/uivenv --python 3.12 && VIRTUAL_ENV=/tmp/uivenv uv pip install -r requirements.lock
+>   # 🔴 ต้องเป็น **lock** — requirements.txt ได้ lib ใหม่กว่า prod (วัด 09-28: genai 2.25 vs 2.10 · openai 3.19 vs 2.44)
+>   # ⚠️ macOS ล้าง /tmp เป็นระยะ → venv พังครึ่งๆ (ModuleNotFoundError) ให้ rm -rf แล้วสร้างใหม่
+>   LOG_FILE=/tmp/test.log /tmp/uivenv/bin/python -m pytest -q     # 1640 passed / 15 skipped
+>   uvx ruff check .
+>   cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noEmit  # 397 passed
+>   ```
+>   🔑 **`LOG_FILE=` สำคัญ** — ไม่ตั้ง = เขียนทับ `server.log` ที่ใช้ verify
+> - ❌ **ห้ามรัน pytest ในคอนเทนเนอร์ prod** — 08-24 พิสูจน์แล้วว่าทำให้ **log อ่านผิด**:
+>   fallback 33 ครั้งใน log กลายเป็น fixture ของเทส (`'x'` `'q'` `'test'`) ไม่ใช่ traffic จริง
+> - 🔴 **ก่อนแก้ฟังก์ชันไหน `grep -rl "<ชื่อ>" tests/` ก่อนเสมอ**
+> - 🔴 **ก่อนค้นเว็บเรื่องที่เคยไล่มาก่อน เปิด `wiki/index.md` ก่อน**
+> - **mutation test ทุกชิ้นที่แก้ + ล้าง `__pycache__` ทุกรอบ** — 08-24 ยิง 10 แบบ **รอด 1**
+>   (ถอด `watchMicTrack()` ออกจาก `connect()` แล้วเทสเขียว 65/65 เพราะเทสเรียกเมธอดตรง
+>   ไม่เคยตรวจว่ามีใครเรียกมันจริง) ⇒ **ปิดด้วยด่านอ่านซอร์ส**
+> - 🆕 **assertion ที่อยู่ผิดฝั่ง = เทสที่ผ่านฟรี** — `test_embed_fallback_uses_same_model_name`
+>   ตรวจ *request* ว่าขอถูกโมเดล ไม่เคยตรวจ *response* ว่าได้อะไรมา ⇒ บั๊กรอดมา 22 วัน
+>   **ถามเสมอ: เทสนี้ยืนยันฝั่งไหน — สิ่งที่เราส่งไป หรือสิ่งที่เราได้กลับมา**
+> - 🆕 **สุ่มตัวอย่างตอบคำถาม "มีของเสียปนไหม" ไม่ได้** — ต้องตรวจครบทุกแถว
+> - 🆕 **ลำดับความน่าเชื่อของแหล่ง: เทสของเอนจิน > ซอร์ส production > บล็อกทดลอง >
+>   issue tracker** · หน้าสรุปเอกสารก็โกหกได้ (MDN เขียนแค่ "experimental" ต้องเปิด
+>   browser-compat-data ตัวดิบ)
+> - **deploy backend = `git reset --hard` + `docker restart`** (โฟลเดอร์ `utils/` `routers/`
+>   mount เป็น directory เห็นทันที) · **ไม่ต้อง rebuild/`--force-recreate`** ซึ่งเคยล้มกลางทาง
+>   · ⚠️ `server.py` เป็น bind mount **ไฟล์เดี่ยว** มีกับดัก inode — ถ้าแก้ไฟล์นั้นต้องเช็ค
+>   `ls -i` host เทียบ container (`docs/reference/infra-nas.md`)
+> - **ก่อน `sync_static.sh`** — 08-24 ใช้วิธีถูกและเร็ว: CSS hash ที่ build ได้ตรงกับที่
+>   prod เสิร์ฟอยู่ = toolchain reproduce ของเดิมได้ ⇒ sync ปลอดภัย
+
+#### ▼ สถานะรอบ 2026-08-17 บ่าย
+
+> ✅ **แก้ครบ 4 อาการของโหมดอ่านนิยาย + deploy + ยืนยันด้วย log จริงแล้ว**
+> commit: `f4e62e8` → `5f190d4` (server+bundle) · `4ec0cb7` → `a627f3f` (React source)
+> bundle ที่เสิร์ฟจริงตอนนี้ = **`index-DD3rJ0CH.js`**
+
+#### สิ่งที่ปิดไปแล้ว (พิสูจน์จาก log prod ไม่ใช่จากเทสอย่างเดียว)
+
+| อาการ | ตัวแก้ | หลักฐานบน prod |
+|---|---|---|
+| **ตัวอ่านซ้อน** | `bookToggleAction()` คลุมครบ 4 ค่าของ `ReaderStatus` + `app.tsx` เรียกตัวตัดสินตัวเดียว + `disconnect()` ก่อน `new BookReader()` เสมอ | `เปิด`/`ปิด` สลับกันเป๊ะ ไม่มี `เปิด` ซ้อน |
+| **ประโยคเดิมซ้ำทับกัน** | regen ส่ง `{"type":"flush"}` ก่อนอ่านท่อนซ้ำ | ยังไม่ได้ทดสอบเส้นนี้ (ไม่มี go_away ในรอบเทส) |
+| **ขวัญตอบทับเสียงนิยาย** | `HalfDuplexGate` เพิ่ม timeline ที่สอง `extUntil` · เสียงนิยายชนะสวิตช์พูดแทรก | อ่าน 5 นาที 41 วิ ขวัญเงียบสนิท |
+| **กดพักแล้วยังพูดต่อ** | `reader_stream_action()` ลูปสตรีมดูธง `paused` ทุก chunk | `12:49:51 พักกลางท่อน → หยุดส่งเสียงทันที` · ที่คั่นไม่ขยับ |
+| **🔁 อ่านท่อนนี้ใหม่** (ใหม่) | ปุ่ม + คำสั่ง `reread` (ไมค์ปิดตอนอ่าน จึงสั่งด้วยเสียงไม่ได้) | ยังไม่ได้กดทดสอบ |
+
+🔑 **ตัวเลขที่ปิดคดีข้อถกเถียงเก่า:** ที่คั่นเดินที่ **13.8 ตัวอักษร/วินาที** (12253→16965 ใน 5:41)
+เทียบกับตอนพัง 08-14 ที่ **185.9 ตัว/วินาที** = ช้าลง **13.5 เท่า ทั้งที่ไม่มี pacing เลย**
+⇒ **"ที่คั่นวิ่งหนี" เกิดจากตัวอ่านซ้อน ไม่ใช่จากป้อนเร็วเกิน** · `reader_pacing_wait` ของ
+`55b8594` เป็นการรักษาปลายเหตุ — **ไม่ต้องเอากลับแล้ว** (`stash@{0}` ที่ผูกกับมันก็ทิ้งได้)
+
+#### 🔴 งานค้าง เรียงตามที่ควรทำ
+
+> ✅ **08-18: เติม log ครบแล้ว (`2df117b` deployed+verified ในคอนเทนเนอร์)** — ข้อ 4 ปิด ·
+> ด่านที่บล็อกข้อ 1 (พิสูจน์ไม่ได้เพราะไม่มี log) ปลดแล้ว **เหลือแค่รอข้อมูลจากการใช้จริง**
+
+1. **คำตอบหลังค้นเว็บหาย เหลือแต่ข้อความบนจอ** (โหมดแชท — ✅ **ชี้ขาดแล้ว 08-18 ดูบล็อก 🥇**)
+   ต้นเหตุที่ยืนยันแล้ว: **ไมค์เปิดกลาง turn** (turn ยังเปิดตอนโดน `interrupted` — พิสูจน์จาก
+   สเปก + พยาน `search_count`) → เสียงแวดล้อมเข้าไป → ตัด turn → `flushPlayback()`
+   ล้างเสียงทิ้ง **แต่ไม่แตะข้อความ** = ลายเซ็นตรงกับที่ user เล่าเป๊ะ · เหลือยืนยันซ้ำ
+   1 รอบบน prod สะอาด (หลัง `dd8f273`) ก่อนลงมือแก้ประตู
+   ▶️ **ขั้นถัดไป: คุยด้วยเสียง + ถามคำถามที่ต้องค้นเว็บสัก 2-3 รอบ แล้วอ่าน log**
+   ```bash
+   ssh nas-cf 'sudo -n /usr/local/bin/docker exec ai-backend-1 \
+     sh -c "grep -hE \"interrupted|เริ่มค้น|ค้นเสร็จ\" /app/logs/server.log.1 /app/logs/server.log | tail -40"'
+   ```
+   - เห็น `interrupted` ที่ยังพิมพ์ **"ค้น N ครั้งใน turn นี้"** (= turn ยังเปิด) ⇒ ลายเซ็น
+     ยืนยันซ้ำ → ลงมือแก้ประตู: `HalfDuplexGate` รู้สถานะ turn ผูกกับ event `done`
+   - เห็นแต่ `interrupted` ที่ **"ไม่ได้ค้นใน turn นี้"** + เงียบเศษวินาที ⇒ เป็นการพูดแทรก
+     ปกติ ไม่ใช่บั๊ก — เช็คสวิตช์พูดแทรก (ต้อง**ปิด**) ก่อนสรุปอะไรต่อ
+2. **Gemini ตายเงียบกลางท่อน ไม่ฟื้นเอง** — prod ไม่มี watchdog (revert `2670c8e` ตั้งแต่ 08-15)
+   ถ้าจะเอากลับ **เอาเฉพาะ watchdog อย่าเอา pacing** (ข้อ 🔑 ข้างบน)
+   · ตอนนี้ลายเซ็นอ่านจาก log ได้แล้ว: `ป้อนท่อน …` ที่**ไม่มี** `ท่อนจบ …` ตามมา
+3. **voice idle 1008-loop** ยังอยู่ · และตอนนี้**แย่ลงโดยอ้อม**: ไมค์ปิดตอนอ่านนิยาย ⇒ session
+   แชทเสียง idle ตลอดเวลาที่ฟังนิยาย ⇒ 1008 ทุก ~151 วิ ตลอดทั้งเล่ม (เห็นจริง `05:52:19` UTC)
+4. ✅ **log ต่อท่อน — ปิดแล้ว 08-18** (`reader_feed_log_line` / `reader_turn_log_line`
+   ใน `utils/voice.py` · 1 คู่/ท่อน ≈ 1 คู่/นาที · รายงานวินาทีของเสียงเทียบเวลาจริง)
+
+#### 🔑 บทเรียนเซสชันนี้
+
+- 🔴 **CI แดงมา 3 commit ตั้งแต่ `f4e62e8` โดยไม่มีใครรู้ — เจอเพราะรัน `ruff check .` เอง**
+  (08-18) สาเหตุ: `elif t == "reread"` ถูกก๊อปจาก `/ws/reader` ไปวางใน handler **เสียง**
+  ซึ่งไม่มีธง `reread` ⇒ `F821` · และถ้ามี client ยิงคำสั่งนั้นเข้าสายเสียงจริงจะได้
+  `NameError` → `except Exception` → `stop.set()` = **ตัด session เสียงทิ้งทั้งเส้น**
+  ⚠️ **prod deploy ผ่านได้ทั้งที่ CI แดง** (deploy ไม่ได้ผูกกับ CI) ⇒ "ใช้งานได้อยู่"
+  ไม่ใช่หลักฐานว่า CI เขียว — **เปิด `gh run list` ดูก่อนเริ่มงานทุกครั้ง**
+- ⚠️ **assertion ที่อ่าน "ตัวหนังสือ" แทน "โค้ด" วัดผิดสิ่ง** — เทส `"reread" not in src`
+  แดงเพราะไปโดน**คอมเมนต์ที่อธิบายบั๊กนั้นเอง** ⇒ เปลี่ยนไปเดินด้วย `ast` (เก็บเฉพาะ
+  `ast.Name` ในฟังก์ชันจริง) · เทสที่ผูกกับ source เป็นสตริงมีกับดักนี้เสมอ
+- **จุดบอด log เจอ 2 ที่ในวันเดียว** — `/ws/reader` มี log แค่ 3 บรรทัดใน 17 วัน และ
+  `interrupted` ไม่ถูก log เลย ⇒ อาการทุกข้อ **พิสูจน์ไม่ได้โดยโครงสร้าง ไม่ใช่หาแล้วไม่เจอ**
+  · ก่อนสรุปว่า "log ไม่พบ" ต้องเช็คก่อนว่า **เครื่องมือวัดมีตาไหม**
+- 🔴 **ก๊อปโครงสร้างมาแล้วต้องก๊อป *เหตุผล* มาด้วย** — `clearExternal()` ตั้ง `extUntil = 0`
+  ตาม `reset()` แต่ `reset()` ถูกเรียกตอนผู้ใช้*ตั้งใจ*แทรก (อยากให้ไมค์เปิดทันที) ส่วน
+  `clearExternal()` ถูกเรียกตอนเสียงจบเอง = คนละเจตนา ⇒ ข้ามหาง 350ms ⇒ กด ⏹ หยุดนิยาย
+  แล้วขวัญแทรกทันที (เสียง "ป๊อก" ตอน flush กลางบัฟเฟอร์เข้าไมค์) — **แก้แล้วใน `a627f3f`**
+- 🔴 **`obj.cb?.(f(x))` — optional call ที่ `undefined` ไม่ประเมิน argument เลย**
+  เขียน `this.cb.onAudio?.(this.playChunk(msg.data))` = เสียงไม่ถูกเล่นถ้าไม่มี callback
+- 🔴 **`now < X + tail` ต้องเช็ค `X > 0` ก่อนเสมอ** — ตอนเปิดหน้าใหม่ๆ `performance.now()`
+  ยังน้อยกว่า tail ⇒ เงื่อนไขเป็นจริงทั้งที่ไม่มีเสียงอะไรเล่นเลย
+- ⚠️ **บันทึกเดิมที่ว่า "เวลาที่จดไว้ทุกที่คลาด 7 ชม." กว้างเกินไป** — เวลาที่มาจาก **user บอก**
+  เป็นเวลาไทยและถูกอยู่แล้ว (เช็คแล้ว: 08-14 10:15-10:20 ตรงกับ log `03:18:11`/`03:20:43` UTC เป๊ะ)
+  ที่คลาดคือเวลาที่ **อ่านจาก log แล้วจดโดยไม่แปลง** — อย่าไปแก้บันทึกที่ถูกอยู่แล้ว
+- ⚠️ **รัน pytest ใน sandbox `/tmp/verify` ที่ symlink `logs` ไป `/app/logs` = เขียนลง log prod ด้วย**
+  (บรรทัด `http://testserver/...` · `FAKE_NO_NETWORK` ที่ `05:36-05:39` UTC 08-17 เป็นของผมเอง)
+  · `test_skills_db_cross_process` แดงใน sandbox นี้เสมอ — **พิสูจน์แล้วว่ากลุ่มควบคุมโค้ดเดิม
+  ก็แดง** ไม่ใช่ regression · deselect ได้
+- 🔒 **user สั่งปิดคดีค่าเสียง/จังหวะการอ่าน (08-17)** — ห้ามแตะ `READER_PROMPT` ·
+  seed/temperature/Aoede · `READ_BLOCK_CHARS` · กฎเลื่อนที่คั่น · jitter prime
+  ⛔ **ข้อเสนอ "ถอด temperature" พักถาวร ห้ามเสนอซ้ำ** (`build_reader_config` สืบ
+  `build_live_config` ทั้งก้อน ⇒ ถอดแล้วเสียงอ่านเปลี่ยนด้วย · มีเทสตรึงจะแดง)
+  · เส้นฐานโมเดลที่วัดไว้ **`gemini-3.1-flash-live-preview` ver = `3.1-flash-live-03-2026`**
+  (วัด 2026-08-17) — ถ้าวันหนึ่งเสียงเปลี่ยนเอง ให้เทียบค่านี้ก่อน
+
+---
+
+## ⏭️ backlog เก่า — ย้ายประวัติไป `docs/session-log/devlog.md` แล้ว (2026-08-18 · ไฟล์ย้ายที่ 08-17)
+
+ประวัติเซสชัน 08-05→08-16 · backlog 08-04 · backlog 06-18 · overlay §22/Model Picker
+**ย้ายลง `docs/session-log/devlog.md` ทั้งหมด** (CLAUDE.md ลดจาก 223 KB → ~83 KB เพราะ 53% เป็นประวัติ)
+
+⚠️ **ยังไม่ได้กวาดว่าอะไรปิดไปแล้ว — อย่าถือว่าปิด** กวาดจาก 49 รายการที่ยังไม่ติด ✅
+เหลือที่ยังเปิดอยู่จริงเท่าที่ตรวจได้:
+
+- 🔴 **DB backup ตายมา 36 วัน — ตรวจจริง 2026-08-18** ตัวล่าสุด `db_backup_20260712_194423.tar.gz`
+  (12 ก.ค.) · `/usr/syno/etc/synoschedule.d/root/*.task` **ไม่มีตัวไหนเรียก `db_backup.sh`**
+  ⇒ `data/chat_history.db` (1.6 MB · sessions/messages/**feedback 👍👎**/pins/shares) และ
+  `data/reader.db` (**130 MB** ข้อความหนังสือ) **ไม่มีสำเนาสำรองเลย**
+  🔑 **กับดักที่ทำให้เรื่องนี้ถูกมองข้ามมา 36 วัน:** `db_backups/phrae-data-map/` อัปเดตทุกวัน
+  (งานคนละโปรเจกต์) ⇒ `ls` โฟลเดอร์แล้วเห็นวันที่สด **จึงดูเหมือน backup ยังเดินอยู่**
+  — ต้องดูชื่อไฟล์ให้ตรงงาน ไม่ใช่ดูวันที่ของโฟลเดอร์
+  ▶️ ทำ: ตั้ง DSM task รายวัน 03:30 (user=root) เรียก `scripts/db_backup.sh`
+- ⚪ **ไม่มีป้าย "กำลังค้น" ในโหมดเสียง** — ค้นใช้ 15-45 วิ = ผู้ใช้ได้ยินความเงียบล้วน
+  🔗 **เกี่ยวโดยตรงกับงานค้างข้อ 1 ข้างบน** (ประตูไมค์หมดอายุระหว่างค้น) — ถ้า server
+  ต้องบอก client ว่า "กำลังค้นอยู่" เพื่อกันประตูเปิด ป้ายนี้ก็ได้มาฟรีจาก event เดียวกัน
+- 🧪 verify ด้วยตาบน browser จริง: File Manager drag&drop / กล้อง / index toast ·
+  ChatBox pills (Plan/Code · สลับผู้ช่วย · status dot · Shift+Enter)
+- 🧪 **voice retry ยังไม่เคยถูกกระตุ้นจริงบน prod** — ยืนยันได้แค่ unit test + โค้ดอยู่ในบันเดิล
+- 🧹 `AI_PALETTE` ใน `~/appscript.ui` ยังมี `fa`/`khim` ค้าง (ถอดจาก backend ตั้งแต่ 06-16) = ซากโค้ด
+- 🎨 `enhanced.js` map สีตามตระกูลเฉด ยังไม่ได้ไล่ความหมายรายจุด
+- ⛔ **พักไว้ (user เคาะแล้ว อย่าเสนอซ้ำ):** `ANTHROPIC_API_KEY`/`MOONSHOT_API_KEY` ใน NAS `.env`
+  · Image Gen (free tier limit=0) · fine-tune (รอ 👍 ~200-500) · Telegram สำหรับ EWS
+
+</details>
+
+---
+
 ## [2026-09-28 ปิดเซสชัน] สรุปเซสชัน 09-25 เช้า → 09-28 — MEDIUM ก้อน 6-11 ปิดครบ + regression จากก้อน 10 แก้แล้ว
 | ก้อน | งาน | ผลบน prod | commit | devlog |
 |---|---|---|---|---|
