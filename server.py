@@ -243,8 +243,12 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
         voice_open_log_line,
         should_run_search,
     )
-    from utils.history import save_message as _save_msg
+    from utils.history import save_message as _save_msg_raw
     from memory.voice_memory import remember_voice_turn
+    from utils.looptiming import SyncCallTimer
+    # วัดงาน sync บน event loop (ขั้น 5B · วัดเท่านั้น — call ยัง sync เหมือนเดิม) · สรุปตอนปิดสาย
+    _loop_timer = SyncCallTimer("voice")
+    _save_msg = _loop_timer.wrap("save_msg", _save_msg_raw)
 
     await websocket.accept()
     # 🔬 ตัวชี้ขาด "client ต่อใหม่กลางสาย หรือ เริ่มสายใหม่" — ดูเหตุผลเต็มที่
@@ -591,6 +595,8 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
             await websocket.send_json({"type": "error", "message": str(e)})
         except Exception:
             pass
+    finally:
+        logger.info(f"[Voice WS] งาน sync บน loop: {_loop_timer.summary()}")
 
 
 # ── ขวัญอ่านหนังสือ (2026-08-11) — ป้อนท่อนจาก BookStore ให้ Gemini Live อ่าน ────
@@ -619,7 +625,12 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
 
     from google import genai
     from google.genai import types
-    from routers.reader import _books, _marks   # ที่เก็บชุดเดียวกับ /api/reader
+    from routers.reader import _books as _books_raw, _marks as _marks_raw   # ที่เก็บชุดเดียวกับ /api/reader
+    from utils.looptiming import SyncCallTimer
+    # วัดงาน sync บน event loop (ขั้น 5B · วัดเท่านั้น) — ห่อที่นี่ที่เดียว call site เดิมทุกตัว · ยัง sync
+    # (`_marks.set` ต้องเสร็จในจังหวะเดียวกับที่เรียก = ที่คั่นไม่เสียหายเมื่อถูก cancel)
+    _loop_timer = SyncCallTimer("reader", always=("books.text",))
+    _books, _marks = _loop_timer.proxy(_books_raw, "books"), _loop_timer.proxy(_marks_raw, "marks")
     from utils.reader import next_block
     from utils.voice import (
         READER_FEED_PREFIX, build_reader_config, live_control_signals, next_read_action,
@@ -953,6 +964,7 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
     finally:
         # คู่กับบรรทัด "เปิด" — สอง session ที่ทับช่วงเวลากันจะเห็นได้ทันทีจาก log
         logger.info(f"[Reader WS] ปิด {session_tag} ที่คั่น {_marks.get(source)}")
+        logger.info(f"[Reader WS] งาน sync บน loop: {_loop_timer.summary()}")
 
 
 if __name__ == "__main__":
