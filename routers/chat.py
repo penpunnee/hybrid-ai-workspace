@@ -445,10 +445,12 @@ async def chat(request: Request):
             # เป็นคำตอบที่ไม่สมบูรณ์ ไม่ควรถูกเรียนรู้เป็นตัวอย่าง
             text = (full_response + "\n\n" if full_response.strip() else "") + f"⚠️ การตอบหยุดกลางคัน: {err_text}"
             try:
-                save_message(assistant, "assistant", text, provider_used or provider, session_id)
+                mid = save_message(assistant, "assistant", text, provider_used or provider, session_id)
                 st["assistant_saved"] = True
+                return mid
             except Exception as save_err:
                 logger.error(f"[Chat] save partial response after crash failed too: {save_err}")
+                return 0
 
         st["save_crash"] = _save_crash
 
@@ -486,7 +488,9 @@ async def chat(request: Request):
                 if st["cancel"].aborted:
                     return                  # client ตัดสาย — _guard_disconnect บันทึกคู่เอง
                 logger.exception("[Chat/agent] run failed")
-                yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+                # บันทึกคู่ก่อน (เดิมไม่บันทึกเลย = user ค้างเดี่ยว) แล้วส่ง id ให้ FE ตั้ง dbId
+                mid = _save_crash(str(e))
+                yield f"data: {json.dumps({'error': str(e), 'message_id': mid}, ensure_ascii=False)}\n\n"
                 return
             # ก้อน 12: agent หยุดกลางคันเพราะผู้ใช้กด Stop → ห้ามบันทึกเป็นคำตอบเต็ม/remember · ตัดสินด้วย `aborted`
             # ไม่ใช่ `is_set()` (ธงอาจถูกตั้งหลัง agent ตอบครบแล้ว — ต้องบันทึกคำตอบเต็ม · บทเรียน CI 09-28)
@@ -650,12 +654,13 @@ async def chat(request: Request):
                 except Exception as e2:
                     if st["cancel"].is_set():
                         return
-                    yield f"data: {json.dumps({'error': f'Fallback ล้มด้วย: {e2}'})}\n\n"
-                    _save_crash(f"Fallback ล้มด้วย: {e2}")
+                    mid = _save_crash(f"Fallback ล้มด้วย: {e2}")
+                    yield f"data: {json.dumps({'error': f'Fallback ล้มด้วย: {e2}', 'message_id': mid})}\n\n"
                     return
             else:
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
-                _save_crash(str(e))
+                # บันทึกก่อนแล้วส่ง id — FE ตั้ง dbId ให้ฟองนี้ได้ (🗑️/แก้ข้อความใช้ได้โดยไม่ต้องรีโหลด)
+                mid = _save_crash(str(e))
+                yield f"data: {json.dumps({'error': str(e), 'message_id': mid})}\n\n"
                 return
 
         # ถูกยกเลิกกลางคัน (ก้อน 10): stream คืนเงียบๆ — ห้ามบันทึกคำตอบครึ่งๆ เป็นคำตอบสมบูรณ์/remember()
@@ -895,10 +900,12 @@ async def regenerate_response(request: Request):
         # (แย่กว่า chat() ปกติ เพราะที่นี่ลบของเดิมทิ้งไปแล้วด้วย)
         text = (st["text"] + "\n\n" if st["text"].strip() else "") + f"⚠️ การตอบหยุดกลางคัน: {err_text}"
         try:
-            save_message(assistant, "assistant", text, provider, session_id)
+            mid = save_message(assistant, "assistant", text, provider, session_id)
             st["saved"] = True
+            return mid
         except Exception as save_err:
             logger.error(f"[Regenerate] save partial response after crash failed too: {save_err}")
+            return 0
 
     def gen_regen():
         usage_sink: dict = {}
@@ -911,8 +918,8 @@ async def regenerate_response(request: Request):
             except Exception as e:
                 if cancel.is_set():
                     return
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
-                _save_regen_crash(str(e))
+                mid = _save_regen_crash(str(e))
+                yield f"data: {json.dumps({'error': str(e), 'message_id': mid})}\n\n"
                 return
             if cancel.aborted:
                 return                      # stream ถูกตัดกลางคัน — on_cut บันทึก "หยุดกลางคัน" (ครบแล้ว = บันทึกปกติ)
