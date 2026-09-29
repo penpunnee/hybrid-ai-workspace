@@ -725,6 +725,7 @@ _(ว่าง — 2 งานค้างจาก 09-29 ปิดแล้ว 
 ### ✅ ปิดแล้ว 09-30 (devlog [ต่อ 40])
 กุญแจกำพร้าหลัง Dream prune จริง (pruned=1) = **0** · ดิสก์ NAS busy เป็นรอบ = healthcheck exec (~2.3 MB/ครั้ง) ไม่ใช่แอป →
 autoheal ของ `docker-events-trap` 5 วิ → 5m (exec 59→21/3 นาที · busy 19→8%) · `ai-backend-1` healthcheck 30s ยังคงเดิม
+Dream REM 0 ธีม = AI ตัดสินใจเอง (ความรู้ทั่วไปถูกข้ามตามดีไซน์ · user เคาะไม่จำ) → log คำตอบดิบตอน 0 ธีม + SKIP เกม `8eacaed` [ต่อ 41]
 
 ### ✅ ปิดแล้วเซสชัน 09-29 (สรุป: devlog [2026-09-29 ปิดเซสชัน 2] · รายละเอียด [ต่อ 28–39])
 dbId ฟองที่เพิ่งส่ง · DELETE sessions บอกผล · เส้น error มี message_id · save_reply อะตอม · skills sync 0 วิ · ถอด POST /api/agent ·
@@ -746,7 +747,7 @@ dbId ฟองที่เพิ่งส่ง · DELETE sessions บอกผ�
 
 ### 📋 งานเปิดอื่น
 - **backend:** reader ยังมี `_marks.get/set` sync บน loop (วัดด้วย looptiming แล้ว — ดูบรรทัด `[Reader WS] งาน sync` ก่อนตัดสิน · 🔒)
-- **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 (รอ memory จากโหมดเสียงสะสม) · REM log raw ตอน `themes=0` ·
+- **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 (รอ memory จากโหมดเสียงสะสม) ·
   ⚪ คำตอบ agent แนะนำ "เปิด Agent Mode" ทั้งที่อยู่ใน agent แล้ว (ต่อ 35)
 
 ### ⏳ รอ user เคาะ
