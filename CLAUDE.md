@@ -738,7 +738,9 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 ✅3 โหมดเสียงบันทึก memory (ต่อ 35 · verify user คุยจริง 30→31 ต่อ 36) · ✅4 log ผล tool + probe (ต่อ 35) ·
 ✅5 deploy แล้ว (ต่อ 37) · ✅ บันทึกช้าจาก fsync NAS: bgwriter + DB ใน mount โฟลเดอร์ + **WAL+NORMAL** (ต่อ 38 · 1.7 วิ → 0.1 ms)
 · 🔴 **`chat_history.db` เป็น WAL แล้ว — ห้าม cp ไฟล์ DB เดี่ยวๆ (ต้องใช้ `sqlite3 .backup` / backup API) · ห้าม mount ไฟล์เดี่ยวกลับ**
-· NAS ไม่มี UPS (user รับความเสี่ยง NORMAL) · งานต่อ: `delete_keys` EF conflict = กุญแจกำพร้าเงียบ (ต่อ 36) · SSD cache (user ตัดสินใจซื้อ)
+· NAS ไม่มี UPS (user รับความเสี่ยง NORMAL) · ✅ `delete_keys` แก้แล้ว (ต่อ 39) · SSD cache **พักไว้** (user: หาทางฟรีก่อน)
+· 🧪 **งานแรกเซสชันหน้า: เช็คกุญแจกำพร้าหลัง Dream prune 09-30 02:00 ต้อง = 0 แล้วรายงาน user** (ค่าตั้งต้น 0 ทุก collection · ต่อ 39)
+· ⏳ user จะดู DSM Resource Monitor ว่าใครเขียนดิสก์ busy ~99% ทุก ~30 วิ (ต่อ 38)
 
 ### ✅ ปิดแล้ว 09-29 (ต่อ 32): คำตอบบันทึกเฉพาะเมื่อแถว user ยังอยู่ (`save_reply` อะตอม · `72a1911`)
 **บันทึกคำตอบหลังรอ LLM ต้องผ่าน `save_reply(…, user_msg_id)`** ห้าม `save_message` ตรง · เทสที่ mock `save_message` ด้วย id ปลอม

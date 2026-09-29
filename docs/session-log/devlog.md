@@ -1,5 +1,20 @@
 ---
 
+## [2026-09-29 ต่อ 39] `delete_keys` ไม่ทิ้งกุญแจกำพร้าเงียบๆ เมื่อ EF conflict (`a09e3cd`) ✅ deployed (restart) + CI เขียว · 🧪 รอเช็คหลัง Dream 30 ก.ย. 02:00
+
+**ค้นชั้น 2:** เดิมเปิดเงาด้วย wrapper ส่ง EF → conflict (ValueError) เข้า `except Exception` = "ไม่มีเงา" → True ทั้งที่ไม่ลบ
+· **ลองบน prod:** collection ที่ไม่มี → `chromadb.errors.NotFoundError` ("Collection [...] does not exist") ⇒ แยกได้ ·
+ซอร์ส 1.5.9 `base_http_client.py:106-129` (map ชื่อ error จากเซิร์ฟเวอร์) · `errors.py:99` · ผู้เรียก 5 จุดผ่าน `delete_with_keys`
+(cleanup 🧹 · Dream prune · delete_entry · delete_lesson · scripts/clean_episodic)
+**แก้:** `get_collection_noembed` · `except NotFoundError` → True · error อื่นตอนเปิด → False + ERROR · ลบล้ม → False + WARNING (เดิม debug)
+· `key_hits` ไม่แตะ · เทส 6 (แดงก่อน 4 · ข้อ 2/6 = พฤติกรรมเดิมที่ถูก) · 🔧 เทสเดิม 2 ตัว patch wrapper ที่ไม่ถูกเรียกแล้ว
+(ตัวหนึ่ง**ผ่านแบบ vacuous**) → ใช้ `client.get_collection` + `NotFoundError` · mutation 7/7 · ชุดเต็ม 2535
+**verify prod (อ่านอย่างเดียว):** โค้ดใหม่ในคอนเทนเนอร์ · `delete_keys(เงาที่ไม่มี)` = True · **กุญแจกำพร้า = 0 ทุก collection**
+(memory_kwan หลัก 48/กุญแจ 45 · memory_logic 0/0 · lessons 8/8 · user_facts 1/1) = ค่าตั้งต้นก่อนเส้นลบจริงทำงาน
+🧪 **ต้องเช็คซ้ำหลัง Dream prune 2026-09-30 02:00 หรือหลังกด 🧹** — กุญแจกำพร้าต้องยังเป็น 0 (user ขอให้รายงาน)
+
+---
+
 ## [2026-09-29 ต่อ 38] บันทึกข้อความช้าจาก fsync NAS — ขั้น 1 (bgwriter `5361a9e`) · 2a (mount โฟลเดอร์ `d304342`) · 2b/2c (writer ค้าง + WAL+NORMAL `c7aac8f`) ✅ prod · CI เขียว
 
 **ที่มา:** 5B วัดได้ `voice save_msg` 0.8–1.7 วิ/ครั้ง × 2/turn บนลูปเสียง (20/20 เกิน 50 ms · heartbeat ไมค์ 5→7 วิ)
