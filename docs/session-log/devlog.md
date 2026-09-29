@@ -1,5 +1,20 @@
 ---
 
+## [2026-09-29 ต่อ 30] เส้น `{"error"}` ได้ `message_id` + agent ล้มไม่ทิ้ง user เดี่ยว (ui `e4b424b` · appscript.ui `4228cdc`) ✅ deployed + CI เขียว
+
+**ค้น 3 เส้นที่ส่ง error:** หลัก/fallback (`_save_crash`) และ regenerate (`_save_regen_crash`) **yield error ก่อนบันทึก แล้วทิ้ง id**
+⇒ ฟอง AI ไม่มี dbId (🗑️ คู่นั้นไม่ขึ้นจนรีโหลด) · 🔴 **agent โยน exception = ไม่บันทึกเลย** ⇒ แถว user ค้างเดี่ยวใน DB (เทสยืนยัน `['user']`)
+**แก้:** ฟังก์ชัน crash คืน id → บันทึกก่อน แล้ว yield `{"error", "message_id"}` ครบ 4 เส้น · agent เรียก `_save_crash`
+(เก็บส่วนที่ตอบไปแล้ว + "⚠️ การตอบหยุดกลางคัน") · FE `applyStreamIds` รับ `error` ด้วย + `userId: null` แล้วต่อเข้า `regenerate`
+**เทส:** `test_error_event_message_id.py` (4 · id ต้องชี้แถว assistant ของ session นี้ที่มีข้อความ error) · vitest +3 · wiring regenerate
+· mutation backend 4/4 · frontend 3/3 (`no-nullguard` vitest ไม่แดงเพราะให้ผลเหมือนเดิมตอนรัน — **tsc จับได้** · appscript.ui ไม่อยู่ใน CI)
+· ชุดเต็ม pytest **2463** · vitest **606** · node 35
+**verify prod:** bundle `index-Bm0-GtmU.js` ✅ · `user_message_id` วิ่งจริงบน prod (2462/2464) ✅ · **เส้น exception ยังไม่ได้เห็นบน prod** —
+ลอง `provider:kimi` (ไม่มี key) และ `ollama` + โมเดลที่ไม่มีจริง: provider แปลง error เป็น `chunk` + `done` เองทั้งคู่
+⇒ เส้นที่แก้เกิดเฉพาะ exception ที่ไม่ได้ดักไว้ · ไม่บังคับให้พังบน prod · probe เก็บกวาดแล้ว (`deleted:2` ×2 · `X-Test-Request`)
+
+---
+
 ## [2026-09-29 ต่อ 29] DELETE /api/sessions บอกผลจริง (ui `1e8d25a` · appscript.ui `385f71c`) + harness SSE ทำ CI แดงเป็นพักๆ (`a99b6cb`) ✅ deployed + verify prod + CI เขียว
 
 **ที่มา:** ตอนเก็บกวาด probe ของ [ต่อ 28] ใส่ชื่อผู้ช่วยผิด (ขาด `🧡`) → ได้ **200 `{"ok":true}` ทั้งที่ลบ 0 แถว**
