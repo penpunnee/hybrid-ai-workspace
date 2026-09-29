@@ -726,6 +726,7 @@ _(ว่าง — 2 งานค้างจาก 09-29 ปิดแล้ว 
 กุญแจกำพร้าหลัง Dream prune จริง (pruned=1) = **0** · ดิสก์ NAS busy เป็นรอบ = healthcheck exec (~2.3 MB/ครั้ง) ไม่ใช่แอป →
 autoheal ของ `docker-events-trap` 5 วิ → 5m (exec 59→21/3 นาที · busy 19→8%) · `ai-backend-1` healthcheck 30s ยังคงเดิม
 Dream REM 0 ธีม = AI ตัดสินใจเอง (ความรู้ทั่วไปถูกข้ามตามดีไซน์ · user เคาะไม่จำ) → log คำตอบดิบตอน 0 ธีม + SKIP เกม `8eacaed` [ต่อ 41]
+insight ของ Dream เป็น object = หน้าต่างรายงานจอขาวทั้งแอป → backend `_normalize_insights` `a54e8a4` + frontend `dreamText` a.ui `0553ba1` [ต่อ 42]
 
 ### ✅ ปิดแล้วเซสชัน 09-29 (สรุป: devlog [2026-09-29 ปิดเซสชัน 2] · รายละเอียด [ต่อ 28–39])
 dbId ฟองที่เพิ่งส่ง · DELETE sessions บอกผล · เส้น error มี message_id · save_reply อะตอม · skills sync 0 วิ · ถอด POST /api/agent ·

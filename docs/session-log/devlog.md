@@ -1,5 +1,24 @@
 ---
 
+## [2026-09-30 ต่อ 42] insight ของ Dream เป็น object → หน้าต่างรายงานจอขาวทั้งแอป — แก้ 2 ชั้น ✅ prod
+
+**ค้น (ยืนยันทั้ง 3 จุดก่อนแก้ ตาม user สั่ง "ส่วนไหนไม่ชัวร์ หาข้อมูลก่อน"):**
+- รายงานเก่า **6/270** มี insight เป็น `{"summary":...,"count":N}` (12 มิ.ย.–15 ก.ค.) · probe [ต่อ 41] ได้ `{"user":"ปอย"}` 1/3 · ธีมไม่เคยผิดรูป (270/270)
+- `app.tsx:2391` `<li>{ins}</li>` · จำลอง React 18.3.1 ใน jsdom: object → *"Objects are not valid as a React child"* แล้ว
+  **html ของ root เหลือ 0 ตัวอักษร** (หัวข้ออื่นหายด้วย) · กลุ่มควบคุมข้อความปกติ · ไม่มี ErrorBoundary (`main.tsx` มีแค่ StrictMode)
+- `/api/dream/report` = ไฟล์ล่าสุดไฟล์เดียว + ปุ่ม "รัน Dream ใหม่" แสดงผลทันที ⇒ รายงานเก่า 6 ไฟล์ไม่ถูกแสดงอีก · ความเสี่ยงอยู่ที่คืนถัดๆ ไป
+- `/api/dream/history` แสดงแค่จำนวน ไม่เสี่ยง · `.md` ใน vault ไม่พังแต่อ่านยาก
+**แก้ชั้น 1 backend (`a54e8a4`):** `_insight_text` (str ตามเดิม · dict → summary/text summary ก่อน · อื่น → JSON `ensure_ascii=False`)
++ `_normalize_insights` (None → [] · ไม่ใช่ list → [value]) เรียกใน `_try_parse` ครอบรอบ 1/2 · เทส 10 (แดงก่อน 8) · mutation 8/8 · ชุดเต็ม 2550
+**แก้ชั้น 2 frontend (a.ui `0553ba1` · static `f5bda36`):** `dreamText()` ใน `utils/dreamstats.ts` · `t.name` / `t.summary` / `ins` ผ่าน `dreamText`
+· เทส 6 + wiring 3 (`appwiring.test.ts` — ไม่มี `{ins}`/`{t.name}`/`{t.summary}` ดิบเหลือ) · mutation 9/9 (ตัวที่รอด = `!Array.isArray` เกินจำเป็น ตัดออก) · vitest 625 · tsc
+**verify prod:** backend `_normalize_insights` ในคอนเทนเนอร์ถูก · Chrome บน `ai.pawinhome.com` bundle `index-Bog-JfeM.js`: ดัก `fetch('/api/dream')`
+ในหน้า (ตอบแทน **ไม่ส่งถึง backend**) ให้คืนธีม name/summary เป็น object + insight 4 แบบ → กด "🌙 รัน Dream ใหม่" → **ไม่จอขาว**
+(root 248,962 ตัวอักษร) · ธีมแสดง `{"bad":"name-obj"}` · insight แสดงครบเป็นข้อความ · ยืนยันไม่มี Dream จริง (report ล่าสุดยัง `190007`) · รีโหลดล้างของปลอมแล้ว
+⚪ ระหว่างทดสอบ popup "Memory เกิน 100 รายการ" เด้งเอง (พฤติกรรมเดิม `loadMemStats` total > 100) — ไม่ได้แตะ
+
+---
+
 ## [2026-09-30 ต่อ 41] Dream REM ได้ 0 ธีม = AI ตัดสินใจเอง ไม่ใช่บั๊ก · log คำตอบดิบ + ข้ามเนื้อหาเกม (`8eacaed`) ✅ prod · CI เขียว
 
 **ค้น (อ่านอย่างเดียว · memories 18 รายการของคืน 09-30 · ยิง Gemini ตรง ไม่รัน Dream ทั้งรอบ):**
