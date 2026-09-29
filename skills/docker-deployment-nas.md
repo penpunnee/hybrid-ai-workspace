@@ -13,7 +13,7 @@
 ## Volumes (สำคัญ — mount จาก NAS_DATA_PATH)
 
 ```yaml
-${NAS_DATA_PATH}/chat_history.db   → /app/chat_history.db
+${NAS_DATA_PATH}/chat_history.db   → /app/data/chat_history.db (ผ่าน mount โฟลเดอร์ ${NAS_DATA_PATH}:/app/data)
 ${NAS_DATA_PATH}/skills_db.json    → /app/skills_db.json
 ${NAS_DATA_PATH}/skills            → /app/skills        # ⚠️ ต้อง mount ไม่งั้น .md หายเมื่อ recreate
 ${NAS_DATA_PATH}/dream_reports     → /app/dream_reports
@@ -54,7 +54,7 @@ LMSTUDIO_CHAT_MODEL=qwen/qwen3.5-9b
 LMSTUDIO_REASON_MODEL=qwen/qwen3.5-9b
 LMSTUDIO_VISION_MODEL=qwen/qwen3.5-9b
 UI_PASSWORD=...                          # ป้องกัน public access
-DB_PATH=/app/chat_history.db
+DB_PATH=/app/data/chat_history.db
 OBSIDIAN_VAULT_PATH=/vault
 NAS_DATA_PATH=/var/services/homes/pawin/ui_data
 OBSIDIAN_VAULT_NAS_PATH=/var/services/homes/pawin/Obsidian

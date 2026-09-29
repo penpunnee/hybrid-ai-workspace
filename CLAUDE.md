@@ -335,7 +335,7 @@ PC_IP=192.168.51.235
 PC_MAC=
 
 # Storage
-DB_PATH=/app/chat_history.db  # ⛔ docker-compose `environment:` ทับ `env_file:` — ตั้งใน .env **ไม่มีผลในคอนเทนเนอร์** (มีผลเฉพาะรัน local ตรงๆ)
+DB_PATH=/app/data/chat_history.db  # (ย้ายจาก mount ไฟล์เดี่ยว 09-29 · WAL ต้องการโฟลเดอร์) ⛔ docker-compose `environment:` ทับ `env_file:` — ตั้งใน .env **ไม่มีผลในคอนเทนเนอร์** (มีผลเฉพาะรัน local ตรงๆ)
 OBSIDIAN_VAULT_PATH=/vault  # ⛔ docker-compose `environment:` ทับ `env_file:` — ตั้งใน .env **ไม่มีผลในคอนเทนเนอร์** (มีผลเฉพาะรัน local ตรงๆ)
 CHROMA_HOST=
 NAS_DATA_PATH=./data

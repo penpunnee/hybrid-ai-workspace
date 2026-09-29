@@ -21,7 +21,9 @@ services:
       retries: 3
       start_period: 90s   # เผื่อ boot upsert skills เข้า ChromaDB (~30-60s)
     volumes:
-      - ${NAS_DATA_PATH:-./data}/chat_history.db:/app/chat_history.db
+      # ⚠️ chat_history.db อยู่ใน mount โฟลเดอร์ ${NAS_DATA_PATH}:/app/data ข้างล่าง (DB_PATH=/app/data/chat_history.db)
+      # ห้ามกลับไป mount ไฟล์เดี่ยว — SQLite WAL สร้าง -wal/-shm ข้าง DB ⇒ จะไปเกิดใน writable layer แล้วหายตอน
+      # recreate (2026-09-29 ขั้น 2a · tests/test_db_path_dir_mount.py)
       - ./identity.json:/app/identity.json
       - ${OBSIDIAN_VAULT_NAS_PATH:-./data}:/vault
       - ${NAS_DATA_PATH:-./data}/dream_reports:/app/dream_reports
@@ -59,7 +61,7 @@ services:
       - ./scripts:/app/scripts
       - chroma_model_cache:/root/.cache/chroma
     environment:
-      - DB_PATH=/app/chat_history.db
+      - DB_PATH=/app/data/chat_history.db
       - OBSIDIAN_VAULT_PATH=/vault
       - LOG_FILE=/app/logs/server.log
     env_file:

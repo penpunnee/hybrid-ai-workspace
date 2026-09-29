@@ -2,7 +2,7 @@
 
 ทำไมต้องมี in-app ทั้งที่มี scripts/db_backup.sh: ตั้ง DSM Task Scheduler
 จาก SSH ไม่ได้ (sudo บน NAS จำกัดแค่ docker) — job ในแอปจบได้เองไม่พึ่ง GUI
-และใน container path DB ชัดเจนเสมอ (/app/chat_history.db = ตัวจริงผ่าน mount)
+และใน container path DB ชัดเจนเสมอ (/app/data/chat_history.db = ตัวจริงผ่าน mount โฟลเดอร์ ./data (เดิม /app/chat_history.db ไฟล์เดี่ยว — ย้าย 09-29))
 
 วิธี: sqlite3 backup API (online snapshot — consistent แม้แอปกำลังเขียน, WAL-safe)
 → tar.gz ที่ DB_BACKUP_DEST (default ./db_backups → /app/db_backups ใน container,

@@ -40,7 +40,7 @@ LMSTUDIO_TIMEOUT=180
 CHROMA_HOST=192.168.51.49
 CHROMA_PORT=8000
 
-DB_PATH=/app/chat_history.db     # ⛔ docker-compose ทับ — ตั้งใน .env ไม่มีผลในคอนเทนเนอร์
+DB_PATH=/app/data/chat_history.db  # ⛔ docker-compose ทับ — ตั้งใน .env ไม่มีผลในคอนเทนเนอร์
 NAS_DATA_PATH=/volume1/docker/hybrid-ai
 
 OBSIDIAN_VAULT_PATH=/vault        # ⛔ docker-compose ทับ — ตั้งใน .env ไม่มีผลในคอนเทนเนอร์
@@ -75,7 +75,7 @@ LINE_NOTIFY_TOKEN=your_token      # แจ้งเตือน Dream Cycle fail
 
 | ENV | Path ใน Container | ที่มา |
 |---|---|---|
-| `DB_PATH` | `/app/chat_history.db` | volume mount |
+| `DB_PATH` | `/app/data/chat_history.db` | volume mount (โฟลเดอร์ ./data) |
 | `OBSIDIAN_VAULT_PATH` | `/vault` | volume mount |
 | skills folder | `/app/skills/` | `NAS_DATA_PATH/skills` |
 | dream reports | `/app/dream_reports/` | `NAS_DATA_PATH/dream_reports` |
