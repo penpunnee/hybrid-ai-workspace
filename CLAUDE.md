@@ -284,7 +284,8 @@ Stats: `GET /api/cache/stats`
 ```env
 # AI
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash   # ⚠️ ห้ามใช้ gemini-2.5-pro บน free tier (quota limit=0 → 429 ทุก request, เจอจริง 2026-06-11)
+GEMINI_MODEL=gemini-3.5-flash-lite   # ค่าที่ prod ตั้ง · default ในโค้ด = `utils/llm.py:GEMINI_MODEL_DEFAULT` (gemini-3.5-flash) · ⚠️ gemini-2.5-flash ปิด 2026-10-16 (`GEMINI_MODEL_SUNSET`) · ห้ามใช้ gemini-2.5-pro บน free tier (quota limit=0 → 429 ทุก request, เจอจริง 2026-06-11)
+GEMINI_FALLBACK_MODEL=gemini-3.1-flash-lite   # สำรองเมื่อตัวหลัก transient-fail · ว่าง = ไม่สลับโมเดล
 GEMINI_SEARCH_MODEL=            # โมเดลเฉพาะ gemini_web_search() (grounding ให้ local/Claude/Kimi) — ว่าง = ใช้ GEMINI_MODEL; precedence: arg > env นี้ > GEMINI_MODEL (มีตั้งแต่ 7087f88, test ใน test_gemini_web_search.py)
 GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview   # default อยู่ที่ `utils/voice.py:GEMINI_LIVE_MODEL_DEFAULT` ที่เดียว (ดูหัวข้อ "เสียงต้องเป็นคนเดิม") ⚠️ ห้ามสลับไปสาย native-audio โดยไม่ถอด `VOICE_TEMPERATURE` — วัดแล้วเสียงหายเงียบๆ 0 ไบต์ · gemini-2.0-flash-exp/gemini-live-2.0-flash-001 ถูกถอดจาก Live API แล้ว (1008 not found). เช็ค model ที่ใช้ได้: ListModels filter supportedGenerationMethods มี bidiGenerateContent
 GEMINI_TTS_MODEL=gemini-2.5-flash-preview-tts   # ⚠️ ต้องเป็นสาย `*-tts` เท่านั้น (`utils/tts.py` เรียก generateContent ไม่ใช่ bidi) · ห้ามใส่สาย native-audio เด็ดขาด = 404 ทุก request · free tier 10 req/วัน/โมเดล · ทางเลือกที่วัดแล้วใช้ได้: gemini-3.1-flash-tts-preview · ดูหัวข้อ "🔊 /api/tts"
@@ -523,7 +524,7 @@ LOG_FILE=/app/logs/server.log  # ⛔ docker-compose `environment:` ทับ `en
 - `static/skills/` (git) ≠ `data/skills/` (container mount) — copy needed after `git pull`
 - **Container name**: docker-compose service `hybrid-ai` → actual container `ai-backend-1` (project name prefix). Use `docker restart ai-backend-1` not `hybrid-ai`
 - **`ai-backend-1` "หาย" ซ้ำ → แก้ถาวรแล้ว ✅ 2026-06-17**: อาการ 2 ครั้ง (2026-06-14/15, 2026-06-17) — Container Manager/docker daemon restart → chromadb/cloudflared กลับมาเอง แต่ `ai-backend-1` **ถูกลบหายจาก `docker ps -a`** (restart policy ช่วยไม่ได้เพราะ container ไม่เหลือ). **แก้:** (1) `restart: always` (เหมือน chromadb) (2) healthcheck (python urllib→`/api/config:8000`, start_period 90s) (3) **`backend-watchdog`** (service ใน compose, image `docker:cli`) loop ทุก 60s — ถ้า `ai-backend-1` ไม่ running → `docker compose up -d hybrid-ai` (idempotent). watchdog mount `/volume1/homes/pawin/ui` ที่ path เดียวกับ host → compose-in-container resolve bind-mount ถูก. **recovery path verified** (boot-race ครั้งเดียวกู้สำเร็จจริง ไม่ flap). กู้ด้วยมือถ้าจำเป็น: `cd /var/services/homes/pawin/ui && sudo docker compose up -d hybrid-ai`
-- **Port: app = `8080`, ChromaDB = `8000` (เจอจริง 2026-06-15)**: docker-compose map `8080:8000` → verify prod ที่ `http://192.168.51.49:8080` (เช่น `/api/status`, `/api/models`). ⚠️ `192.168.51.49:8000` คือ **ChromaDB** (ตอบ 404 สำหรับ path ของแอป) — อย่าสับสน. (admin curl ตัวอย่างเก่าใน doc ที่ใช้ :8000 น่าจะคลาด — ใช้ :8080)
+- **Port: app = `8080`, ChromaDB = `8000` (เจอจริง 2026-06-15)**: docker-compose map `8080:8000` → verify prod ที่ `http://192.168.51.49:8080` (เช่น `/api/status`, `/api/models`). ⚠️ `192.168.51.49:8000` คือ **ChromaDB** (ตอบ 404 สำหรับ path ของแอป) — อย่าสับสน.
 - `detect_home_tools` keyword precision: `_DOCKER_KW` ใช้ compound เท่านั้น (`"docker รัน"`, `"docker หยุดทำงาน"` ฯลฯ) — standalone `"รัน"` / `"หยุด"` / `"หยุดทำงาน"` ถูกตัดออกแล้ว (session 2026-06-03)
 - โมเดลเล็ก (ollama llama3) **ไม่ทำตาม guard 100%** — งาน real-time ที่ต้องการความถูกต้องเป๊ะ ให้ใช้ Agent mode / Claude / Gemini
 - **Auth lockout false-positive (แก้แล้ว 2026-06-02)**: React app โหลดหน้าแรกยิง API ไม่มี token → นับเป็น auth-fail → lock ก่อน login. แก้: นับเฉพาะ request ที่มี `x-auth-token` แต่ผิด (`core/ratelimit.py`)
@@ -671,9 +672,9 @@ text ยาว → chunk_text() → MAP (สรุปแต่ละ chunk) → 
 **ตัวอย่าง:**
 ```bash
 # OCR
-curl -X POST http://NAS:8000/api/documents/ocr -F "file=@scan.pdf"
+curl -X POST http://NAS:8080/api/documents/ocr -F "file=@scan.pdf"
 # สรุป
-curl -X POST http://NAS:8000/api/documents/summarize -F "file=@report.pdf" -F "summary_type=general"
+curl -X POST http://NAS:8080/api/documents/summarize -F "file=@report.pdf" -F "summary_type=general"
 ```
 
 **⚠️ NAS ต้องติดตั้ง poppler:**
@@ -720,7 +721,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า
-ไม่มีงานเร่ง — เลือกจาก 📋 งานเปิดอื่น (แนะนำ: ⚪ Agent แนะนำ "เปิด Agent Mode" ทั้งที่อยู่ใน agent · แก้เอกสาร `:8000`/ชื่อ Gemini)
+ไม่มีงานเร่ง — เลือกจาก 📋 งานเปิดอื่น (แนะนำ: ⚪ Agent แนะนำ "เปิด Agent Mode" ทั้งที่อยู่ใน agent)
 หรือ ⏳ รอ user เคาะ · ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
 ### ✅ ปิดแล้ว (สรุป: devlog [2026-09-30 ปิดเซสชัน] · [2026-09-29 ปิดเซสชัน 2])
@@ -769,8 +770,6 @@ Low Power/ความร้อน) — `underruns` อ่านแล้ว = �
 `pythainlp` ไม่มีในอิมเมจ ⇒ เทส `utils/thaiscatter.py` 14 ตัวถูกข้ามทุกที่ · `enhanced.js` map สีตามตระกูลเฉด ·
 ป้าย "กำลังค้น" ในโหมดเสียง · turn ที่โดน `go_away` ตัดไม่นับเป็นความล้มเหลว (ยังไม่มีเทสตรึง) ·
 คอมเมนต์ `utils/bookreader.ts:114` เรื่อง rAF ตกรุ่น · citations ราคาเกมอาจเป็นแหล่งรอง (Steam age-check) ·
-ตัวอย่าง curl ใน "Admin unlock" ยังใช้ `:8000` (= ChromaDB · แอปคือ `:8080`) ·
-บล็อก env ใน "Environment Variables" ยังเขียน `GEMINI_MODEL=gemini-2.5-flash` (retired แล้ว · prod ใช้ `gemini-3.5-flash-lite`)
 
 ### ⛔ พักไว้ (user เคาะแล้ว อย่าเสนอซ้ำ)
 `ANTHROPIC_API_KEY`/`MOONSHOT_API_KEY` · Image Gen (free tier limit=0) · fine-tune (รอ 👍 ~200-500) ·
@@ -850,7 +849,7 @@ seek ต้อง**อ่านค่าก่อนเขียน** (user อ�
 `POST /api/admin/unlock` — ล้าง auth-fail lockout สำหรับ IP ที่ระบุ (LAN/loopback เท่านั้น, 403 ถ้ามาจาก Cloudflare/public)
 ```bash
 # ปลด lock IP ที่ระบุ (รันจาก LAN) — ต้องระบุ IP จริงของ client ไม่ใช่ NAS
-curl -X POST http://192.168.51.49:8000/api/admin/unlock \
+curl -X POST http://192.168.51.49:8080/api/admin/unlock \
      -H "Content-Type: application/json" -d '{"ip": "CLIENT_IP"}'
 # หา IP จาก log: docker logs ai-backend-1 2>&1 | grep "auth_fail\|lock" | tail -10
 ```

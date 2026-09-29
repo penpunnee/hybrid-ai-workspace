@@ -1,5 +1,13 @@
 ---
 
+## [2026-09-30 ต่อ 44] แก้เอกสาร CLAUDE.md — พอร์ต `:8000`→`:8080` + บล็อก env ของ Gemini ✅ verify prod
+- curl ตัวอย่าง 3 จุด (Admin unlock · OCR · summarize) ใช้ `:8000` = ChromaDB → เปลี่ยนเป็น `:8080` (compose `8080:8000`)
+  · วัดจริง: `POST :8080/api/admin/unlock` (IP TEST-NET 203.0.113.1) = 200 `{"unlocked":...}` · `:8000` = 404
+  · `:8000` ที่เหลือถูกต้อง (healthcheck ในคอนเทนเนอร์ · คำอธิบาย ChromaDB)
+- บล็อก env: `GEMINI_MODEL=gemini-2.5-flash` → ค่าที่ prod ตั้งจริง `gemini-3.5-flash-lite` (อ่านจาก `.env` บน NAS) + เพิ่ม `GEMINI_FALLBACK_MODEL`
+  · ⚠️ แก้ถ้อยคำใน backlog เดิม: 2.5-flash **ยังไม่ retired** — อยู่ใน `GEMINI_MODEL_SUNSET` ปิด 2026-10-16
+- ถอดสองบรรทัดนี้ออกจาก ⚪ งานเล็กค้าง + คำแนะนำใน 🥇
+
 ## [2026-09-30 ปิดเซสชัน] สรุปเซสชัน 09-30 (ต่อ 40–43) — กุญแจกำพร้า · ดิสก์ NAS · Dream REM · insight จอขาว · ErrorBoundary
 
 | งาน | ผลบน prod | commit | devlog |
