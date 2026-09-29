@@ -27,7 +27,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 3. `MEMORY.md` เก็บได้แค่ "เปิดไฟล์ไหนก่อน + ข้อห้ามที่ยังมีผล"
 4. ⚠️ ไฟล์นี้ถูกฉีดเข้า context **ทันทีที่แตะไฟล์ใดก็ตามในรีโป** (nested CLAUDE.md ·
    เพดาน CLI = 4 MB จึงไม่มีการตัดให้) ⇒ **มันโตเมื่อไหร่เสียโควตาทุกเซสชันทันที**
-   ตอนนี้ **~97 KB** (วัด 09-28 หลังย้ายบล็อก ▶️ เก่า 115 KB ลง devlog [ต่อ 24] · เคยถึง ~197 KB) — ส่วนที่เหลือเกือบทั้งหมดเป็น Architecture/Web Search/TTS ซึ่งยังมีประวัติเล่ายาวปนอยู่ · บทเรียนเต็มที่ vault `wiki/concepts/claude-md-context-budget.md`
+   ตอนนี้ **~101 KB** (วัด 09-29 ปิดเซสชัน · 09-28 หลังย้ายบล็อก ▶️ เก่า 115 KB ลง devlog [ต่อ 24] · เคยถึง ~197 KB) — ส่วนที่เหลือเกือบทั้งหมดเป็น Architecture/Web Search/TTS ซึ่งยังมีประวัติเล่ายาวปนอยู่ · บทเรียนเต็มที่ vault `wiki/concepts/claude-md-context-budget.md`
 5. **ถังความจำของโปรเจกต์นี้:** `~/.claude/projects/-Users-pawin-Desktop-ui/memory/`
    — เปิดงานด้วย **`cc khim`** เท่านั้นถึงจะได้ถังนี้ (เปิดจาก `~` = ได้ถังกลาง คนละใบ)
    · `MEMORY.md` ในถัง = หน้าแรก (ตัวชี้/ข้อห้าม/งานค้าง) · โน้ตข้างเคียงเป็น **symlink
@@ -719,19 +719,27 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → /scrutinize → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy → verify prod (ยืนยันว่าเส้นที่แก้ถูกวิ่งจริง)
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
-### 🥇 งานแรก: ก้อน 12
-- ✅ **ข้อ 1 ปิดแล้ว 09-29 (`3ad9767` · devlog [ต่อ 25]):** agent (LM Studio) กด Stop แล้วหยุดทันที — step เป็น stream + register + เพดานรวม
-- ✅ **"(agent ไม่มีคำตอบ)" หลังผล tool ปิดแล้ว 09-29 (`f1e6d0d` · devlog [ต่อ 26]):** content ว่าง + มีผล tool → `synthesize()` (probe 15/15 · prod 3/3)
-  · ⚪ ยังไม่รู้ว่าทำไม 09-18 ตอบได้ (น่าจะ LM Studio อัปเดต runtime เอง) · SSH เข้า PC .235 ตอบ "cannot find the path" ทุกคำสั่ง — เข้าไปดูเวอร์ชันไม่ได้
-- **backend:** EF conflict ใน `utils/memory.get_collection`
-  ทำ cleanup ข้าม collection เงียบๆ · `server.py` WS อ่าน/เสียงยังมีงาน sync บน loop (🔒 ทำเมื่อ user สั่ง + วัดเสียงก่อน/หลัง)
-- ✅ **frontend 9 ข้อ ปิดแล้ว 09-29 (ui `e9edd73` · appscript.ui `18eb5c9` · devlog [ต่อ 27])** — verify ใน Chrome บน prod 4 ข้อ ·
-  ⚠️ appscript.ui ยังไม่ push (`origin` ahead 6 — ค้างจากเซสชันก่อนๆ ด้วย) · ถัดไป: backlog `dbId` ข้างล่าง
-- **backlog `dbId`:** ข้อความที่เพิ่งส่งไม่มี `dbId` (`app.tsx` เส้นส่งหลัก + `done` ไม่ตั้งให้ AI) ⇒ แก้ข้อความไม่ truncate
-  (DB ซ้อน) · ปุ่ม pin/feedback/🗑️ ไม่ขึ้นจนรีโหลด · แก้ = backend ส่ง `user_message_id` ใน `done` + ตั้ง dbId ทั้งคู่
-  (ยืนยันจากโค้ด **ยังไม่ดูใน browser**)
+### 🥇 งานแรกเซสชันหน้า (user เคาะ 09-29): backlog `dbId`
+**อาการ (ยืนยันจากโค้ดเท่านั้น — ดูใน browser ก่อนแก้):** ข้อความที่เพิ่งส่งในหน้าเดียวกันไม่มี `dbId` —
+เส้นส่งหลักใน `handleSend` สร้างฟอง user โดยไม่มี `dbId` และตอนได้ `done` ตั้งแค่ `streaming/stats` ให้ฟอง AI
+(ต่างจาก regenerate/edit ที่ตั้ง `dbId: obj.message_id`) · `dbId` มาจาก `loadHistory` ตอนสลับ session/รีโหลดเท่านั้น
+⇒ (1) แก้ข้อความที่เพิ่งส่ง = ไม่ยิง truncate → DB มีคู่เก่า+ใหม่ซ้อน (2) ปุ่มที่ gate ด้วย `msg.dbId &&` (📌 pin · 👍👎 · 🗑️) ไม่ขึ้นจนรีโหลด
+**แนวแก้ที่จดไว้ (09-24):** backend ส่ง `user_message_id` ใน event `done` (`routers/chat.py` เส้นปกติ + short-circuit ทุกเส้น:
+response cache · image gen · teach · agent) · `app.tsx` ตั้ง `dbId` ให้ทั้งฟอง user และ AI ตอนได้ `done`
+⚠️ เลขบรรทัดเดิมเลื่อนหมดแล้ว (ก้อน 12 แก้ `app.tsx`/`chat.py` หลายจุด) — ค้นใหม่ · ขั้นตอนเดิม: ค้น 2 ชั้น → แผน → /scrutinize → เทสแดง → แก้ → mutation → deploy → verify → CI
+
+### ✅ ปิดแล้วเซสชัน 09-28 ดึก → 09-29 (สรุปทั้งเซสชัน: devlog [2026-09-29 ปิดเซสชัน])
+- agent (LM Studio) กด Stop แล้วหยุดทันที (`3ad9767` · [ต่อ 25]) · "(agent ไม่มีคำตอบ)" หลังผล tool → สรุปใหม่ (`f1e6d0d` · [ต่อ 26])
+- frontend 9 ข้อของ audit (ui `e9edd73` · appscript.ui `18eb5c9` · [ต่อ 27]) · ย้ายบล็อก ▶️ เก่าลง devlog (`5aef79a` · [ต่อ 24])
+- ⚪ ยังไม่รู้ว่าทำไม agent ตอบได้เมื่อ 09-18 (น่าจะ LM Studio อัปเดต runtime เอง) · SSH เข้า PC .235 ตอบ "cannot find the path" ทุกคำสั่ง
+- ⚠️ **appscript.ui ยังไม่ push** — `origin` (NAS) ahead 6 (5 ค้างจากเซสชันก่อนๆ) · ถาม user ก่อน push
+
+### 📋 งานเปิดอื่น
+- **backend:** EF conflict ใน `utils/memory.get_collection` ทำ cleanup ข้าม collection เงียบๆ ·
+  `server.py` WS อ่าน/เสียงยังมีงาน sync บน loop (🔒 ทำเมื่อ user สั่ง + วัดเสียงก่อน/หลัง) ·
+  `/api/agent` ไม่มี `_guard_disconnect` (กด Stop = user orphan · ไม่มี frontend เรียก)
 - **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 · REM log raw ตอน `themes=0` · guard "ไม่มีข้อมูลจริง"
-  ใน `_run_agent_fc` · job sync skills ตอนบูต embed ทีละรายการแย่ง recall หลัง restart
+  ใน `_run_agent_fc` · job sync skills ตอนบูต embed ทีละรายการแย่ง recall หลัง restart (เห็นจริง 09-28: step แรกของ agent ช้า 19 วิหลัง restart)
 
 ### ⏳ รอ user เคาะ
 (ข) response cache ข้าม session · คิวเล็กจาก 09-24 (**เช็คสถานะจริงก่อน**): ถอด `CHROMA_PATH` dead config +
@@ -749,7 +757,7 @@ Low Power/ความร้อน) — `underruns` อ่านแล้ว = �
 `pythainlp` ไม่มีในอิมเมจ ⇒ เทส `utils/thaiscatter.py` 14 ตัวถูกข้ามทุกที่ · `enhanced.js` map สีตามตระกูลเฉด ·
 ป้าย "กำลังค้น" ในโหมดเสียง · turn ที่โดน `go_away` ตัดไม่นับเป็นความล้มเหลว (ยังไม่มีเทสตรึง) ·
 คอมเมนต์ `utils/bookreader.ts:114` เรื่อง rAF ตกรุ่น · citations ราคาเกมอาจเป็นแหล่งรอง (Steam age-check) ·
-`/api/agent` ไม่มี `_guard_disconnect` (กด Stop = user orphan · ไม่มี frontend เรียก) · ตัวอย่าง curl ใน "Admin unlock" ยังใช้ `:8000` (= ChromaDB · แอปคือ `:8080`) ·
+ตัวอย่าง curl ใน "Admin unlock" ยังใช้ `:8000` (= ChromaDB · แอปคือ `:8080`) ·
 บล็อก env ใน "Environment Variables" ยังเขียน `GEMINI_MODEL=gemini-2.5-flash` (retired แล้ว · prod ใช้ `gemini-3.5-flash-lite`)
 
 ### ⛔ พักไว้ (user เคาะแล้ว อย่าเสนอซ้ำ)
