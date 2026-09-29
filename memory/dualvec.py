@@ -173,20 +173,25 @@ def delete_keys(client, col_name: str, ids: list[str]) -> bool:
     """
     if not ids:
         return True
-    from utils.memory import get_collection
+    from chromadb.errors import NotFoundError
+    from utils.memory import get_collection_noembed
 
     try:
-        col = get_collection(client, keys_collection(col_name))
-    except Exception as e:
-        # ยังไม่มี collection เงา (ยังไม่ backfill / assistant ใหม่) = ไม่มีอะไรกำพร้า
-        # ⚠️ ต้องแยกเคสนี้ออกจาก "ลบไม่สำเร็จ" ไม่งั้นจะเตือนกำพร้าผิดทุกครั้ง
-        logger.debug(f"[dualvec] ไม่มี collection เงาของ {col_name}: {e}")
+        # delete ไม่ embed → ไม่ส่ง EF (2026-09-29) — เดิมใช้ wrapper ที่ส่ง EF: EF conflict = ValueError ถูกตีความว่า
+        # "ไม่มีเงา" → คืน True ทั้งที่ไม่ได้ลบ ⇒ กุญแจกำพร้าเงียบๆ (ของที่ลบแล้วโผล่กลับเข้า context)
+        col = get_collection_noembed(client, keys_collection(col_name))
+    except NotFoundError:
+        # ไม่มี collection เงาจริง (assistant ใหม่ / ยังไม่ backfill) = ไม่มีอะไรกำพร้า — ลองบน prod แล้ว:
+        # collection ที่ไม่มี → chromadb.errors.NotFoundError ⚠️ แยกจาก "เปิดไม่ได้" ไม่งั้นเตือนกำพร้าผิดทุกครั้ง
         return True
+    except Exception as e:
+        logger.error(f"[dualvec] เปิด collection เงาของ {col_name} ไม่ได้: {type(e).__name__}: {e}")
+        return False
     try:
         col.delete(ids=ids)
         return True
     except Exception as e:
-        logger.debug(f"[dualvec] delete_keys ล้ม ({col_name}): {e}")
+        logger.warning(f"[dualvec] delete_keys ล้ม ({col_name}): {type(e).__name__}: {e}")
         return False
 
 

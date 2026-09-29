@@ -66,19 +66,22 @@ class TestCascadeHelper:
         จะไม่มีวันจับได้ว่ามันรายงานผลผิด (mutation M6 รอดเพราะเหตุนี้)"""
         from memory.dualvec import delete_keys
 
+        # เปิดผ่าน client.get_collection ตรง (get_collection_noembed · 09-29) — ไม่ผ่าน wrapper utils.memory.get_collection แล้ว
         col = MagicMock()
         col.delete.side_effect = Exception("chroma ล่ม")
         client = MagicMock()
-        with patch("utils.memory.get_collection", return_value=col):
-            assert delete_keys(client, "memory_kwan", ["x"]) is False
+        client.get_collection.return_value = col
+        assert delete_keys(client, "memory_kwan", ["x"]) is False
 
     def test_delete_keys_คืน_True_เมื่อยังไม่มี_collection_เงา(self):
-        """assistant ใหม่ / ยังไม่ backfill = ไม่มีอะไรกำพร้า ห้ามเตือนผิด"""
+        """assistant ใหม่ / ยังไม่ backfill = ไม่มีอะไรกำพร้า ห้ามเตือนผิด
+        · "ไม่มี" = chromadb.errors.NotFoundError เท่านั้น (error อื่น = เปิดไม่ได้ → False · test_delete_keys_noembed)"""
+        from chromadb.errors import NotFoundError
         from memory.dualvec import delete_keys
 
         client = MagicMock()
-        with patch("utils.memory.get_collection", side_effect=Exception("ไม่มี collection")):
-            assert delete_keys(client, "memory_new", ["x"]) is True
+        client.get_collection.side_effect = NotFoundError("Collection [memory_new__keys] does not exist")
+        assert delete_keys(client, "memory_new", ["x"]) is True
 
     def test_ไม่มี_id_ไม่แตะอะไรเลย(self):
         from memory.dualvec import delete_with_keys
