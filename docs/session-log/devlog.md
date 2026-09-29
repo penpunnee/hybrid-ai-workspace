@@ -1,5 +1,27 @@
 ---
 
+## [2026-09-29 ต่อ 36] ผลทดสอบเสียงจริง ✅ + ขั้น 5A (`9ad2129` · appscript.ui `da2fbb5`) + 5B (`26dd789`) — CI เขียว · ⏸️ ยังไม่ deploy (user สั่งเตรียมคำสั่งไว้)
+
+**ทดสอบโหมดเสียง (user คุยจริง 3 turn):** 06:12:59 + 06:14:09 `[Voice/memory] ข้าม reason=searched` (โมเดลค้นเว็บใน turn) ·
+**06:27:50 `[Voice/memory] บันทึก` → `memory_kwan` 30 → 31** (created_at 06:27:50 · source=conversation · type=event · conf 0.7)
+· ไม่มี `บันทึกไม่สำเร็จ` · ⚪ ยังไม่รู้ว่าโมเดลเสียงค้นเว็บบ่อยแค่ไหน (ถ้าบ่อย `searched` จะข้าม turn ส่วนใหญ่) — ต้องนับจาก log ต่อ
+· 🔧 ระหว่างทาง: `nas-cf` ค้างเพราะ Cloudflare Access หมดอายุ (user login ให้) · ตัวตรวจสิทธิ์ของเครื่องมือล่มชั่วคราวหลายรอบ
+
+**5A — EF conflict:** `get_collection_noembed` (ห้าม add/query) ใช้ใน 5 จุด (cleanup · Dream Light/decay/prune · `delete_with_keys`
+ตัวหลัก) · `key_hits` (query) ไม่แตะ + เทสกลุ่มควบคุม · แหล่งอ้าง: chromadb 1.5.9 `collection_configuration.py:781-798/791` ·
+`CollectionCommon.py` (get/delete ไม่ `_embed` · update embed เฉพาะมี documents) · `unreadable: {collection: เหตุผล}` + log ERROR
+ใน cleanup / report `phase1_light` / decay / prune (ไม่ใช้ `skipped` — ชนสองความหมายเดิม) · log decay/prune เดิมเป็น DEBUG
+· FE `cleanupToast` "(อ่านไม่ได้ N collection)" · เทส 8 + vitest 7 + wiring · mutation 9/9 + 2/2 · 🔧 เทสต้อง patch
+`_get_embedding_function` ไม่งั้น EF=None → conflict ไม่เกิด = ผ่านฟรี · `test_dream_single_run` fake รับ `**_`
+· ⚪ **นอกแผน (ยังไม่แก้):** `delete_keys` (`dualvec.py:179`) เจอ EF conflict = ถือว่า "ไม่มีเงา" คืน True → กุญแจกำพร้าเงียบ
+
+**5B — เวลางาน sync บน loop:** 🔑 `log_timing` **ไม่เขียน log** (contextvar ให้ /api/chat) → `utils/looptiming.SyncCallTimer`
+(WARNING > 50 ms · summary ตอนปิดสาย · `always=("books.text",)`) · ห่อที่บรรทัด import เท่านั้น — call site นับก่อน=หลัง
+(get 4 · set 3 · text 1 · save_msg 2) · call ยัง sync (cancel-safety `_marks.set`) · voice ได้ `finally` สรุป · เทส 10 · mutation 9/9
+**sha เสียง local ก่อน=หลัง** live `dbff1a358e00ef03` · reader `8c5dbf9603eb3630` · sysprompt `8bddd1cae4be22b1` · ชุดเต็ม 2510 · vitest 616
+
+---
+
 ## [2026-09-29 ต่อ 35] โหมดเสียงบันทึกลง memory (`c9531b6`) + log ผล tool (`057dcd2`) + probe tool ล้ม ✅ deployed + sha เสียงตรง + CI เขียว · 🧪 รอ user คุยเสียงทดสอบ
 
 **ขั้น 3 สืบ (ไม่แก้โค้ด):** mapping ถูก — "🧡 ขวัญ (Logic)" → `resolve_slug` = `kwan` ทั้งฝั่งเขียน (`memory/store.py`) และอ่าน

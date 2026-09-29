@@ -735,9 +735,9 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 · ตรวจทาน [ต่อ 31]: ✏️ ต้องซ่อนระหว่าง stream (regression จาก dbId — แก้ `bace965`)
 
 ### 🔜 แผนที่ user เคาะ 09-29 (ทำตามลำดับ): ✅1 skills sync (ต่อ 33) · ✅2 ถอด POST /api/agent (ต่อ 34) ·
-✅3 สืบ memory → โหมดเสียงไม่เคย remember (88% ของบทสนทนา) → แก้แล้ว (ต่อ 35 · 🧪 **รอ user คุยเสียงแล้วเช็ค `[Voice/memory]` +
-`memory_kwan` > 30**) · ✅4 log ผล tool + probe tool ล้ม: Gemini 8/8 · qwen 10/10 ตอบตรง → ยังไม่ต้องมี guard (ต่อ 35) ·
-5 EF conflict → `get_collection` ดิบ + `skipped` · `log_timing` WS/`_books.text()` (วัดเท่านั้น 🔒 ห้ามแตะค่าเสียง)
+✅3 โหมดเสียงบันทึก memory (ต่อ 35 · verify user คุยจริง 30→31 ต่อ 36) · ✅4 log ผล tool + probe (ต่อ 35) ·
+✅5 commit แล้ว **⏸️ ยังไม่ deploy** (5A `9ad2129`+appscript.ui `da2fbb5` · 5B `26dd789` แตะ server.py → `--force-recreate` + inode + sha)
+· งานต่อ: นับว่าโมเดลเสียงค้นเว็บบ่อยแค่ไหน (เงื่อนไข `searched`) · `delete_keys` EF conflict = กุญแจกำพร้าเงียบ (ต่อ 36)
 
 ### ✅ ปิดแล้ว 09-29 (ต่อ 32): คำตอบบันทึกเฉพาะเมื่อแถว user ยังอยู่ (`save_reply` อะตอม · `72a1911`)
 **บันทึกคำตอบหลังรอ LLM ต้องผ่าน `save_reply(…, user_msg_id)`** ห้าม `save_message` ตรง · เทสที่ mock `save_message` ด้วย id ปลอม
@@ -747,7 +747,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 - agent (LM Studio) กด Stop แล้วหยุดทันที (`3ad9767` · [ต่อ 25]) · "(agent ไม่มีคำตอบ)" หลังผล tool → สรุปใหม่ (`f1e6d0d` · [ต่อ 26])
 - frontend 9 ข้อของ audit (ui `e9edd73` · appscript.ui `18eb5c9` · [ต่อ 27]) · ย้ายบล็อก ▶️ เก่าลง devlog (`5aef79a` · [ต่อ 24])
 - ⚪ ยังไม่รู้ว่าทำไม agent ตอบได้เมื่อ 09-18 (น่าจะ LM Studio อัปเดต runtime เอง) · SSH เข้า PC .235 ตอบ "cannot find the path" ทุกคำสั่ง
-- appscript.ui push ขึ้น NAS แล้ว (09-29 · `bace965`) · นอก LAN ใช้ `git -c url."nas-cf:".insteadOf="nas:" push origin main`
+- ⚠️ **appscript.ui ahead 1** (`da2fbb5` ยังไม่ push NAS) · นอก LAN ใช้ `git -c url."nas-cf:".insteadOf="nas:" push origin main`
 
 ### 📋 งานเปิดอื่น
 - **backend:** EF conflict ใน `utils/memory.get_collection` ทำ cleanup ข้าม collection เงียบๆ ·
