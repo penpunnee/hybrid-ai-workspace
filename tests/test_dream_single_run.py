@@ -26,7 +26,7 @@ def _free_lock():
 
 
 def _blocking_light_sleep(gate: threading.Event, started: threading.Event):
-    def fake(hours=24):
+    def fake(hours=24, **_):          # **_ = unreadable= (ขั้น 5A)
         started.set()
         gate.wait(5)
         return []
@@ -50,13 +50,13 @@ def test_เรียกซ้อนจาก_thread_อื่น_ต้อง�
 
 
 def test_ล้มกลางทาง_ต้องปล่อย_lock(monkeypatch):
-    def boom(hours=24):
+    def boom(hours=24, **_):
         raise RuntimeError("chroma down")
     monkeypatch.setattr(dream, "light_sleep", boom)
     with pytest.raises(RuntimeError):
         dream.run_dream_cycle(provider="ollama")
     assert dream.is_running() is False
-    monkeypatch.setattr(dream, "light_sleep", lambda hours=24: [])
+    monkeypatch.setattr(dream, "light_sleep", lambda hours=24, **_: [])
     monkeypatch.setattr(dream, "_save_report", lambda r: None)
     assert dream.run_dream_cycle(provider="ollama")["skipped"], "รอบถัดไปต้องวิ่งได้ (lock ไม่ค้าง)"
 

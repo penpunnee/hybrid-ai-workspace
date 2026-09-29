@@ -154,6 +154,17 @@ def get_collection(client, name: str, **kwargs):
     return client.get_collection(name, **kwargs)
 
 
+def get_collection_noembed(client, name: str):
+    """เปิด collection **โดยไม่ส่ง embedding function** — สำหรับงานที่ไม่ embed เท่านั้น: get / delete /
+    update(metadatas=…) · ⛔ **ห้ามใช้กับ add/upsert/query ด้วยข้อความ** (จะ embed ด้วย EF ผิดตัว = vector คนละ space เงียบๆ)
+
+    ทำไม: `get_collection()` ข้างบนส่ง EF ของเรา (ชื่อ "ollama") เสมอ → collection ที่ persist EF ชื่ออื่นโยน
+    `ValueError(... Embedding function conflict ...)` (chromadb 1.5.9 collection_configuration.py:781-798) ทั้งที่งาน
+    ไม่ได้ embed เลย · ไม่ส่ง EF = ชื่อ "default" ซึ่งถูกข้ามการตรวจ (:791) · get/delete ไม่เรียก `_embed` และ update
+    embed เฉพาะเมื่อส่ง documents (CollectionCommon.py) — ขั้น 5A 2026-09-29"""
+    return client.get_collection(name)
+
+
 def _safe_slug(name: str) -> str:
     """แปลงชื่อ assistant → ชื่อ ChromaDB collection ที่ถูกต้อง [a-zA-Z0-9._-]"""
     # ตัด emoji และ non-ASCII ออก แล้ว sanitize
@@ -543,6 +554,7 @@ def cleanup_old_memories(days: int = 30) -> dict:
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
     deleted_total = 0
     detail = {}
+    unreadable: dict = {}      # collection ที่อ่าน/ลบไม่ได้ — ต้องบอก ไม่ใช่ ok เงียบๆ (ขั้น 5A)
     # เงาต้องหายเพราะ "ตัวหลักถูกลบ" ไม่ใช่เพราะถูกกวาดเองแยกกัน — กวาดแยก =
     # สองชุดเดินคนละจังหวะแล้วดริฟต์ (ดู memory/dualvec.is_keys_collection)
     # allowlist เฉพาะ episodic (`memory_<slug>`) — เดิม denylist แล้วลบ user_facts/lessons ด้วย
@@ -555,7 +567,7 @@ def cleanup_old_memories(days: int = 30) -> dict:
             if not is_episodic_collection(name):
                 continue
             try:
-                col = get_collection(client, name)
+                col = get_collection_noembed(client, name)       # get + delete ไม่ embed
                 results = col.get(include=["metadatas"])
                 ids_to_delete = [
                     results["ids"][i]
@@ -568,11 +580,13 @@ def cleanup_old_memories(days: int = 30) -> dict:
                     deleted_total += len(ids_to_delete)
                     detail[name] = len(ids_to_delete)
             except Exception as e:
-                logger.warning(f"cleanup_old_memories: failed to process collection '{name}': {e}")
+                logger.error(f"cleanup_old_memories: อ่าน/ลบ collection '{name}' ไม่ได้: {e}")
+                unreadable[name] = f"{type(e).__name__}: {e}"[:200]
                 continue
     except Exception as e:
         return {"ok": False, "error": str(e)}
-    return {"ok": True, "deleted": deleted_total, "detail": detail, "cutoff_days": days}
+    return {"ok": True, "deleted": deleted_total, "detail": detail, "cutoff_days": days,
+            "unreadable": unreadable}
 
 
 def is_memory_available() -> bool:

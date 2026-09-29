@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from collections import Counter
 from pathlib import Path
 
-from utils.memory import _get_client, get_collection, get_or_create_collection
+from utils.memory import _get_client, get_collection_noembed, get_or_create_collection
 from utils.llm import stream_response
 # ⬇️ อ่านจาก core/config.py ที่เดียว — เดิมไฟล์นี้มี default ของตัวเองที่ไม่ตรงกับที่อื่น
 # (ตัวกัน: tests/test_env_default_consistency.py)
@@ -137,7 +137,7 @@ def should_promote_theme(name: str, summary: str, hits: int) -> tuple[bool, str]
 
 
 # ---------- Phase 1: Light Sleep ----------
-def light_sleep(hours: int = 24) -> list[dict]:
+def light_sleep(hours: int = 24, unreadable: dict | None = None) -> list[dict]:
     """
     คัดเลือก memory ดิบที่ถูกสร้างใน N ชั่วโมงที่ผ่านมา
     
@@ -178,7 +178,7 @@ def light_sleep(hours: int = 24) -> list[dict]:
         # → conflict กับ ollama embedding function ปัจจุบัน → ทั้งฟังก์ชัน return [] ทุกคืน
         # แม้ memory_kwan/memory_logic ตัวจริงจะมีข้อมูลอยู่ก็ตาม)
         try:
-            col = get_collection(client, name)
+            col = get_collection_noembed(client, name)   # get อย่างเดียว ไม่ embed (ขั้น 5A)
             data = col.get()
             for i, doc in enumerate(data.get("documents", [])):
                 meta = data.get("metadatas", [{}])[i] or {}
@@ -192,7 +192,10 @@ def light_sleep(hours: int = 24) -> list[dict]:
                         "assistant": meta.get("assistant", ""),
                     })
         except Exception as e:
-            logger.warning(f"Dream/LightSleep: skip collection '{name}': {e}")
+            # "อ่านไม่ได้" ต้องไม่หน้าตาเหมือน "ไม่มี memory" — ผู้เรียกส่ง dict มารับ (report phase1_light.unreadable)
+            logger.error(f"Dream/LightSleep: อ่าน collection '{name}' ไม่ได้: {e}")
+            if unreadable is not None:
+                unreadable[name] = f"{type(e).__name__}: {e}"[:200]
 
     return raw_memories
 
@@ -370,6 +373,7 @@ def memory_decay(decay_rate: float = 0.05, min_confidence: float = 0.2) -> dict:
 
     decayed = 0
     skipped = 0
+    unreadable: dict = {}      # ≠ skipped (skipped = verified/no-meta) — collection ที่อ่าน/อัปเดตไม่ได้
     cutoff = (datetime.now() - timedelta(days=7)).isoformat()  # ไม่ถูก access > 7 วัน
 
     try:
@@ -379,7 +383,7 @@ def memory_decay(decay_rate: float = 0.05, min_confidence: float = 0.2) -> dict:
             if not is_episodic_collection(name):   # allowlist เดียวกับ 🧹 cleanup (memory/dualvec)
                 continue
             try:
-                col = get_collection(client, name)
+                col = get_collection_noembed(client, name)   # get + update(metadatas) ไม่ embed (ขั้น 5A)
                 data = col.get()
                 ids = data.get("ids", [])
                 metas = data.get("metadatas", [])
@@ -407,12 +411,13 @@ def memory_decay(decay_rate: float = 0.05, min_confidence: float = 0.2) -> dict:
                 if updated_ids:
                     col.update(ids=updated_ids, metadatas=updated_metas)
             except Exception as e:
-                logger.debug(f"Decay collection {name} error: {e}")
+                logger.error(f"Dream/Decay: อ่าน/อัปเดต collection '{name}' ไม่ได้: {e}")
+                unreadable[name] = f"{type(e).__name__}: {e}"[:200]
     except Exception as e:
         logger.warning(f"memory_decay error: {e}")
 
-    logger.info(f"Dream/Decay: decayed={decayed}, skipped={skipped} (verified/no-meta)")
-    return {"decayed": decayed, "skipped": skipped}
+    logger.info(f"Dream/Decay: decayed={decayed}, skipped={skipped} (verified/no-meta), unreadable={len(unreadable)}")
+    return {"decayed": decayed, "skipped": skipped, "unreadable": unreadable}
 
 
 # ---------- Phase 3.5: Memory Prune (hard delete — กันบวม) ----------
@@ -459,13 +464,14 @@ def memory_prune(cap: int = None, max_age_days: int = 30, min_confidence: float 
     now = datetime.now()
     pruned = 0
     kept = 0
+    unreadable: dict = {}      # collection ที่อ่าน/ลบไม่ได้ (ขั้น 5A)
     try:
         for col_info in client.list_collections():
             name = col_info.name if hasattr(col_info, "name") else str(col_info)
             if not is_episodic_collection(name):   # allowlist เดียวกับ 🧹 cleanup (memory/dualvec)
                 continue
             try:
-                col = get_collection(client, name)
+                col = get_collection_noembed(client, name)   # get + delete ไม่ embed (ขั้น 5A)
                 data = col.get()
                 ids = data.get("ids", [])
                 metas = data.get("metadatas", [])
@@ -504,12 +510,13 @@ def memory_prune(cap: int = None, max_age_days: int = 30, min_confidence: float 
                     delete_with_keys(client, name, to_delete)
                     pruned += len(to_delete)
             except Exception as e:
-                logger.debug(f"Prune collection {name} error: {e}")
+                logger.error(f"Dream/Prune: อ่าน/ลบ collection '{name}' ไม่ได้: {e}")
+                unreadable[name] = f"{type(e).__name__}: {e}"[:200]
     except Exception as e:
         logger.warning(f"memory_prune error: {e}")
 
-    logger.info(f"Dream/Prune: pruned={pruned}, kept={kept} (cap={cap})")
-    return {"pruned": pruned, "kept": kept, "cap": cap}
+    logger.info(f"Dream/Prune: pruned={pruned}, kept={kept} (cap={cap}), unreadable={len(unreadable)}")
+    return {"pruned": pruned, "kept": kept, "cap": cap, "unreadable": unreadable}
 
 
 # ---------- Phase 3: Deep Sleep ----------
@@ -674,8 +681,9 @@ def _run_dream_cycle_impl(provider: str = "auto", hours: int = 24) -> dict:
     }
 
     # Phase 1
-    memories = light_sleep(hours=hours)
-    report["phase1_light"] = {"raw_count": len(memories)}
+    light_unreadable: dict = {}
+    memories = light_sleep(hours=hours, unreadable=light_unreadable)
+    report["phase1_light"] = {"raw_count": len(memories), "unreadable": light_unreadable}
     report["memories_processed"] = len(memories)
     logger.info(f"Dream Phase 1 (Light Sleep): Found {len(memories)} memories")
 

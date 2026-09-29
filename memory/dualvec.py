@@ -211,10 +211,10 @@ def delete_with_keys(client, col_name: str, ids: list[str]) -> None:
         logger.error(
             f"[dualvec] ลบกุญแจของ {col_name} ไม่สำเร็จ ({len(ids)} id) — "
             f"ลบตัวหลักต่อ แต่จะเหลือกุญแจกำพร้า ให้รัน scripts/reconcile_keys.py")
-    from utils.memory import get_collection
+    from utils.memory import get_collection_noembed
 
-    # ใช้ wrapper ตัวเดียวกับที่ทั้งโปรเจกต์ใช้ (inject embedding_function)
-    # ⚠️ ตั้งใจใช้ `get_collection` ไม่ใช่ `get_or_create_collection` — การ "ลบ"
+    # delete ไม่ embed → ไม่ส่ง EF (ขั้น 5A · EF conflict ทำให้ลบไม่ได้ทั้งที่ไม่เกี่ยวกับ embed)
+    # ⚠️ ตั้งใจใช้ get_collection ไม่ใช่ `get_or_create_collection` — การ "ลบ"
     # ไม่ควรสร้าง collection เปล่าทิ้งไว้เป็นผลข้างเคียง (เส้น delete_lesson เดิม
     # ทำแบบนั้น แล้วคืน True ทั้งที่ไม่มีอะไรให้ลบ)
-    get_collection(client, col_name).delete(ids=ids)
+    get_collection_noembed(client, col_name).delete(ids=ids)
