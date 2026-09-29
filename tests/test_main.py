@@ -160,11 +160,16 @@ class TestSessionEndpoints:
         assert data.get("ok") == True
 
     def test_delete_session(self, mock_env):
-        """Test DELETE /api/sessions/{assistant}/{session_id}"""
-        create_response = client.post("/api/sessions/ฟ้า")
+        """Test DELETE /api/sessions/{assistant}/{session_id}
+
+        ใช้ผู้ช่วยที่มีอยู่จริงใน config — ชื่อที่ไม่รู้จัก (ไม่อยู่ใน config และไม่มีใน DB) ได้ 404 แล้ว
+        (test_delete_session_result.py) · เดิมใช้ "ฟ้า" ซึ่งผ่านได้เฉพาะเมื่อเทสอื่นเขียนแถว "ฟ้า" ไว้ก่อน"""
+        from assistants.config import ASSISTANTS
+        asst = next(iter(ASSISTANTS))
+        create_response = client.post(f"/api/sessions/{asst}")
         session_id = create_response.json()["session_id"]
 
-        response = client.delete(f"/api/sessions/ฟ้า/{session_id}")
+        response = client.delete(f"/api/sessions/{asst}/{session_id}")
         assert response.status_code == 200
 
 

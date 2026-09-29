@@ -132,20 +132,23 @@ def rename_session(assistant: str, session_id: str, name: str):
     conn.close()
 
 
-def clear_session(assistant: str, session_id: str):
-    """ลบประวัติแชทของ session นั้น รวมถึง custom name และตารางพ่วง
+def clear_session(assistant: str, session_id: str) -> int:
+    """ลบประวัติแชทของ session นั้น รวมถึง custom name และตารางพ่วง · คืนจำนวนข้อความที่ลบ
 
     ⚠️ เพิ่ม table ที่มี `session_id` เมื่อไหร่ ต้องมาต่อท้ายลิสต์นี้ด้วย —
     ไม่งั้นจะเหลือ orphan ที่ไม่มีใครลบให้ (เจอจริง 2026-08-06: `skill_shadow`
     ค้างทุกครั้งที่ลบ session ต้องไล่เก็บมือ · `tests/test_clear_session_cascade.py` คุมไว้แล้ว)
     """
     conn = _get_conn()
+    deleted = 0
     for table in ("messages", "session_names", "skill_shadow", "share_links"):
         try:
-            conn.execute(
+            cur = conn.execute(
                 f"DELETE FROM {table} WHERE assistant = ? AND session_id = ?",
                 (assistant, session_id),
             )
+            if table == "messages":
+                deleted = cur.rowcount
         except sqlite3.OperationalError:
             # DB เก่าที่ยังไม่เคยเขียน shadow/share เลย = ไม่มีตารางนี้ — ห้ามทำให้การลบ session พัง
             logger.debug("clear_session: ข้ามตาราง %s (ยังไม่มีในฐานข้อมูล)", table)
@@ -159,6 +162,20 @@ def clear_session(assistant: str, session_id: str):
     dropped = share_store_delete_by_session(assistant, session_id)
     if dropped:
         logger.info("clear_session: ถอด share token ออกจาก store %d รายการ", len(dropped))
+    return deleted
+
+
+def assistant_has_data(assistant: str) -> bool:
+    """ชื่อผู้ช่วยนี้เคยมีข้อความ/ชื่อ session ใน DB ไหม — ชื่อรุ่นเก่าที่ถอดจาก config แล้ว
+    (prod ยังมี `kwan`/`ฟ้า`) ต้องยังลบ session ได้ · ใช้คู่กับ ASSISTANTS ตัดสินว่า "รู้จัก" """
+    conn = _get_conn()
+    try:
+        for table in ("messages", "session_names"):
+            if conn.execute(f"SELECT 1 FROM {table} WHERE assistant = ? LIMIT 1", (assistant,)).fetchone():
+                return True
+        return False
+    finally:
+        conn.close()
 
 
 def pin_message(db_id: int, pinned: bool = True):

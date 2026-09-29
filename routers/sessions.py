@@ -1,3 +1,4 @@
+import logging
 import secrets
 import uuid
 from datetime import datetime
@@ -10,8 +11,9 @@ from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 from utils.history import (
     load_history, get_sessions, clear_session, export_history_md,
     pin_message, get_pinned_messages, truncate_from_db_id, rename_session,
-    delete_message_by_id,
+    delete_message_by_id, assistant_has_data,
 )
+from assistants.config import ASSISTANTS
 
 router = APIRouter(prefix="/api", tags=["sessions"])
 
@@ -43,8 +45,15 @@ async def patch_session(assistant: str, session_id: str, request: Request):
 
 @router.delete("/sessions/{assistant}/{session_id}")
 def delete_session(assistant: str, session_id: str):
-    clear_session(assistant, session_id)
-    return {"ok": True}
+    """ลบ 0 แถวยังนับว่าสำเร็จ — session ไม่มีแถวของตัวเอง ("ว่าง" กับ "ไม่มี" แยกไม่ได้ · แชทใหม่ → 🗑️ ต้องไม่ error)
+    แต่ต้องบอก `deleted` · ชื่อผู้ช่วยที่ไม่รู้จักเลย (ไม่อยู่ใน config และไม่มีใน DB) ตรวจได้แน่นอน → 404
+    (เดิมตอบ ok:true เสมอ — ชื่อผิดแล้ว "ลบสำเร็จ" ทั้งที่ไม่ได้ลบอะไร · เจอ 2026-09-29)"""
+    if assistant not in ASSISTANTS and not assistant_has_data(assistant):
+        raise HTTPException(status_code=404, detail=f"ไม่รู้จักผู้ช่วย '{assistant}' — ไม่ได้ลบอะไร")
+    deleted = clear_session(assistant, session_id)
+    if not deleted:
+        logging.getLogger(__name__).info("ลบ session %s/%s: ไม่มีข้อความให้ลบ (deleted=0)", assistant, session_id)
+    return {"ok": True, "deleted": deleted}
 
 
 @router.get("/history/{assistant}/{session_id}")
