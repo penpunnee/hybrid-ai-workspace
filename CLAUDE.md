@@ -721,8 +721,8 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า
-ไม่มีงานเร่ง — เลือกจาก 📋 งานเปิดอื่น (แนะนำ: ⚪ Agent แนะนำ "เปิด Agent Mode" ทั้งที่อยู่ใน agent)
-หรือ ⏳ รอ user เคาะ · ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
+ไม่มีงานเร่ง — เลือกจาก 📋 งานเปิดอื่น / ⏳ รอ user เคาะ (09-30 ต่อ 44–45 ปิด: เอกสาร `:8080`/Gemini · agent ไม่แนะนำ "เปิด Agent mode" แล้ว)
+ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
 ### ✅ ปิดแล้ว (สรุป: devlog [2026-09-30 ปิดเซสชัน] · [2026-09-29 ปิดเซสชัน 2])
 **09-30:** กุญแจกำพร้าหลัง Dream = 0 · ดิสก์ NAS busy = healthcheck exec (autoheal 5s→5m นอกรีโป) · REM 0 ธีม = AI ตัดสินใจเอง (log raw + SKIP เกม) ·
@@ -751,8 +751,7 @@ insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBounda
 
 ### 📋 งานเปิดอื่น
 - **backend:** reader ยังมี `_marks.get/set` sync บน loop (วัดด้วย looptiming แล้ว — ดูบรรทัด `[Reader WS] งาน sync` ก่อนตัดสิน · 🔒)
-- **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 (รอ memory จากโหมดเสียงสะสม) ·
-  ⚪ คำตอบ agent แนะนำ "เปิด Agent Mode" ทั้งที่อยู่ใน agent แล้ว (ต่อ 35)
+- **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 (รอ memory จากโหมดเสียงสะสม)
 
 ### ⏳ รอ user เคาะ
 (ข) response cache ข้าม session · คิวเล็กจาก 09-24 (**เช็คสถานะจริงก่อน**): ถอด `CHROMA_PATH` dead config +

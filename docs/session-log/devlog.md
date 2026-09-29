@@ -1,5 +1,17 @@
 ---
 
+## [2026-09-30 ต่อ 45] agent ไม่แนะนำ "เปิด Agent mode" ตอนอยู่ใน agent แล้ว (`8dc49c9`) ✅ deploy + verify prod + CI เขียว
+- **ต้นเหตุ:** `_NO_FABRICATION` (`assistants/config.py`) สั่ง "ดึงสดไม่ได้ → แนะนำให้เปิด Agent mode" และ system ก้อนเดียวกัน
+  ถูกส่งเข้า agent ทั้ง 3 provider (gemini `:516` · lmstudio `:608` · ollama/ReAct `:716`) — probe B2 (ต่อ 35) = 18/18 คำตอบ
+- **แก้:** แยกประโยคเป็น `SUGGEST_AGENT_MODE` (guard ประกอบด้วยการต่อสตริง = byte-identical) · `orchestrator._agent_system()`
+  ตัดประโยคตอนประกอบ system ของ agent ทั้ง 3 เส้น · **ไม่แก้ถ้อยคำ guard** เพราะ persona ถูกใช้กับเสียง (🔒 sha) + seed fine-tune
+- เทส `tests/test_agent_no_self_suggest.py` 4 (ใช้ persona จริง · มีตัวกัน no-op: ประโยคต้องอยู่ใน guard จริง) · mutation 4/4 KILLED ·
+  ชุดเต็ม 2554 passed · ruff ผ่าน
+- **พิสูจน์ persona ไม่เปลี่ยน:** sha256[:16] ก่อน=หลัง `a74443c80e02def3`/1865 (guard `909da583d3acbf43`) · ในคอนเทนเนอร์ prod:
+  clause in persona True · in agent system False · guard ที่เหลือยังอยู่
+- ยังไม่ได้ยิง agent จริงดูคำตอบ (กินโควตา + ต้องเก็บกวาด session) — รอ user ใช้งานจริงแล้วสังเกต
+- ⚪ ไม่ได้แตะ: เส้น `gemini_agent` (grounding ใน `utils/llm.py`) ได้ persona เดิม — free tier grounding = 429 อยู่แล้ว
+
 ## [2026-09-30 ต่อ 44] แก้เอกสาร CLAUDE.md — พอร์ต `:8000`→`:8080` + บล็อก env ของ Gemini ✅ verify prod
 - curl ตัวอย่าง 3 จุด (Admin unlock · OCR · summarize) ใช้ `:8000` = ChromaDB → เปลี่ยนเป็น `:8080` (compose `8080:8000`)
   · วัดจริง: `POST :8080/api/admin/unlock` (IP TEST-NET 203.0.113.1) = 200 `{"unlocked":...}` · `:8000` = 404
