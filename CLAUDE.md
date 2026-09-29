@@ -730,7 +730,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 - agent (LM Studio) กด Stop แล้วหยุดทันที (`3ad9767` · [ต่อ 25]) · "(agent ไม่มีคำตอบ)" หลังผล tool → สรุปใหม่ (`f1e6d0d` · [ต่อ 26])
 - frontend 9 ข้อของ audit (ui `e9edd73` · appscript.ui `18eb5c9` · [ต่อ 27]) · ย้ายบล็อก ▶️ เก่าลง devlog (`5aef79a` · [ต่อ 24])
 - ⚪ ยังไม่รู้ว่าทำไม agent ตอบได้เมื่อ 09-18 (น่าจะ LM Studio อัปเดต runtime เอง) · SSH เข้า PC .235 ตอบ "cannot find the path" ทุกคำสั่ง
-- ⚠️ **appscript.ui ยังไม่ push** — `origin` (NAS) ahead 7 · ถาม user ก่อน push
+- appscript.ui push ขึ้น NAS แล้ว (09-29 · `5af3196`) · นอก LAN ใช้ `git -c url."nas-cf:".insteadOf="nas:" push origin main`
 
 ### 📋 งานเปิดอื่น
 - **backend:** `DELETE /api/sessions/{assistant}/{sid}` ชื่อผิด → 200 ok ทั้งที่ลบ 0 แถว (เจอ 09-29) ·
