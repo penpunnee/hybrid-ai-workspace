@@ -14,6 +14,48 @@ from utils.memory import get_or_create_collection
 logger = logging.getLogger(__name__)
 
 
+def _embed_model_tag() -> str:
+    """ป้ายโมเดล embed ที่เก็บใน metadata — เปลี่ยน EMBEDDING_MODEL แล้ว sync ต้อง re-embed (vector คนละ space)
+    อ่านจาก core.config ตอนเรียก (ไม่ผูกตอน import) · "" = ปิด EF ของเรา → chroma ใช้ default ของมัน (utils/memory.py)"""
+    from core import config
+    return config.EMBEDDING_MODEL or "default"
+
+
+def _skill_entry(topic: str, summary: str, category: str, source: str) -> tuple[str, dict]:
+    """document + metadata ของ skill หนึ่งตัว — ที่เดียวที่กำหนดรูป (add_skill กับ sync ต้องเทียบกันได้เป๊ะ)"""
+    return f"{topic}: {summary}", {"topic": topic, "category": category, "source": source,
+                                   "embed_model": _embed_model_tag()}
+
+
+def _upsert_changed(collection, skill_id, skills_db: Dict, current: Dict) -> tuple[int, int]:
+    """upsert เฉพาะตัวที่ document/metadata ต่างจากที่ index มี — **ครั้งเดียวทั้งชุด** (EF ส่ง list ใน embed เดียว)
+    batch ล้ม → ถอยทีละตัว (ตัวเสียตัวเดียวไม่ลากทั้งชุด = พฤติกรรมเดิม) · คืน (จำนวนที่เปลี่ยน, จำนวนที่ upsert สำเร็จ)"""
+    ids, docs, metas = [], [], []
+    for topic, data in skills_db.items():
+        doc, meta = _skill_entry(topic, data.get("summary", ""), "learned", data.get("source", "unknown"))
+        sid = skill_id(topic)
+        if current.get(sid) == (doc, meta):
+            continue
+        ids.append(sid)
+        docs.append(doc)
+        metas.append(meta)
+    if not ids:
+        return 0, 0
+    try:
+        collection.upsert(ids=ids, documents=docs, metadatas=metas)
+        return len(ids), len(ids)
+    except Exception as e:
+        logger.warning(f"sync_from_db: upsert ทั้งชุด {len(ids)} รายการล้ม ({e}) — ถอยไปทีละตัว")
+    done = 0
+    for sid, doc, meta in zip(ids, docs, metas):
+        try:
+            collection.upsert(ids=[sid], documents=[doc], metadatas=[meta])
+            done += 1
+        except Exception as e:
+            logger.error(f"Failed to upsert skill {meta['topic']}: {e}")
+    return len(ids), done
+
+
 class SkillsSearch:
     """Semantic Search สำหรับ Skills โดยใช้ ChromaDB"""
     
@@ -70,11 +112,8 @@ class SkillsSearch:
         
         try:
             skill_id = f"skill_{topic.replace(' ', '_').lower()}"
-            self.collection.upsert(
-                ids=[skill_id],
-                documents=[f"{topic}: {summary}"],
-                metadatas=[{"topic": topic, "category": category, "source": source}],
-            )
+            doc, meta = _skill_entry(topic, summary, category, source)
+            self.collection.upsert(ids=[skill_id], documents=[doc], metadatas=[meta])
             logger.info(f"Upserted skill: {topic}")
         except Exception as e:
             logger.error(f"Failed to upsert skill: {e}")
@@ -113,10 +152,18 @@ class SkillsSearch:
         if not self.available or not self.collection:
             logger.warning("Skills search not available, skipping sync_from_db")
             return
+        # get() คืน documents+metadatas เป็นค่า default (chromadb 1.5.9 Collection.py:136) → ใช้ข้ามตัวที่ไม่เปลี่ยน
+        # เดิม upsert ทีละตัวทุกบูต = embed 22 ครั้ง 34–55 วิ แย่งคิวกับ recall (agent step แรกช้า 19 วิ · วัด prod 09-28/29)
+        current: Dict = {}
         try:
-            existing = set(self.collection.get().get("ids", []) or [])
+            got = self.collection.get()
+            existing = set(got.get("ids", []) or [])
+            ids = got.get("ids") or []
+            docs = got.get("documents") or [None] * len(ids)
+            metas = got.get("metadatas") or [None] * len(ids)
+            current = {i: (d, m) for i, d, m in zip(ids, docs, metas)}
         except Exception as e:
-            logger.warning(f"sync_from_db: อ่าน id เดิมไม่ได้ ({e}) — ทำแค่ upsert")
+            logger.warning(f"sync_from_db: อ่าน index เดิมไม่ได้ ({e}) — upsert ทั้งหมด")
             existing = set()
         # ⚠️ race (audit 2026-09-24 MEDIUM): ผู้เรียกส่ง snapshot ที่อ่านไว้ก่อน — writer ที่บันทึกระหว่างนั้น
         # จะไม่อยู่ใน `skills_db` แล้วถูกลบออกจาก index ทั้งที่ไฟล์มี ⇒ ตัดสิน "stale" ด้วย snapshot ∪ **ไฟล์จริง
@@ -134,7 +181,8 @@ class SkillsSearch:
                     logger.info(f"sync_from_db: ลบ skill ที่ไม่มีใน db แล้ว {len(stale)} รายการ")
                 except Exception as e:
                     logger.error(f"sync_from_db: ลบ stale ids ล้มเหลว: {e}")
-        self.add_skills_from_db(skills_db)
+        changed, done = _upsert_changed(self.collection, self._skill_id, skills_db, current)
+        logger.info(f"sync_from_db: ไม่เปลี่ยน {len(skills_db) - changed} · upsert {done}/{changed} รายการ")
     
     def _space(self) -> Optional[str]:
         """space จริงของ collection ที่ต่ออยู่ — **อ่านจาก metadata ไม่ใช่จากเจตนาในโค้ด**
