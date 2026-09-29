@@ -69,8 +69,6 @@ CHROMA_HOST  = env_str("CHROMA_HOST", "", group=_G,
                        doc="โฮสต์ ChromaDB (ความจำระยะยาว) — ว่าง = ให้โค้ดไล่เดาเอง\n"
                            "บน Docker: ชื่อ service เช่น chromadb · บน NAS ที่รันแยก: IP ของ NAS")
 CHROMA_PORT  = env_int("CHROMA_PORT", 8000, group=_G, doc="พอร์ต ChromaDB")
-CHROMA_PATH  = env_str("CHROMA_PATH", "./data/chroma", group=_G,
-                       doc="⚠️ dead config — ไม่มีผู้บริโภค (ChromaDB เป็นคอนเทนเนอร์แยก)")
 
 # ── App ──────────────────────────────────────────────────────────────────────
 _G = "App"

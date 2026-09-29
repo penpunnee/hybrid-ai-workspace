@@ -187,7 +187,6 @@ def test_ลงทะเบียนชื่อซ้ำด้วย_default_�
     ("DB_PATH", "./chat_history.db"),
     ("CHROMA_HOST", ""),
     ("CHROMA_PORT", 8000),
-    ("CHROMA_PATH", "./data/chroma"),
     ("UI_PASSWORD", ""),
     ("CORS_ORIGINS", ""),
     ("RELOAD", False),
@@ -1274,3 +1273,10 @@ def test_ha_client_ค่าที่_resolve_จริง(monkeypatch):
 def test_HA_TIMEOUT_พิมพ์ผิดต้องดังเหมือน_int_เดิม(monkeypatch):
     with pytest.raises(ValueError):
         _reload_with(monkeypatch, "utils.ha_client", {"HA_TIMEOUT": "สิบ"})
+
+
+def test_CHROMA_PATH_ถอดแล้ว():
+    """dead config — ChromaDB เป็นคอนเทนเนอร์แยกที่มี volume ของตัวเอง (`chroma_data:/data`)
+    ค่าที่ไม่มีผู้บริโภคแต่อยู่ใน .env.example ทำให้คนเข้าใจผิดว่าตั้งที่อยู่ข้อมูล Chroma ได้"""
+    from core import env_registry
+    assert "CHROMA_PATH" not in env_registry.load_all()
