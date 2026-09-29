@@ -238,6 +238,19 @@ class ToolCall:
     id: str = ""
 
 
+def _tool_status(result: str) -> str:
+    """สถานะผล tool สำหรับ log — ดูแค่เครื่องหมายนำหน้า (execute_tool ขึ้นต้น ❌ เมื่อล้มเสมอ · ⚠️ = tool รายงานไม่แน่ใจ)
+    ⚠️ tool บางตัวรายงาน "ว่าง" โดยไม่มีเครื่องหมาย (เช่น NAS ไม่มีข้อมูล volume) → นับเป็น ok ที่นี่ · log ใช้วัด ไม่ใช่ guard"""
+    t = (result or "").strip()
+    if not t:
+        return "empty"
+    if t.startswith("❌"):
+        return "error"
+    if t.startswith("⚠️"):
+        return "warn"
+    return "ok"
+
+
 def _run_agent_fc(adapter, max_steps: int) -> Generator[tuple[str, Any], None, None]:
     """loop กลาง provider-agnostic: thinking → generate → ถ้ามี tool call รัน
     แล้ววนต่อ, ไม่มี = คำตอบสุดท้าย (stream). ครบ max_steps → บังคับ synthesize.
@@ -284,6 +297,10 @@ def _run_agent_fc(adapter, max_steps: int) -> Generator[tuple[str, Any], None, N
                 ev["id"] = call.id
             yield ("event", ev)
             result = execute_tool(call.name, call.args)
+            # 1 บรรทัดต่อ tool — **ไม่ใส่เนื้อหา** (ผล web/memory อาจมีข้อมูลส่วนตัว · log rotate เก็บ 5 ไฟล์)
+            # ใช้วัดว่า tool ได้ข้อมูลจริงบ่อยแค่ไหน ก่อนตัดสินเรื่อง guard "ไม่มีข้อมูลจริง" (ขั้น 4 · 09-29)
+            logger.info(f"[Agent/{adapter.name}] tool {call.name} step={step + 1} "
+                        f"len={len(result)} status={_tool_status(result)}")
             rev = {"type": "tool_result", "name": call.name, "preview": result[:300], "length": len(result)}
             if call.id:
                 rev["id"] = call.id
