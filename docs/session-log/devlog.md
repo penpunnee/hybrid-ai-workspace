@@ -1,5 +1,15 @@
 ---
 
+## [2026-09-30 ต่อ 46] ถอด `CHROMA_PATH` (dead config) + ลบ collection ว่างบน prod 3 ตัว (`f4373d1`) ✅ deploy + CI เขียว
+- **เช็คสถานะจริงก่อน:** `CHROMA_PATH` มีแค่บรรทัดประกาศใน `core/config.py` + เทส + `.env.example` · ผู้บริโภค 0 ·
+  `.env` บน NAS ไม่ได้ตั้ง · ChromaDB ใช้ volume `chroma_data:/data` ของตัวเอง ⇒ ไม่เคยกันอะไรไว้
+- ถอดจาก config + `gen_env_example.py --write` · เทส `test_CHROMA_PATH_ถอดแล้ว` (แดงก่อนแก้) · ชุดเต็ม 2554 passed · ruff ผ่าน
+- **collection:** `memory_a` / `memory_logic` / `memory_logic__keys` = 0 รายการ · ไม่มีโค้ด prod สร้างชื่อเหล่านี้ (มีแค่ในเทส) ·
+  มี chroma backup `chroma_20260930_000003.tgz` · สคริปต์ลบเช็ค `count()==0` ทีละตัวก่อน `delete_collection` (ไม่ศูนย์ = ABORT) → ลบครบ 3
+  · เหลือ 11 collection (`memory_kwan` 47 · `__keys` 44 — main ไม่มีกุญแจได้ตามปกติ `key_text()` คืน None)
+- verify: `hasattr(core.config,"CHROMA_PATH")` = False ในคอนเทนเนอร์ · healthy · `/api/status` memory true
+- ⚪ ถ้า client เก่าส่ง assistant `logic` มา `remember()` จะสร้าง `memory_logic` ใหม่ได้ — ไม่ใช่บั๊ก แค่จดไว้ถ้าเห็นมันโผล่อีก
+
 ## [2026-09-30 ต่อ 45] agent ไม่แนะนำ "เปิด Agent mode" ตอนอยู่ใน agent แล้ว (`8dc49c9`) ✅ deploy + verify prod + CI เขียว
 - **ต้นเหตุ:** `_NO_FABRICATION` (`assistants/config.py`) สั่ง "ดึงสดไม่ได้ → แนะนำให้เปิด Agent mode" และ system ก้อนเดียวกัน
   ถูกส่งเข้า agent ทั้ง 3 provider (gemini `:516` · lmstudio `:608` · ollama/ReAct `:716`) — probe B2 (ต่อ 35) = 18/18 คำตอบ

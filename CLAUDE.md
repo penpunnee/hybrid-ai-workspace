@@ -721,7 +721,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า
-ไม่มีงานเร่ง — เลือกจาก 📋 งานเปิดอื่น / ⏳ รอ user เคาะ (09-30 ต่อ 44–45 ปิด: เอกสาร `:8080`/Gemini · agent ไม่แนะนำ "เปิด Agent mode" แล้ว)
+ไม่มีงานเร่ง — เลือกจาก 📋 งานเปิดอื่น / ⏳ รอ user เคาะ (09-30 ต่อ 44–46 ปิด: เอกสาร `:8080`/Gemini · agent ไม่แนะนำ "เปิด Agent mode" · ถอด `CHROMA_PATH` + ลบ collection ว่าง 3 ตัว)
 ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
 ### ✅ ปิดแล้ว (สรุป: devlog [2026-09-30 ปิดเซสชัน] · [2026-09-29 ปิดเซสชัน 2])
@@ -754,8 +754,7 @@ insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBounda
 - **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 (รอ memory จากโหมดเสียงสะสม)
 
 ### ⏳ รอ user เคาะ
-(ข) response cache ข้าม session · คิวเล็กจาก 09-24 (**เช็คสถานะจริงก่อน**): ถอด `CHROMA_PATH` dead config +
-กวาด collection กำพร้า `memory_a`/`memory_logic(__keys)` · voice idle 1008-loop ตอนคุยธรรมดา (client reconnect วนทุก
+(ข) response cache ข้าม session · คิวเล็กจาก 09-24 (**เช็คสถานะจริงก่อน**): voice idle 1008-loop ตอนคุยธรรมดา (client reconnect วนทุก
 151 วิ · ทางแก้ keepalive ยังไม่เคาะ) · ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน · ถอด Google CSE จาก chain
 (`utils/websearch.py`) ถ้าไม่แก้ Cloud project
 
