@@ -120,6 +120,7 @@ class _MarkerFilter:
 
 from utils.llm import GEMINI_MODEL  # ที่เดียว (ดู utils/llm.py:GEMINI_MODEL_DEFAULT)
 from utils.llm import _stop_if_cancelled  # ธงยกเลิกของ request (ก้อน 10/12)
+from assistants.config import SUGGEST_AGENT_MODE
 # ⬇️ env ทุกตัวของไฟล์นี้มีเจ้าของอยู่ที่ core/config.py — import ค่า ห้ามอ่านซ้ำ
 # (ก้อน 4 · 2026-09-23 · ตัวกัน: tests/test_env_registry.py + test_orchestrator_config.py)
 # ชื่อระดับโมดูลคงไว้เหมือนเดิม — เทสใช้ patch("agents.orchestrator.GEMINI_API_KEY") ฯลฯ
@@ -162,6 +163,13 @@ AGENT_SYSTEM_HINT = (
     "6. **user พูดว่า 'ไปหาในเน็ต'/'เช็คเน็ต'/'ดูในเน็ต'/'อินเทอร์เน็ต'/'search'/'ค้นหา' "
     "→ ต้องเรียก web_search ทันที ห้ามตอบจากความจำ**\n"
 )
+
+
+
+def _agent_system(system_text: str, hint: str) -> str:
+    """system ของ agent = persona − ประโยค "แนะนำให้เปิด Agent mode" + hint (อยู่ใน agent แล้ว)"""
+    return (system_text or "").replace(SUGGEST_AGENT_MODE, "") + hint
+
 
 # ReAct system prompt สำหรับ Ollama (text-based loop แทน function calling)
 _REACT_SYSTEM = """คุณเป็น AI assistant ที่มีเครื่องมือ (tools) ใช้ได้ดังนี้:
@@ -513,7 +521,7 @@ def _run_agent_gemini(
 
     # แปลง messages → Gemini format
     system_text, history, last_user = _split_messages_for_gemini(messages)
-    system_text = (system_text or "") + AGENT_SYSTEM_HINT
+    system_text = _agent_system(system_text, AGENT_SYSTEM_HINT)
 
     gen_config = genai_types.GenerateContentConfig(
         system_instruction=system_text,
@@ -605,7 +613,7 @@ def _run_agent_lmstudio(
         model = _CFG_LMSTUDIO_CHAT_MODEL
 
     if messages and messages[0]["role"] == "system":
-        messages[0]["content"] = messages[0]["content"] + AGENT_SYSTEM_HINT
+        messages[0]["content"] = _agent_system(messages[0]["content"], AGENT_SYSTEM_HINT)
     else:
         messages.insert(0, {"role": "system", "content": AGENT_SYSTEM_HINT.strip()})
 
@@ -714,7 +722,7 @@ def _run_agent_ollama(
 
     # ฉีด ReAct system prompt
     if messages and messages[0]["role"] == "system":
-        messages[0]["content"] = messages[0]["content"] + "\n\n" + react_system
+        messages[0]["content"] = _agent_system(messages[0]["content"], "\n\n" + react_system)
     else:
         messages.insert(0, {"role": "system", "content": react_system})
 
