@@ -1,5 +1,35 @@
 ---
 
+## [2026-09-29 ปิดเซสชัน 2] สรุปเซสชัน 09-29 (ต่อ 28–39) — dbId · sessions DELETE · เส้น error · save_reply · skills sync · ถอด /api/agent · memory โหมดเสียง · 5A/5B · fsync NAS/WAL · delete_keys
+
+| งาน | ผลบน prod | commit | devlog |
+|---|---|---|---|
+| ฟองที่เพิ่งส่งได้ `dbId` (SSE `user_message_id`) + `_on_cut` ข้ามแถว user ที่ถูก truncate | Chrome: truncate จริง DB คู่เดียว | ui `fbf7837` · a.ui `5af3196` | [ต่อ 28] |
+| DELETE /api/sessions คืน `deleted` + ชื่อผู้ช่วยไม่รู้จัก 404 · `clearChat` เช็ค res.ok · harness SSE อ่าน request ครบ (ECONNRESET) | 404/200 ตามคาด | `1e8d25a` `a99b6cb` · a.ui `385f71c` | [ต่อ 29] |
+| เส้น `{"error"}` ได้ `message_id` + agent ล้มไม่ทิ้ง user เดี่ยว | — (exception path เห็นแค่ในเทส) | `e4b424b` · a.ui `4228cdc` | [ต่อ 30] |
+| ตรวจทาน: ✏️ ต้องซ่อนระหว่าง stream (regression จาก dbId) · ถอนคำพูดเรื่อง RST Linux/macOS | Chrome: ✏️ 0 ระหว่าง stream | a.ui `bace965` | [ต่อ 31] |
+| `save_reply` อะตอม — คำตอบบันทึกเฉพาะเมื่อแถว user ยังอยู่ | truncate กลางคำตอบ → DB ว่าง | `72a1911` | [ต่อ 32] |
+| skills sync ตอนบูต: ข้ามตัวไม่เปลี่ยน + upsert ชุดเดียว + `embed_model` | 34–55 วิ → **0 วิ** | `8681951` | [ต่อ 33] |
+| ถอด `POST /api/agent` (เก็บ GET tools) | POST 404 · GET 200 | `02b1bd0` | [ต่อ 34] |
+| **โหมดเสียงบันทึก memory** (88% ของบทสนทนาไม่เคยเข้า) · log ผล tool · probe tool ล้ม (Gemini 8/8 · qwen 10/10 ตอบตรง) | memory_kwan 30 → 48 | `c9531b6` `057dcd2` | [ต่อ 35–37] |
+| 5A `get_collection_noembed` + `unreadable` · 5B `looptiming` · ถอดเงื่อนไข `searched` | sha เสียงตรง · unreadable {} | `9ad2129` `26dd789` `4e8fc8d` · a.ui `da2fbb5` | [ต่อ 36–37] |
+| บันทึกช้าจาก fsync NAS (RAID5 HDD 5,400 rpm): bgwriter + DB mount โฟลเดอร์ + **WAL+NORMAL** | save_msg max 1,691 → 218 ms (ครั้งแรก) · ~0.2 ms | `5361a9e` `d304342` `c7aac8f` | [ต่อ 38] |
+| `delete_keys` noembed + แยก `NotFoundError` | กุญแจกำพร้า 0 ทุก collection | `a09e3cd` | [ต่อ 39] |
+ชุดเต็ม pytest 2447 → **2535** · vitest 586 → **616** · CI เขียวทุก commit · appscript.ui push NAS ครบ (`da2fbb5`)
+
+**บทเรียนหลักของเซสชัน**
+- user ย้ำ (memory feedback ข้อ 13): ค้นให้ครบทุกข้อก่อนเสนอ · ข้ออ้างเทคนิคต้องมีแหล่ง/ผลทดลอง · "ต่อเลย" ≠ ข้ามรายงานแผน —
+  เซสชันนี้ผิดซ้ำ 2 ครั้งก่อนถูกเตือน (เส้น error · save_reply เขียนแผนแล้วลงมือในข้อความเดียว)
+- **เทส vacuous เจอ 5 ครั้ง** (mock id ปลอม · patch wrapper ที่ไม่ถูกเรียก · `app.routes` ห่อ `_IncludedRouter` · EF=None ทำให้ conflict ไม่เกิด ·
+  harness `_on_cut`) ⇒ หลังเปลี่ยนเส้นทางโค้ด ให้พิสูจน์ว่าเทสเดิมวิ่งถึงจุดวัดจริง (ทำบรรทัดก่อนจุดวัดให้โยน error แล้วต้องแดง)
+- ตัววัดที่เพิ่ม (5B looptiming · B1 log ผล tool) เจอปัญหาจริงทันทีที่ใช้งาน (fsync 1.7 วิบนลูปเสียง) — วัดก่อนเดา
+- `cp` ทับไฟล์บน NAS โดยไม่ `cmp` ก่อน (ต่อ 34) — ต่อไป cmp แล้วค่อย cp แยกคำสั่ง
+
+**ค้าง:** 🧪 เช็คกุญแจกำพร้าหลัง Dream 09-30 02:00 (ต้อง 0) · ⏳ user ดู DSM Resource Monitor (ดิสก์ busy ~99% ทุก ~30 วิ) ·
+SSD cache พักไว้ · ⚪ agent แนะนำ "เปิด Agent Mode" ทั้งที่อยู่ใน agent
+
+---
+
 ## [2026-09-29 ต่อ 39] `delete_keys` ไม่ทิ้งกุญแจกำพร้าเงียบๆ เมื่อ EF conflict (`a09e3cd`) ✅ deployed (restart) + CI เขียว · 🧪 รอเช็คหลัง Dream 30 ก.ย. 02:00
 
 **ค้นชั้น 2:** เดิมเปิดเงาด้วย wrapper ส่ง EF → conflict (ValueError) เข้า `except Exception` = "ไม่มีเงา" → True ทั้งที่ไม่ลบ

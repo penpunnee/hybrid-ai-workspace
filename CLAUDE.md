@@ -720,41 +720,30 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า
-ยังไม่ได้เคาะ — ถาม user (ตัวเลือกอยู่ใน 📋 งานเปิดอื่น / ⏳ รอ user เคาะ)
+1. 🧪 **เช็คกุญแจกำพร้าหลัง Dream prune 09-30 02:00** (หรือหลังกด 🧹) ต้อง = 0 ทุก collection แล้วรายงาน user
+   (ค่าตั้งต้น 09-29: memory_kwan 48/45 · memory_logic 0/0 · lessons 8/8 · user_facts 1/1 · กำพร้า 0 · devlog [ต่อ 39])
+2. ⏳ ถาม user ผล DSM Resource Monitor — ใครเขียนดิสก์ busy ~99% ทุก ~30 วิ (devlog [ต่อ 38])
 
-### ✅ ปิดแล้ว 09-29 (ต่อ 28): backlog `dbId`
-ฟองที่เพิ่งส่งได้ `dbId` ทันที (SSE `user_message_id` หลัง save user + `applyStreamIds`) · `_on_cut` ข้ามเมื่อแถว user ถูก truncate แล้ว
-(ui `fbf7837` · appscript.ui `5af3196` · verify Chrome prod: truncate จริง DB คู่เดียว) · **เพิ่ม `user_message_id` ใน short-circuit ใหม่ทุกเส้นที่ save user**
+### ✅ ปิดแล้วเซสชัน 09-29 (สรุป: devlog [2026-09-29 ปิดเซสชัน 2] · รายละเอียด [ต่อ 28–39])
+dbId ฟองที่เพิ่งส่ง · DELETE sessions บอกผล · เส้น error มี message_id · save_reply อะตอม · skills sync 0 วิ · ถอด POST /api/agent ·
+**โหมดเสียงบันทึก memory** (ถอด searched) · 5A noembed+unreadable · 5B looptiming · **fsync NAS: bgwriter + WAL+NORMAL** · delete_keys
+· SSD cache **พักไว้** (user: หาทางฟรีก่อน) · appscript.ui push NAS ครบ
 
-### ✅ ปิดแล้ว 09-29 (ต่อ 29): DELETE /api/sessions บอกผลจริง + harness SSE (CI แดงเป็นพักๆ)
-คืน `deleted` · ชื่อผู้ช่วยที่ไม่อยู่ทั้ง config และ DB → 404 · `clearChat` เช็ค `res.ok` (ui `1e8d25a` · appscript.ui `385f71c`)
-· SSE server ปลอมในเทสต้องอ่าน request ครบก่อนปิด ไม่งั้น RST → ECONNRESET (`a99b6cb`)
-
-### ✅ ปิดแล้ว 09-29 (ต่อ 30): เส้น `{"error"}` ได้ `message_id` + agent ล้มไม่ทิ้ง user เดี่ยว
-ฟังก์ชัน crash คืน id · บันทึกก่อนค่อย yield · FE รับ error + regenerate (ui `e4b424b` · appscript.ui `4228cdc`) · **error ใหม่ที่ save แถว → ส่ง `message_id` ด้วยเสมอ**
-· ตรวจทาน [ต่อ 31]: ✏️ ต้องซ่อนระหว่าง stream (regression จาก dbId — แก้ `bace965`)
-
-### 🔜 แผนที่ user เคาะ 09-29 (ทำตามลำดับ): ✅1 skills sync (ต่อ 33) · ✅2 ถอด POST /api/agent (ต่อ 34) ·
-✅3 โหมดเสียงบันทึก memory (ต่อ 35 · verify user คุยจริง 30→31 ต่อ 36) · ✅4 log ผล tool + probe (ต่อ 35) ·
-✅5 deploy แล้ว (ต่อ 37) · ✅ บันทึกช้าจาก fsync NAS: bgwriter + DB ใน mount โฟลเดอร์ + **WAL+NORMAL** (ต่อ 38 · 1.7 วิ → 0.1 ms)
-· 🔴 **`chat_history.db` เป็น WAL แล้ว — ห้าม cp ไฟล์ DB เดี่ยวๆ (ต้องใช้ `sqlite3 .backup` / backup API) · ห้าม mount ไฟล์เดี่ยวกลับ**
-· NAS ไม่มี UPS (user รับความเสี่ยง NORMAL) · ✅ `delete_keys` แก้แล้ว (ต่อ 39) · SSD cache **พักไว้** (user: หาทางฟรีก่อน)
-· 🧪 **งานแรกเซสชันหน้า: เช็คกุญแจกำพร้าหลัง Dream prune 09-30 02:00 ต้อง = 0 แล้วรายงาน user** (ค่าตั้งต้น 0 ทุก collection · ต่อ 39)
-· ⏳ user จะดู DSM Resource Monitor ว่าใครเขียนดิสก์ busy ~99% ทุก ~30 วิ (ต่อ 38)
-
-### ✅ ปิดแล้ว 09-29 (ต่อ 32): คำตอบบันทึกเฉพาะเมื่อแถว user ยังอยู่ (`save_reply` อะตอม · `72a1911`)
-**บันทึกคำตอบหลังรอ LLM ต้องผ่าน `save_reply(…, user_msg_id)`** ห้าม `save_message` ตรง · เทสที่ mock `save_message` ด้วย id ปลอม
-ต้อง mock `save_reply` คู่ด้วย (ไม่งั้นจบก่อนถึงจุดวัด = vacuous · เจอจริง `test_empty_response_guard`)
-
-### ✅ ปิดแล้วเซสชัน 09-28 ดึก → 09-29 (สรุปทั้งเซสชัน: devlog [2026-09-29 ปิดเซสชัน])
-- agent (LM Studio) กด Stop แล้วหยุดทันที (`3ad9767` · [ต่อ 25]) · "(agent ไม่มีคำตอบ)" หลังผล tool → สรุปใหม่ (`f1e6d0d` · [ต่อ 26])
-- frontend 9 ข้อของ audit (ui `e9edd73` · appscript.ui `18eb5c9` · [ต่อ 27]) · ย้ายบล็อก ▶️ เก่าลง devlog (`5aef79a` · [ต่อ 24])
-- ⚪ ยังไม่รู้ว่าทำไม agent ตอบได้เมื่อ 09-18 (น่าจะ LM Studio อัปเดต runtime เอง) · SSH เข้า PC .235 ตอบ "cannot find the path" ทุกคำสั่ง
-- appscript.ui push ขึ้น NAS แล้ว (09-29 · `da2fbb5`) · นอก LAN ใช้ `git -c url."nas-cf:".insteadOf="nas:" push origin main`
+### 🔑 กติกาใหม่จากเซสชัน 09-29 (ที่มาใน devlog)
+- 🔴 **`chat_history.db` เป็น WAL** (`DB_PATH=/app/data/chat_history.db` · mount โฟลเดอร์) — **ห้าม cp ไฟล์ DB เดี่ยวๆ** (ใช้ `sqlite3 .backup`/backup API)
+  · **ห้าม mount ไฟล์เดี่ยวกลับ** (`tests/test_db_path_dir_mount.py`) · NAS ไม่มี UPS (user รับความเสี่ยง NORMAL) · ถอย: `PRAGMA journal_mode=DELETE`
+- บันทึกคำตอบหลังรอ LLM → `save_reply(…, user_msg_id)` · short-circuit ใหม่ที่ save user → ส่ง `user_message_id` · error ที่ save แถว → ส่ง `message_id`
+  · เทสที่ mock `save_message` ด้วย id ปลอมต้อง mock `save_reply` คู่
+- งาน Chroma ที่ไม่ embed (get/delete/update meta) → `get_collection_noembed` · add/query ใช้ wrapper (มี EF) · "ไม่มี collection" = `NotFoundError`
+- `/ws/voice`: memory ผ่าน `remember_voice_turn` (daemon thread · ข้ามแค่ interrupted/no text) · `_save_msg` ผ่าน bgwriter (FIFO worker เดียว)
+  · ห่อที่บรรทัด import เท่านั้น — call site `_save_msg(`/`_marks.set(` ถูกเทสยึดไว้ · แตะ server.py = `--force-recreate` + inode + sha เสียง
+  (`sha256(repr(cfg))[:16]` live `dbff1a358e00ef03` · reader `8c5dbf9603eb3630` · sysprompt `8bddd1cae4be22b1`)
+- `log_timing` ไม่เขียน log (contextvar ให้ /api/chat) — วัด WS ใช้ `utils/looptiming` · Gemini free **15 req/นาที/โมเดล**
+- เทส route ใช้ `app.openapi()["paths"]` (`app.routes` ห่อ `_IncludedRouter` = ผ่านฟรี) · เปลี่ยนเส้นทางโค้ดแล้วต้องพิสูจน์ว่าเทสเดิมวิ่งถึงจุดวัด
+- `nas-cf` ค้าง = Cloudflare Access หมดอายุ → ให้ user login · NAS ใช้ `sh` (ไม่มี `<(...)`)
 
 ### 📋 งานเปิดอื่น
-- **backend:** EF conflict ใน `utils/memory.get_collection` ทำ cleanup ข้าม collection เงียบๆ ·
-  `server.py` WS อ่าน/เสียงยังมีงาน sync บน loop (🔒 ทำเมื่อ user สั่ง + วัดเสียงก่อน/หลัง)
+- **backend:** reader ยังมี `_marks.get/set` sync บน loop (วัดด้วย looptiming แล้ว — ดูบรรทัด `[Reader WS] งาน sync` ก่อนตัดสิน · 🔒)
 - **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 (รอ memory จากโหมดเสียงสะสม) · REM log raw ตอน `themes=0` ·
   ⚪ คำตอบ agent แนะนำ "เปิด Agent Mode" ทั้งที่อยู่ใน agent แล้ว (ต่อ 35)
 
