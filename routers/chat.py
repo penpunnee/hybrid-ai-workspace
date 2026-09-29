@@ -16,7 +16,7 @@ from utils.rag import inject_context_to_system, format_skill_files
 from utils.skills_select import select_skills
 from utils.skills_shadow import should_shadow_log as _shadow_should_log
 from utils.history import (
-    save_message, load_history, pop_replies_after_last_user, has_reply_after,
+    save_message, load_history, pop_replies_after_last_user, has_reply_after, message_exists,
 )
 from utils.memory import save_lesson, save_preference, get_lessons, get_preferences, search_memory
 from memory.operations import remember, recall, teach, push_working
@@ -225,7 +225,7 @@ async def chat(request: Request):
     # อยู่ก่อน teach/cache — คำสั่งวาดรูปไม่ใช่ knowledge ห้ามเข้า cache/memory
     from utils.image_gen import detect_image_request, generate_image
     if prompt and detect_image_request(prompt) and not (tool_agent or agent_mode):
-        await run_in_threadpool(save_message, assistant, "user", prompt, "image_gen", session_id)
+        img_uid = await run_in_threadpool(save_message, assistant, "user", prompt, "image_gen", session_id)
         result = await run_in_threadpool(generate_image, prompt,
                                          image_b64=image_b64, image_mime=image_mime)
         if result.get("ok"):
@@ -237,6 +237,7 @@ async def chat(request: Request):
                                           "image_gen", session_id)
 
         def gen_image_resp():
+            yield f"data: {json.dumps({'user_message_id': img_uid})}\n\n"
             yield f"data: {json.dumps({'chunk': reply}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'done': True, 'model': 'gemini-image', 'provider': 'image_gen', 'message_id': img_aid}, ensure_ascii=False)}\n\n"
 
@@ -260,11 +261,12 @@ async def chat(request: Request):
             hit = await run_in_threadpool(_rc_lookup, assistant, prompt)
             if hit:
                 cached_resp = hit["response"]
-                await run_in_threadpool(save_message, assistant, "user", prompt, "cache", session_id)
+                cached_uid = await run_in_threadpool(save_message, assistant, "user", prompt, "cache", session_id)
                 cached_aid = await run_in_threadpool(save_message, assistant, "assistant",
                                                      cached_resp, "cache", session_id)
 
                 def gen_cached():
+                    yield f"data: {json.dumps({'user_message_id': cached_uid})}\n\n"
                     yield f"data: {json.dumps({'cache_hit': {'similarity': hit['similarity'], 'source_prompt': hit['source_prompt']}}, ensure_ascii=False)}\n\n"
                     yield f"data: {json.dumps({'chunk': cached_resp}, ensure_ascii=False)}\n\n"
                     yield f"data: {json.dumps({'done': True, 'model': hit.get('model','cache'), 'provider': 'cache', 'message_id': cached_aid}, ensure_ascii=False)}\n\n"
@@ -403,8 +405,9 @@ async def chat(request: Request):
         if al_decision and al_decision.clarify_directly:
             clarify = al_decision.clarify_message
             logger.info(f"[Chat/AL] {al_decision.reason} — short-circuit clarify (no LLM)")
-            save_message(assistant, "user", prompt, provider, session_id)
+            st["user_msg_id"] = save_message(assistant, "user", prompt, provider, session_id)
             st["user_saved"] = True
+            yield f"data: {json.dumps({'user_message_id': st['user_msg_id']})}\n\n"
             clarify_aid = save_message(assistant, "assistant", clarify, "active_learning", session_id)
             st["assistant_saved"] = True
             push_working(session_id, "user", prompt)
@@ -424,6 +427,9 @@ async def chat(request: Request):
 
         st["user_msg_id"] = save_message(assistant, "user", prompt, provider, session_id)
         st["user_saved"] = True
+        # FE ตั้ง dbId ให้ฟอง user ทันที (backlog dbId 09-29) — ส่งก่อนคำตอบ เพราะกด Stop = ไม่มี done
+        # แต่แถวนี้อยู่ใน DB แล้ว (แก้ข้อความทีหลังต้อง truncate ได้ ไม่งั้นคู่เก่า+ใหม่ซ้อน)
+        yield f"data: {json.dumps({'user_message_id': st['user_msg_id']})}\n\n"
 
         # ตั้งค่าตั้งต้นให้ `_save_crash` อ่านได้ตั้งแต่ตอนนี้ — สาขา agent/routing ข้างล่าง
         # มี yield หลัง save user แล้ว ⇒ client ตัดสายตรงนั้นก็ต้องบันทึกคู่ได้
@@ -818,6 +824,11 @@ async def chat(request: Request):
 
     def _on_cut():
         if not (st["user_saved"] and not st["assistant_saved"] and st["save_crash"]):
+            return
+        if not message_exists(st["user_msg_id"]):
+            # ผู้ใช้แก้ข้อความ (truncate) ไปแล้วระหว่างที่ handler นี้มาช้า — turn นี้ไม่มีอยู่แล้ว
+            # บันทึกตอนนี้ = ฟอง "หยุดกลางคัน" กำพร้าคั่นกลาง turn ใหม่ (backlog dbId 09-29)
+            logger.info("[Chat] client ตัดสายกลาง stream — user message ถูกลบไปแล้ว (แก้ข้อความ) ไม่บันทึก")
             return
         if _regen_key(assistant, session_id) in _REGEN_INFLIGHT:
             logger.info("[Chat] client ตัดสายกลาง stream — regenerate ของ session นี้กำลังวิ่ง ไม่บันทึกซ้ำ")

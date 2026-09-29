@@ -143,6 +143,36 @@ async def test_ตัดสายแล้วมีคำตอบใหม่�
 
 
 @pytest.mark.asyncio
+async def test_ตัดสายแล้ว_user_ถูก_truncate_ไปแล้ว_ต้องไม่ต่อฟองกำพร้า(monkeypatch):
+    """backlog dbId (2026-09-29): ฟอง user ที่เพิ่งส่งมี dbId แล้ว ⇒ "Stop แล้วแก้ข้อความ" กลายเป็นเส้นปกติ
+    ลำดับ: ส่ง U1 → Stop → แก้ข้อความ = truncate(U1) → ส่ง U2 (คำตอบ A2 ยังไม่ save) → handler ตัดสายของ U1
+    มาถึงช้า (วัดบน prod ช้าได้ 63 วิ) → `has_reply_after(U1)` = False เพราะ A2 ยังไม่มี
+    ⇒ ต้องเห็นว่าแถว U1 ถูกลบไปแล้ว และห้ามบันทึก "หยุดกลางคัน" คั่นระหว่าง U2 กับ A2"""
+    from utils.history import save_message, truncate_from_db_id, _get_conn
+    sid = "s_disconnect_after_truncate"
+
+    def _stream_then_edit(messages, **k):
+        import time
+        yield "ท่อน0 "
+        yield "ท่อน1 "
+        conn = _get_conn()
+        try:
+            (u1,) = conn.execute("SELECT id FROM messages WHERE session_id = ? AND role = 'user'", (sid,)).fetchone()
+        finally:
+            conn.close()
+        assert truncate_from_db_id(u1)                                  # ผู้ใช้แก้ข้อความ
+        save_message("kwan", "user", "U2 แก้แล้ว", "ollama", sid)        # turn ใหม่ — A2 ยัง stream อยู่
+        time.sleep(0.05)
+        yield "ท่อน2 "
+
+    monkeypatch.setattr(chatmod, "stream_response", _stream_then_edit)
+    with patch.object(chatmod, "remember"), patch.object(chatmod, "teach", return_value=False):
+        await _post_then_drop(sid, drop_after_chunks=2)
+    contents = [m["content"] for m in load_history("kwan", sid)]
+    assert contents == ["U2 แก้แล้ว"], f"ห้ามต่อฟอง 'หยุดกลางคัน' ของ U1 ที่ถูกลบแล้ว ({contents})"
+
+
+@pytest.mark.asyncio
 async def test_ตัดสายใน_session_ที่มี_turn_เก่า_ต้องยังบันทึกคู่(monkeypatch):
     """กลุ่มควบคุมของ guard `has_reply_after`: คำตอบของ turn *ก่อนหน้า* (A1) ต้องไม่ถูกนับว่า
     "ตอบ U2 แล้ว" — ไม่งั้น session ที่คุยมาก่อนจะกลับไปทิ้ง orphan เหมือนเดิม (mutation จับได้)"""

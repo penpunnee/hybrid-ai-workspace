@@ -309,6 +309,15 @@ def delete_message_by_id(db_id: int):
         conn.close()
 
 
+def message_exists(db_id: int) -> bool:
+    """แถว id นี้ยังอยู่ไหม — handler ตัดสายที่มาช้าใช้เช็คว่า user แก้ข้อความ (truncate) ไปแล้วหรือยัง"""
+    conn = _get_conn()
+    try:
+        return conn.execute("SELECT 1 FROM messages WHERE id = ?", (db_id,)).fetchone() is not None
+    finally:
+        conn.close()
+
+
 def has_reply_after(assistant: str, session_id: str, user_msg_id: int) -> bool:
     """มีคำตอบ (assistant) ที่ตามหลัง user message นี้อยู่แล้วไหม
 
