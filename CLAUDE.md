@@ -726,15 +726,18 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 ฟองที่เพิ่งส่งได้ `dbId` ทันที (SSE `user_message_id` หลัง save user + `applyStreamIds`) · `_on_cut` ข้ามเมื่อแถว user ถูก truncate แล้ว
 (ui `fbf7837` · appscript.ui `5af3196` · verify Chrome prod: truncate จริง DB คู่เดียว) · **เพิ่ม `user_message_id` ใน short-circuit ใหม่ทุกเส้นที่ save user**
 
+### ✅ ปิดแล้ว 09-29 (ต่อ 29): DELETE /api/sessions บอกผลจริง + harness SSE (CI แดงเป็นพักๆ)
+คืน `deleted` · ชื่อผู้ช่วยที่ไม่อยู่ทั้ง config และ DB → 404 · `clearChat` เช็ค `res.ok` (ui `1e8d25a` · appscript.ui `385f71c`)
+· SSE server ปลอมในเทสต้องอ่าน request ครบก่อนปิด ไม่งั้น RST → ECONNRESET (`a99b6cb`)
+
 ### ✅ ปิดแล้วเซสชัน 09-28 ดึก → 09-29 (สรุปทั้งเซสชัน: devlog [2026-09-29 ปิดเซสชัน])
 - agent (LM Studio) กด Stop แล้วหยุดทันที (`3ad9767` · [ต่อ 25]) · "(agent ไม่มีคำตอบ)" หลังผล tool → สรุปใหม่ (`f1e6d0d` · [ต่อ 26])
 - frontend 9 ข้อของ audit (ui `e9edd73` · appscript.ui `18eb5c9` · [ต่อ 27]) · ย้ายบล็อก ▶️ เก่าลง devlog (`5aef79a` · [ต่อ 24])
 - ⚪ ยังไม่รู้ว่าทำไม agent ตอบได้เมื่อ 09-18 (น่าจะ LM Studio อัปเดต runtime เอง) · SSH เข้า PC .235 ตอบ "cannot find the path" ทุกคำสั่ง
-- appscript.ui push ขึ้น NAS แล้ว (09-29 · `5af3196`) · นอก LAN ใช้ `git -c url."nas-cf:".insteadOf="nas:" push origin main`
+- ⚠️ **appscript.ui ahead 1** (`385f71c` ยังไม่ push · ถาม user ก่อน) · นอก LAN ใช้ `git -c url."nas-cf:".insteadOf="nas:" push origin main`
 
 ### 📋 งานเปิดอื่น
-- **backend:** `DELETE /api/sessions/{assistant}/{sid}` ชื่อผิด → 200 ok ทั้งที่ลบ 0 แถว (เจอ 09-29) ·
-  `handleSend` เส้น `{"error"}` ฟอง AI ไม่มี `dbId` (แถว `_save_crash` มีใน DB · 🗑️ คู่นั้นไม่ขึ้น) ·
+- **backend:** `handleSend` เส้น `{"error"}` ฟอง AI ไม่มี `dbId` (แถว `_save_crash` มีใน DB · 🗑️ คู่นั้นไม่ขึ้น) ·
   EF conflict ใน `utils/memory.get_collection` ทำ cleanup ข้าม collection เงียบๆ ·
   `server.py` WS อ่าน/เสียงยังมีงาน sync บน loop (🔒 ทำเมื่อ user สั่ง + วัดเสียงก่อน/หลัง) ·
   `/api/agent` ไม่มี `_guard_disconnect` (กด Stop = user orphan · ไม่มี frontend เรียก)

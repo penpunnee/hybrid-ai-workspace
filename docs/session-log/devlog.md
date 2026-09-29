@@ -1,5 +1,33 @@
 ---
 
+## [2026-09-29 ต่อ 29] DELETE /api/sessions บอกผลจริง (ui `1e8d25a` · appscript.ui `385f71c`) + harness SSE ทำ CI แดงเป็นพักๆ (`a99b6cb`) ✅ deployed + verify prod + CI เขียว
+
+**ที่มา:** ตอนเก็บกวาด probe ของ [ต่อ 28] ใส่ชื่อผู้ช่วยผิด (ขาด `🧡`) → ได้ **200 `{"ok":true}` ทั้งที่ลบ 0 แถว**
+
+**ค้น:** `delete_session` เรียก `clear_session()` แล้วตอบ ok เสมอ · **`POST /api/sessions/{a}` แค่สุ่ม id ไม่เขียน DB**
+⇒ "session ว่าง" กับ "ไม่มี session" แยกกันไม่ได้โดยโครงสร้าง ⇒ ตอบ 404 เมื่อลบ 0 แถวไม่ได้
+(เริ่มแชทใหม่ → 🗑️ จะ error) · RFC 9110 §9.2.2 (idempotent = ผลที่ตั้งใจเหมือนเดิม response ต่างได้) · §9.3.5 ไม่บังคับ 404
+· prod มีชื่อผู้ช่วยรุ่นเก่าที่ไม่อยู่ใน config แล้ว (`kwan` 49 · `ฟ้า` 13 · `ขวัญ` 5 · `logic` 2 · `a` 1)
+
+**สัญญาใหม่:** ลบสำเร็จคืน `{"ok": true, "deleted": N}` (0 = log info) · ชื่อผู้ช่วยที่**ไม่อยู่ทั้งใน config และใน DB**
+(`assistant_has_data()` ดู `messages` + `session_names`) → **404** "ไม่รู้จักผู้ช่วย … — ไม่ได้ลบอะไร"
+· frontend `clearChat` เดิม**ไม่อ่าน response เลย** (500/เน็ตหลุดก็ "🗑️ ล้างแล้ว") → เช็ค `res.ok` + catch
+
+**เทส:** `test_delete_session_result.py` (5) · mutation backend 7/7 (รอบแรก `dbonly` รอด — ผู้ช่วยใน config ที่ยังไม่มีแถวเลย
+ไม่มีเทสคุม → เพิ่มแล้ว) · wiring `clearChat` 2 · frontend mutation 2/2
+· ⚠️ `test_main::test_delete_session` ใช้ "ฟ้า" — **ผ่านเฉพาะเมื่อเทสอื่นเขียนแถว "ฟ้า" ไว้ก่อน** (รันเดี่ยวแดง) → ใช้ผู้ช่วยจาก config
+**verify prod** (urllib ในคอนเทนเนอร์ · sid ที่ไม่มีจริง): `ขวัญ (Logic)` → 404 · `🧡 ขวัญ (Logic)` → 200 `deleted:0` · `kwan` → 200 `deleted:0`
+
+**CI `1e8d25a` แดง** `test_router_agent_กลุ่มควบคุม…`: `[Errno 104] Connection reset by peer` — ไม่เกี่ยวกับงานนี้ แต่ไล่ต้นเหตุก่อน:
+`_SSEServer._one` (`test_stream_cooperative_cancel.py`) `recv(65536)` ครั้งเดียว · httpx ส่ง header/body แยกก้อน · request agent 19.7 KB
+→ body มาไม่ทัน recv แรก แล้วปิด socket ทั้งที่มีข้อมูลค้าง = kernel ส่ง **RST** แทน FIN → client ECONNRESET ตอนอ่านท้าย stream
+· **ทำซ้ำ 3/3 ทั้ง Linux (`docker run --rm python:3.11-slim` บน NAS · `--network none`) และ macOS · อ่านครบก่อนปิด 0/3**
+· รอบแรกทำซ้ำไม่ได้เพราะ server ปิดก่อน body มาถึง (ไม่มีข้อมูลค้างตอนปิด) — ต้องให้ body มาระหว่างที่ server ยังส่งอยู่
+· แก้ harness ให้อ่านครบตาม content-length · เทส harness แดงแน่นอนก่อนแก้ · mutation แดง · **harness เท่านั้น** (LM Studio จริงอ่านครบ)
+· 🔧 ชื่อเทสไทยที่มี `ำ` — node id ที่พิมพ์เองไม่ match (NFC ต่างกัน) · `-k` รับอักษรไทยไม่ได้ → ดึง id จาก `--collect-only`
+
+---
+
 ## [2026-09-29 ต่อ 28] backlog dbId — ฟองที่เพิ่งส่งได้ `dbId` ทันที + กันฟองกำพร้าหลังแก้ข้อความ (ui `fbf7837` · appscript.ui `5af3196`) ✅ deployed + verify Chrome บน prod + CI เขียว
 
 **ค้น (โค้ดจริง ไม่ใช่ตามที่จดไว้):** แย่กว่า backlog — `handleSend` **ไม่ตั้ง `dbId` ให้ฟองไหนเลย** (ฟอง AI ด้วย ไม่ใช่แค่ user)
