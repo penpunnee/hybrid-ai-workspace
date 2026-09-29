@@ -736,8 +736,8 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 
 ### 🔜 แผนที่ user เคาะ 09-29 (ทำตามลำดับ): ✅1 skills sync (ต่อ 33) · ✅2 ถอด POST /api/agent (ต่อ 34) ·
 ✅3 โหมดเสียงบันทึก memory (ต่อ 35 · verify user คุยจริง 30→31 ต่อ 36) · ✅4 log ผล tool + probe (ต่อ 35) ·
-✅5 commit แล้ว **⏸️ ยังไม่ deploy** (5A `9ad2129`+appscript.ui `da2fbb5` · 5B `26dd789` แตะ server.py → `--force-recreate` + inode + sha)
-· งานต่อ: นับว่าโมเดลเสียงค้นเว็บบ่อยแค่ไหน (เงื่อนไข `searched`) · `delete_keys` EF conflict = กุญแจกำพร้าเงียบ (ต่อ 36)
+✅5 deploy แล้ว (ต่อ 37 · sha เสียงตรง) · ถอด `searched` แล้ว (4/9 turn เคยโดนข้าม) · 🧪 รอดูบรรทัด `งาน sync บน loop`
+ตอนปิดสายเสียง/อ่านจริง · งานต่อ: `delete_keys` EF conflict = กุญแจกำพร้าเงียบ (ต่อ 36)
 
 ### ✅ ปิดแล้ว 09-29 (ต่อ 32): คำตอบบันทึกเฉพาะเมื่อแถว user ยังอยู่ (`save_reply` อะตอม · `72a1911`)
 **บันทึกคำตอบหลังรอ LLM ต้องผ่าน `save_reply(…, user_msg_id)`** ห้าม `save_message` ตรง · เทสที่ mock `save_message` ด้วย id ปลอม

@@ -1,5 +1,20 @@
 ---
 
+## [2026-09-29 ต่อ 37] ถอดเงื่อนไข `searched` (`4e8fc8d`) + deploy 5A/5B/voice ✅ prod · sha เสียงตรง · CI เขียว
+
+**ผลทดสอบเสียงรอบ 2 (user คุย 6 turn 06:39–06:41):** บันทึก 3 · ข้าม `searched` 2 (ถาม "ลักษณะการพูดของ ChatGPT เป็นทางการไหม" /
+"คำว่า แม้ว่า เป็นภาษาราชการไหม" — โมเดลเลือกค้นเว็บเอง) · `no_ai_text` 1 · `memory_kwan` 31 → **34** · ทั้งวัน 9 turn: บันทึก 4 ·
+searched 4 (44%) · no_ai_text 1 ⇒ user เคาะถอด `searched` ให้ `should_remember` (`realtime_query` จากคำถาม) กรองข้อมูลสดแทน
+**แก้:** ถอดพารามิเตอร์ทั้งเส้น (decision · `remember_voice_turn` · จุดเรียก server.py) · เทส signature + wiring keywords ==
+{interrupted} + เคสจริงที่เคยโดนข้ามต้องผ่าน · mutation 2/2 · ชุดเต็ม 2511
+**deploy (5A `9ad2129` · 5B `26dd789` · `4e8fc8d` · bundle `index-BzGXcklt.js`):** `--force-recreate` สำเร็จ · healthy ·
+inode host=container 274443 · ในคอนเทนเนอร์มี SyncCallTimer/get_collection_noembed · **sha prod ก่อน=หลัง** live `dbff1a358e00ef03` ·
+reader `8c5dbf9603eb3630` · sysprompt `8bddd1cae4be22b1` · 5A read-only: `light_sleep(24h)` = 4 memories · `unreadable: {}`
+(ไม่ได้เรียก cleanup/decay/prune — ลบ/แก้ข้อมูลจริง)
+🧪 **รอเห็นบน prod:** บรรทัด `[Voice WS] งาน sync บน loop` / `[Reader WS] งาน sync บน loop` ตอนปิดสาย + turn ที่ค้นเว็บถูกบันทึก
+
+---
+
 ## [2026-09-29 ต่อ 36] ผลทดสอบเสียงจริง ✅ + ขั้น 5A (`9ad2129` · appscript.ui `da2fbb5`) + 5B (`26dd789`) — CI เขียว · ⏸️ ยังไม่ deploy (user สั่งเตรียมคำสั่งไว้)
 
 **ทดสอบโหมดเสียง (user คุยจริง 3 turn):** 06:12:59 + 06:14:09 `[Voice/memory] ข้าม reason=searched` (โมเดลค้นเว็บใน turn) ·
