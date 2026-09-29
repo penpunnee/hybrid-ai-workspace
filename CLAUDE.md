@@ -721,8 +721,8 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 
 ### 🥇 งานแรก: ก้อน 12
 - ✅ **ข้อ 1 ปิดแล้ว 09-29 (`3ad9767` · devlog [ต่อ 25]):** agent (LM Studio) กด Stop แล้วหยุดทันที — step เป็น stream + register + เพดานรวม
-- 🐛 **ถัดไปก่อนอย่างอื่น:** หลังผล tool qwen3.5 ตอบใน `reasoning_content` → `content` ว่าง → ผู้ใช้เห็น "(agent ไม่มีคำตอบ)"
-  (A/B หลังผล tool: stream 4/5 · non-stream 5/5 ว่าง · กลุ่มควบคุมบน prod 09-29 ก็เจอ) · 09-18 เคยตอบได้ ⇒ **ไล่ก่อนว่าอะไรเปลี่ยน** อย่าเพิ่งเดาแก้
+- ✅ **"(agent ไม่มีคำตอบ)" หลังผล tool ปิดแล้ว 09-29 (`f1e6d0d` · devlog [ต่อ 26]):** content ว่าง + มีผล tool → `synthesize()` (probe 15/15 · prod 3/3)
+  · ⚪ ยังไม่รู้ว่าทำไม 09-18 ตอบได้ (น่าจะ LM Studio อัปเดต runtime เอง) · SSH เข้า PC .235 ตอบ "cannot find the path" ทุกคำสั่ง — เข้าไปดูเวอร์ชันไม่ได้
 - **backend:** EF conflict ใน `utils/memory.get_collection`
   ทำ cleanup ข้าม collection เงียบๆ · `server.py` WS อ่าน/เสียงยังมีงาน sync บน loop (🔒 ทำเมื่อ user สั่ง + วัดเสียงก่อน/หลัง)
 - **frontend 9 ข้อ** (`docs/audit/2026-09-24-full-audit.md` หัวข้อ 2 ท้าย): `_parseChatSSE` ซ้ำ · `AI_PALETTE.khim` ·
@@ -768,6 +768,8 @@ seek ต้อง**อ่านค่าก่อนเขียน** (user อ�
 **backend**
 - LM Studio agent step เป็น **stream** แล้ว (ก้อน 12) — ประกอบ tool call เอง ห้าม `ChatCompletionStreamState` (โยนตอน finish=length) ·
   fake ในเทสต้องส่งเป็นชิ้น (`tests/test_agents.py:_as_stream`) · เทสตัดสาย router ต้องตัดตอนเธรด*ค้างรอ LLM อยู่จริง* (`_SSEServerSeen`)
+- qwen3.5 ผ่าน LM Studio: `content` ว่างแต่ `reasoning_content` มี = ไม่ปิด `<think>` (LM Studio #1602) · **ปิด thinking ผ่าน API ไม่ได้** (#1990 · วัด 3/6) ·
+  ห้ามโชว์ `reasoning_content` แทนคำตอบ · ทางที่ใช้ได้ = ต่อ user turn แล้วขอใหม่
 - เส้น SSE ที่ save ลง DB ระหว่าง stream → `_guard_disconnect` + `anyio.lowlevel.checkpoint()` ก่อน yield ทุกชิ้น ·
   เส้นที่เรียก LLM → `_CancellableStreamingResponse` + `_guard_disconnect(cancel=)` + ส่ง `cancel=` ให้ `stream_response`
 - หลังลูป stream ตัดสินด้วย **`cancel.aborted`** ไม่ใช่ `cancel.is_set()` · provider ใหม่ต้องลงทะเบียน stream + เช็คธงทุก raw chunk

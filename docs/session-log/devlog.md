@@ -1,5 +1,26 @@
 ---
 
+## [2026-09-29 ต่อ 26] agent LM Studio หลังผล tool ได้ "(agent ไม่มีคำตอบ)" → สรุปใหม่ (`f1e6d0d`) ✅ deployed + verify prod 3/3
+**อาการ:** กลุ่มควบคุมของ [ต่อ 25] (agent ไม่ตัดสาย) ได้ "(agent ไม่มีคำตอบ)" · DB prod มี 3/96 (09-18 ×2 · 09-23 ×1)
+**ต้นเหตุ (ยืนยันด้วย probe payload agent จริง · qwen3.5-9b):** หลังผล tool โมเดลตอบโดยไม่ปิด `<think>` ที่ template เปิดไว้ให้
+→ LM Studio นับทั้งก้อนเป็น `reasoning_content` · `content` ว่าง · `finish=stop` · content ว่าง **11/12** (ข่าวทอง 5/6 · เช็คเครือข่าย 6/6)
+· ผู้ดูแล LM Studio อธิบายกลไกเดียวกันใน issue #1602 (EOT ก่อน `</think>` = ไม่ใช่บั๊กของ server)
+· ไม่เกี่ยวกับงาน [ต่อ 25]: A/B stream 4/5 vs non-stream 5/5 ว่างเหมือนกัน · ไม่มี commit ไหนตั้งแต่ 09-18 เปลี่ยนโมเดล/prompt (`cbddc04` แค่ย้ายค่าไป config)
+  ⇒ ที่ 09-18 ยังตอบได้ **ยังไม่รู้สาเหตุ** (น่าจะ runtime/template ของ LM Studio อัปเดตเอง — เข้า PC ไม่ได้ SSH ตอบ "cannot find the path" ทุกคำสั่ง)
+**ทางที่ลองแล้วตัดทิ้ง:** `chat_template_kwargs.enable_thinking=False` ได้แค่ 3/6 (ตรง LM Studio #1990: รุ่น 9B ไม่เคารพ) ·
+ใช้ `reasoning_content` แทนคำตอบ = ไม่ได้ (เป็นความคิดปนคำตอบ "โอเค พี่ปอย … ผมได้ผลจาก tool") ·
+ต่อ user nudge ทุกครั้งหลังผล tool = ได้ 6/6 แต่ prompt สรุปเดิมห้ามเรียก tool ⇒ ตัด multi-step (ค้น → fetch_url) ทิ้ง
+**แก้:** `_LMStudioAdapter.step()` — ไม่มี tool call + content ว่าง + **มีผล tool แล้ว** → `yield from self.synthesize()` (เส้นเดิม: ต่อ user=`_FORCE_SYNTH_PROMPT` · stream · ไม่ส่ง tools)
+· probe เส้นนี้ตรงๆ **15/15** (ข่าวทอง/เครือข่าย/คำนวณ ×5) · รอบแรกที่ยังไม่มีผล tool คงเดิม (สรุปจากความว่างเปล่า = ชวนแต่ง) · log WARNING ทุกครั้งที่ใช้ทางสำรอง
+· ราคา: +1 LLM call เฉพาะตอน content ว่าง (ตอนนี้แทบทุกครั้งหลังผล tool ~+5–13 วิ)
+**เทส:** 5 ตัว (รวมกลุ่มควบคุม 3 ที่ผ่านบนโค้ดเดิม) · mutation 4/4 · ชุดเต็ม 2447
+**verify prod (`X-Test-Request` · ลบ session แล้ว):** ข่าวทอง (web_search → fetch_url → ตอบเองรอบ 3) · เช็คเครือข่าย (ping_network → **ทางสำรอง** → ตาราง 1,213 ตัวอักษร) ·
+คำนวณ (calculator → **ทางสำรอง** → 7,006,652 ถูก) = ได้คำตอบ **3/3** (ก่อนแก้กลุ่มควบคุม 0/1)
+**🔑 บทเรียน:** (1) "content ว่าง" ของ reasoning model มีกลไกที่รู้จักแล้ว — ดู `reasoning_content` + ตำแหน่ง `</think>` ก่อนเดา
+(2) ตัวเลือก "ปิด thinking" ต้องวัดกับรุ่นที่ใช้จริง — เอกสารของ Qwen/vLLM ใช้ไม่ได้กับ LM Studio + 9B (3) หลักฐานว่า "ไม่ใช่ regression" = A/B ด้วย payload เดียวกัน ไม่ใช่เหตุผล
+
+---
+
 ## [2026-09-29 ต่อ 25] ก้อน 12 ข้อ 1 — โหมด agent (LM Studio) กด Stop แล้วหยุดทันที (`3ad9767`) ✅ deployed + verify prod + CI เขียว
 **อาการ:** ก้อน 10 ทำให้แชทปกติตัด LM Studio ได้ทันที แต่ `run_agent` ไม่รับ `StreamCancel` · `_LMStudioAdapter.step()` เรียกแบบ non-stream
 ⇒ ตัดกลางทางไม่ได้ (ยังไม่มี response ให้ตัด socket) · handler มาช้าเท่าที่ step ใช้ (log prod 7–23 วิ/step · เพดาน `LMSTUDIO_TIMEOUT` 180) · GPU คิดต่อทิ้งเปล่า
