@@ -532,9 +532,9 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                     if getattr(sc, "turn_complete", False):
                                         await websocket.send_json({"type": "done"})
                                         # episodic memory (user เคาะ 09-29 · เดิมโหมดเสียงไม่เคยบันทึก = 88% ของบทสนทนา)
-                                        # daemon thread ไม่ await · ต้องก่อนรีเซ็ต search_count และก่อนล้างบัฟเฟอร์ข้อความ
+                                        # daemon thread ไม่ await · ต้องก่อนล้างบัฟเฟอร์ข้อความ (ไม่ข้าม turn ที่ค้นเว็บแล้ว — 09-29)
                                         remember_voice_turn(asst_name, user_transcript, ai_transcript,
-                                                            interrupted=turn_interrupted, searched=search_count > 0)
+                                                            interrupted=turn_interrupted)
                                         turn_interrupted = False
                                         # เพดานค้นนับต่อ turn — คำถามใหม่เริ่มนับใหม่เสมอ
                                         # ไม่งั้นคุยยาวๆ จะชนเพดานถาวรแล้วค้นไม่ได้อีกทั้ง session

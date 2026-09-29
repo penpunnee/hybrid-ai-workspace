@@ -3,8 +3,9 @@
 สืบแล้ว: 88% ของบทสนทนา (224/254 turn ตั้งแต่ 08-18) มาจาก `/ws/voice` ซึ่งบันทึกแค่ประวัติแชท ไม่เคยเรียก `remember()`
 ⇒ memory แทบไม่โต (11 รายการใน 6 สัปดาห์) · Dream REM ไม่มีข้อมูล
 
-เงื่อนไขที่ user เคาะ: ผ่าน `should_remember` · ไม่บันทึก turn ที่ถูกพูดแทรก (คำตอบไม่ครบ) · ไม่บันทึก turn ที่ใช้ web search
-(ข้อมูลสด) · ไม่กรองข้อความสั้น · ห้ามบันทึกจากโหมดอ่านนิยาย (`/ws/reader`) · ห้ามแตะค่าเสียง (พิสูจน์ด้วย sha)
+เงื่อนไขที่ user เคาะ: ผ่าน `should_remember` · ไม่บันทึก turn ที่ถูกพูดแทรก (คำตอบไม่ครบ) · ไม่กรองข้อความสั้น
+· ⚠️ เดิมข้าม turn ที่ใช้ web search ด้วย — ถอดแล้ว (user เคาะ 09-29 หลังทดสอบจริง: 4/9 turn ถูกข้ามทั้งที่เป็นคำถามภาษาทั่วไป
+ที่โมเดลเลือกค้นเอง) · ข้อมูลสดให้ `should_remember` (`realtime_query` ดูจากคำถาม) กรองแทน · ห้ามบันทึกจากโหมดอ่านนิยาย (`/ws/reader`) · ห้ามแตะค่าเสียง (พิสูจน์ด้วย sha)
 `remember()` embed ผ่าน Ollama 0.56–6.73 วิ ⇒ ห้าม await ในลูปเสียง ต้องยิง daemon thread
 """
 import ast
@@ -27,7 +28,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     ("   ", "คำตอบ", {}, (False, "no_user_text")),                               # auto-continue: AI พูดเอง
     ("ถาม", "  ", {}, (False, "no_ai_text")),
     ("เล่าเรื่องแมว", "กาลครั้ง…", {"interrupted": True}, (False, "interrupted")),
-    ("เล่าเรื่องแมว", "กาลครั้ง…", {"searched": True}, (False, "searched")),
+    ("คำว่า แม้ว่า เป็นภาษาราชการไหม", "เป็นคำเชื่อมที่ใช้ได้ทั้ง…", {}, (True, "ok")),   # เคสจริงที่เคยโดนข้ามเพราะโมเดลค้นเว็บ
     ("ราคาทองวันนี้เท่าไร", "ขายออก 41,000", {}, (False, "realtime_query")),   # ผ่าน should_remember จริง
 ])
 def test_decision(user, ai, kw, expected):
@@ -81,9 +82,9 @@ def test_log_ไม่มีเนื้อหาบทสนทนา(monkeypat
     monkeypatch.setattr(vm, "remember", lambda *a: None)
     with caplog.at_level(logging.INFO, logger="memory.voice_memory"):
         vm.remember_voice_turn("k", "ความลับบ้านเลขที่ 99", "คำตอบลับ")
-        vm.remember_voice_turn("k", "ความลับบ้านเลขที่ 99", "คำตอบลับ", searched=True)
+        vm.remember_voice_turn("k", "ความลับบ้านเลขที่ 99", "คำตอบลับ", interrupted=True)
     text = "\n".join(r.getMessage() for r in caplog.records)
-    assert "[Voice/memory]" in text and "searched" in text
+    assert "[Voice/memory]" in text and "interrupted" in text
     assert "ความลับ" not in text and "คำตอบลับ" not in text
 
 
@@ -110,19 +111,20 @@ def _turn_complete_block(voice):
     raise AssertionError("ไม่เจอบล็อก turn_complete")
 
 
-def test_voice_เรียกในบล็อก_turn_complete_ก่อนล้างบัฟเฟอร์และก่อนรีเซ็ต_search_count(tree):
+def test_ไม่มีเงื่อนไข_searched_แล้ว():
+    import inspect
+    assert "searched" not in inspect.signature(vm.voice_memory_decision).parameters
+    assert "searched" not in inspect.signature(vm.remember_voice_turn).parameters
+
+
+def test_voice_เรียกในบล็อก_turn_complete_ก่อนล้างบัฟเฟอร์(tree):
     block = _turn_complete_block(_func(tree, "voice_websocket"))
     calls = _calls(block, "remember_voice_turn")
     assert len(calls) == 1, "ต้องเรียกครั้งเดียวต่อ turn"
     call = calls[0]
     assert [ast.unparse(a) for a in call.args[1:]] == ["user_transcript", "ai_transcript"]
     kw = {k.arg: ast.unparse(k.value) for k in call.keywords}
-    assert kw.get("interrupted") == "turn_interrupted", kw        # ไม่ใช่ค่าคงที่
-    assert kw.get("searched") == "search_count > 0", kw
-    body = [ast.unparse(s) for s in block.body]
-    at = next(i for i, s in enumerate(body) if "remember_voice_turn" in s)
-    reset_search = next(i for i, s in enumerate(body) if s.startswith("search_count = 0"))
-    assert at < reset_search, "ต้องอ่าน search_count ของ turn นี้ก่อนถูกรีเซ็ต"
+    assert kw == {"interrupted": "turn_interrupted"}, kw           # ไม่ใช่ค่าคงที่ · ไม่มี searched แล้ว
     clear_user = [i for i, s in enumerate(ast.unparse(block).splitlines()) if "user_transcript = ''" in s]
     assert clear_user, "ต้องยังล้างบัฟเฟอร์เหมือนเดิม"
 
