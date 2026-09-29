@@ -118,7 +118,7 @@ def _func(src, name):
 
 def test_voice_ห่อ_save_msg_ที่บรรทัด_import_และสรุปตอนปิดสาย(src):
     voice = ast.unparse(_func(src, "voice_websocket"))
-    assert "_save_msg = _loop_timer.wrap('save_msg'" in voice
+    assert "_loop_timer.wrap('save_msg'" in voice          # ห่อซ้อนใน _writer.wrap (ขั้น 1 · test_bgwriter)
     assert "SyncCallTimer('voice')" in voice
     assert "_loop_timer.summary()" in voice
 

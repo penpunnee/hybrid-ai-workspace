@@ -246,9 +246,12 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     from utils.history import save_message as _save_msg_raw
     from memory.voice_memory import remember_voice_turn
     from utils.looptiming import SyncCallTimer
-    # วัดงาน sync บน event loop (ขั้น 5B · วัดเท่านั้น — call ยัง sync เหมือนเดิม) · สรุปตอนปิดสาย
+    from utils.bgwriter import OrderedBackgroundWriter
+    # วัดงาน sync (5B) · บันทึกนอก event loop ด้วย worker ตัวเดียว = ลำดับ user→assistant ถูก (commit 0.8–1.7 วิ
+    # บน NAS เคยบล็อกลูปเสียง · 09-29) · call site เดิมทุกตัว · ตัวจับเวลาวัดใน worker = เวลา DB จริง
     _loop_timer = SyncCallTimer("voice")
-    _save_msg = _loop_timer.wrap("save_msg", _save_msg_raw)
+    _writer = OrderedBackgroundWriter("voice-save")
+    _save_msg = _writer.wrap(_loop_timer.wrap("save_msg", _save_msg_raw))
 
     await websocket.accept()
     # 🔬 ตัวชี้ขาด "client ต่อใหม่กลางสาย หรือ เริ่มสายใหม่" — ดูเหตุผลเต็มที่
@@ -596,7 +599,8 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
         except Exception:
             pass
     finally:
-        logger.info(f"[Voice WS] งาน sync บน loop: {_loop_timer.summary()}")
+        # สรุปเป็นงานสุดท้ายในคิวของ writer = ออกหลังบันทึกครบ · ไม่รอ (ปิดสายไม่ค้างรอ DB · งานค้างไม่ถูกยกเลิก)
+        _writer.close(then=lambda: logger.info(f"[Voice WS] งาน sync (บันทึกใน worker): {_loop_timer.summary()}"))
 
 
 # ── ขวัญอ่านหนังสือ (2026-08-11) — ป้อนท่อนจาก BookStore ให้ Gemini Live อ่าน ────
