@@ -77,6 +77,28 @@ def save_message(assistant: str, role: str, content: str, provider: str = "ollam
     return int(new_id) if new_id else 0
 
 
+def save_reply(assistant: str, content: str, provider: str, session_id: str, user_msg_id: int) -> int:
+    """บันทึกคำตอบ **เฉพาะเมื่อแถว user ของ turn นี้ยังอยู่** — คืน id หรือ 0 ถ้าไม่ได้บันทึก
+
+    ระหว่างรอ LLM ผู้ใช้อาจแก้ข้อความ (truncate) ไปแล้ว (2 แท็บ · bundle เก่า · Stop ตรงจังหวะตอบครบ)
+    ⇒ บันทึกต่อ = แถว assistant ต่อท้าย turn ใหม่ (ประวัติสลับคู่) · INSERT…WHERE EXISTS คำสั่งเดียว = อะตอม
+    (เช็ค message_exists แล้วค่อย save มีช่องให้ truncate แทรกกลาง) · anchor ต้องเป็นแถว user ของ session นี้
+    """
+    conn = _get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO messages (assistant, role, content, provider, created_at, session_id) "
+            "SELECT ?, 'assistant', ?, ?, ?, ? WHERE EXISTS ("
+            "  SELECT 1 FROM messages WHERE id = ? AND assistant = ? AND session_id = ? AND role = 'user')",
+            (assistant, content, provider, datetime.now().astimezone().isoformat(), session_id,
+             user_msg_id, assistant, session_id),
+        )
+        conn.commit()
+        return int(cur.lastrowid) if cur.rowcount == 1 and cur.lastrowid else 0
+    finally:
+        conn.close()
+
+
 def load_history(assistant: str, session_id: str = "default", include_meta: bool = False) -> list[dict]:
     """โหลดประวัติแชทของ session นั้นจาก DB"""
     conn = _get_conn()
@@ -231,10 +253,11 @@ def search_messages(query: str, assistant: str = "", limit: int = 20) -> list[di
     return results
 
 
-def pop_replies_after_last_user(assistant: str, session_id: str) -> str:
-    """เตรียม regenerate: ลบเฉพาะคำตอบที่ตามหลัง user message ล่าสุด แล้วคืน prompt นั้น
+def pop_replies_after_last_user(assistant: str, session_id: str) -> tuple[str, int]:
+    """เตรียม regenerate: ลบเฉพาะคำตอบที่ตามหลัง user message ล่าสุด แล้วคืน (prompt, id ของแถว user นั้น)
 
-    คืน "" ถ้า session ไม่มี user message เลย (ไม่ลบอะไร)
+    คืน ("", 0) ถ้า session ไม่มี user message เลย (ไม่ลบอะไร) · id ใช้เป็น anchor ของ `save_reply`
+    (ต้องมาจาก query เดียวกัน — ดึงแยกทีหลังมีช่องให้ truncate แทรกแล้วได้ id ของ user ตัวก่อนหน้า)
     ⚠️ เดิม `delete_last_assistant_message` ลบ assistant *ล่าสุดของ session* โดยไม่ดูว่ามัน
     อยู่หลัง user ล่าสุดไหม → turn สุดท้ายที่เป็น orphan (U1,A1,U2 — client ตัดสายกลาง stream)
     กด regenerate = ลบ **A1** ทิ้ง (audit 2026-09-24 MEDIUM · เทส test_regenerate_history_integrity)
@@ -248,7 +271,7 @@ def pop_replies_after_last_user(assistant: str, session_id: str) -> str:
             (assistant, session_id),
         ).fetchone()
         if not row:
-            return ""
+            return "", 0
         last_user_id, prompt = row
         doomed = [
             r[0] for r in conn.execute(
@@ -261,7 +284,7 @@ def pop_replies_after_last_user(assistant: str, session_id: str) -> str:
             marks = ",".join("?" * len(doomed))
             conn.execute(f"DELETE FROM messages WHERE id IN ({marks})", doomed)
             conn.commit()
-        return prompt
+        return prompt, last_user_id
     finally:
         conn.close()
 

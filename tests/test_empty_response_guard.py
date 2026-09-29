@@ -58,16 +58,17 @@ class TestEmptyResponseGuard:
 
     def test_empty_stream_never_saves_blank_assistant_message(self):
         """ข้อความ assistant ที่บันทึกลง DB ต้องไม่ว่างเปล่า"""
+        # คำตอบ assistant บันทึกผ่าน save_reply (anchor = แถว user · ตรวจทาน 09-29) — args[1] = content
         with patch("routers.chat.stream_response") as mock_stream, \
-             patch("routers.chat.save_message", return_value=1) as mock_save:
+             patch("routers.chat.save_message", return_value=1), \
+             patch("routers.chat.save_reply", return_value=2) as mock_reply:
             mock_stream.return_value = iter([])
 
             resp = client.post("/api/chat", json=_BODY)
             _ = resp.text  # drain → generator ทำงานจริง
 
-            asst_saves = [c for c in mock_save.call_args_list if c.args[1] == "assistant"]
-            assert asst_saves, "ต้องมีการ save assistant message"
-            assert asst_saves[0].args[2].strip() != ""
+            assert mock_reply.call_args_list, "ต้องมีการ save assistant message"
+            assert mock_reply.call_args_list[0].args[1].strip() != ""
 
     def test_whitespace_only_stream_treated_as_empty(self):
         """stream ที่มีแต่ whitespace = ว่างเปล่าเช่นกัน"""
@@ -82,8 +83,11 @@ class TestEmptyResponseGuard:
     def test_empty_guard_notice_never_enters_memory(self):
         """notice ห้ามเข้า remember()/teach() — กัน episodic contamination
         (recall ดึงกลับมาแล้วโมเดลเลียนแบบ notice เป็นคำตอบ)"""
+        # save_reply ต้อง mock ด้วย — ไม่งั้น id ปลอมไม่มีแถว user จริง → save_reply คืน 0 → จบก่อนถึง gate
+        # แล้ว assert_not_called ผ่านแบบไม่ได้ทดสอบอะไร (พิสูจน์ด้วย mutation · ตรวจทาน 09-29)
         with patch("routers.chat.stream_response") as mock_stream, \
              patch("routers.chat.save_message", return_value=1), \
+             patch("routers.chat.save_reply", return_value=2), \
              patch("routers.chat.remember") as mock_remember, \
              patch("routers.chat.teach") as mock_teach:
             mock_stream.return_value = iter([])

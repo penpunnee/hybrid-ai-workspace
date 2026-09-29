@@ -16,7 +16,7 @@ from utils.rag import inject_context_to_system, format_skill_files
 from utils.skills_select import select_skills
 from utils.skills_shadow import should_shadow_log as _shadow_should_log
 from utils.history import (
-    save_message, load_history, pop_replies_after_last_user, has_reply_after, message_exists,
+    save_message, save_reply, load_history, pop_replies_after_last_user, has_reply_after, message_exists,
 )
 from utils.memory import save_lesson, save_preference, get_lessons, get_preferences, search_memory
 from memory.operations import remember, recall, teach, push_working
@@ -173,12 +173,19 @@ async def _guard_disconnect(inner, on_cut, cancel=None):
 
 
 def persist_agent_turn(assistant: str, prompt: str, full_response: str, session_id: str,
-                        is_test_request: bool = False) -> int:
+                        is_test_request: bool = False, user_msg_id: int | None = None) -> int:
     """persist คำตอบ agent → save_message + push_working เสมอ, แต่ **gate** remember()
     (episodic) ด้วย should_auto_learn — คำตอบ agent มาจาก tool real-time เสมอ
     ดังนั้นงาน realtime/home-tool ไม่ควรตกผลึกลง episodic (กันปนเปื้อน volatile).
     is_test_request (P2-9): smoke test ผ่าน X-Test-Request ก็ข้าม remember เหมือนกัน"""
-    agent_msg_id = save_message(assistant, "assistant", full_response, "agent", session_id)
+    if user_msg_id is None:
+        agent_msg_id = save_message(assistant, "assistant", full_response, "agent", session_id)
+    else:
+        # แถว user ถูกลบ (แก้ข้อความ) ระหว่าง agent ทำงาน = ไม่บันทึก/ไม่เรียนรู้คำตอบของคำถามที่ถูกถอน
+        agent_msg_id = save_reply(assistant, full_response, "agent", session_id, user_msg_id)
+        if not agent_msg_id:
+            logger.info("[Chat/agent] user message ถูกลบระหว่างตอบ — ไม่บันทึก/ไม่ remember")
+            return 0
     push_working(session_id, "user", prompt)
     push_working(session_id, "assistant", full_response)
     if is_test_request:
@@ -445,7 +452,8 @@ async def chat(request: Request):
             # เป็นคำตอบที่ไม่สมบูรณ์ ไม่ควรถูกเรียนรู้เป็นตัวอย่าง
             text = (full_response + "\n\n" if full_response.strip() else "") + f"⚠️ การตอบหยุดกลางคัน: {err_text}"
             try:
-                mid = save_message(assistant, "assistant", text, provider_used or provider, session_id)
+                # save_reply: แถว user ถูกลบ (แก้ข้อความ) ไปแล้ว = ไม่ต่อฟองกำพร้า (คืน 0)
+                mid = save_reply(assistant, text, provider_used or provider, session_id, st["user_msg_id"])
                 st["assistant_saved"] = True
                 return mid
             except Exception as save_err:
@@ -501,7 +509,8 @@ async def chat(request: Request):
             agent_msg_id = 0
             try:
                 agent_msg_id = persist_agent_turn(assistant, prompt, full_response, session_id,
-                                                   is_test_request=is_test_request)
+                                                   is_test_request=is_test_request,
+                                                   user_msg_id=st["user_msg_id"])
                 st["assistant_saved"] = True
             except Exception as e:
                 logger.warning(f"[Chat/agent] persist failed: {e}")
@@ -695,8 +704,14 @@ async def chat(request: Request):
             yield f"data: {json.dumps({'chunk': notice}, ensure_ascii=False)}\n\n"
             full_response = notice
 
-        message_id = save_message(assistant, "assistant", full_response, provider_used, session_id)
+        # save_reply = บันทึกเฉพาะเมื่อแถว user ยังอยู่ (อะตอม) — ผู้ใช้แก้ข้อความระหว่างรอ LLM (2 แท็บ · bundle เก่า ·
+        # Stop ตรงจังหวะตอบครบ) ⇒ ไม่บันทึก ไม่เรียนรู้ แค่ปิด stream (ตรวจทาน 09-29 [ต่อ 31])
+        message_id = save_reply(assistant, full_response, provider_used, session_id, st["user_msg_id"])
         st["assistant_saved"] = True
+        if not message_id:
+            logger.info("[Chat] user message ถูกลบ (แก้ข้อความ) ระหว่างตอบ — ไม่บันทึก/ไม่เรียนรู้คำตอบนี้")
+            yield f"data: {json.dumps({'done': True, 'model': model_used, 'provider': provider_used, 'request_id': current_request_id()}, ensure_ascii=False)}\n\n"
+            return
 
         # ── Shadow logging ของ skills injection (backlog ข้อ 21) ────────────────
         # บันทึกว่าแต่ละ scorer *จะ* เลือกไฟล์ไหน โดยไม่แตะสิ่งที่ฉีดไปแล้วข้างบน
@@ -871,7 +886,7 @@ async def regenerate_response(request: Request):
     _REGEN_INFLIGHT.add(rkey)
 
     # ลบเฉพาะคำตอบที่ตามหลัง user ล่าสุด (turn orphan = ไม่ลบอะไร · A1 ของ turn ก่อนหน้ารอด)
-    last_prompt = await run_in_threadpool(pop_replies_after_last_user, assistant, session_id)
+    last_prompt, last_user_id = await run_in_threadpool(pop_replies_after_last_user, assistant, session_id)
     if not last_prompt:
         _REGEN_INFLIGHT.discard(rkey)
         async def _err():
@@ -900,7 +915,7 @@ async def regenerate_response(request: Request):
         # (แย่กว่า chat() ปกติ เพราะที่นี่ลบของเดิมทิ้งไปแล้วด้วย)
         text = (st["text"] + "\n\n" if st["text"].strip() else "") + f"⚠️ การตอบหยุดกลางคัน: {err_text}"
         try:
-            mid = save_message(assistant, "assistant", text, provider, session_id)
+            mid = save_reply(assistant, text, provider, session_id, last_user_id)   # anchor = แถว user ของ turn นี้
             st["saved"] = True
             return mid
         except Exception as save_err:
@@ -925,8 +940,11 @@ async def regenerate_response(request: Request):
                 return                      # stream ถูกตัดกลางคัน — on_cut บันทึก "หยุดกลางคัน" (ครบแล้ว = บันทึกปกติ)
             # ⚠️ ต้องส่ง message_id ใน done เหมือนเส้น /api/chat — FE ใช้ตั้ง dbId
             # ของข้อความ (เดิมทิ้งค่า return → ปุ่ม 👍/👎/📌 หายทุกครั้งหลัง regenerate)
-            mid = save_message(assistant, "assistant", st["text"], provider, session_id)
+            # save_reply: แถว user ถูกลบ (แก้ข้อความจากอีกแท็บ) ระหว่างตอบ = ไม่ต่อท้าย turn ก่อนหน้า (คืน 0)
+            mid = save_reply(assistant, st["text"], provider, session_id, last_user_id)
             st["saved"] = True
+            if not mid:
+                logger.info("[Regenerate] user message ถูกลบระหว่างตอบ — ไม่บันทึก")
             yield f"data: {json.dumps({'done': True, 'message_id': mid, 'usage': usage_sink or None})}\n\n"
         finally:
             _REGEN_INFLIGHT.discard(rkey)

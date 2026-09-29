@@ -97,14 +97,16 @@ class TestGeminiQuotaFallbackNotice:
     def test_saved_message_excludes_fallback_notice(self):
         """ข้อความที่ save ลง DB ต้องเป็นคำตอบจริงล้วนๆ ไม่มี banner ปน"""
         with patch("routers.chat.stream_response", side_effect=_quota_then_answer()), \
-             patch("routers.chat.save_message", return_value=1) as mock_save, \
+             patch("routers.chat.save_message", return_value=1), \
+             patch("routers.chat.save_reply", return_value=2) as mock_reply, \
              patch("reasoning.router.route",
                    return_value=MagicMock(provider="ollama", model="", reason="test")), \
              patch("reasoning.classifier.needs_internet", return_value=False):
             resp = client.post("/api/chat", json=_BODY)
             _ = resp.text
 
-            asst_saves = [c for c in mock_save.call_args_list if c.args[1] == "assistant"]
+            # คำตอบ assistant บันทึกผ่าน save_reply (ตรวจทาน 09-29) — args[1] = content
+            asst_saves = mock_reply.call_args_list
             assert asst_saves, "ต้องมีการ save assistant message"
-            assert asst_saves[0].args[2] == "สวัสดีครับ", \
-                f"ข้อความ save ต้องไม่มี banner ปน แต่ได้: {asst_saves[0].args[2]!r}"
+            assert asst_saves[0].args[1] == "สวัสดีครับ", \
+                f"ข้อความ save ต้องไม่มี banner ปน แต่ได้: {asst_saves[0].args[1]!r}"

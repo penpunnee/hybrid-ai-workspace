@@ -90,6 +90,7 @@ def _post_with_teach_result(monkeypatch, result: bool):
     monkeypatch.setattr(chatmod, "threading", SimpleNamespace(Thread=_Thread))
     with patch("routers.chat.stream_response") as ms, \
          patch("routers.chat.save_message", return_value=1), \
+         patch("routers.chat.save_reply", return_value=2), \
          patch("routers.chat.remember"), \
          patch("routers.chat.teach", return_value=result) as mt:
         ms.return_value = iter(["ก" * 150])

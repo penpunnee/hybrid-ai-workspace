@@ -42,6 +42,7 @@ def _post(monkeypatch, headers=None):
     monkeypatch.setattr(chatmod, "threading", SimpleNamespace(Thread=_RecordingThread))
     with patch("routers.chat.stream_response") as mock_stream, \
          patch("routers.chat.save_message", return_value=1), \
+         patch("routers.chat.save_reply", return_value=2), \
          patch("routers.chat.remember") as mock_remember, \
          patch("routers.chat.teach", return_value=False) as mock_teach:
         # return_value=False = รอบแรกไม่ได้บันทึก fact → เธรด _teach รอบหลังต้องถูก spawn
