@@ -1,5 +1,26 @@
 ---
 
+## [2026-09-29 ต่อ 32] บันทึกคำตอบเฉพาะเมื่อแถว user ของ turn ยังอยู่ — `save_reply` อะตอม (`72a1911`) ✅ deployed + verify prod + CI เขียว
+
+**ที่มา:** ความเสี่ยงที่เหลือจาก [ต่อ 31] — FE ห้ามแก้ระหว่าง stream แล้ว แต่ backend ยังบันทึกคำตอบของ stream ที่แถว user
+ถูก truncate ไปแล้วได้ (2 แท็บ · bundle เก่า · Stop ตรงจังหวะตอบครบ) ⇒ คำตอบต่อท้าย turn ใหม่ + remember จากคำถามที่ถูกถอน
+**scrutinize:** "เช็ค `message_exists` แล้วค่อย save" มีช่อง TOCTOU → ใช้ `INSERT … SELECT … WHERE EXISTS (แถว user ของ session นี้)`
+คำสั่งเดียว (อะตอม) · anchor ต้องเป็น role=user + assistant/session เดียวกัน
+**แก้ครบทุกเส้นที่มีช่วงรอ LLM:** หลัก (ไม่บันทึก → ไม่ push_working/remember/teach/learn/shadow · ส่ง `done` ไม่มี id ปิด stream)
+· agent (`persist_agent_turn(user_msg_id=)` · ไม่ส่ง = บันทึกแบบเดิม ให้ผู้เรียกเก่า/เทสตรง) · `_save_crash` · regenerate ปกติ+error
+(`pop_replies_after_last_user` คืน `(prompt, id)` จาก query เดียวกัน — query แยกทีหลังมีช่องให้ได้ id ของ user ตัวก่อน)
+short-circuit (image_gen/cache/clarify) บันทึกต่อจาก user ทันที ไม่มีช่วงรอ → ไม่แตะ
+**เทส:** `test_reply_requires_user_row.py` (9) · mutation **9/9** (รอบแรก `regen-crash` รอด → เพิ่มเทส) · ชุดเต็ม pytest **2472** · node 35 · ruff
+🔴 **เทสเก่า 5 ไฟล์ mock `save_message` ด้วย id ปลอม (ไม่มีแถวจริง)** → `save_reply` หา anchor ไม่เจอ → จบก่อน · 3 ตัวแดง (แก้โดยให้
+ตรวจที่ `save_reply` แทน ความแรงเท่าเดิม) · **`test_empty_response_guard::…never_enters_memory` ผ่านแบบ vacuous** — พิสูจน์: ให้บรรทัด
+ก่อน gate โยน error แล้วยังผ่าน → เพิ่ม mock แล้ววิ่งถึงจริง (แดงเมื่อโยน) · ⚪ gate empty-guard เองเป็นชั้นซ้ำ (`should_remember`
+ปฏิเสธ notice เป็น `error_response` อยู่แล้ว · mutant รอดบนโค้ดก่อนแก้ด้วย) — ไม่เกี่ยวกับงานนี้
+**verify prod (ในคอนเทนเนอร์ · `X-Test-Request`):** ปกติ → คู่ 2468/2469 บันทึกครบ · truncate ทันทีที่ได้ `user_message_id` →
+โมเดลตอบต่อ 14 chunk ได้ `done` ไม่มี id · **DB ว่าง** · log `user message ถูกลบ (แก้ข้อความ) ระหว่างตอบ` · เก็บกวาดแล้ว
+🔧 กติกา: **mock `save_message` ด้วย id ปลอมใน /api/chat ต้อง mock `save_reply` คู่กันเสมอ** ไม่งั้นเทสจบก่อนถึงจุดที่ตั้งใจวัด
+
+---
+
 ## [2026-09-29 ต่อ 31] ตรวจทานงาน dbId/sessions/error ทั้งเซสชัน — เจอ regression 1 ข้อ แก้แล้ว (appscript.ui `bace965` · ui `0a770c1`) ✅ verify Chrome prod
 
 **หลักฐานต้นทาง (ดึงจาก rfc-editor/docs.python.org ตรง):**
