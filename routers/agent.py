@@ -1,30 +1,15 @@
-"""Agent endpoint — multi-step tool use ด้วย SSE events
+"""Agent tools listing
 
-POST /api/agent
-  Body: {"assistant", "session_id", "prompt"}
-  Returns: SSE stream
-    data: {"type": "thinking", "step": 1}
-    data: {"type": "tool_call", "name": "weather", "args": {...}, "id": "..."}
-    data: {"type": "tool_result", "name": "weather", "preview": "...", "length": N}
-    data: {"type": "answering"}
-    data: {"type": "chunk", "text": "..."}
-    data: {"type": "done"}
+GET /api/agent/tools — รายชื่อ tools ที่ agent ใช้ได้
+
+⚠️ `POST /api/agent` ถูกถอดแล้ว (2026-09-29 · user เคาะ) — ใช้ `POST /api/chat` + `{"tool_agent": true}` แทน
+ค้นก่อนถอด: ผู้เรียกในโค้ด 0 · access log prod 06-30→09-29 มี 13 ครั้งเป็น probe/verify ของเราเองทั้งหมด ·
+เส้นนั้นไม่มี `_guard_disconnect`/cancel/`save_reply` (Stop หรือ exception ก่อน chunk = แถว user ค้างเดี่ยว)
+ขณะที่ `/api/chat` tool_agent มีครบ ⇒ ไม่ดูแลโค้ดซ้ำสองชุด (บทเรียน websearch 2 pipeline)
 """
-import json
-import logging
-
-from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse
-from starlette.concurrency import run_in_threadpool
-
-from agents.orchestrator import run_agent
-from agents.tools import list_tools
-from assistants.config import ASSISTANTS
-from utils.history import save_message, load_history
-from utils.http_limits import json_body_capped, MAX_BODY_BYTES
+from fastapi import APIRouter
 
 router = APIRouter(prefix="/api", tags=["agent"])
-logger = logging.getLogger(__name__)
 
 
 @router.get("/agent/tools")
@@ -42,72 +27,3 @@ def list_available_tools():
             for name, spec in TOOL_REGISTRY.items()
         ],
     }
-
-
-# เพดานรอบ tool-call ต่อคำขอ — เดิม `int(data["max_steps"])` ดิบ: `"abc"` = 500 · `500` = LLM 500 รอบ
-# (audit 2026-09-24 MEDIUM ข้อ 5) · default 4 เท่า run_agent()
-MAX_STEPS_CAP = 10
-_MAX_STEPS_DEFAULT = 4
-
-
-def _parse_max_steps(raw) -> int:
-    """ขยะ/ไม่ส่ง → default · แล้ว clamp เข้า [1, MAX_STEPS_CAP] (bool ก็ถือเป็นขยะ)"""
-    if raw is None or isinstance(raw, bool):
-        return _MAX_STEPS_DEFAULT
-    try:
-        n = int(raw)
-    except (TypeError, ValueError):
-        return _MAX_STEPS_DEFAULT
-    return max(1, min(MAX_STEPS_CAP, n))
-
-
-@router.post("/agent")
-async def agent_chat(request: Request):
-    data = await json_body_capped(request, MAX_BODY_BYTES)
-    assistant = data.get("assistant", list(ASSISTANTS.keys())[0])
-    session_id = data.get("session_id", "default")
-    prompt = data.get("prompt", "")
-    max_steps = _parse_max_steps(data.get("max_steps"))
-    provider = data.get("provider", "gemini")  # default Gemini (พร้อมใช้ทันที)
-
-    config = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])
-    base_prompt = config["system_prompt"]
-
-    # sqlite เร็วกว่าตัวอื่นมาก แต่ยังเป็น IO บน event loop — ย้ายให้เหมือนกันทั้งเส้น
-    # (ตัว generator `sse()` เป็น sync generator อยู่แล้ว starlette ห่อ iterate_in_threadpool ให้)
-    history = await run_in_threadpool(load_history, assistant, session_id)
-    await run_in_threadpool(save_message, assistant, "user", prompt, "agent", session_id)
-
-    messages = [{"role": "system", "content": base_prompt}]
-    messages += [{"role": m["role"], "content": m["content"]} for m in history]
-    messages.append({"role": "user", "content": prompt})
-
-    def sse():
-        full = ""
-        try:
-            for kind, payload in run_agent(messages, max_steps=max_steps, provider=provider):
-                if kind == "event":
-                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-                elif kind == "chunk":
-                    full += payload
-                    yield f"data: {json.dumps({'type': 'chunk', 'text': payload}, ensure_ascii=False)}\n\n"
-        except Exception as e:
-            logger.exception("[Agent] sse failed")
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
-        if full:
-            try:
-                save_message(assistant, "assistant", full, "agent", session_id)
-            except Exception as e:
-                logger.warning(f"[Agent] save failed: {e}")
-        yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
-
-    return StreamingResponse(
-        sse(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "X-Agent-Tools": ",".join(list_tools()),
-            "Access-Control-Expose-Headers": "X-Agent-Tools",
-        },
-    )

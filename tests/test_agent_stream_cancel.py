@@ -239,7 +239,7 @@ def test_step_เกินเพดานเวลารวม_หยุดแ�
 
 
 def test_ไม่ส่ง_cancel_ทำงานได้เหมือนเดิม(lms, tools_ran):
-    """/api/agent และผู้เรียกเก่าไม่ส่ง cancel"""
+    """ผู้เรียกที่ไม่ส่ง cancel (run_agent รับ cancel=None ได้ — `/api/agent` ถูกถอดแล้ว 2026-09-29)"""
     lms(_Client([_ch(tool_calls=[_tc(0, id="c1", name="calculator", args='{"expression": "3"}')]), _ch(finish="tool_calls")],
                 [_ch("สาม"), _ch(finish="stop")]))
     out = list(orch.run_agent([{"role": "user", "content": "q"}], provider="lmstudio"))

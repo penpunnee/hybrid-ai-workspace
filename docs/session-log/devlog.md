@@ -1,5 +1,21 @@
 ---
 
+## [2026-09-29 ต่อ 33] skills sync ตอนบูต — embed เฉพาะตัวที่เปลี่ยน + upsert ชุดเดียว + `embed_model` (`8681951`) ✅ deployed + verify prod 2 บูต + CI เขียว
+
+**ค้นก่อนลงมือ (รายงาน 5 สาย · user เคาะลำดับ 1→5):** บูตทุกครั้ง upsert ทีละตัว 22 ครั้ง (`skills_search.py:73`) · EF ของ chromadb
+ยิง Ollama ตรง (`utils/memory.py:121-123`) ไม่ผ่าน cache · sync 34–55 วิทั้ง 10 รอบ restart · agent step แรกช้า 19/14 วิเฉพาะ request
+ที่ตกช่วง sync (นอกช่วง 2–5 วิ) · log เห็น `/api/embed` ของ recall สลับคิวกับ `Upserted skill` = แย่งกันจริง
+· แหล่งอ้าง: chromadb 1.5.9 `Collection.py:136` (get default include metadatas+documents) · `ollama_embedding_function.py:66`
+(`embed(input=list)`) · https://docs.ollama.com/api/embed ("Text or array of texts") · metadata บน prod วัดแล้วไม่มีฟิลด์โมเดล
+**แก้:** ข้ามตัวที่ document+metadata ตรง · ตัวที่เปลี่ยน upsert ครั้งเดียว (batch ล้ม → ถอยทีละตัว) · metadata `embed_model`
+(EMBEDDING_MODEL หรือ "default") ทั้ง sync และ `add_skill` · logic เป็นฟังก์ชันระดับโมดูล (เทสเดิมผูกเมธอดจริงเข้า MagicMock ทีละตัว)
+**เทส:** `test_skills_sync_incremental.py` (9) · mutation 7/7 (ตัว "ไม่มีอะไรเปลี่ยน" ผ่านแบบ vacuous ตอนแดง — mutant `always-upsert` จับได้หลังแก้)
+· ชุดเต็ม 2481
+**verify prod:** บูตแรก `ไม่เปลี่ยน 0 · upsert 22/22` **6 วิ** (ของเก่าไม่มี embed_model) · restart อีกรอบ `ไม่เปลี่ยน 22 · upsert 0/0` **0 วิ**
+(ready 05:08:36 = synced 05:08:36) · collection 22 ตัวมี `embed_model=paraphrase-multilingual` ครบ
+
+---
+
 ## [2026-09-29 ต่อ 32] บันทึกคำตอบเฉพาะเมื่อแถว user ของ turn ยังอยู่ — `save_reply` อะตอม (`72a1911`) ✅ deployed + verify prod + CI เขียว
 
 **ที่มา:** ความเสี่ยงที่เหลือจาก [ต่อ 31] — FE ห้ามแก้ระหว่าง stream แล้ว แต่ backend ยังบันทึกคำตอบของ stream ที่แถว user

@@ -14,9 +14,8 @@
 ## 💬 Chat
 | Method | Path | Function |
 |---|---|---|
-| POST | `/api/chat` | Streaming SSE chat (rich events: chunk, citations, reflection, cache_hit) |
+| POST | `/api/chat` | Streaming SSE chat (rich events: chunk, citations, reflection, cache_hit) · multi-step tool agent: ส่ง `"tool_agent": true` (`POST /api/agent` ถูกถอดแล้ว 2026-09-29) |
 | POST | `/api/regenerate` | Re-stream last AI response |
-| POST | `/api/agent` | Multi-step tool-use agent |
 | GET | `/api/agent/tools` | List registered tools |
 | WS | `/ws/voice/{assistant_slug}` | Voice chat via Gemini Live |
 

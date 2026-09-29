@@ -27,7 +27,6 @@ def _over_cap_json() -> bytes:
 
 # (method, path, body เล็กที่ใช้เป็นกลุ่มควบคุม)
 ROUTES = [
-    ("POST",  "/api/agent",            {"prompt": "hi"}),
     ("POST",  "/api/auth/login",       {"password": "x"}),
     ("POST",  "/api/chat",             {"prompt": "hi"}),
     ("POST",  "/api/regenerate",       {"assistant": "x"}),
