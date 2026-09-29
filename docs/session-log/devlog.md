@@ -1,5 +1,27 @@
 ---
 
+## [2026-09-30 ปิดเซสชัน] สรุปเซสชัน 09-30 (ต่อ 40–43) — กุญแจกำพร้า · ดิสก์ NAS · Dream REM · insight จอขาว · ErrorBoundary
+
+| งาน | ผลบน prod | commit | devlog |
+|---|---|---|---|
+| เช็คกุญแจกำพร้าหลัง Dream prune จริง (pruned=1) | กำพร้า **0** · memory_kwan 47/44 | — (อ่านอย่างเดียว) | [ต่อ 40] |
+| ดิสก์ NAS busy เป็นรอบ = healthcheck exec (~2.3 MB/ครั้ง) · autoheal ของ `docker-events-trap` 5 วิ → 5m (นอกรีโป) | exec 59→21 · md2 154→66 MB · busy 19→8% /3 นาที | pihole-nas-backup `185ee2f` | [ต่อ 40] |
+| Dream REM 0 ธีม = AI ตัดสินใจเอง · log คำตอบดิบ + SKIP เกม | log `0 themes, raw=` ครบ · เกมไม่หลุด | `8eacaed` | [ต่อ 41] |
+| insight เป็น object → หน้าต่างรายงาน Dream จอขาวทั้งแอป · แก้ 2 ชั้น | Chrome: ข้อมูลผิดรูป 4 แบบแสดงเป็นข้อความ | `a54e8a4` · a.ui `0553ba1` | [ต่อ 42] |
+| `AppErrorBoundary` ครอบทั้งแอป | Chrome: `TypeError` จริง → หน้าแจ้ง + โหลดใหม่กลับปกติ | a.ui `8f9f0c1` · static `29ed3fa` | [ต่อ 43] |
+pytest 2535 → **2550** · vitest 616 → **633** · CI เขียวทุก commit · appscript.ui push NAS ครบ (`8f9f0c1`)
+
+**บทเรียนหลักของเซสชัน**
+- user สั่งซ้ำ 3 ครั้ง "ส่วนไหนไม่ชัวร์ หาข้อมูลก่อน" / "ชัวร์ยัง" — ทุกครั้งเจอของจริงที่เปลี่ยนแผน: temperature ไม่ช่วย (Gemini 3 docs) ·
+  ข้อเสนอเดิม "ถอด autoheal คง healthcheck 5m" ผิด (healthcheck ไม่มีคนอ่าน) · ต้องพิสูจน์ React **production build** แยก (error ไม่ถึง window)
+- ข้อมูลเข้าเดียวกันส่ง LLM ซ้ำหลายรอบก่อนสรุป (REM 1/4 vs 0/3) — รอบเดียวหลอกได้
+- verify บน prod ด้วยการดัก `fetch` ในหน้า (ตอบแทน ไม่ถึง backend) ใช้ซ้ำได้ดี · แผนจำลองแรกล้ม (สลับเซสชันไม่ลบทีละ node) → บอกตรงๆ แล้วเปลี่ยนวิธี
+- เขียน devlog อ้างที่มาต้องเช็คโค้ดก่อน (อ้าง `round(...)` ผิด — แก้ก่อน commit)
+
+**ค้าง:** ⚪ Agent แนะนำ "เปิด Agent Mode" ทั้งที่อยู่ใน agent · เอกสาร `:8000`→`:8080` + ชื่อ Gemini เก่า · ⏳ รอ user เคาะคิวเดิม + healthcheck 30s ที่เหลือ
+
+---
+
 ## [2026-09-30 ต่อ 43] `AppErrorBoundary` ครอบทั้งแอป — error ตอน render/commit = หน้าแจ้ง + ปุ่มโหลดใหม่ แทนจอขาว (a.ui `8f9f0c1` · static `29ed3fa`) ✅ prod
 
 **ค้นก่อนทำ (user สั่ง "ตรวจวัดผล และค้นข้อมูลเพิ่มเติม" + "ชัวร์ยัง"):**

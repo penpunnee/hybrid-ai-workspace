@@ -701,7 +701,7 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ⚠️ **fine-tune ≠ memorization** — use RAG/memory for "remembering" things; fine-tune is for style/format/behavior that prompting can't fix. Try Modelfile persona → skills/RAG first; fine-tune is the last resort. Currently gated on accumulating ~200-500 👍 (`GET /api/feedback/stats`).
 
-## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-09-29 · **ที่เดียว**)
+## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-09-30 · **ที่เดียว**)
 
 > บล็อก ▶️ ทั้งหมดจนถึง 09-28 (ก้อน 1–11 · config ก้อน 1–4 · reader/voice 08-17→09-22 · ไมค์ 08-24/26)
 > ถูกยก**ทั้งดุ้นไม่แก้**ไปไว้ที่ devlog **[2026-09-28 ต่อ 24]** — ที่นี่เหลือแค่งานเปิด + กติกาที่ยังมีผล
@@ -720,19 +720,20 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า
-_(ว่าง — 2 งานค้างจาก 09-29 ปิดแล้ว 09-30 · devlog [ต่อ 40])_ เลือกจาก 📋 งานเปิดอื่น / ⏳ รอ user เคาะ
+ไม่มีงานเร่ง — เลือกจาก 📋 งานเปิดอื่น (แนะนำ: ⚪ Agent แนะนำ "เปิด Agent Mode" ทั้งที่อยู่ใน agent · แก้เอกสาร `:8000`/ชื่อ Gemini)
+หรือ ⏳ รอ user เคาะ · ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
-### ✅ ปิดแล้ว 09-30 (devlog [ต่อ 40])
-กุญแจกำพร้าหลัง Dream prune จริง (pruned=1) = **0** · ดิสก์ NAS busy เป็นรอบ = healthcheck exec (~2.3 MB/ครั้ง) ไม่ใช่แอป →
-autoheal ของ `docker-events-trap` 5 วิ → 5m (exec 59→21/3 นาที · busy 19→8%) · `ai-backend-1` healthcheck 30s ยังคงเดิม
-Dream REM 0 ธีม = AI ตัดสินใจเอง (ความรู้ทั่วไปถูกข้ามตามดีไซน์ · user เคาะไม่จำ) → log คำตอบดิบตอน 0 ธีม + SKIP เกม `8eacaed` [ต่อ 41]
-insight ของ Dream เป็น object = หน้าต่างรายงานจอขาวทั้งแอป → backend `_normalize_insights` `a54e8a4` + frontend `dreamText` a.ui `0553ba1` [ต่อ 42]
-`AppErrorBoundary` ครอบทั้งแอป (`utils/errorboundary.tsx` · `main.tsx`) — error ตอน render/commit = หน้าแจ้ง + 🔄 โหลดใหม่ แทนจอขาว a.ui `8f9f0c1` [ต่อ 43]
+### ✅ ปิดแล้ว (สรุป: devlog [2026-09-30 ปิดเซสชัน] · [2026-09-29 ปิดเซสชัน 2])
+**09-30:** กุญแจกำพร้าหลัง Dream = 0 · ดิสก์ NAS busy = healthcheck exec (autoheal 5s→5m นอกรีโป) · REM 0 ธีม = AI ตัดสินใจเอง (log raw + SKIP เกม) ·
+insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBoundary` ครอบทั้งแอป
+**09-29:** dbId · DELETE sessions · save_reply อะตอม · skills sync 0 วิ · โหมดเสียงบันทึก memory · fsync NAS/WAL · delete_keys · SSD cache **พักไว้**
 
-### ✅ ปิดแล้วเซสชัน 09-29 (สรุป: devlog [2026-09-29 ปิดเซสชัน 2] · รายละเอียด [ต่อ 28–39])
-dbId ฟองที่เพิ่งส่ง · DELETE sessions บอกผล · เส้น error มี message_id · save_reply อะตอม · skills sync 0 วิ · ถอด POST /api/agent ·
-**โหมดเสียงบันทึก memory** (ถอด searched) · 5A noembed+unreadable · 5B looptiming · **fsync NAS: bgwriter + WAL+NORMAL** · delete_keys
-· SSD cache **พักไว้** (user: หาทางฟรีก่อน) · appscript.ui push NAS ครบ
+### 🔑 กติกาใหม่จากเซสชัน 09-30
+- Dream/REM: **ไม่เก็บความรู้ทั่วไปที่หาจากเน็ตได้ + เนื้อหาเกม** (user เคาะ) · ข้อมูลส่วนตัวให้ user สั่ง "จำไว้ว่า" → `user_facts` ·
+  อย่าลด temperature ของ Gemini 3 (docs แนะนำ 1.0 · วัดแล้ว 0.0 ยังแกว่ง) · insight ต้องผ่าน `_normalize_insights`
+- ค่าจาก API ที่ render ใน React ต้องเป็น string/number — object เป็น child = จอขาว (ตอนนี้เหลือหน้าแจ้งของ `AppErrorBoundary`) · ใช้ `dreamText` แบบเดียวกันเมื่อเจอ
+- verify frontend บน prod: ดัก `window.fetch` ในหน้า**ตอบแทนทั้งหมด** (ห้าม pass-through เส้นที่มีผลข้างเคียง เช่น `/api/dream`) · อย่าใช้ "เริ่มแชทใหม่" (สร้างเซสชันจริง)
+- NAS: healthcheck ทุกครั้ง = `docker exec` เขียนดิสก์ ~2.3 MB (RAID5) · วัดด้วย `/proc/diskstats` md2 + `docker events --filter event=exec_start`
 
 ### 🔑 กติกาใหม่จากเซสชัน 09-29 (ที่มาใน devlog)
 - 🔴 **`chat_history.db` เป็น WAL** (`DB_PATH=/app/data/chat_history.db` · mount โฟลเดอร์) — **ห้าม cp ไฟล์ DB เดี่ยวๆ** (ใช้ `sqlite3 .backup`/backup API)
