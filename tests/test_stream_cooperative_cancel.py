@@ -53,9 +53,31 @@ class _SSEServer:
                 return
             threading.Thread(target=self._one, args=(c,), daemon=True).start()
 
+    @staticmethod
+    def _read_request(c):
+        """อ่าน request ให้ครบ (header + body ตาม content-length) — ปิด socket ทั้งที่ body ค้างอ่าน
+        = kernel ส่ง RST → client ECONNRESET ตอนอ่านท้าย stream (เทส harness ท้ายไฟล์)"""
+        buf = b""
+        while b"\r\n\r\n" not in buf:
+            d = c.recv(65536)
+            if not d:
+                return
+            buf += d
+        head, _, rest = buf.partition(b"\r\n\r\n")
+        length = 0
+        for line in head.split(b"\r\n")[1:]:
+            k, _, v = line.partition(b":")
+            if k.strip().lower() == b"content-length":
+                length = int(v.strip())
+        while len(rest) < length:
+            d = c.recv(65536)
+            if not d:
+                return
+            rest += d
+
     def _one(self, c):
         try:
-            c.recv(65536)
+            self._read_request(c)
             c.sendall(b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n")
             c.sendall(_chunk({"content": "ท่อน0 "}))
             t0 = time.time()
@@ -292,3 +314,32 @@ def test_provider_ที่หยุดเพราะธง_ต้องบอ�
     assert tok.aborted is False, "ตั้งธงเฉยๆ ≠ stream ถูกตัด — ต้องให้ provider เป็นคนบอก"
     assert llm._stop_if_cancelled(tok) is True and tok.aborted is True
     assert llm._stop_if_cancelled(None) is False
+
+
+# ── harness เอง: ต้องอ่าน request ให้ครบก่อนปิด socket (CI แดงเป็นพักๆ 09-29) ────────────────
+# `_one` เดิม `recv(65536)` ครั้งเดียว — httpx ส่ง header กับ body แยกก้อน ถ้า body (agent = 19.7 KB · 23 tools)
+# ยังไม่มาทันตอน recv แรก แล้ว server ปิด socket ทั้งที่มีข้อมูลค้างอ่าน kernel ส่ง RST แทน FIN
+# → client ได้ ECONNRESET ตอนอ่านท้าย stream (`test_router_agent_กลุ่มควบคุม...` แดงบน CI `1e8d25a`)
+# ทำซ้ำได้ 3/3 ทั้ง Linux (container) และ macOS · อ่านครบก่อนปิด = 0/3
+def test_harness_อ่าน_request_ครบก่อนปิด_ไม่_reset_แม้_body_มาทีหลัง():
+    s = _SSEServer("finish")
+    body = b'{"x":"' + b"y" * 19000 + b'"}'
+    head = (b"POST /v1/chat/completions HTTP/1.1\r\nhost: t\r\ncontent-type: application/json\r\n"
+            b"content-length: %d\r\n\r\n" % len(body))
+    cl = socket.create_connection(("127.0.0.1", s.port))
+    try:
+        cl.sendall(head)
+        time.sleep(0.05)                          # server ได้แค่ header ใน recv แรกแน่ๆ
+        cl.sendall(body)
+        got = b""
+        while True:
+            time.sleep(0.03)                      # client อ่านช้ากว่า server ส่ง (เหมือนประมวลผล SSE)
+            d = cl.recv(64)
+            if not d:
+                break
+            got += d
+    except ConnectionResetError as e:
+        pytest.fail(f"server ปลอมปิด socket ทั้งที่ body ค้างอ่าน → RST ({e}) · อ่านได้ {len(got)} ไบต์")
+    finally:
+        cl.close()
+    assert b"[DONE]" in got
