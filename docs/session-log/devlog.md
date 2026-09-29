@@ -1,5 +1,32 @@
 ---
 
+## [2026-09-29 ต่อ 35] โหมดเสียงบันทึกลง memory (`c9531b6`) + log ผล tool (`057dcd2`) + probe tool ล้ม ✅ deployed + sha เสียงตรง + CI เขียว · 🧪 รอ user คุยเสียงทดสอบ
+
+**ขั้น 3 สืบ (ไม่แก้โค้ด):** mapping ถูก — "🧡 ขวัญ (Logic)" → `resolve_slug` = `kwan` ทั้งฝั่งเขียน (`memory/store.py`) และอ่าน
+(`utils/memory._get_collection`) · `memory_logic` = กำพร้าจาก `_safe_slug` แบบเก่า · `should_remember` กรองแค่ 2 ครั้งใน 6 สัปดาห์
+· 🔑 **ต้นเหตุ: user turn 254 ตั้งแต่ 08-18 เป็นเสียง (`gemini_live`) 224 = 88%** และ `/ws/voice` ไม่เคยเรียก `remember()`
+(`git log -S` ใน server.py = 0 · ไม่มีบันทึกว่าตั้งใจ) ⇒ memory +11 ใน 6 สัปดาห์ · Dream ไม่มีข้อมูล
+**ส่วน A (user เคาะ):** `memory/voice_memory.py` — decision pure (should_remember + ข้าม interrupted/searched · ไม่กรองข้อความสั้น)
++ `remember` ใน daemon thread (embed 0.56–6.73 วิ ห้าม await ในลูปเสียง) · log แค่ผล/เหตุผล · `server.py` +8 บรรทัด
+(ธง `turn_interrupted` · เรียกก่อนรีเซ็ต `search_count`/ล้างบัฟเฟอร์) · `/ws/reader` ไม่มีการบันทึกข้อความเลยโดยโครงสร้าง + เทส ast
+· วัด prod: คู่ 218 → ผ่าน 185 (realtime 26 · negative 6 · home_tool 1) · เทส 14 · mutation 11/11 (รอบแรก `interrupted-const`
+รอดเพราะเทสเช็คแค่ชื่อในซอร์ส → เช็คค่า keyword ด้วย ast)
+**พิสูจน์ค่าเสียง:** วิธีวัด baseline 09-23 = `sha256(repr(cfg))[:16]` (ลองหลายรูปแบบจนตรง) · ก่อน=หลัง: live `dbff1a358e00ef03`/1647 ·
+reader `8c5dbf9603eb3630`/1386 · sysprompt `8bddd1cae4be22b1`/3393 · deploy `--force-recreate` สำเร็จ · inode host=container 274318
+· ค่าอ้างอิงก่อนทดสอบ: `memory_kwan` = 30 (ล่าสุด 09-18 13:13) · 🧪 **รอ user คุยเสียง 1–2 turn แล้วเช็ค `[Voice/memory]` + count**
+**B1:** `[Agent/<provider>] tool <name> step=N len=N status=ok|error|warn|empty` — ไม่มีเนื้อหา · เทส 6 · mutation 4/4 ·
+เห็นทำงานจริงใน probe (`tool web_search step=1 len=48 status=error`)
+**B2 probe (ในคอนเทนเนอร์ · execute_tool คืน ❌ ทุกครั้ง · system prompt จริง · LOG_FILE แยก):**
+- **Gemini 8/8 บอกว่าดึงไม่ได้ · แต่ง 0** (ทอง/อากาศ/NAS/Bitcoin ×2) → หยุดที่ข้อข่าวเพราะ **429 ต่อนาที**
+  (`GenerateRequestsPerMinutePerProjectPerModel-FreeTier` = **15/นาที/โมเดล** ไม่ใช่รายวัน · ใช้ไป ~17 · ⚠️ นาทีนั้น prod อาจ 429 ด้วย)
+  → ข้าม Gemini ข้อที่เหลือ ไม่ยิงซ้ำ
+- **LM Studio qwen3.5-9b 10/10 บอกว่าดึงไม่ได้ · แต่ง 0** (5 ข้อ ×2 · 6–18 วิ/รอบ · บางรอบลอง tool ซ้ำ 2 ครั้ง)
+- **สรุป: ยังไม่ต้องมี guard "ไม่มีข้อมูลจริง" ใน `_run_agent_fc`** (18/18 ตอบตรง · `_NO_FABRICATION` ใน system prompt ทำงาน)
+  · เก็บสถิติจริงต่อจาก log B1 · ⚪ สังเกต: ทุกคำตอบแนะนำ "เปิด Agent Mode" ทั้งที่อยู่ใน agent อยู่แล้ว (ข้อความใน prompt) — ยังไม่แก้
+🔧 **เพดาน Gemini free = 15 req/นาที/โมเดล** — probe ที่ยิงรัว ต้องเว้น ≥4 วิ/request หรือแบ่งรอบ
+
+---
+
 ## [2026-09-29 ต่อ 34] ถอด `POST /api/agent` (เก็บ `GET /api/agent/tools`) (`02b1bd0`) ✅ deployed + verify prod + CI เขียว
 
 **ค้นก่อนลงมือ:** ผู้เรียกในโค้ด 0 (frontend/bundle/overlay/MCP/scripts) · access log prod 06-30→09-29 = 13 ครั้ง ตรงกับ probe/verify ของเรา

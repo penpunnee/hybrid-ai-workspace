@@ -735,7 +735,8 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 · ตรวจทาน [ต่อ 31]: ✏️ ต้องซ่อนระหว่าง stream (regression จาก dbId — แก้ `bace965`)
 
 ### 🔜 แผนที่ user เคาะ 09-29 (ทำตามลำดับ): ✅1 skills sync (ต่อ 33) · ✅2 ถอด POST /api/agent (ต่อ 34) ·
-3 สืบว่าทำไม memory ไม่เข้า (`remember()` map collection / `should_remember`) · 4 log ผล tool ใน `_run_agent_fc` + probe tool ล้ม ·
+✅3 สืบ memory → โหมดเสียงไม่เคย remember (88% ของบทสนทนา) → แก้แล้ว (ต่อ 35 · 🧪 **รอ user คุยเสียงแล้วเช็ค `[Voice/memory]` +
+`memory_kwan` > 30**) · ✅4 log ผล tool + probe tool ล้ม: Gemini 8/8 · qwen 10/10 ตอบตรง → ยังไม่ต้องมี guard (ต่อ 35) ·
 5 EF conflict → `get_collection` ดิบ + `skipped` · `log_timing` WS/`_books.text()` (วัดเท่านั้น 🔒 ห้ามแตะค่าเสียง)
 
 ### ✅ ปิดแล้ว 09-29 (ต่อ 32): คำตอบบันทึกเฉพาะเมื่อแถว user ยังอยู่ (`save_reply` อะตอม · `72a1911`)
@@ -751,8 +752,8 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 ### 📋 งานเปิดอื่น
 - **backend:** EF conflict ใน `utils/memory.get_collection` ทำ cleanup ข้าม collection เงียบๆ ·
   `server.py` WS อ่าน/เสียงยังมีงาน sync บน loop (🔒 ทำเมื่อ user สั่ง + วัดเสียงก่อน/หลัง)
-- **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 · REM log raw ตอน `themes=0` · guard "ไม่มีข้อมูลจริง"
-  ใน `_run_agent_fc`
+- **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 (รอ memory จากโหมดเสียงสะสม) · REM log raw ตอน `themes=0` ·
+  ⚪ คำตอบ agent แนะนำ "เปิด Agent Mode" ทั้งที่อยู่ใน agent แล้ว (ต่อ 35)
 
 ### ⏳ รอ user เคาะ
 (ข) response cache ข้าม session · คิวเล็กจาก 09-24 (**เช็คสถานะจริงก่อน**): ถอด `CHROMA_PATH` dead config +
