@@ -1,5 +1,26 @@
 ---
 
+## [2026-09-30 ต่อ 43] `AppErrorBoundary` ครอบทั้งแอป — error ตอน render/commit = หน้าแจ้ง + ปุ่มโหลดใหม่ แทนจอขาว (a.ui `8f9f0c1` · static `29ed3fa`) ✅ prod
+
+**ค้นก่อนทำ (user สั่ง "ตรวจวัดผล และค้นข้อมูลเพิ่มเติม" + "ชัวร์ยัง"):**
+- ประวัติจอขาว 3 สาเหตุ แก้ทีละจุดมาตลอด ไม่เคยตัดสินใจ*ไม่*ทำ boundary: overlay ลบ DOM (`NotFoundError` [ต่อ 15]) · `AI_PALETTE.khim` (`TypeError`) · Dream insight object (`Error` [ต่อ 42])
+- react.dev: ไม่มี boundary → *"React will remove its UI from the screen"* · จับไม่ได้: event handler/async/SSR/ตัว boundary เอง · ต้องเป็น class
+  (หรือ `react-error-boundary` — ไม่ได้ติดตั้ง ไม่เพิ่ม dep) · production: error ที่ boundary จับแล้ว**ไม่ bubble ถึง window**
+- jsdom React 18.3.1 **ทั้ง dev และ production build** (ยืนยันว่าโหลด prod จริง: `ReactDebugCurrentFrame` dev=true / prod=false / vitest-prod=false):
+  ไม่มี boundary 3 เคส → html 0 · มี boundary → fallback ครบ 3 (รวม `NotFoundError` ตอน commit) · แอปปกติแสดงตามเดิม · `window` error = 0 ใน production
+- draft บันทึก localStorage debounce 400 ms (`app.tsx:234`) → reload ได้ข้อความคืน (เสียได้ ≤0.4 วิสุดท้าย) · `__hwReactChatBox` ตั้งตอนโหลดโมดูล (`app.tsx:44`) ⇒ overlay §22 ไม่แทรก fallback
+**แก้:** `utils/errorboundary.tsx` `AppErrorBoundary` (getDerivedStateFromError · componentDidCatch → `console.error('[AppErrorBoundary]', …)` · ข้อความไทย + ชื่อ error + ปุ่ม 🔄 โหลดใหม่ ·
+ไม่มีปุ่ม reset state — state เดิม throw ซ้ำ) · `main.tsx` ครอบ `<InteractiveLiquidGlass />` ใน StrictMode
+· เทส 8 (แดงก่อน 7 กับ stub ส่งลูกผ่าน · ควบคุม 1) · mutation 6/6 · vitest 633 · tsc ผ่าน
+**verify prod (Chrome · bundle `index-CFS2YfbC.js`):**
+- ❌ จำลอง overlay ลบ node แรกของรายการข้อความ → สลับเซสชัน: **ไม่พัง** (สลับเซสชันแทนทั้งกล่อง ไม่ได้ลบทีละ node — ต่างจากเคส 🗑️ เดิม) → รีโหลดล้าง
+- ✅ ดัก `fetch('/api/dream')` ในหน้า (ไม่ถึง backend) คืน `duration_sec` เป็นข้อความ → กด "รัน Dream ใหม่" → `TypeError: vc.toFixed is not a function`
+  → **หน้าแจ้ง error ขึ้น** (root 959 ตัวอักษร ไม่ใช่ 0) · log `[AppErrorBoundary]` 1 ครั้ง · overlay Context/Vault ยังอยู่ไม่ขวาง
+  → กด 🔄 โหลดใหม่ (คลิกจริง) → แอปกลับมาปกติ root 245,264 · ไม่มี Dream จริง (report ล่าสุดยัง `190007`)
+⚪ `duration_sec?.toFixed(1)` พังถ้าไม่ใช่ตัวเลข — backend คืน float เสมอ (`(end - start).total_seconds()` `utils/dream.py:728,755`) จึงเป็นแค่ช่องทางทดสอบ ไม่ใช่บั๊กจริง
+
+---
+
 ## [2026-09-30 ต่อ 42] insight ของ Dream เป็น object → หน้าต่างรายงานจอขาวทั้งแอป — แก้ 2 ชั้น ✅ prod
 
 **ค้น (ยืนยันทั้ง 3 จุดก่อนแก้ ตาม user สั่ง "ส่วนไหนไม่ชัวร์ หาข้อมูลก่อน"):**
