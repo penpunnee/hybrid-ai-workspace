@@ -244,6 +244,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
         should_run_search,
     )
     from utils.history import save_message as _save_msg
+    from memory.voice_memory import remember_voice_turn
 
     await websocket.accept()
     # 🔬 ตัวชี้ขาด "client ต่อใหม่กลางสาย หรือ เริ่มสายใหม่" — ดูเหตุผลเต็มที่
@@ -463,6 +464,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                     import base64
                     user_transcript = ""
                     ai_transcript = ""
+                    turn_interrupted = False     # turn นี้ถูกพูดแทรก → คำตอบไม่ครบ ไม่บันทึกลง memory
                     try:
                         # ⚠️ session.receive() yield แค่ turn เดียวแล้ว generator จบ —
                         # ต้องวน while เรียกใหม่ทุก turn ไม่งั้น turn 2 เป็นต้นไปไม่มีใครอ่านคำตอบ
@@ -510,6 +512,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                     user_transcript += user_delta
                                     ai_transcript += ai_delta
                                     if any(e.get("type") == "interrupted" for e in events):
+                                        turn_interrupted = True
                                         now = time.monotonic()
                                         logger.info(interrupt_log_line(
                                             silence_s=(None if last_audio_at is None
@@ -524,6 +527,11 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                         await websocket.send_json(evt)
                                     if getattr(sc, "turn_complete", False):
                                         await websocket.send_json({"type": "done"})
+                                        # episodic memory (user เคาะ 09-29 · เดิมโหมดเสียงไม่เคยบันทึก = 88% ของบทสนทนา)
+                                        # daemon thread ไม่ await · ต้องก่อนรีเซ็ต search_count และก่อนล้างบัฟเฟอร์ข้อความ
+                                        remember_voice_turn(asst_name, user_transcript, ai_transcript,
+                                                            interrupted=turn_interrupted, searched=search_count > 0)
+                                        turn_interrupted = False
                                         # เพดานค้นนับต่อ turn — คำถามใหม่เริ่มนับใหม่เสมอ
                                         # ไม่งั้นคุยยาวๆ จะชนเพดานถาวรแล้วค้นไม่ได้อีกทั้ง session
                                         search_count = 0
