@@ -732,15 +732,17 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 
 ### ✅ ปิดแล้ว 09-29 (ต่อ 30): เส้น `{"error"}` ได้ `message_id` + agent ล้มไม่ทิ้ง user เดี่ยว
 ฟังก์ชัน crash คืน id · บันทึกก่อนค่อย yield · FE รับ error + regenerate (ui `e4b424b` · appscript.ui `4228cdc`) · **error ใหม่ที่ save แถว → ส่ง `message_id` ด้วยเสมอ**
+· ตรวจทาน [ต่อ 31]: ✏️ ต้องซ่อนระหว่าง stream (regression จาก dbId — แก้ `bace965`)
 
 ### ✅ ปิดแล้วเซสชัน 09-28 ดึก → 09-29 (สรุปทั้งเซสชัน: devlog [2026-09-29 ปิดเซสชัน])
 - agent (LM Studio) กด Stop แล้วหยุดทันที (`3ad9767` · [ต่อ 25]) · "(agent ไม่มีคำตอบ)" หลังผล tool → สรุปใหม่ (`f1e6d0d` · [ต่อ 26])
 - frontend 9 ข้อของ audit (ui `e9edd73` · appscript.ui `18eb5c9` · [ต่อ 27]) · ย้ายบล็อก ▶️ เก่าลง devlog (`5aef79a` · [ต่อ 24])
 - ⚪ ยังไม่รู้ว่าทำไม agent ตอบได้เมื่อ 09-18 (น่าจะ LM Studio อัปเดต runtime เอง) · SSH เข้า PC .235 ตอบ "cannot find the path" ทุกคำสั่ง
-- ⚠️ **appscript.ui ahead 1** (`4228cdc` ยังไม่ push · ถาม user ก่อน) · นอก LAN ใช้ `git -c url."nas-cf:".insteadOf="nas:" push origin main`
+- ⚠️ **appscript.ui ahead 2** (`4228cdc` `bace965` ยังไม่ push · ถาม user ก่อน) · นอก LAN ใช้ `git -c url."nas-cf:".insteadOf="nas:" push origin main`
 
 ### 📋 งานเปิดอื่น
-- **backend:** EF conflict ใน `utils/memory.get_collection` ทำ cleanup ข้าม collection เงียบๆ ·
+- **backend:** stream ที่แถว user ถูก truncate ไปแล้วยังบันทึกคำตอบ (2 แท็บ/bundle เก่า · [ต่อ 31]) → เช็ค `message_exists` ก่อน save ·
+  EF conflict ใน `utils/memory.get_collection` ทำ cleanup ข้าม collection เงียบๆ ·
   `server.py` WS อ่าน/เสียงยังมีงาน sync บน loop (🔒 ทำเมื่อ user สั่ง + วัดเสียงก่อน/หลัง) ·
   `/api/agent` ไม่มี `_guard_disconnect` (กด Stop = user orphan · ไม่มี frontend เรียก)
 - **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 · REM log raw ตอน `themes=0` · guard "ไม่มีข้อมูลจริง"

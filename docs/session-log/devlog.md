@@ -1,5 +1,29 @@
 ---
 
+## [2026-09-29 ต่อ 31] ตรวจทานงาน dbId/sessions/error ทั้งเซสชัน — เจอ regression 1 ข้อ แก้แล้ว (appscript.ui `bace965` · ui `0a770c1`) ✅ verify Chrome prod
+
+**หลักฐานต้นทาง (ดึงจาก rfc-editor/docs.python.org ตรง):**
+- RFC 9110 §9.2.2 "the same intended effect, even if the original request succeeded, though the response might differ" ·
+  §9.3.5 DELETE สำเร็จ SHOULD ส่ง 202/204/200 (ไม่ได้กำหนด 404) ⇒ สัญญา `deleted` ของ [ต่อ 29] ถูกตามมาตรฐาน
+- RFC 1122 §4.2.2.13 "CLOSE call while received data is still pending … SHOULD send a RST to show that data was lost"
+  ⇒ ยืนยันกลไก harness ECONNRESET ของ [ต่อ 29]
+- Python sqlite3 `Cursor.rowcount` = "number of modified rows for INSERT, UPDATE, DELETE" ⇒ `clear_session` คืนค่าถูก
+
+**🔴 regression ที่เจอ:** ✏️ ไม่ได้ซ่อนระหว่าง stream (ฟอง user ไม่เคย `streaming`) และ `submitEdit` ไม่เช็ค `streaming`
+· ก่อนงาน dbId: แก้ตอนยังตอบ = ไม่ truncate → คู่ซ้อนแต่ยังเข้าคู่ถูก · **หลังงาน dbId:** truncate(U1) → ส่ง U2 → stream เดิม
+(ไม่ถูกยกเลิก) ตอบจบแล้วบันทึก A1 ต่อท้าย ⇒ DB = `U2, A1(คำตอบคำถามเก่า), A2` ประวัติสลับคู่
+**แก้:** ซ่อน ✏️ เมื่อ `streaming` (เหมือน 🗑️) + guard ใน `submitEdit` · wiring test 2 · mutation 2/2 · vitest **608**
+**verify prod:** bundle `index-CrTC75YY.js` · ส่งข้อความแล้ว ✏️ = 0 ตลอด 2.5–17.5 วิ · ตอบจบ (20 วิ) ✏️ + 👍 กลับมา · ลบ session ทดสอบ (`deleted:2`)
+
+**ถอนคำพูด:** ระหว่างไล่ ECONNRESET ผมบอก user ว่า "Linux ทิ้งข้อมูลใน buffer เมื่อได้ RST ส่วน macOS ยังอ่านได้" — **ผิด**
+การทดลองรอบสองให้ผลเหมือนกันทั้งสอง OS (อ่านครบ 4 ท่อนแล้วค่อยได้ reset) · ตัวแปรจริงคือ **ความเร็วที่ client อ่าน**
+เทียบกับจังหวะที่ RST มาถึง — probe pytest บน Mac (cap recv 500) ผ่าน 3/3 เพราะ httpx อ่านหมดก่อน RST · CI ช้ากว่าจึงโดน
+
+**ความเสี่ยงที่เหลือ (ไม่แก้ · จด):** backend ยังบันทึกคำตอบของ stream ที่แถว user ถูก truncate ไปแล้ว (เส้น save ปกติ ไม่ใช่ `_on_cut`)
+— หลังแก้ FE เหลือแค่เคส 2 แท็บ / bundle เก่า / จังหวะ Stop ตรงกับที่ LLM ตอบครบ · ปิดได้ด้วยเช็ค `message_exists` ก่อน save
+
+---
+
 ## [2026-09-29 ต่อ 30] เส้น `{"error"}` ได้ `message_id` + agent ล้มไม่ทิ้ง user เดี่ยว (ui `e4b424b` · appscript.ui `4228cdc`) ✅ deployed + CI เขียว
 
 **ค้น 3 เส้นที่ส่ง error:** หลัก/fallback (`_save_crash`) และ regenerate (`_save_regen_crash`) **yield error ก่อนบันทึก แล้วทิ้ง id**
