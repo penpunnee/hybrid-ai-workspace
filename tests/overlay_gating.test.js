@@ -75,3 +75,41 @@ test("slice() ตัดโค้ดออกมาได้จริง ไม�
   assert.ok(slice("const pinObserver", "// 6. COPY CODE BUTTON").length > 200);
   assert.ok(slice("// 19. EDIT + RESEND", "// 21.").length > 200);
 });
+
+// ── audit 2026-09-24 MEDIUM (frontend) — overlay ที่ React ทำเองแล้ว ห้ามทำซ้ำ (ก้อน 12 · 2026-09-29) ──
+// §3 Ctrl+E: React (`app.tsx` onKey) export แล้ว · overlay ก็ export อีกไฟล์ = ได้ 2 ไฟล์ต่อการกดครั้งเดียว
+test("§3 Ctrl+E ของ overlay ถูก gate (React export เองแล้ว — เดิมได้ 2 ไฟล์)", () => {
+  const sec = slice("// 3. EXPORT SESSION", "// 4. PIN MESSAGE");
+  const kd = sec.indexOf('addEventListener("keydown"');
+  assert.ok(kd > -1, "หา keydown listener ของ §3 ไม่เจอ");
+  assert.match(sec.slice(kd), GATE);
+});
+
+// §10 ↑/↓: ตั้ง `ta.value` ตรงๆ → value tracker ของ React ดัก setter ไว้ → onChange ไม่ยิง → state ไม่เปลี่ยน
+// (Enter ส่งค่าเดิม) และยึด ArrowUp ทุกครั้งแม้เคอร์เซอร์อยู่กลางข้อความหลายบรรทัด · React ทำเอง (utils/prompthistory.ts)
+test("§10 PROMPT HISTORY ถูก gate (React มี ↑/↓ ของตัวเอง)", () => {
+  const sec = slice("// 10. PROMPT HISTORY", "// 11. PASTE IMAGE");
+  assert.match(sec, GATE);
+});
+
+// §11 วางรูป: เขียน `hw_pending_image` ที่ React ไม่เคยอ่าน → toast "✅ รูปพร้อม" แต่รูปไม่ถูกส่ง · React รับ onPaste เอง
+test("§11 PASTE IMAGE ถูก gate (React รับ onPaste เอง — overlay เขียน key ที่ไม่มีใครอ่าน)", () => {
+  const sec = slice("// 11. PASTE IMAGE", "// 12. TYPING INDICATOR");
+  assert.match(sec, GATE);
+});
+
+// tee + `_parseChatSSE`: ฉีด citations/reflection/cache/active_learning/timing ลงฟองที่ React render เองอยู่แล้ว
+// = โชว์ซ้ำสอง + แก้ DOM ที่ React เป็นเจ้าของ (กติกา: overlay ห้ามแตะ DOM ของ React) · debate = ยัดผิดฟอง
+test("tee stream + _parseChatSSE ทำเฉพาะ bundle เก่า (React render event พวกนี้เองแล้ว)", () => {
+  const sec = slice("// Tee stream", "return resp;");
+  const cond = sec.slice(0, sec.indexOf("{"));
+  assert.match(cond, /!\s*window\.__hwReactChatBox/, `เงื่อนไข tee ต้องมี !window.__hwReactChatBox: ${cond}`);
+});
+
+// กลุ่มควบคุม — bundle เก่ายังได้ของเดิมครบ
+test("bundle เก่ายังมี history ↑/↓ · paste · Ctrl+E · tee (ไม่ได้ลบทิ้ง)", () => {
+  assert.match(slice("// 10. PROMPT HISTORY", "// 11. PASTE IMAGE"), /_promptHistory\[_histIdx\]/);
+  assert.match(slice("// 11. PASTE IMAGE", "// 12. TYPING INDICATOR"), /\/api\/upload/);
+  assert.match(slice("// 3. EXPORT SESSION", "// 4. PIN MESSAGE"), /doExport\(\)/);
+  assert.match(slice("// Tee stream", "return resp;"), /_parseChatSSE\(/);
+});

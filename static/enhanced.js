@@ -117,7 +117,9 @@
         }
         // Tee stream — React อ่านอันหนึ่ง, enhanced.js parse อีกอัน
         // ทำเสมอสำหรับ /api/chat เพื่อ render citations/reflection/cache_hit/feedback
-        if (typeof url === "string" && (url === "/api/chat" || url.includes("/api/regenerate")) && resp.body) {
+        // ⚠️ bundle React ปัจจุบัน render citations/reflection/cache_hit/active_learning/สถิติเองแล้ว —
+        //    parse ซ้ำ = ขึ้นซ้ำสอง + ฉีด DOM ลงฟองของ React (ห้าม) · debate ยัดผิดฟอง (audit 2026-09-24)
+        if (!window.__hwReactChatBox && typeof url === "string" && (url === "/api/chat" || url.includes("/api/regenerate")) && resp.body) {
           try {
             const [reactStream, ourStream] = resp.body.tee();
             // start chat-event parser (citations, reflection, cache_hit, active_learning, message_id)
@@ -656,6 +658,7 @@
   }
 
   document.addEventListener("keydown", (e) => {
+    if (window.__hwReactChatBox) return;   // React ผูก Ctrl/⌘+E export เองแล้ว — เดิมได้ 2 ไฟล์ต่อการกดครั้งเดียว
     if (e.ctrlKey && e.key === "e" && !e.shiftKey) {
       e.preventDefault();
       doExport();
@@ -1072,6 +1075,8 @@
   }
 
   document.addEventListener("keydown", (e) => {
+    // React มี ↑/↓ ของตัวเอง (utils/prompthistory.ts) — ตั้ง ta.value ตรงๆ แบบนี้ React ไม่เห็น (value tracker)
+    if (window.__hwReactChatBox) return;
     const ta = e.target;
     if (!_isChatInput(ta)) return;
     if (e.key === "ArrowUp" && !e.shiftKey) {
@@ -1093,6 +1098,7 @@
   // 11. PASTE IMAGE FROM CLIPBOARD — วาง Ctrl+V ได้เลยไม่ต้องกด upload
   // ─────────────────────────────────────────────────────────────────────────────
   document.addEventListener("paste", async (e) => {
+    if (window.__hwReactChatBox) return;   // React รับ onPaste เอง — hw_pending_image ไม่มีใครอ่าน (รูปไม่ถูกส่ง)
     const items = [...(e.clipboardData?.items || [])];
     const img = items.find(i => i.type.startsWith("image/"));
     if (!img) return;
