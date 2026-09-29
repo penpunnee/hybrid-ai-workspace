@@ -720,9 +720,11 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า
-1. 🧪 **เช็คกุญแจกำพร้าหลัง Dream prune 09-30 02:00** (หรือหลังกด 🧹) ต้อง = 0 ทุก collection แล้วรายงาน user
-   (ค่าตั้งต้น 09-29: memory_kwan 48/45 · memory_logic 0/0 · lessons 8/8 · user_facts 1/1 · กำพร้า 0 · devlog [ต่อ 39])
-2. ⏳ ถาม user ผล DSM Resource Monitor — ใครเขียนดิสก์ busy ~99% ทุก ~30 วิ (devlog [ต่อ 38])
+_(ว่าง — 2 งานค้างจาก 09-29 ปิดแล้ว 09-30 · devlog [ต่อ 40])_ เลือกจาก 📋 งานเปิดอื่น / ⏳ รอ user เคาะ
+
+### ✅ ปิดแล้ว 09-30 (devlog [ต่อ 40])
+กุญแจกำพร้าหลัง Dream prune จริง (pruned=1) = **0** · ดิสก์ NAS busy เป็นรอบ = healthcheck exec (~2.3 MB/ครั้ง) ไม่ใช่แอป →
+autoheal ของ `docker-events-trap` 5 วิ → 5m (exec 59→21/3 นาที · busy 19→8%) · `ai-backend-1` healthcheck 30s ยังคงเดิม
 
 ### ✅ ปิดแล้วเซสชัน 09-29 (สรุป: devlog [2026-09-29 ปิดเซสชัน 2] · รายละเอียด [ต่อ 28–39])
 dbId ฟองที่เพิ่งส่ง · DELETE sessions บอกผล · เส้น error มี message_id · save_reply อะตอม · skills sync 0 วิ · ถอด POST /api/agent ·

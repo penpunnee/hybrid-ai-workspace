@@ -1,5 +1,25 @@
 ---
 
+## [2026-09-30 ต่อ 40] ปิด 2 งานค้างจาก 09-29 — กุญแจกำพร้าหลัง Dream = 0 ✅ · ดิสก์ NAS busy เป็นรอบ = healthcheck exec (แก้แล้ว นอกรีโป)
+
+**1. กุญแจกำพร้าหลัง Dream prune 09-30 02:00 (อ่านอย่างเดียว)** — เส้นลบจริงวิ่งแล้ว 1 ครั้ง ไม่ทิ้งกำพร้า
+- report `dream_20260929_190007.json`: `phase3_prune {pruned: 1, kept: 47, cap: 500, unreadable: {}}` · log ไม่มี WARNING/ERROR
+- ลำดับใน log 19:00:06–07 UTC: `delete` ที่ `memory_kwan__keys` ก่อน แล้วค่อย `delete` ที่ `memory_kwan` (ลบเงาก่อนตามดีไซน์)
+- `scripts/reconcile_keys.py` (ในคอนเทนเนอร์ ไม่ใส่ `--fix`) → **✅ ไม่มีกุญแจกำพร้า**
+- ยอด: memory_kwan 48/45 → **47/44** · memory_logic 0/0 · lessons 8/8 · user_facts 1/1
+- ⚪ ผลพลอยได้: REM ได้ `themes=0` จาก 18 memories อีกคืน (งาน "REM log raw ตอน themes=0" ยังเปิดอยู่)
+
+**2. ดิสก์ md2 busy เป็นรอบ (ค้างจาก [ต่อ 38])** — ตัวการ **ไม่ใช่แอปเรา**
+- วัดด้วย `docker run --rm --privileged --pid=host docker:cli` อ่าน `/proc/*/io`: dockerd เขียน 35.5 MB/90 วิ ตัวอื่น < 1 MB
+- ไฟล์ที่ถูกเขียน: containerd `meta.db` (bolt) + `config.v2.json` ของคอนเทนเนอร์ที่มี healthcheck · log driver เป็น `db` แต่ log น้อยมาก
+- เทียบทีละวินาที: ทุก `exec_start` → วินาทีถัดไป md2 เขียน ~2.3 MB · ไม่มี exec = ~0
+- `docker-events-trap-autoheal` (งานเครือข่ายบ้าน ไม่ใช่ Khim/Phrae/Pi) healthcheck ทุก **5 วิ** จากค่า default ของ image = 32/59 exec
+- แก้: healthcheck trap+autoheal → 5m ใน `~/docker-events-trap/docker-compose.yml` (backup `.bak-20260930` · สำเนา `~/pihole-nas-backup` `185ee2f`)
+- **วัด 3 นาที ก่อน/หลัง: exec 59→21 · md2 เขียน 154→66 MB · busy 19→8%** · ทั้งสองตัว healthy
+- ที่เหลือทุก 30 วิ: `ai-backend-1` · `pihole-backup` · `nebula-sync` (ไม่แตะ) · รายละเอียดใน memory `project_home_network.md`
+
+---
+
 ## [2026-09-29 ปิดเซสชัน 2] สรุปเซสชัน 09-29 (ต่อ 28–39) — dbId · sessions DELETE · เส้น error · save_reply · skills sync · ถอด /api/agent · memory โหมดเสียง · 5A/5B · fsync NAS/WAL · delete_keys
 
 | งาน | ผลบน prod | commit | devlog |
