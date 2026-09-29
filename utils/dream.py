@@ -256,6 +256,8 @@ def rem_sleep(memories: list[dict], provider: str = "auto") -> dict:
         "  - a value that expires (prices, weather, ping results, episode numbers, "
         "system status, dates) — these are wrong by next week\n"
         "  - a failure/error/limitation ('system cannot X', 'quota exceeded')\n"
+        "  - game content: walkthroughs, tips/strategies, which boss or difficulty "
+        "unlocks an item, release news\n"
         "  - a greeting, chitchat, or a statement about which language to reply in\n\n"
         "Returning an empty themes list is CORRECT and expected when the logs contain "
         "no durable knowledge. Do not invent themes to fill the list.\n\n"
@@ -307,6 +309,12 @@ def rem_sleep(memories: list[dict], provider: str = "auto") -> dict:
         except json.JSONDecodeError:
             return None
 
+    def _log_if_empty(result: dict, raw: str) -> None:
+        # ได้ 0 ธีมเป็นเรื่องปกติ (prompt สั่งไว้) แต่ถ้าไม่เก็บคำตอบดิบ จะแยก "AI ตอบว่าง"
+        # ออกจาก "ตอบแปลกแต่ parse ผ่าน" ไม่ได้ — วัด 09-30 ต้องยิงซ้ำเองถึงรู้
+        if not result.get("themes"):
+            logger.info(f"Dream/REM: 0 themes, raw={raw[:500]!r}")
+
     # ให้ router resolve "auto" → LMStudio/DeepSeek/Gemini/Ollama (single source of truth)
     if provider == "auto":
         try:
@@ -329,6 +337,7 @@ def rem_sleep(memories: list[dict], provider: str = "auto") -> dict:
         result = _try_parse(response)
         if result:
             logger.info(f"Dream/REM: Found {len(result.get('themes', []))} themes")
+            _log_if_empty(result, response)
             return result
         logger.warning(f"Dream/REM: attempt 1 failed to parse, raw={response[:200]}")
     except Exception as e:
@@ -349,6 +358,7 @@ def rem_sleep(memories: list[dict], provider: str = "auto") -> dict:
         result = _try_parse(response2)
         if result:
             logger.info(f"Dream/REM: attempt 2 succeeded — {len(result.get('themes', []))} themes")
+            _log_if_empty(result, response2)
             return result
         logger.warning(f"Dream/REM: attempt 2 also failed, raw={response2[:200]}")
     except Exception as e:
