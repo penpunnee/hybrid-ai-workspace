@@ -1,5 +1,29 @@
 ---
 
+## [2026-09-29 ต่อ 38] บันทึกข้อความช้าจาก fsync NAS — ขั้น 1 (bgwriter `5361a9e`) · 2a (mount โฟลเดอร์ `d304342`) · 2b/2c (writer ค้าง + WAL+NORMAL `c7aac8f`) ✅ prod · CI เขียว
+
+**ที่มา:** 5B วัดได้ `voice save_msg` 0.8–1.7 วิ/ครั้ง × 2/turn บนลูปเสียง (20/20 เกิน 50 ms · heartbeat ไมค์ 5→7 วิ)
+**ค้น 3 ทาง (fork · อ่านอย่างเดียว):**
+- ทาง 3 NAS: **HDD 5,400 rpm ×4 RAID5 ไม่มี SSD cache** (`cachedev_0` = ชื่อ dm ของ Synology ไม่ใช่ SSD) · `dd dsync` /volume1 213 ms/ครั้ง
+  vs tmpfs ~0 · `/tmp` ในคอนเทนเนอร์อยู่บน `/volume1/@docker` · md2 busy เป็นรอบ ~30 วิ (99→6%) ต้นทางระบุไม่ได้ด้วยสิทธิ์ pawin ·
+  parity RMW (ดิสก์อ่าน ~60/วิ ขณะ md2 อ่าน 0) · ⛔ ไม่จูน btrfs/nocow · ระยะยาว SSD cache RAID1 (user ตัดสินเรื่องซื้อ)
+- ทาง 2 WAL: วัดไฟล์ชั่วคราวบน prod — delete+FULL 476/772 · WAL+FULL ค้าง 276/399 · **WAL+NORMAL ค้าง 0.0/0.1** · เปิดใหม่ทุกครั้ง 403/675
+  ⇒ ต้อง connection ค้าง · 🔴 mount ไฟล์เดี่ยว = -wal ไปอยู่ใน writable layer (หายตอน recreate · howtocorrupt)
+- ทาง 1 thread: `ThreadPoolExecutor(max_workers=1)` FIFO (`concurrent/futures/thread.py`) · `asyncio.to_thread` ลำดับไม่รับประกัน
+**user เคาะ:** ลำดับ 1→2a→2b→2c · NAS **ไม่มี UPS** แต่เลือก **WAL+NORMAL** (รู้ว่าไฟดับ commit ช่วงท้ายอาจหาย DB ไม่เสีย)
+**ขั้น 1:** `utils/bgwriter.OrderedBackgroundWriter` ห่อที่บรรทัด import (call site เดิม) · close(then=สรุป) ออกหลังบันทึกครบ · เทส 7 · mutation 8/8 ·
+sha เสียง prod ตรง · deploy recreate inode 274852
+**ขั้น 2a:** ไฟล์อยู่ `./data/chat_history.db` แล้ว + `./data:/app/data` mount อยู่แล้ว ⇒ **ไม่ต้องย้ายไฟล์** แค่ `DB_PATH=/app/data/chat_history.db`
++ ถอด mount ไฟล์เดี่ยว · backup `pre-2a-20260929-203554.db` (1957 · integrity ok) · verify: DB_PATH ใหม่ · /proc/mounts ไม่มี chat_history ·
+1957 แถว · API sessions 30 · เทส compose guard (yaml · rsplit — `${NAS_DATA_PATH:-./data}` มี `:`) compose เดิมแดง 3/3 · skills docs 3 ไฟล์
+cmp ตรง git เก่าก่อน cp · resync 0
+**ขั้น 2b/2c:** `_writer()` connection ค้าง (check_same_thread=False + lock) · WAL + NORMAL เฉพาะ save_message/save_reply · error = ทิ้งแล้วเปิดใหม่
+· เส้นอื่นเปิดใหม่ทุกครั้งเหมือนเดิม · backup `pre-wal-20260929-204547.db` · **prod: save_message [1674.9 (เปิด+สลับ WAL), 0.1, 0.1, 0.1, 0.1] ms**
+· journal=wal sync=1 · probe ลบแล้ว (1957) · `pragma journal_mode` จาก host = wal · เทส 8 · mutation 6/6 · ชุดเต็ม 2529
+· ถอยกลับ: `PRAGMA journal_mode=DELETE` · 🧪 รอเห็น `[LoopTiming] voice save_msg` ต่ำกว่า 50 ms ตอน user คุยเสียงรอบหน้า
+
+---
+
 ## [2026-09-29 ต่อ 37] ถอดเงื่อนไข `searched` (`4e8fc8d`) + deploy 5A/5B/voice ✅ prod · sha เสียงตรง · CI เขียว
 
 **ผลทดสอบเสียงรอบ 2 (user คุย 6 turn 06:39–06:41):** บันทึก 3 · ข้าม `searched` 2 (ถาม "ลักษณะการพูดของ ChatGPT เป็นทางการไหม" /

@@ -736,8 +736,9 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 
 ### 🔜 แผนที่ user เคาะ 09-29 (ทำตามลำดับ): ✅1 skills sync (ต่อ 33) · ✅2 ถอด POST /api/agent (ต่อ 34) ·
 ✅3 โหมดเสียงบันทึก memory (ต่อ 35 · verify user คุยจริง 30→31 ต่อ 36) · ✅4 log ผล tool + probe (ต่อ 35) ·
-✅5 deploy แล้ว (ต่อ 37 · sha เสียงตรง) · ถอด `searched` แล้ว (4/9 turn เคยโดนข้าม) · 🧪 รอดูบรรทัด `งาน sync บน loop`
-ตอนปิดสายเสียง/อ่านจริง · งานต่อ: `delete_keys` EF conflict = กุญแจกำพร้าเงียบ (ต่อ 36)
+✅5 deploy แล้ว (ต่อ 37) · ✅ บันทึกช้าจาก fsync NAS: bgwriter + DB ใน mount โฟลเดอร์ + **WAL+NORMAL** (ต่อ 38 · 1.7 วิ → 0.1 ms)
+· 🔴 **`chat_history.db` เป็น WAL แล้ว — ห้าม cp ไฟล์ DB เดี่ยวๆ (ต้องใช้ `sqlite3 .backup` / backup API) · ห้าม mount ไฟล์เดี่ยวกลับ**
+· NAS ไม่มี UPS (user รับความเสี่ยง NORMAL) · งานต่อ: `delete_keys` EF conflict = กุญแจกำพร้าเงียบ (ต่อ 36) · SSD cache (user ตัดสินใจซื้อ)
 
 ### ✅ ปิดแล้ว 09-29 (ต่อ 32): คำตอบบันทึกเฉพาะเมื่อแถว user ยังอยู่ (`save_reply` อะตอม · `72a1911`)
 **บันทึกคำตอบหลังรอ LLM ต้องผ่าน `save_reply(…, user_msg_id)`** ห้าม `save_message` ตรง · เทสที่ mock `save_message` ด้วย id ปลอม
