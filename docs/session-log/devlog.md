@@ -1,5 +1,22 @@
 ---
 
+## [2026-09-29 ต่อ 34] ถอด `POST /api/agent` (เก็บ `GET /api/agent/tools`) (`02b1bd0`) ✅ deployed + verify prod + CI เขียว
+
+**ค้นก่อนลงมือ:** ผู้เรียกในโค้ด 0 (frontend/bundle/overlay/MCP/scripts) · access log prod 06-30→09-29 = 13 ครั้ง ตรงกับ probe/verify ของเรา
+(⚪ log ไม่มี IP — พิสูจน์ 100% ไม่ได้ว่าไม่มีคนนอก) · เส้นนี้ไม่มี `_guard_disconnect`/cancel/`save_reply` + exception ก่อน chunk
+หรือตอบว่าง = user ค้างเดี่ยว · `/api/chat` tool_agent มีครบ · user เคาะ (ก) ถอด
+**แก้:** `routers/agent.py` เหลือ GET · ลบ `test_agent_max_steps.py` (`/api/chat` ไม่รับ max_steps จากผู้ใช้ — ใช้ default ของ run_agent)
+· ตัดแถวใน `test_body_cap_all_routes` · `test_agent_endpoint_removed.py` (3) · เอกสาร `skills/api-endpoints-reference.md`
+🔧 **`app.routes` ของ FastAPI ที่ติดตั้งห่อ router ที่ include เป็น `_IncludedRouter` (path=None)** → เทสที่ไล่ `app.routes` ผ่านฟรี ·
+ใช้ `app.openapi()["paths"]` + กลุ่มควบคุม (ต้องเห็น `/api/agent/tools`) แทน
+**deploy เอกสาร:** `cp skills/… data/skills/` · resync dry-run = 0 เปลี่ยน (summary ใน skills_db = 300 ตัวแรก ไม่ครอบแถวที่แก้ ·
+RAG อ่าน .md ตรง) → ไม่ต้อง `--apply`
+⚠️ **พลาด:** รัน `diff -q` กับ `cp` ในคำสั่งเดียว — ไม่ได้ดูก่อนทับ · ตรวจย้อน: ไม่มี snapshot · แต่ `data/skills` ตรง git ไบต์ต่อไบต์ **22/22**
+และไฟล์นี้ใน git ไม่ถูกแก้ตั้งแต่ 05-12 ⇒ อนุมานได้ว่าของที่ทับ = git ฉบับก่อน (ไม่ใช่การพิสูจน์) · ต่อไป **cmp ก่อน แล้วค่อย cp เป็นคนละคำสั่ง**
+**verify prod:** `POST /api/agent` → 404 · `GET /api/agent/tools` → 200 (23 tools) · sync บูต `ไม่เปลี่ยน 22 · upsert 0/0` (ยืนยันต่อ 33 ซ้ำ)
+
+---
+
 ## [2026-09-29 ต่อ 33] skills sync ตอนบูต — embed เฉพาะตัวที่เปลี่ยน + upsert ชุดเดียว + `embed_model` (`8681951`) ✅ deployed + verify prod 2 บูต + CI เขียว
 
 **ค้นก่อนลงมือ (รายงาน 5 สาย · user เคาะลำดับ 1→5):** บูตทุกครั้ง upsert ทีละตัว 22 ครั้ง (`skills_search.py:73`) · EF ของ chromadb
