@@ -725,9 +725,8 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
   · ⚪ ยังไม่รู้ว่าทำไม 09-18 ตอบได้ (น่าจะ LM Studio อัปเดต runtime เอง) · SSH เข้า PC .235 ตอบ "cannot find the path" ทุกคำสั่ง — เข้าไปดูเวอร์ชันไม่ได้
 - **backend:** EF conflict ใน `utils/memory.get_collection`
   ทำ cleanup ข้าม collection เงียบๆ · `server.py` WS อ่าน/เสียงยังมีงาน sync บน loop (🔒 ทำเมื่อ user สั่ง + วัดเสียงก่อน/หลัง)
-- **frontend 9 ข้อ** (`docs/audit/2026-09-24-full-audit.md` หัวข้อ 2 ท้าย): `_parseChatSSE` ซ้ำ · `AI_PALETTE.khim` ·
-  "จำไว้ว่า" fetch นอก try · prompt history ↑/↓ · paste รูปไม่ส่ง · `voicelive.ts onclose` · `bookreader` ไม่ disconnect ·
-  Ctrl+E ซ้ำ · latest-request guard
+- ✅ **frontend 9 ข้อ ปิดแล้ว 09-29 (ui `e9edd73` · appscript.ui `18eb5c9` · devlog [ต่อ 27])** — verify ใน Chrome บน prod 4 ข้อ ·
+  ⚠️ appscript.ui ยังไม่ push (`origin` ahead 6 — ค้างจากเซสชันก่อนๆ ด้วย) · ถัดไป: backlog `dbId` ข้างล่าง
 - **backlog `dbId`:** ข้อความที่เพิ่งส่งไม่มี `dbId` (`app.tsx` เส้นส่งหลัก + `done` ไม่ตั้งให้ AI) ⇒ แก้ข้อความไม่ truncate
   (DB ซ้อน) · ปุ่ม pin/feedback/🗑️ ไม่ขึ้นจนรีโหลด · แก้ = backend ส่ง `user_message_id` ใน `done` + ตั้ง dbId ทั้งคู่
   (ยืนยันจากโค้ด **ยังไม่ดูใน browser**)
@@ -802,9 +801,13 @@ seek ต้อง**อ่านค่าก่อนเขียน** (user อ�
 - ❌ ห้ามรัน pytest ในคอนเทนเนอร์ prod (fixture ปน log)
 
 **frontend**
+- overlay ที่ React ทำเองแล้วต้อง gate `if (window.__hwReactChatBox) return;` (ตอนนี้: tee/`_parseChatSSE` · Ctrl+E · ↑/↓ · paste · §19/§20 · §22) —
+  เพิ่ม feature ใน React แล้วไล่ overlay ที่ทำซ้ำด้วย · เทส `tests/overlay_gating.test.js`
+- bookreader: server ปิดสาย = เก็บกวาดหลังเสียงค้างเล่นหมด (`playEnd` + ticker) **ห้าม disconnect ทันที** (ตัดท้ายเล่ม) · สีผู้ช่วยผ่าน `paletteFor()` เท่านั้น
 - stream ใหม่ใช้ `sseEvents()` + `settleStream()` ใน finally + `streamFailureText()` ใน catch — ห้ามลูป `getReader()` เอง
 - overlay ห้าม `.remove()`/แก้ DOM ที่ React เป็นเจ้าของ (จอขาว) · แก้ `enhanced.js` แล้ว `?v=YYYYMMDD-<md5 8 ตัว>`
 - เครื่องหลักคือ iPhone ไม่มี hover → สถานะต้องเป็นแถบข้อความ ไม่ใช่ tooltip
+- Chrome MCP: `computer key/type` อาจไม่ถึงหน้าเว็บ (หน้าต่างไม่ได้ focus) → ใช้ event ที่ dispatch ด้วย JS · ดัก `window.fetch` ในหน้าแทนการยิงจริงเมื่อทดสอบบน prod
 - probe ใน Chrome: ห้ามอ่าน `innerText` ของ node ใหญ่วนซ้ำ · ลูปรอ < 45 วิ · ข้อความทดสอบต้องเก็บกวาด (session + memory)
 
 **deploy / infra**

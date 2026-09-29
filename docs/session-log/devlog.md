@@ -1,5 +1,31 @@
 ---
 
+## [2026-09-29 ต่อ 27] ก้อน 12 — frontend 9 ข้อของ audit MEDIUM (ui `e9edd73` · appscript.ui `18eb5c9`) ✅ deployed + verify ใน Chrome บน prod + CI เขียว
+ค้นชั้น 1 ทุกข้อกับโค้ดปัจจุบันก่อนแก้ (เลขบรรทัดใน audit เลื่อนแล้ว) — **จริงทั้ง 9** และเจอเพิ่มอีก 2 จุดในข้อ 3
+| # | ข้อ | ยืนยันด้วย | แก้ |
+|---|---|---|---|
+| 1 | tee + `_parseChatSSE` ของ overlay ไม่ gate | React render citations/reflection/cache/active_learning เองแล้ว (`app.tsx` 753-800/1363-1376) · overlay ฉีดลงฟองของ React = ซ้ำ + แตะ DOM ของ React | gate ด้วย `!window.__hwReactChatBox` |
+| 2 | `AI_PALETTE.khim` | palette มีแค่ `kwan` · 2 จุด fallback ไป key ที่ไม่มี → `p.glow` ของ undefined = จอขาว (latent) | ย้ายเป็น `utils/aipalette.ts` `paletteFor()` (hasOwnProperty กัน `constructor`) |
+| 3 | "จำไว้ว่า" fetch นอก try | เน็ตล้ม = `streaming` ค้าง true ถาวร · **+ ไม่อ่านคำตอบ** (backend `save_mem` ตอบ `{ok:false}` ได้ → ขึ้น ✅ อยู่ดี) · **+ `loadSessions()` เลือก session[0] แล้วโหลดประวัติทับ** = ฟอง ✅ (ไม่อยู่ใน DB) หาย/ถูกสลับ session | `utils/remember.ts` (ไม่ throw · บอกผลจริง) · `finally` ปลดล็อก · `refreshSessions` · ล้มแล้วคืนข้อความเข้าช่อง |
+| 4 | ↑/↓ ของ overlay | ตั้ง `ta.value` ตรงๆ → value tracker ของ React ไม่เห็น · React ไม่มี history ของตัวเอง | gate overlay + `utils/prompthistory.ts` ใน React (เฉพาะเคอร์เซอร์บรรทัดแรก/ท้าย · ไม่มี selection · key เดียวกับ overlay) |
+| 5 | วางรูป | overlay เขียน `hw_pending_image` · `grep` ใน app.tsx = 0 ผู้อ่าน | gate overlay + `onPaste` → `utils/paste.ts` → `handleIncomingFile` (เส้นเดียวกับ drag&drop) |
+| 6 | `voicelive.ts onclose` socket เก่า | `scheduleRetry` ปิด ws1 แล้วเปิด ws2 · close ของ ws1 มาช้า → `retrying=false` แล้ว → ปิด ws2 ทิ้ง (เทสแดงบนโค้ดเดิม: ws2 closeCalls=1 + error) | ทุก handler เช็ค `ws !== this.ws` |
+| 7 | `bookreader` ไม่ disconnect | `ws.onclose` แค่ตั้ง idle → ticker/listener/AudioContext/`audioSession=playback` ค้าง | **ห้าม disconnect ทันที**: server ปิดสายทันทีหลัง `done_book` (`stop.set()` ใน `reader_websocket`) ขณะท้ายเล่มค้างใน buffer · นับ `playEnd` ตามนาฬิกา AudioContext แล้วให้ ticker เดิมเก็บกวาดเมื่อ `currentTime ≥ playEnd + 1 วิ` (ไม่มีเสียงค้าง = ทันที) |
+| 8 | Ctrl+E ซ้ำ | React (`onKey`) + overlay (§3) = 2 ไฟล์ | gate overlay |
+| 9 | latest-request guard | `loadHistory` ไม่มีตัวกันคำตอบมาช้า · `refreshSessions(ชื่อเดิม)` ท้าย `handleSend` เขียนรายการของผู้ช่วยเก่าทับ (latent: ผู้ช่วยตัวเดียว) · การอัปเดตฟองของ stream ใช้ `id` อยู่แล้ว ไม่ทับ | `utils/latest.ts` + `aiNameRef` |
+**เทส:** vitest 586 (ใหม่ 5 ไฟล์ util + wiring `utils/appwiring.test.ts` + voicelive 3 + bookreader 5) · node 35 (gate ใหม่ 5) · tsc 0 · pytest 2447 · **mutation 32/32**
+· ลบโค้ดที่ไม่มีผลสังเกตได้ 2 จุดระหว่างเตรียม mutation (fallback `index` ของ tool call · stale check ใน `onclose` ของ bookreader)
+**verify ใน Chrome บน prod (ไม่เขียนข้อมูลจริง — ดัก fetch ในหน้า):** bundle `index-x7i0OF7k.js` md5 ตรง · Ctrl+E = export **1** ไฟล์ ·
+↑↑/↓↓/↓ เกิน/↑ ในข้อความหลายบรรทัด ถูกทุกกรณี · วางรูป → `/api/upload` 1 ครั้ง + ชิป "image.png ✕" + ไม่มี `hw_pending_image` · วางข้อความล้วนไม่ถูกดัก ·
+จำไว้ว่า: ล้ม → ❌ + ข้อความคืนช่อง + ไม่ disabled · สำเร็จ → ✅ ค้าง + ไม่มี `/api/history` (ไม่สลับ session) · console ไม่มี error · คืน history/เอารูปทดสอบออกแล้ว
+**ไม่ได้ verify บน prod:** ข้อ 1 (ต้องยิงแชทจริง) · 2 (ต้องมีผู้ช่วยตัวที่ 2) · 6-7 (ต้องเน็ตหลุดจริง/ฟังจบเล่ม) · 9 (race) — ยืนยันด้วยเทส + mutation เท่านั้น
+**⚠️ appscript.ui ไม่ได้ push** — `origin` (NAS) ตามหลังอยู่แล้ว 5 commit ก่อนรอบนี้ (เซสชันก่อนๆ ไม่ push) · ตอนนี้ ahead 6
+**🔑 บทเรียน:** (1) เลขบรรทัดใน audit เก่า 5 วันเลื่อนหมด — ค้นใหม่ทุกข้อ (2) "ข้อเดียว" มักมีจุดข้างเคียงในฟังก์ชันเดียวกัน (ข้อ 3 เจอเพิ่ม 2)
+(3) ตัวแก้ที่ดูตรงไปตรงมา (disconnect ตอน onclose) ตัดท้ายเล่มทิ้ง — ต้องไล่ฝั่ง server ว่าปิดสายตอนไหน (4) เทส harness ที่ assign `globalThis.localStorage` พังเมื่อเทสก่อนหน้าใช้ `vi.stubGlobal`
+— ใช้ `stubGlobal`/`unstubAllGlobals` เสมอ (5) Chrome MCP: `computer key/type` ไม่ถึงหน้าเว็บเมื่อหน้าต่างไม่ได้ focus ระดับ OS → ใช้ event ที่ dispatch ด้วย JS (React รับเหมือนกัน)
+
+---
+
 ## [2026-09-29 ต่อ 26] agent LM Studio หลังผล tool ได้ "(agent ไม่มีคำตอบ)" → สรุปใหม่ (`f1e6d0d`) ✅ deployed + verify prod 3/3
 **อาการ:** กลุ่มควบคุมของ [ต่อ 25] (agent ไม่ตัดสาย) ได้ "(agent ไม่มีคำตอบ)" · DB prod มี 3/96 (09-18 ×2 · 09-23 ×1)
 **ต้นเหตุ (ยืนยันด้วย probe payload agent จริง · qwen3.5-9b):** หลังผล tool โมเดลตอบโดยไม่ปิด `<think>` ที่ template เปิดไว้ให้
