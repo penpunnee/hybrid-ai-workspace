@@ -1,5 +1,35 @@
 ---
 
+## [2026-09-29 ต่อ 28] backlog dbId — ฟองที่เพิ่งส่งได้ `dbId` ทันที + กันฟองกำพร้าหลังแก้ข้อความ (ui `fbf7837` · appscript.ui `5af3196`) ✅ deployed + verify Chrome บน prod + CI เขียว
+
+**ค้น (โค้ดจริง ไม่ใช่ตามที่จดไว้):** แย่กว่า backlog — `handleSend` **ไม่ตั้ง `dbId` ให้ฟองไหนเลย** (ฟอง AI ด้วย ไม่ใช่แค่ user)
+⇒ หลังส่งไม่มี 👍👎/📌/🗑️ จนรีโหลด · `submitEdit` ตั้งแค่ฟอง AI · ปุ่ม ✏️ ไม่ gate ด้วย dbId ⇒ แก้ข้อความที่เพิ่งส่ง
+ไม่ยิง truncate = DB คู่เก่า+ใหม่ซ้อน · backend ส่ง `message_id` (AI) ครบ 6 เส้นอยู่แล้ว แต่ **id ของ user ไม่ส่งเลย**
+
+**แก้:**
+- backend: SSE `{"user_message_id"}` **ทันทีหลัง save user ก่อน chunk แรก** ใน 4 จุด (หลัก=agent ร่วม · image_gen · cache ·
+  active-learning clarify) — เลือกแยก event แทนใส่ใน `done` เพราะกด Stop = ไม่มี `done` แต่แถว user อยู่ใน DB แล้ว
+- 🔴 **scrutinize จับได้:** `_on_cut` ตัดสินด้วย `has_reply_after(user_msg_id)` เท่านั้น — handler ตัดสายมาช้าได้ 63 วิ
+  ⇒ "Stop → แก้ข้อความ" (ซึ่งตอนนี้ใช้ได้จริงแล้ว) = U1 ถูก truncate · U2 ส่งแล้ว A2 ยัง stream → `has_reply_after`=False
+  → บันทึก "หยุดกลางคัน" คั่นกลาง turn ใหม่ · เทสแดงยืนยันแล้วว่าเกิดจริง → เพิ่ม `message_exists()` (`utils/history.py`) ข้ามถ้าแถว user หายไปแล้ว
+- frontend: `utils/streamids.ts:applyStreamIds()` (pure · id ต้องเป็นจำนวนเต็มบวก — agent persist ล้มส่ง 0) เรียกทุก event
+  ใน `handleSend`/`submitEdit` · wiring test ตรึงลำดับ `(prev, obj, userId, aiId)` + ฟองต้องสร้างด้วย id ตัวเดียวกัน
+
+**เทส:** pytest `test_chat_user_message_id.py` (5 เส้น · id ต้องชี้แถว user จริง · มาก่อน chunk แรก) + race 1 ตัวใน
+`test_stream_disconnect_orphan.py` · vitest `streamids.test.ts` + wiring 2 · mutation backend **6/6** · frontend **8/8**
+(รอบแรก wiring ปล่อย mutant สลับ userId/aiId รอด → บีบ regex แล้วจับได้) · ชุดเต็ม pytest **2453** · vitest **600** · node **35** · ruff ✅
+
+**verify prod (Chrome Mac · ดัก fetch แนบ `X-Test-Request: 1`):** ส่ง → 👍👎 ขึ้นทันที · ฟอง user มี 🗑️ + 📌 ·
+✏️ แก้ → `DELETE /api/truncate/2458` จริง → DB เหลือ `(2460 user)(2461 assistant)` คู่เดียว · log `skip lesson — reason=test_request` ·
+ลบ session ทดสอบแล้ว (0 แถว)
+
+**เจอระหว่างทาง (ยังไม่แก้ · จดเข้า ▶️):**
+- `DELETE /api/sessions/{assistant}/{sid}` ชื่อ assistant ผิด (ขาด emoji `🧡`) → **200 `{"ok":true}` ทั้งที่ลบ 0 แถว** ("ไม่มีอะไรให้ลบ" หน้าตาเหมือน "ลบแล้ว")
+- เส้น `{"error"}` ของ `handleSend` ฟอง AI ไม่มี `dbId` ทั้งที่ `_save_crash` บันทึกแถวแล้ว → 🗑️ ของคู่นั้นไม่ขึ้น (ข้อมูลไม่เสีย: truncate ครอบ)
+- race "Stop → แก้ข้อความ" ทดสอบด้วยเทสเท่านั้น ไม่ได้ทำซ้ำบน prod
+
+---
+
 ## [2026-09-29 ปิดเซสชัน] สรุปเซสชัน 09-28 ดึก → 09-29 — ก้อน 12 (agent Stop · agent ไม่มีคำตอบ · frontend 9 ข้อ) + ลดขนาด CLAUDE.md
 | งาน | ผลบน prod | commit | devlog |
 |---|---|---|---|

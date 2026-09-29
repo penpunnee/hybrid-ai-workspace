@@ -719,23 +719,23 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → /scrutinize → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy → verify prod (ยืนยันว่าเส้นที่แก้ถูกวิ่งจริง)
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
-### 🥇 งานแรกเซสชันหน้า (user เคาะ 09-29): backlog `dbId`
-**อาการ (ยืนยันจากโค้ดเท่านั้น — ดูใน browser ก่อนแก้):** ข้อความที่เพิ่งส่งในหน้าเดียวกันไม่มี `dbId` —
-เส้นส่งหลักใน `handleSend` สร้างฟอง user โดยไม่มี `dbId` และตอนได้ `done` ตั้งแค่ `streaming/stats` ให้ฟอง AI
-(ต่างจาก regenerate/edit ที่ตั้ง `dbId: obj.message_id`) · `dbId` มาจาก `loadHistory` ตอนสลับ session/รีโหลดเท่านั้น
-⇒ (1) แก้ข้อความที่เพิ่งส่ง = ไม่ยิง truncate → DB มีคู่เก่า+ใหม่ซ้อน (2) ปุ่มที่ gate ด้วย `msg.dbId &&` (📌 pin · 👍👎 · 🗑️) ไม่ขึ้นจนรีโหลด
-**แนวแก้ที่จดไว้ (09-24):** backend ส่ง `user_message_id` ใน event `done` (`routers/chat.py` เส้นปกติ + short-circuit ทุกเส้น:
-response cache · image gen · teach · agent) · `app.tsx` ตั้ง `dbId` ให้ทั้งฟอง user และ AI ตอนได้ `done`
-⚠️ เลขบรรทัดเดิมเลื่อนหมดแล้ว (ก้อน 12 แก้ `app.tsx`/`chat.py` หลายจุด) — ค้นใหม่ · ขั้นตอนเดิม: ค้น 2 ชั้น → แผน → /scrutinize → เทสแดง → แก้ → mutation → deploy → verify → CI
+### 🥇 งานแรกเซสชันหน้า
+ยังไม่ได้เคาะ — ถาม user (ตัวเลือกอยู่ใน 📋 งานเปิดอื่น / ⏳ รอ user เคาะ)
+
+### ✅ ปิดแล้ว 09-29 (ต่อ 28): backlog `dbId`
+ฟองที่เพิ่งส่งได้ `dbId` ทันที (SSE `user_message_id` หลัง save user + `applyStreamIds`) · `_on_cut` ข้ามเมื่อแถว user ถูก truncate แล้ว
+(ui `fbf7837` · appscript.ui `5af3196` · verify Chrome prod: truncate จริง DB คู่เดียว) · **เพิ่ม `user_message_id` ใน short-circuit ใหม่ทุกเส้นที่ save user**
 
 ### ✅ ปิดแล้วเซสชัน 09-28 ดึก → 09-29 (สรุปทั้งเซสชัน: devlog [2026-09-29 ปิดเซสชัน])
 - agent (LM Studio) กด Stop แล้วหยุดทันที (`3ad9767` · [ต่อ 25]) · "(agent ไม่มีคำตอบ)" หลังผล tool → สรุปใหม่ (`f1e6d0d` · [ต่อ 26])
 - frontend 9 ข้อของ audit (ui `e9edd73` · appscript.ui `18eb5c9` · [ต่อ 27]) · ย้ายบล็อก ▶️ เก่าลง devlog (`5aef79a` · [ต่อ 24])
 - ⚪ ยังไม่รู้ว่าทำไม agent ตอบได้เมื่อ 09-18 (น่าจะ LM Studio อัปเดต runtime เอง) · SSH เข้า PC .235 ตอบ "cannot find the path" ทุกคำสั่ง
-- ⚠️ **appscript.ui ยังไม่ push** — `origin` (NAS) ahead 6 (5 ค้างจากเซสชันก่อนๆ) · ถาม user ก่อน push
+- ⚠️ **appscript.ui ยังไม่ push** — `origin` (NAS) ahead 7 · ถาม user ก่อน push
 
 ### 📋 งานเปิดอื่น
-- **backend:** EF conflict ใน `utils/memory.get_collection` ทำ cleanup ข้าม collection เงียบๆ ·
+- **backend:** `DELETE /api/sessions/{assistant}/{sid}` ชื่อผิด → 200 ok ทั้งที่ลบ 0 แถว (เจอ 09-29) ·
+  `handleSend` เส้น `{"error"}` ฟอง AI ไม่มี `dbId` (แถว `_save_crash` มีใน DB · 🗑️ คู่นั้นไม่ขึ้น) ·
+  EF conflict ใน `utils/memory.get_collection` ทำ cleanup ข้าม collection เงียบๆ ·
   `server.py` WS อ่าน/เสียงยังมีงาน sync บน loop (🔒 ทำเมื่อ user สั่ง + วัดเสียงก่อน/หลัง) ·
   `/api/agent` ไม่มี `_guard_disconnect` (กด Stop = user orphan · ไม่มี frontend เรียก)
 - **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 · REM log raw ตอน `themes=0` · guard "ไม่มีข้อมูลจริง"
