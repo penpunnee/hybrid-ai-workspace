@@ -201,6 +201,29 @@ def light_sleep(hours: int = 24, unreadable: dict | None = None) -> list[dict]:
 
 
 # ---------- Phase 2: REM Sleep ----------
+def _insight_text(item) -> str:
+    """insight หนึ่งข้อ → ข้อความเสมอ
+
+    prompt สั่ง list ของข้อความ แต่ Gemini ส่ง object มาเป็นบางรอบ (รายงานเก่า 6/270 ·
+    probe 09-30 1/3) — หน้าต่างรายงานแสดง `<li>{ins}</li>` เจอ object = React unmount ทั้งแอป
+    """
+    if isinstance(item, str):
+        return item
+    if isinstance(item, dict):
+        for key in ("summary", "text"):
+            if isinstance(item.get(key), str):
+                return item[key]
+    return json.dumps(item, ensure_ascii=False)
+
+
+def _normalize_insights(value) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        value = [value]
+    return [_insight_text(i) for i in value]
+
+
 def rem_sleep(memories: list[dict], provider: str = "auto") -> dict:
     """
     วิเคราะห์ pattern + หาธีม + cross-links
@@ -305,6 +328,7 @@ def rem_sleep(memories: list[dict], provider: str = "auto") -> dict:
             ):
                 logger.warning("Dream/REM: got template placeholder, retrying")
                 return None
+            result["insights"] = _normalize_insights(result.get("insights"))
             return result
         except json.JSONDecodeError:
             return None
