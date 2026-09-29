@@ -383,3 +383,50 @@ def test_router_agent_โยน_exception_หลังถูกยกเลิ�
     hist = load_history("kwan", sid)
     assert [m["role"] for m in hist] == ["user", "assistant"], hist
     assert hist[1]["content"].startswith("ครึ่ง") and "หยุดกลางคัน" in hist[1]["content"], hist[1]["content"]
+
+
+# ── หลังผล tool: content ว่าง (คำตอบไปอยู่ใน reasoning_content) → สรุปใหม่ (09-29) ──────────
+# probe LM Studio จริง (qwen3.5-9b · payload agent จริง): หลังผล tool ได้ content ว่าง **11/12** (ข่าวทอง 5/6 ·
+# เช็คเครือข่าย 6/6) เพราะ template เปิด `<think>` ให้แล้วโมเดลตอบโดยไม่ปิด → LM Studio นับเป็น reasoning ทั้งก้อน
+# (LM Studio #1602: ปิด think ไม่ทันก่อน EOT) · `enable_thinking=False` ใช้ไม่ได้กับรุ่นนี้ (#1990 · วัด 3/6) ·
+# reasoning_content ไม่ใช่คำตอบสะอาด ("โอเค พี่ปอย … ผมได้ผลจาก tool") ห้ามโชว์แทน ·
+# เส้น synthesize() เดิม (ต่อ user=_FORCE_SYNTH_PROMPT · ไม่ส่ง tools) ได้คำตอบ **15/15**
+def test_หลังผล_tool_content_ว่าง_สรุปใหม่แทนไม่มีคำตอบ(lms, tools_ran):
+    client = lms(_Client([_ch(tool_calls=[_tc(0, id="c1", name="ping_network", args="{}")]), _ch(finish="tool_calls")],
+                         [_ch(reasoning="โอเค พี่ปอย เครือข่ายดี"), _ch(finish="stop")],
+                         [_ch("🟢 ออนไลน์"), _ch("ครบ"), _ch(finish="stop")]))
+    out = _run()
+    assert _chunks(out) == ["🟢 ออนไลน์", "ครบ"], out
+    assert len(client.calls) == 3
+    synth = client.calls[2]
+    assert synth["messages"][-1] == {"role": "user", "content": orch._FORCE_SYNTH_PROMPT}
+    assert "tools" not in synth, "รอบสรุปห้ามเปิด tool (probe 15/15 ทำแบบนี้)"
+
+
+def test_รอบแรก_content_ว่าง_ยังไม่มีผล_tool_ไม่สรุปใหม่(lms):
+    client = lms(_Client([_ch(reasoning="คิด"), _ch(finish="stop")]))
+    assert _chunks(_run()) == ["(agent ไม่มีคำตอบ)"]
+    assert len(client.calls) == 1, "ยังไม่มีข้อมูลจาก tool ให้สรุป — สรุปใหม่ = ชวนแต่งเอง"
+
+
+def test_หลังผล_tool_มีคำตอบอยู่แล้ว_ไม่เรียกซ้ำ(lms, tools_ran):
+    client = lms(_Client([_ch(tool_calls=[_tc(0, id="c1", name="calculator", args='{"expression": "2"}')]), _ch(finish="tool_calls")],
+                         [_ch("สอง"), _ch(finish="stop")]))
+    assert _chunks(_run()) == ["สอง"]
+    assert len(client.calls) == 2
+
+
+def test_สรุปใหม่แล้วยังว่าง_ได้ไม่มีคำตอบ(lms, tools_ran):
+    lms(_Client([_ch(tool_calls=[_tc(0, id="c1", name="calculator", args="{}")]), _ch(finish="tool_calls")],
+                [_ch(reasoning="ก"), _ch(finish="stop")],
+                [_ch(reasoning="ข"), _ch(finish="stop")]))
+    assert _chunks(_run()) == ["(agent ไม่มีคำตอบ)"]
+
+
+def test_ถูกยกเลิกระหว่างสรุปใหม่_หยุดเงียบ(lms, tools_ran):
+    tok = StreamCancel()
+    lms(_Client([_ch(tool_calls=[_tc(0, id="c1", name="calculator", args="{}")]), _ch(finish="tool_calls")],
+                [_ch(reasoning="ก"), _ch(finish="stop")],
+                [_ch("ครึ่ง"), tok.cancel, _ch("ต่อ"), _ch(finish="stop")]))
+    out = _run(cancel=tok)
+    assert _chunks(out) == ["ครึ่ง"] and tok.aborted is True, out

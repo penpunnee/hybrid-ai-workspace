@@ -375,6 +375,7 @@ class _LMStudioAdapter:
         self.messages = messages
         self.tools = tools_schema
         self.cancel = cancel
+        self._has_tool_results = False
 
     def _open(self, **kw):
         """เปิด stream แล้วลงทะเบียนกับธงยกเลิก — `cancel()` จะ shutdown socket ให้ตัวอ่านที่ค้างหลุดทันที
@@ -419,6 +420,13 @@ class _LMStudioAdapter:
         if not tool_calls:
             mf = _MarkerFilter()
             final = (mf.feed(text) + mf.flush()).strip()
+            if not final and self._has_tool_results:
+                # qwen3.5 หลังผล tool มักตอบโดยไม่ปิด `<think>` ที่ template เปิดไว้ → LM Studio ยัดคำตอบทั้งก้อนลง
+                # reasoning_content · content ว่าง (probe 09-29: 11/12 · LM Studio #1602) · ปิด thinking ผ่าน API ไม่ได้
+                # กับรุ่นนี้ (#1990) และ reasoning ไม่ใช่คำตอบสะอาด ห้ามโชว์แทน ⇒ ขอสรุปจากผล tool อีกรอบ (15/15)
+                logger.warning("[Agent/LM Studio] หลังผล tool ได้ content ว่าง (คำตอบค้างใน reasoning) — ขอสรุปใหม่")
+                yield from self.synthesize()
+                return
             yield ("text", final or "(agent ไม่มีคำตอบ)")
             return
         self.messages.append({
@@ -437,6 +445,7 @@ class _LMStudioAdapter:
             yield ("call", ToolCall(name=tc["name"], args=args, id=tc["id"]))
 
     def add_tool_results(self, results):
+        self._has_tool_results = True
         for call, result in results:
             self.messages.append({"role": "tool", "tool_call_id": call.id,
                                   "name": call.name, "content": result})
