@@ -29,7 +29,8 @@ class SyncCallTimer:
         s[1] += ms
         s[2] = max(s[2], ms)
         if ms > self.slow_ms:
-            logger.warning(f"[LoopTiming] {self.tag} {name} {ms:.1f}ms (เกิน {self.slow_ms:.0f}ms บน event loop)")
+            # ไม่ระบุว่า "บน event loop" — voice save_msg วัดใน worker ของ bgwriter แล้ว (ขั้น 1) · reader ยังอยู่บน loop
+            logger.warning(f"[LoopTiming] {self.tag} {name} {ms:.1f}ms (เกิน {self.slow_ms:.0f}ms)")
 
     def wrap(self, name: str, fn):
         def timed(*args, **kwargs):

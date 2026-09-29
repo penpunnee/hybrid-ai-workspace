@@ -16,6 +16,62 @@ from core.config import DB_PATH  # noqa: E402
 _schema_lock = threading.Lock()
 _schema_ready = False
 
+# ── writer connection ค้างตัวเดียว + WAL + synchronous=NORMAL (ขั้น 2b/2c · 2026-09-29) ─────────────────────
+# วัด prod (Btrfs · RAID5 HDD 5,400 rpm) ต่อ commit: delete+FULL เดิม 476/772 ms · WAL+NORMAL connection ค้าง 0.0/0.1 ms
+# · WAL+NORMAL เปิดใหม่ทุกครั้ง 403/675 ms ⇒ ได้ผลเฉพาะ connection ค้าง · ใช้กับเส้นเขียนที่ถี่ (save_message · save_reply)
+# ⚠️ NORMAL: ไฟดับ/OS crash → commit ช่วงท้ายอาจหาย แต่ DB ไม่เสีย · แอป crash ไม่หาย (sqlite.org/pragma.html#pragma_synchronous)
+#    user เคาะ 09-29 ทั้งที่รู้ว่า NAS ไม่มี UPS · journal_mode=WAL ถาวรในไฟล์ (sqlite.org/wal.html)
+# ⚠️ ต้องอยู่ใน mount โฟลเดอร์ (DB_PATH=/app/data/...) — -wal/-shm ต้องอยู่ข้าง DB บน host (tests/test_db_path_dir_mount.py)
+# ถอยกลับ: `PRAGMA journal_mode=DELETE` (checkpoint ก่อน) — ไม่ต้องแก้โค้ดส่วนอื่น
+_writer_lock = threading.Lock()
+_writer_conn: sqlite3.Connection | None = None
+_writer_path: str | None = None
+
+
+def _writer() -> sqlite3.Connection:
+    """connection เขียนที่เปิดค้าง — เรียกได้เฉพาะตอนถือ `_writer_lock` · DB_PATH เปลี่ยน (เทส) = เปิดใหม่"""
+    global _writer_conn, _writer_path
+    if _writer_conn is None or _writer_path != DB_PATH:
+        if _writer_conn is not None:
+            _writer_conn.close()
+        conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10)   # ข้าม thread ได้เพราะมี lock ของเรา
+        _init_schema(conn)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        _writer_conn, _writer_path = conn, DB_PATH
+    return _writer_conn
+
+
+def _close_writer() -> None:
+    global _writer_conn, _writer_path
+    with _writer_lock:
+        if _writer_conn is not None:
+            try:
+                _writer_conn.close()
+            except sqlite3.Error:
+                pass
+        _writer_conn, _writer_path = None, None
+
+
+def _write(sql: str, params: tuple) -> tuple[int, int]:
+    """execute + commit ผ่าน writer → (lastrowid, rowcount) อ่านใต้ lock · error = ทิ้ง connection (ครั้งหน้าเปิดใหม่)
+    แล้วโยนต่อ — ไม่กลืนเงียบ"""
+    global _writer_conn, _writer_path
+    with _writer_lock:
+        try:
+            conn = _writer()
+            cur = conn.execute(sql, params)
+            conn.commit()
+            return int(cur.lastrowid or 0), cur.rowcount
+        except sqlite3.Error:
+            try:
+                if _writer_conn is not None:
+                    _writer_conn.close()
+            except sqlite3.Error:
+                pass
+            _writer_conn, _writer_path = None, None
+            raise
+
 
 def _init_schema(conn: sqlite3.Connection) -> None:
     """รัน DDL ครั้งเดียวต่อ process (idempotent, thread-safe)."""
@@ -63,18 +119,14 @@ def _get_conn():
 
 
 def save_message(assistant: str, role: str, content: str, provider: str = "ollama", session_id: str = "default") -> int:
-    """บันทึกข้อความลง SQLite พร้อม session_id — คืน id ของ row ที่เพิ่งบันทึก"""
-    conn = _get_conn()
-    cur = conn.execute(
+    """บันทึกข้อความลง SQLite พร้อม session_id — คืน id ของ row ที่เพิ่งบันทึก (ผ่าน writer ค้าง · WAL)"""
+    new_id, _ = _write(
         "INSERT INTO messages (assistant, role, content, provider, created_at, session_id) VALUES (?, ?, ?, ?, ?, ?)",
         # astimezone() = ISO พร้อม UTC offset — container prod เป็น UTC แต่ผู้ใช้อยู่ ICT
         # ถ้าเก็บ naive string UI จะโชว์เวลา UTC ตรงๆ (เพี้ยน +7 ชม. — เจอจริง 2026-08-11)
         (assistant, role, content, provider, datetime.now().astimezone().isoformat(), session_id),
     )
-    conn.commit()
-    new_id = cur.lastrowid
-    conn.close()
-    return int(new_id) if new_id else 0
+    return new_id
 
 
 def save_reply(assistant: str, content: str, provider: str, session_id: str, user_msg_id: int) -> int:
@@ -84,19 +136,14 @@ def save_reply(assistant: str, content: str, provider: str, session_id: str, use
     ⇒ บันทึกต่อ = แถว assistant ต่อท้าย turn ใหม่ (ประวัติสลับคู่) · INSERT…WHERE EXISTS คำสั่งเดียว = อะตอม
     (เช็ค message_exists แล้วค่อย save มีช่องให้ truncate แทรกกลาง) · anchor ต้องเป็นแถว user ของ session นี้
     """
-    conn = _get_conn()
-    try:
-        cur = conn.execute(
-            "INSERT INTO messages (assistant, role, content, provider, created_at, session_id) "
-            "SELECT ?, 'assistant', ?, ?, ?, ? WHERE EXISTS ("
-            "  SELECT 1 FROM messages WHERE id = ? AND assistant = ? AND session_id = ? AND role = 'user')",
-            (assistant, content, provider, datetime.now().astimezone().isoformat(), session_id,
-             user_msg_id, assistant, session_id),
-        )
-        conn.commit()
-        return int(cur.lastrowid) if cur.rowcount == 1 and cur.lastrowid else 0
-    finally:
-        conn.close()
+    new_id, rowcount = _write(
+        "INSERT INTO messages (assistant, role, content, provider, created_at, session_id) "
+        "SELECT ?, 'assistant', ?, ?, ?, ? WHERE EXISTS ("
+        "  SELECT 1 FROM messages WHERE id = ? AND assistant = ? AND session_id = ? AND role = 'user')",
+        (assistant, content, provider, datetime.now().astimezone().isoformat(), session_id,
+         user_msg_id, assistant, session_id),
+    )
+    return new_id if rowcount == 1 and new_id else 0
 
 
 def load_history(assistant: str, session_id: str = "default", include_meta: bool = False) -> list[dict]:
