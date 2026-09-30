@@ -721,7 +721,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า
-ไม่มีงานเร่ง — เลือกจาก 📋 งานเปิดอื่น / ⏳ รอ user เคาะ (09-30 ต่อ 44–46 ปิด: เอกสาร `:8080`/Gemini · agent ไม่แนะนำ "เปิด Agent mode" · ถอด `CHROMA_PATH` + ลบ collection ว่าง 3 ตัว)
+ไม่มีงานเร่ง — เลือกจาก 📋 งานเปิดอื่น / ⏳ รอ user เคาะ (09-30 ต่อ 44–47 ปิด: เอกสาร `:8080`/Gemini · agent ไม่แนะนำ "เปิด Agent mode" · ถอด `CHROMA_PATH` + ลบ collection ว่าง 3 ตัว · ที่คั่นโหมดอ่านเลิกบล็อก loop)
 ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
 ### ✅ ปิดแล้ว (สรุป: devlog [2026-09-30 ปิดเซสชัน] · [2026-09-29 ปิดเซสชัน 2])
@@ -750,7 +750,7 @@ insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBounda
 - `nas-cf` ค้าง = Cloudflare Access หมดอายุ → ให้ user login · NAS ใช้ `sh` (ไม่มี `<(...)`)
 
 ### 📋 งานเปิดอื่น
-- **backend:** reader ยังมี `_marks.get/set` sync บน loop (วัดด้วย looptiming แล้ว — ดูบรรทัด `[Reader WS] งาน sync` ก่อนตัดสิน · 🔒)
+- **backend:** 🧪 reader `marks.set` แก้แล้ว (ต่อ 47) — รอบอ่านจริงถัดไปเช็คว่า `[LoopTiming] reader marks.set` หายหลังท่อนแรก
 - **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 (รอ memory จากโหมดเสียงสะสม)
 
 ### ⏳ รอ user เคาะ

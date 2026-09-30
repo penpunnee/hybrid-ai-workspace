@@ -1,5 +1,26 @@
 ---
 
+## [2026-09-30 ต่อ 47] ที่คั่นโหมดอ่านเลิกบล็อก event loop — writer ค้าง + WAL + NORMAL (`62aefcc`) ✅ deploy + verify prod + CI เขียว
+**ข้อมูลจาก user ฟังจริง 03:19–03:22 UTC** (xianni.pdf 3 ท่อนแล้วพัก): `[LoopTiming] reader marks.set` **595 / 559 / 619 ms** ทุกท่อน
+บน event loop · `marks.get` ไม่เคยเกิน 50 ms · summary `งาน sync บน loop` ไม่ขึ้นเพราะ user **กดพัก (📖) ไม่ใช่ ⏹** — WS ค้างใน
+`wait_while_paused` โดยตั้งใจ (ไม่มี Live session · ไม่กินโควตา) · ⏹ = `disconnect()` ส่ง close + ปิด socket
+**ต้นเหตุ (probe บน NAS ด้วย DB ชั่วคราวในโฟลเดอร์เดียวกัน · ลบแล้ว):** เวลาอยู่ที่ commit ล้วน (connect/exec ~0)
+| แบบ | median |
+|---|---|
+| delete+FULL เปิดใหม่ (เดิม) | 454–490 ms |
+| WAL+FULL | 968 ms (แย่กว่า) |
+| WAL+NORMAL เปิดใหม่ | 281 ms |
+| **WAL+NORMAL connection ค้าง** | **243 ครั้งแรก → 0 ms** |
+**แก้:** `BookmarkStore` เก็บ writer ต่อ instance (path คงที่ ไม่ต้องใช้ global แบบ history.py) + lock (WS บน loop · `/api/reader`
+ใน threadpool) · `set`/`clear` ผ่าน `_write` (sync + commit ก่อนคืน = กติกา cancel เดิม) · error → ทิ้ง connection แล้วโยนต่อ ·
+**เช็คผล `PRAGMA journal_mode`** (scrutinize: มันเปลี่ยนไม่สำเร็จแบบเงียบได้ถ้ามีคนล็อกไฟล์) → WARNING · `BookStore` ไม่แตะ
+(แต่ WAL ติดไฟล์ถาวร — `-wal` จะโตเท่าเล่มที่ put ล่าสุดแล้วไม่หด · ยอมรับ) · ไม่แตะ `READ_BLOCK_CHARS`/`next_block`/ค่าเสียง
+**เทส** `tests/test_reader_bookmark_writer.py` 5 (แดงก่อน 3 · ควบคุม 2: commit เห็นทันที · หลาย thread) · mutation 6/6
+(no-lock = process crash ⇒ lock จำเป็นจริง) · ชุดเต็ม 2559 · ruff ผ่าน
+**verify prod:** ที่คั่นก่อน deploy `xianni.pdf` 90301 · รัน `BookmarkStore` จริงในคอนเทนเนอร์ **เขียนค่าเดิม 90301** (อ่านก่อนเขียน):
+`set ms [893.8, 0.1, 0.0, 0.0]` · หลังจากนั้น 90301 · `journal wal` · `/api/reader/books` ปกติ · healthy
+🧪 เหลือ: ดู log รอบอ่านจริงถัดไป — instance ของ server เปิด writer ตอน set แรก (ท่อนแรกอาจยังเกิน 50 ms ครั้งเดียว)
+
 ## [2026-09-30 ต่อ 46] ถอด `CHROMA_PATH` (dead config) + ลบ collection ว่างบน prod 3 ตัว (`f4373d1`) ✅ deploy + CI เขียว
 - **เช็คสถานะจริงก่อน:** `CHROMA_PATH` มีแค่บรรทัดประกาศใน `core/config.py` + เทส + `.env.example` · ผู้บริโภค 0 ·
   `.env` บน NAS ไม่ได้ตั้ง · ChromaDB ใช้ volume `chroma_data:/data` ของตัวเอง ⇒ ไม่เคยกันอะไรไว้
