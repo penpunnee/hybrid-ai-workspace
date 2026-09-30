@@ -11,8 +11,12 @@ user เคาะ 2026-08-09: "โยนนิยาย PDF ให้อ่า�
 รอดแม้ re-index ใหม่ด้วยขนาด chunk คนละแบบ
 """
 
+import logging
 import sqlite3
+import threading
 import time
+
+_log = logging.getLogger(__name__)
 
 # ขนาดท่อนที่ส่งให้ TTS ต่อครั้ง
 #
@@ -74,10 +78,46 @@ class BookmarkStore:
 
     def __init__(self, db_path: str):
         self.db_path = db_path
+        # writer ค้างตัวเดียว + WAL + synchronous=NORMAL (แบบเดียวกับ utils/history.py · 2026-09-30)
+        # วัด prod: set เดิม 559–619 ms **บน event loop ของ /ws/reader** ทุกท่อน (commit+fsync บน RAID5)
+        # · probe NAS: WAL+NORMAL connection ค้าง 0 ms · เปิดใหม่ทุกครั้ง 281 ms ⇒ ได้ผลเฉพาะ connection ค้าง
+        # ⚠️ NORMAL: ไฟดับ/OS crash → ที่คั่นล่าสุดอาจถอยไป ~1 ท่อน แต่ DB ไม่เสีย · แอป crash ไม่หาย
+        # ⚠️ set ยัง sync + commit ก่อนคืนค่า (ที่คั่นไม่เสียหายเมื่อ task ถูก cancel — server.py)
+        # lock: WS เขียนบน event loop · /api/reader เขียนใน threadpool — connection เดียวกัน
+        self._writer_lock = threading.Lock()
+        self._writer_conn: sqlite3.Connection | None = None
         self._init()
 
     def _conn(self):
         return sqlite3.connect(self.db_path, timeout=10)
+
+    def _writer(self) -> sqlite3.Connection:
+        """เรียกได้เฉพาะตอนถือ `_writer_lock`"""
+        if self._writer_conn is None:
+            conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=10)
+            mode = conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+            if mode != "wal":
+                # เปลี่ยนไม่สำเร็จเงียบๆ ได้ถ้ามีคนล็อกไฟล์อยู่ — ไม่พัง แต่ต้องมีร่องรอย (set จะช้าเท่าเดิม)
+                _log.warning(f"[BookmarkStore] journal_mode={mode} (ขอ wal ไม่สำเร็จ) — {self.db_path}")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            self._writer_conn = conn
+        return self._writer_conn
+
+    def _write(self, sql: str, params: tuple) -> None:
+        """execute + commit · error = ทิ้ง connection (ครั้งหน้าเปิดใหม่) แล้วโยนต่อ ไม่กลืนเงียบ"""
+        with self._writer_lock:
+            try:
+                conn = self._writer()
+                conn.execute(sql, params)
+                conn.commit()
+            except sqlite3.Error:
+                try:
+                    if self._writer_conn is not None:
+                        self._writer_conn.close()
+                except sqlite3.Error:
+                    pass
+                self._writer_conn = None
+                raise
 
     def _init(self) -> None:
         with self._conn() as c:
@@ -98,17 +138,15 @@ class BookmarkStore:
 
     def set(self, source: str, pos: int) -> None:
         """เขียนทับเสมอ — สะสมแถวเมื่อไหร่ `get` จะหยิบแถวไหนก็ไม่รู้"""
-        with self._conn() as c:
-            c.execute(
-                """INSERT INTO reading_progress (source, pos, updated_at) VALUES (?, ?, ?)
-                   ON CONFLICT(source) DO UPDATE SET pos = excluded.pos,
-                                                     updated_at = excluded.updated_at""",
-                (source, max(0, int(pos)), time.time()),
-            )
+        self._write(
+            """INSERT INTO reading_progress (source, pos, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT(source) DO UPDATE SET pos = excluded.pos,
+                                                 updated_at = excluded.updated_at""",
+            (source, max(0, int(pos)), time.time()),
+        )
 
     def clear(self, source: str) -> None:
-        with self._conn() as c:
-            c.execute("DELETE FROM reading_progress WHERE source = ?", (source,))
+        self._write("DELETE FROM reading_progress WHERE source = ?", (source,))
 
 
 class BookStore:
