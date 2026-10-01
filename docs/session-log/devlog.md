@@ -14,6 +14,8 @@
   วิศวกร WebKit: fix ครอบแค่ MediaStreamTrack **ไม่ครอบ WebAudio** · workaround ที่รับรอง = เล่น WebAudio ผ่าน `MediaStreamAudioDestinationNode`
   → `<audio>` · สลับ `audioSession.type` ได้ผลบางครั้ง · ไม่มี API เลือกลำโพงบน iOS · ⚠️ vault เคยเขียนว่า WebAudio ปลอดภัยกว่า = ผิด (แก้แล้ว)
   · ⏳ รอ user เคาะ: เปลี่ยนเส้นเล่นเสียงโหมดคุย (แตะใกล้โซนเสียง 🔒 · ต้อง A/B บน iPhone)
+- **iOS 27.2 (user สั่งเช็ค):** ยังเป็น beta 2 (09-21) · Safari 27.2 beta แก้ getUserMedia `NotAllowedError` หลัง audio service reset ·
+  Safari 27.0 แก้ AudioSession ให้ active ตลอดที่ไมค์ทำงาน (180505014) · **ไม่มีรายการแก้ output ไป earpiece** ⇒ อัปเดต iOS ไม่น่าแก้
 
 ## [2026-10-01 ต่อ 53] แก้ voice idle 1008-loop — client พักสายเมื่อไม่มีใครใช้ (appscript.ui `0eb2063` · static `04967cd`) ✅ deploy + CI เขียว · 🧪 รอใช้จริง
 
