@@ -702,7 +702,7 @@ curate (👍 / auto-score / synthetic seed) → train (QLoRA, PC RTX 3060) → e
 
 ⚠️ **fine-tune ≠ memorization** — use RAG/memory for "remembering" things; fine-tune is for style/format/behavior that prompting can't fix. Try Modelfile persona → skills/RAG first; fine-tune is the last resort. Currently gated on accumulating ~200-500 👍 (`GET /api/feedback/stats`).
 
-## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-09-30 · **ที่เดียว**)
+## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-01 · **ที่เดียว**)
 
 > บล็อก ▶️ ทั้งหมดจนถึง 09-28 (ก้อน 1–11 · config ก้อน 1–4 · reader/voice 08-17→09-22 · ไมค์ 08-24/26)
 > ถูกยก**ทั้งดุ้นไม่แก้**ไปไว้ที่ devlog **[2026-09-28 ต่อ 24]** — ที่นี่เหลือแค่งานเปิด + กติกาที่ยังมีผล
@@ -721,15 +721,19 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า
-ไม่มีงานเร่ง — เลือกจาก 📋 งานเปิดอื่น / ⏳ รอ user เคาะ (09-30 ต่อ 44–47 ปิด: เอกสาร `:8080`/Gemini · agent ไม่แนะนำ "เปิด Agent mode" · ถอด `CHROMA_PATH` + ลบ collection ว่าง 3 ตัว · ที่คั่นโหมดอ่านเลิกบล็อก loop)
+ไม่มีงานเร่ง — 🧪 ถ้า user เพิ่งฟังนิยาย: เช็คว่า `[LoopTiming] reader marks.set` หายหลังท่อนแรก (ต่อ 47) · ที่เหลือเลือกจาก 📋 / ⏳ รอ user เคาะ
 ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
-### ✅ ปิดแล้ว (สรุป: devlog [2026-09-30 ปิดเซสชัน] · [2026-09-29 ปิดเซสชัน 2])
+### ✅ ปิดแล้ว (สรุป: devlog [2026-09-30 ปิดเซสชัน 2] · [2026-09-30 ปิดเซสชัน] · [2026-09-29 ปิดเซสชัน 2])
+**09-30 (2):** เอกสาร `:8080`/Gemini · agent ไม่แนะนำ "เปิด Agent mode" · ถอด `CHROMA_PATH` + ลบ collection ว่าง 3 · ที่คั่นโหมดอ่าน 0.6 วิ → 0 ms
 **09-30:** กุญแจกำพร้าหลัง Dream = 0 · ดิสก์ NAS busy = healthcheck exec (autoheal 5s→5m นอกรีโป) · REM 0 ธีม = AI ตัดสินใจเอง (log raw + SKIP เกม) ·
 insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBoundary` ครอบทั้งแอป
 **09-29:** dbId · DELETE sessions · save_reply อะตอม · skills sync 0 วิ · โหมดเสียงบันทึก memory · fsync NAS/WAL · delete_keys · SSD cache **พักไว้**
 
 ### 🔑 กติกาใหม่จากเซสชัน 09-30
+- system ของ agent ประกอบผ่าน `orchestrator._agent_system()` เท่านั้น (ตัด `SUGGEST_AGENT_MODE`) · ห้ามแก้ถ้อยคำ `_NO_FABRICATION` (sha persona/เสียง)
+- sqlite ที่เขียนถี่บน NAS: ตัวที่ได้ผลคือ **connection ค้าง** + WAL + NORMAL (WAL อย่างเดียวช้ากว่าเดิม) · **เช็คผล `PRAGMA journal_mode`** (เปลี่ยนไม่สำเร็จแบบเงียบได้)
+- โหมดอ่าน: 📖 = พัก (WS ค้างโดยตั้งใจ ไม่มี log "ปิด") · ⏹ = ปิดจริง · log `งาน sync บน loop` ขึ้นเฉพาะตอนปิด
 - Dream/REM: **ไม่เก็บความรู้ทั่วไปที่หาจากเน็ตได้ + เนื้อหาเกม** (user เคาะ) · ข้อมูลส่วนตัวให้ user สั่ง "จำไว้ว่า" → `user_facts` ·
   อย่าลด temperature ของ Gemini 3 (docs แนะนำ 1.0 · วัดแล้ว 0.0 ยังแกว่ง) · insight ต้องผ่าน `_normalize_insights`
 - ค่าจาก API ที่ render ใน React ต้องเป็น string/number — object เป็น child = จอขาว (ตอนนี้เหลือหน้าแจ้งของ `AppErrorBoundary`) · ใช้ `dreamText` แบบเดียวกันเมื่อเจอ

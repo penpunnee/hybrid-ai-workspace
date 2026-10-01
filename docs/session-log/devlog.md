@@ -1,5 +1,14 @@
 ---
 
+## [2026-09-30 ปิดเซสชัน 2] สรุป (ต่อ 44–47) — เอกสาร · agent ไม่แนะนำตัวเอง · กวาด config/collection · ที่คั่นโหมดอ่าน
+- **ต่อ 44** `c413f21` — curl `:8000`→`:8080` (verify unlock 200 / 404) · บล็อก env Gemini ตรง prod (2.5-flash ยัง *sunset 10-16* ไม่ใช่ retired)
+- **ต่อ 45** `8dc49c9` — `SUGGEST_AGENT_MODE` แยกจาก guard (byte-identical · sha `a74443c80e02def3`) · `_agent_system()` ตัดทั้ง 3 provider · mutation 4/4
+- **ต่อ 46** `f4373d1` — ถอด `CHROMA_PATH` · ลบ `memory_a`/`memory_logic`/`memory_logic__keys` (count 0 ตรวจทีละตัว · มี backup 00:00)
+- **ต่อ 47** `62aefcc` — `BookmarkStore` writer ค้าง + WAL + NORMAL · prod 595/559/619 ms → `[893.8, 0.1, 0.0, 0.0]` · ที่คั่น 90301 ไม่ขยับ · mutation 6/6
+- CI เขียวทุก commit · ชุดเต็มล่าสุด 2559 passed · ไม่แตะค่าเสียง
+**ค้าง:** 🧪 log รอบอ่านจริงถัดไป (`marks.set` ต้องหายหลังท่อนแรก) · ⏳ รอ user เคาะ: reconcile_keys เข้ารอบกลางคืน · ถอด Google CSE ·
+voice idle keepalive (เห็นซ้ำ 09-30 04:23 `1008` ห่าง 152 วิ ขณะ `vis=hidden`) · response cache ข้าม session
+
 ## [2026-09-30 ต่อ 47] ที่คั่นโหมดอ่านเลิกบล็อก event loop — writer ค้าง + WAL + NORMAL (`62aefcc`) ✅ deploy + verify prod + CI เขียว
 **ข้อมูลจาก user ฟังจริง 03:19–03:22 UTC** (xianni.pdf 3 ท่อนแล้วพัก): `[LoopTiming] reader marks.set` **595 / 559 / 619 ms** ทุกท่อน
 บน event loop · `marks.get` ไม่เคยเกิน 50 ms · summary `งาน sync บน loop` ไม่ขึ้นเพราะ user **กดพัก (📖) ไม่ใช่ ⏹** — WS ค้างใน
