@@ -173,7 +173,7 @@ overlay แบบ vanilla (ไม่ต้อง build, ทำงานคู่
 - ⚠️ **DELETE `/api/skills/{id}`**: lebt `delete_file` query param (default false). ส่ง `?delete_file=true` ถ้าต้องลบ .md ด้วย — กัน data loss
 
 
-## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-01 · **ที่เดียว**)
+## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-01 ปิดเซสชัน · **ที่เดียว**)
 
 > บล็อก ▶️ ทั้งหมดจนถึง 09-28 (ก้อน 1–11 · config ก้อน 1–4 · reader/voice 08-17→09-22 · ไมค์ 08-24/26)
 > ถูกยก**ทั้งดุ้นไม่แก้**ไปไว้ที่ devlog **[2026-09-28 ต่อ 24]** — ที่นี่เหลือแค่งานเปิด + กติกาที่ยังมีผล
@@ -191,17 +191,29 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → /scrutinize → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy → verify prod (ยืนยันว่าเส้นที่แก้ถูกวิ่งจริง)
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
-### 🥇 งานแรกเซสชันหน้า
-ไม่มีงานเร่ง — เลือกจาก 📋 / ⏳ รอ user เคาะ
+### 🥇 งานแรกเซสชันหน้า — 🧪 user เทสบน iPhone แล้วเช็ค log (ต่อ 55)
+1. โหมดเสียง → ปิดไมค์ → ล็อกจอ ~1 นาที → กลับมา → เปิดไมค์ → ต้องเห็นป้าย/ปุ่ม "ไมค์ถูก iOS ปิด" → แตะ → กดเริ่มใหม่ → ถามขวัญ
+   → เสียงต้องออก**ลำโพงล่าง** · log: `recover-attempt … mode=end-call reason=ended` (ถ้ารอบนั้นไมค์ไม่ถูกปิด ปุ่มจะไม่ขึ้น = ปกติ)
+2. ระหว่างพักสาย ต้องมี `mic_probe parked` และ**ไม่มี** `1008` วน (`grep -E "1008|parked|recover-attempt" /app/logs/server.log`)
+ไม่ผ่าน → ถามว่าเสียงออกลำโพงไหน แล้วพิจารณาทาง 1 (⏳) · ผ่าน → ปิดคดี earpiece แบบทาง 2
 ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
-### ✅ ปิดแล้ว (สรุป: devlog [2026-09-30 ปิดเซสชัน 2] · [2026-09-30 ปิดเซสชัน] · [2026-09-29 ปิดเซสชัน 2])
+### ✅ ปิดแล้ว (สรุป: devlog [2026-10-01 ปิดเซสชัน] · [2026-09-30 ปิดเซสชัน 2] · [2026-09-30 ปิดเซสชัน] · [2026-09-29 ปิดเซสชัน 2])
 **10-01:** CLAUDE.md 103→42 KB + เทสงบ 50 KB (ต่อ 48) · เทสตรึง go_away โหมดอ่าน (ต่อ 49) · verify ที่คั่นด้วยรอบฟังจริง (ต่อ 50) ·
-ถอด Google CSE → Brave → DDG + redact คีย์ Brave (ต่อ 51) · voice idle 1008-loop → client พักสาย (ต่อ 52–53)
+ถอด Google CSE → Brave → DDG + redact คีย์ Brave (ต่อ 51) · voice idle 1008-loop → client พักสาย (ต่อ 52–53) · ไมค์ถูก iOS ปิด → จบสายแล้วเริ่มใหม่ (ต่อ 54–55 · 🧪 รอ iPhone)
 **09-30 (2):** เอกสาร `:8080`/Gemini · agent ไม่แนะนำ "เปิด Agent mode" · ถอด `CHROMA_PATH` + ลบ collection ว่าง 3 · ที่คั่นโหมดอ่าน 0.6 วิ → 0 ms
 **09-30:** กุญแจกำพร้าหลัง Dream = 0 · ดิสก์ NAS busy = healthcheck exec (autoheal 5s→5m นอกรีโป) · REM 0 ธีม = AI ตัดสินใจเอง (log raw + SKIP เกม) ·
 insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBoundary` ครอบทั้งแอป
 **09-29:** dbId · DELETE sessions · save_reply อะตอม · skills sync 0 วิ · โหมดเสียงบันทึก memory · fsync NAS/WAL · delete_keys · SSD cache **พักไว้**
+
+### 🔑 กติกาใหม่จากเซสชัน 10-01
+- `CLAUDE.md` งบ 50 KB มีเทส (`tests/test_claude_md_budget.py`) — **อย่าขยับเพดาน** ย้ายลง `docs/` · บล็อก env อยู่ `docs/reference/env-vars.md` (ratchet สแกน)
+- ค้นเว็บ = Brave → DDG · ⛔ **ห้ามเอา Google CSE กลับ** (ปิดรับลูกค้าใหม่ · ปิดถาวร 2027-01-01) · log คีย์ผ่าน `_redact_secrets`
+- Gemini 3.1 Live ตัดสายที่ไม่มี audio input ด้วย 1008 ที่ ~151 วิ (ไม่มีในเอกสาร) → client `parkIfUnused()` ·
+  ⛔ ไม่แก้ด้วย keepalive/`audio_stream_end` (probe แล้วไม่ช่วย · keepalive กินโควตา)
+- iOS: mic track `ended` → เสียง WebAudio ออก earpiece (WebKit 218012) · ปุ่มเคส `ended` = `stopVoice()` อย่างเดียว ⛔ **ห้ามเติม `startVoice()`**
+- push `~/appscript.ui` นอก LAN: `git push github main` + `git push nas-cf:/var/services/homes/pawin/git/appscript.ui.git main`
+- probe Live API บน prod: `docker exec -d -e PYTHONPATH=/app -w /app` เขียนผลลงไฟล์ (ssh ผ่าน cf หลุดเมื่อรอนาน) · ทีละสาย (สองสายพร้อมกัน = 1011) · ลบไฟล์ probe ทิ้ง
 
 ### 🔑 กติกาใหม่จากเซสชัน 09-30
 - system ของ agent ประกอบผ่าน `orchestrator._agent_system()` เท่านั้น (ตัด `SUGGEST_AGENT_MODE`) · ห้ามแก้ถ้อยคำ `_NO_FABRICATION` (sha persona/เสียง)

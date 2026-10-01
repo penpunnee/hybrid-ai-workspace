@@ -1,5 +1,23 @@
 ---
 
+## [2026-10-01 ปิดเซสชัน] สรุป (ต่อ 48–55) — CLAUDE.md ลดขนาด · ถอด CSE · voice 1008-loop · iOS earpiece
+
+| ต่อ | งาน | ผล | commit |
+|---|---|---|---|
+| 48 | CLAUDE.md 103 → 42 KB (ยกส่วนอ้างอิงลง `docs/reference/` 4 ไฟล์ ไม่แก้เนื้อ) + เทสงบ 50 KB + ratchet env สแกนไฟล์ใหม่ | ✅ CI | `7170fbc` |
+| 49 | เทสตรึง "go_away ไม่นับเป็นความล้มเหลว" โหมดอ่าน · คอมเมนต์ rAF ตกรุ่นใน bookreader.ts | ✅ CI | `96d87be` · ui `f094025` |
+| 50 | verify ที่คั่นโหมดอ่านด้วยรอบฟังจริง: marks.set 559–619 ms → ~0.15 ms | ✅ prod | `f4764fc` |
+| 51 | ถอด Google CSE (403 · Google ปิดรับลูกค้าใหม่ · ปิดถาวร 2027-01-01) → Brave → DDG + redact คีย์ Brave | ✅ prod + CI | `cbd9062` |
+| 52 | ต้นเหตุ voice 1008-loop: สายไม่มี input ถูก Gemini 3.1 Live ตัดที่ ~151 วิ (653/653 สาย · probe 150.7/152.6 วิ แม้ส่ง audio_stream_end · เอกสารทางการไม่มี idle timeout) | หลักฐาน | `74d9edf` |
+| 53 | client พักสายเมื่อไม่มีใครใช้ (`parkIfUnused`) — ไม่ต่อใหม่วน · ต่อเมื่อเปิดไมค์/กลับหน้าจอ/พิมพ์ | ✅ prod (เห็น `parked` · ไม่มี 1008 วน) | ui `0eb2063` · `04967cd` |
+| 54 | "ข้อความมาแต่เสียงไม่ออก": iOS ปิดไมค์ตอนล็อกจอ → เสียงออก earpiece (WebKit 218012 · iOS 27.2 beta ยังเป็น · release notes 27/27.2 ไม่แก้) | หลักฐาน + vault | `d18edbc` |
+| 55 | ไมค์ถูก iOS ปิด → ปุ่ม "จบสายแล้วเริ่มใหม่" (ทาง 2) + `ended` ยกระดับเหตุผลได้ | ✅ deploy + CI · 🧪 รอ iPhone | ui `46ebfd7` · `066c60e` |
+
+- vault ที่สร้าง/แก้: `google-custom-search-api-shutdown` · `gemini-live-idle-1008` · `ios-audio-interruption-recovery` (แก้ข้อมูลผิด: WebAudio ไม่ได้ปลอดภัยกว่า)
+- ค้นพบข้างทาง: `gemini-3.1-flash-live-preview` = legacy (ยังไม่มีวันปิด · ตัวแทน `gemini-3.8-live`) · prod fallback `gemini-3.1-flash-lite` ปิด 2027-05-07
+- ⚠️ ผมแก้คำพูดตัวเอง 2 ครั้ง: "CSE เสียหนึ่งรอบทุกการค้น" (ผิด — เรียกเฉพาะ Brave ว่าง) · "1008 เพราะ idle" ตอนแรกเป็นอนุมาน → พิสูจน์ด้วย probe ทีหลัง
+- 🧪 ส่งต่อเซสชันหน้า: user จะเทสบน iPhone (ดู ▶️ งานแรก)
+
 ## [2026-10-01 ต่อ 55] ไมค์ถูก iOS ปิด → ปุ่มพาไป "จบสายแล้วเริ่มใหม่" (ทาง 2 · appscript.ui `46ebfd7` · static `066c60e`) ✅ deploy + CI เขียว · 🧪 รอ user ลอง
 
 - ที่มา: ต่อ 54 (earpiece หลัง track `ended` · WebKit 218012 · iOS 27.2 ยังเป็น) · user เคาะทาง 2 (ไม่แตะเส้นเล่นเสียง)
