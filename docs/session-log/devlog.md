@@ -19,6 +19,12 @@
   ปิด ping แล้วได้ `1008 The operation was aborted.` ตรงกับเรา · อีกเธรด "closes after ~2–3 minutes of inactivity without GOAWAY" (Google ตอบว่า replicate ไม่ได้)
   · ⚠️ ขัดกัน: เธรด regression 08-04 มี probe idle ทุกคืนอยู่ได้ ~540 วิ (ไม่ถูกตัดที่ 150) ⇒ เงื่อนไขอาจขึ้นกับ config · **ข้อมูลของเราเองชี้ขาดสำหรับระบบเรา**
   · ไม่มีเอกสารทางการเรื่อง idle timeout · ไม่มี keepalive ที่ Google แนะนำ ⇒ ตัด (ข) keepalive ส่งเงียบ (ต้องส่ง audio จริงตลอด = กินโควตา)
+- **เอกสารทางการ (เช็ค 10-01):** session audio-only 15 นาที · connection ~10 นาที + GoAway · **ไม่มีหน้าไหนพูดถึง idle timeout/1008**
+  · `audioStreamEnd` = "should be sent ... because the microphone was turned off" (เราไม่เคยส่ง) · `gemini-3.1-flash-live-preview` = **legacy**,
+  ยังไม่ประกาศวันปิด, ตัวแทน `gemini-3.8-live` (ออก 09-15 · user ส่งภาพ AI Studio: 3.8 Live เปิดบน free tier ของคีย์นี้)
+- 🔬 **probe ตรงจากคอนเทนเนอร์ prod 03:25 UTC** (`build_live_config` ตัวจริง · ไม่มี client/เบราว์เซอร์ · ทีละสาย):
+  A ปล่อยว่าง → **1008 ที่ 150.7 วิ** · B ส่ง `audio_stream_end` แล้วว่าง → **1008 ที่ 152.6 วิ** · ไม่มี GoAway ทั้งคู่
+  ⇒ reproduce ได้แบบแยกตัวแปร · `audio_stream_end` **ไม่ช่วย** · ต้นเหตุคือ "ไม่มี audio input ~150 วิ" ฝั่ง Gemini ไม่ใช่โค้ดเรา
 - ทางแก้ที่เสนอ (ยังไม่ทำ): (ก) client ไม่ต่อใหม่หลัง 1008 ถ้า `muted && hidden` — ต่อเมื่อเปิดไมค์/กลับมาหน้าจอ (ข) keepalive ส่งเงียบ
   = กินโควตา audio input ตลอดเวลาที่ค้าง (ค) server ตัดสายหลัง 1008 ติดกัน N ครั้งโดยไม่มี input · คำถามแยก: ทำไมสายเสียงเปิดใหม่เองตอน 03:22:15 ขณะ reader ทำงาน
 
