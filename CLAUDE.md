@@ -191,9 +191,9 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → /scrutinize → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy → verify prod (ยืนยันว่าเส้นที่แก้ถูกวิ่งจริง)
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
-### 🥇 งานแรกเซสชันหน้า — ค้นเว็บค้างหลายนาทีเมื่อ PC .235 ดับ (ต่อ 56–57)
-โหมดเสียงเงียบ 3.5 นาที: Gemini search 429 → Brave → QueryRewrite + rerank embed รอ .235 (timeout 30 วิ × retry) → ผลถูกตัดทิ้งหมด (fail-closed)
-· แผนที่เสนอ: ข้ามเครื่องที่ health บอกว่าดับ · `max_retries=0` · เพดานเวลารวมโหมดเสียง · "rerank ล้ม" ต้องไม่หน้าตาเหมือน "ไม่เจอ" — รายละเอียด devlog ต่อ 56–57
+### 🥇 งานแรกเซสชันหน้า — ค้นเว็บค้างเมื่อ PC .235 ดับ: ข้อ 1–4 ที่เหลือ (ต่อ 58)
+ต่อ 57 ปิด Gemini grounding + LLM rewrite บน prod แล้ว (A/B ~9.9 → ~3.6 วิ) · ที่เหลือคือ rerank embed ค้าง ~3 นาทีตอน .235 ดับ:
+`max_retries=0` embed · ข้ามเครื่องที่ health บอกดับ · เพดานเวลารวมโหมดเสียง · "rerank ล้ม" ต้องไม่หน้าตาเหมือน "หาไม่เจอ" — devlog ต่อ 56–57
 ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
 ### ✅ ปิดแล้ว (สรุป: devlog [2026-10-01 ปิดเซสชัน] · [2026-09-30 ปิดเซสชัน 2] · [2026-09-30 ปิดเซสชัน] · [2026-09-29 ปิดเซสชัน 2])
@@ -206,7 +206,7 @@ insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBounda
 
 ### 🔑 กติกาใหม่จากเซสชัน 10-01
 - `CLAUDE.md` งบ 50 KB มีเทส (`tests/test_claude_md_budget.py`) — **อย่าขยับเพดาน** ย้ายลง `docs/` · บล็อก env อยู่ `docs/reference/env-vars.md` (ratchet สแกน)
-- ค้นเว็บ = Brave → DDG · ⛔ **ห้ามเอา Google CSE กลับ** (ปิดรับลูกค้าใหม่ · ปิดถาวร 2027-01-01) · log คีย์ผ่าน `_redact_secrets`
+- ค้นเว็บ = Brave → DDG · prod ปิด `GEMINI_WEB_SEARCH_ENABLED` + `QUERY_REWRITE_ENABLED` (ต่อ 57 · free tier grounding = 429) · ⛔ **ห้ามเอา Google CSE กลับ** (ปิดรับลูกค้าใหม่ · ปิดถาวร 2027-01-01) · log คีย์ผ่าน `_redact_secrets`
 - Gemini 3.1 Live ตัดสายที่ไม่มี audio input ด้วย 1008 ที่ ~151 วิ (ไม่มีในเอกสาร) → client `parkIfUnused()` ·
   ⛔ ไม่แก้ด้วย keepalive/`audio_stream_end` (probe แล้วไม่ช่วย · keepalive กินโควตา)
 - iOS: mic track `ended` → เสียง WebAudio ออก earpiece (WebKit 218012) · ปุ่มเคส `ended` = `stopVoice()` อย่างเดียว ⛔ **ห้ามเติม `startVoice()`**

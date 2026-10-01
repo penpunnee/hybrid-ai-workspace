@@ -1,5 +1,39 @@
 ---
 
+## [2026-10-01 ต่อ 57] สืบเส้นค้นเว็บโหมดเสียง → ปิด Gemini grounding + ปิด LLM rewrite บน prod · วัด A/B ~9.9 → ~3.6 วิ ✅ prod
+
+**สืบ (log prod ทั้ง 6 ไฟล์ 06-04 → วันนี้):**
+- **Gemini grounding:** `gemini-2.5-flash` สำเร็จ 109 ครั้ง (06-12 → **08-26**) · หลังย้ายไปโปรเจกต์ free tier 08-26
+  (`gemini-3.5-flash` 429 ×3 · `gemini-3.5-flash-lite` 429 **×66 สำเร็จ 0**) — ตรงกับที่วัดแยกตัวแปรไว้ 08-31
+  (`docs/reference/web-search.md:33` · free tier ไม่เปิด grounding) แต่ไม่เคยมีการตัดสินใจว่าจะทำยังไง โค้ดเลยยิงก่อนทุกครั้ง
+  · ⚠️ ผมรายงาน user ตอนแรกว่า "ไม่ลองโมเดลสำรอง" — **ผิด** ถอนแล้ว
+- **LLM rewrite:** `[WebSearch] rewrite:` = **0 ครั้งทุกไฟล์** · ล้ม timeout/connection/400 `Model is unloaded` · เอกสาร 08-03 บอกว่า
+  no-op กับ Qwen3.5 อยู่แล้ว · เส้นที่ทำงานจริง = `clean_query()` · ราคา: +8 วิทุกการค้น (.235 เปิด) / +25 วิ (.235 ดับ)
+- `openai` 2.44.0 (Mac = prod) `DEFAULT_MAX_RETRIES=2` ⇒ timeout จริง = 3× ค่าที่ตั้ง (ยืนยันตัวเลข 90/92 วิ ใน ต่อ 56)
+
+**ทำ (user เคาะ: ข้อ 5 ปิด rewrite · ข้อ 6 ข้าม Gemini):**
+- `138f2a1` env ใหม่ `GEMINI_WEB_SEARCH_ENABLED` (default true = เดิม) — ปิด = `gemini_web_search` คืน `("", [])` ไม่ยิง API ·
+  caller ทั้งสอง (`server.py` โหมดเสียง · `routers/chat.py:_inject_web_context`) ถอยไปเส้น Brave เองเมื่อได้ค่าว่าง ·
+  เทส 3 ตัวแดงก่อนแก้ · mutation 2/2 KILLED · ชุดเต็ม 2560 passed · ruff ผ่าน
+- prod `.env` เติม `QUERY_REWRITE_ENABLED=false` + `GEMINI_WEB_SEARCH_ENABLED=false` (สำรอง `.env.bak-20261001`) ·
+  `--force-recreate` → healthy · inode `server.py` host = container (274852) · env ในคอนเทนเนอร์ครบ
+- **ถอย:** ลบ 2 บรรทัดใน `.env` แล้ว `--force-recreate`
+
+**วัดบน prod (probe ในคอนเทนเนอร์ เลียนเส้นโหมดเสียง gemini → web_search_with_results · คำค้นใหม่ทุกครั้งกัน cache · LOG_FILE แยก ไม่ปน server.log · ลบ probe แล้ว):**
+
+| เส้นเดิม | วิ | เส้นใหม่ | วิ |
+|---|---|---|---|
+| RTX 5090 (ก่อน deploy) | 11.50 | RTX 5080 (หลัง deploy) | 5.58 |
+| iPhone 17 Pro | 9.28 | Galaxy S26 Ultra | 2.66 |
+| MotoGP บุรีรัมย์ | 8.86 | F1 สิงคโปร์ | 4.28 |
+| Ghost of Yotei | 9.90 | Death Stranding 2 | 1.90 |
+| **เฉลี่ย** | **~9.9** | | **~3.6** |
+
+ทุกรอบได้ 3 ผล (ได้ผลครบเท่าเดิม) · ⚠️ คนละคำค้น/ตัวอย่างเล็ก — ตัวเลขบอกทิศทาง ไม่ใช่ค่าแม่น · ยังไม่ได้วัดในสายเสียงจริง
+- CI ของ `3d76127` (docs) แดง = pip `files.pythonhosted.org Read timed out` ตอน build อิมเมจ (infra ไม่ใช่เทส)
+- ⏭️ ยังเหลือ (ต่อ 58): ข้อ 1–4 — `max_retries=0` embed · ข้ามเครื่องที่ health บอกดับ · เพดานเวลารวมโหมดเสียง ·
+  "rerank ล้ม" ≠ "หาไม่เจอ" (ตอน .235 ดับ embed ยังค้าง ~3 นาทีอยู่ — สองสวิตช์นี้ตัดได้แค่ส่วน rewrite 25 วิ)
+
 ## [2026-10-01 ต่อ 56] user เทส iPhone (ต่อ 55) — เสียงออกลำโพงปกติ ✅ แต่วิ่งทางปุ่มกู้ไมค์เดิม ไม่ใช่ `end-call` · เจอค้นเว็บค้าง 3.5 นาทีตอน PC .235 ดับ
 
 **รอบเทสไมค์ (log prod หลังบรรทัด 34533 · UTC):**
