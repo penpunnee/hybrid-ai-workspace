@@ -126,10 +126,13 @@ class TestIncompleteLogLine:
 ข้อความ = "ก" * 600_000
 
 
+GO_AWAY = "go_away"
+
+
 class _Sessionปลอม:
     """ป้อนท่อน → (เสียงตาม `plan`) → turn_complete → เงียบรอ
 
-    `plan(n_session, pos) -> ไบต์เสียง` · จด `("feed", n, pos)`
+    `plan(n_session, pos) -> ไบต์เสียง | GO_AWAY` · จด `("feed", n, pos)`
     """
 
     def __init__(self, log, n, marks, plan):
@@ -143,6 +146,13 @@ class _Sessionปลอม:
 
         async def gen():
             await asyncio.sleep(0.01)
+            if nbytes == GO_AWAY:
+                # server สั่งย้ายกลางท่อน — ไม่มี turn_complete ตามมา
+                yield types.SimpleNamespace(
+                    data=None, server_content=None, session_resumption_update=None,
+                    go_away=types.SimpleNamespace(time_left=None))
+                while True:
+                    await asyncio.sleep(0.02)
             if nbytes:
                 yield types.SimpleNamespace(data=b"\x00" * nbytes, server_content=None,
                                             go_away=None, session_resumption_update=None)
@@ -324,3 +334,31 @@ def test_กลุ่มควบคุม_เสียงปกติ_ไม่
     pos = [p for _, p in _feeds(log)]
     assert len(pos) == len(set(pos)), f"ท่อนปกติถูกอ่านซ้ำ: {log}"
     assert "open#2" not in log, f"ไม่มีท่อนเสียแต่ต่อ session ใหม่: {log}"
+
+
+def test_ท่อนที่โดน_go_away_ตัดกลาง_ไม่นับเป็นความล้มเหลว(เส้นอ่าน):
+    """ตรึงพฤติกรรมที่เห็นบน prod 09-18 (@49619): ป้อน 5 ครั้งแต่ตัดสิน 4 — ครั้งที่ 2
+    ถูก `go_away` ตัดก่อนจบ turn จึงไม่มีอะไรให้ตัดสิน · ถ้านับเป็นความล้มเหลว
+    การย้าย server ตามรอบ (~ทุก 10 นาที ไม่เกี่ยวกับเนื้อหา) จะกินเพดาน 3 ครั้ง
+    แล้วพักหนังสือทั้งที่ยังไม่ได้ลองอ่านครบ"""
+    import server
+
+    log, marks, state = เส้นอ่าน
+    ป้อนครั้งที่ = [0]
+
+    def plan(n, pos):
+        ป้อนครั้งที่[0] += 1
+        return GO_AWAY if ป้อนครั้งที่[0] == 2 else 0
+
+    state["plan"] = plan
+    ได้รับ: list = []
+    with TestClient(server.app).websocket_connect(f"/ws/reader?source={เล่ม}") as ws:
+        assert ws.receive_json()["type"] == "connected"
+        _รับจนเจอ(ws, "paused", ได้รับ)
+        assert marks[เล่ม] == 0, f"ท่อนเปล่าแต่ที่คั่นเลื่อน: {log}"
+        # ตัดสิน 4 ครั้ง (ต้นฉบับ + ลองซ้ำ 3) + ครั้งที่โดน go_away อีก 1 = ป้อน 5
+        assert _feeds(log) == [(1, 0), (1, 0), (2, 0), (3, 0), (4, 0)], (
+            f"go_away ถูกนับเป็นความล้มเหลว (หรือลำดับลองซ้ำเพี้ยน): {log}")
+        retries = [m["attempt"] for m in ได้รับ if m.get("type") == "retry"]
+        assert retries == [1, 2, 3], f"ป้ายลองซ้ำผิด: {ได้รับ}"
+        ws.send_json({"type": "close"})

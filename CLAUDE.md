@@ -241,8 +241,8 @@ Low Power/ความร้อน) — `underruns` อ่านแล้ว = �
 ### ⚪ งานเล็กค้าง
 `GEMINI_LIVE_MODEL` จะยกขึ้น `.env` ไหม · AnythingLLM ตกรุ่น (หรือปิดทิ้ง 3.34 GB) · โมเดล local ไม่มีใครใช้ ~14 GB ·
 `pythainlp` ไม่มีในอิมเมจ ⇒ เทส `utils/thaiscatter.py` 14 ตัวถูกข้ามทุกที่ · `enhanced.js` map สีตามตระกูลเฉด ·
-ป้าย "กำลังค้น" ในโหมดเสียง · turn ที่โดน `go_away` ตัดไม่นับเป็นความล้มเหลว (ยังไม่มีเทสตรึง) ·
-คอมเมนต์ `utils/bookreader.ts:114` เรื่อง rAF ตกรุ่น · citations ราคาเกมอาจเป็นแหล่งรอง (Steam age-check) ·
+ป้าย "กำลังค้น" ในโหมดเสียง ·
+citations ราคาเกมอาจเป็นแหล่งรอง (Steam age-check) ·
 
 ### ⛔ พักไว้ (user เคาะแล้ว อย่าเสนอซ้ำ)
 `ANTHROPIC_API_KEY`/`MOONSHOT_API_KEY` · Image Gen (free tier limit=0) · fine-tune (รอ 👍 ~200-500) ·
