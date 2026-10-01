@@ -10,6 +10,7 @@ GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3.5-flash-lite   # ค่าที่ prod ตั้ง · default ในโค้ด = `utils/llm.py:GEMINI_MODEL_DEFAULT` (gemini-3.5-flash) · ⚠️ gemini-2.5-flash ปิด 2026-10-16 (`GEMINI_MODEL_SUNSET`) · ห้ามใช้ gemini-2.5-pro บน free tier (quota limit=0 → 429 ทุก request, เจอจริง 2026-06-11)
 GEMINI_FALLBACK_MODEL=gemini-3.1-flash-lite   # สำรองเมื่อตัวหลัก transient-fail · ว่าง = ไม่สลับโมเดล
 GEMINI_SEARCH_MODEL=            # โมเดลเฉพาะ gemini_web_search() (grounding ให้ local/Claude/Kimi) — ว่าง = ใช้ GEMINI_MODEL; precedence: arg > env นี้ > GEMINI_MODEL (มีตั้งแต่ 7087f88, test ใน test_gemini_web_search.py)
+GEMINI_WEB_SEARCH_ENABLED=true    # false = ข้าม gemini_web_search ไปเส้น Brave ตรง — free tier grounding = 429 limit: 0 · prod ตั้ง false (2026-10-01)
 GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview   # default อยู่ที่ `utils/voice.py:GEMINI_LIVE_MODEL_DEFAULT` ที่เดียว (ดูหัวข้อ "เสียงต้องเป็นคนเดิม") ⚠️ ห้ามสลับไปสาย native-audio โดยไม่ถอด `VOICE_TEMPERATURE` — วัดแล้วเสียงหายเงียบๆ 0 ไบต์ · gemini-2.0-flash-exp/gemini-live-2.0-flash-001 ถูกถอดจาก Live API แล้ว (1008 not found). เช็ค model ที่ใช้ได้: ListModels filter supportedGenerationMethods มี bidiGenerateContent
 GEMINI_TTS_MODEL=gemini-2.5-flash-preview-tts   # ⚠️ ต้องเป็นสาย `*-tts` เท่านั้น (`utils/tts.py` เรียก generateContent ไม่ใช่ bidi) · ห้ามใส่สาย native-audio เด็ดขาด = 404 ทุก request · free tier 10 req/วัน/โมเดล · ทางเลือกที่วัดแล้วใช้ได้: gemini-3.1-flash-tts-preview · ดูหัวข้อ "🔊 /api/tts"
 # Claude (Anthropic) — provider "claude"; ปล่อยว่าง=ปิด

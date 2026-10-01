@@ -44,7 +44,7 @@ from core.config import LMSTUDIO_API_KEY as _LMSTUDIO_API_KEY
 from core.config import LMSTUDIO_BASE_URL as _LMSTUDIO_BASE_URL
 from core.config import LMSTUDIO_TIMEOUT as _LMSTUDIO_TIMEOUT
 # env ที่ไฟล์นี้เป็นเจ้าของ — อ่านผ่าน registry เพื่อให้ .env.example generate ได้
-from core.env_registry import env_int, env_str
+from core.env_registry import env_bool, env_int, env_str
 
 load_dotenv()
 
@@ -176,6 +176,11 @@ GEMINI_FALLBACK_MODEL = env_str("GEMINI_FALLBACK_MODEL", "", group=_G, doc=(
 GEMINI_SEARCH_MODEL = env_str("GEMINI_SEARCH_MODEL", "", group=_G, doc=(
     "โมเดลเฉพาะ gemini_web_search() (grounding ให้ local/Claude/Kimi)\n"
     "ว่าง = ใช้ GEMINI_MODEL · ⚠️ free tier ไม่เปิด google_search grounding (429 limit: 0)"))
+# สวิตช์ข้าม gemini_web_search ทั้งเส้น (2026-10-01) — free tier ไม่เปิด grounding
+# ⇒ prod ล้ม 429 ทุกครั้งตั้งแต่ย้ายโปรเจกต์ 08-26 · ปิด = caller ไปเส้น Brave ตรง ไม่ยิงคำขอที่รู้ว่าล้ม
+GEMINI_WEB_SEARCH_ENABLED = env_bool("GEMINI_WEB_SEARCH_ENABLED", True, group=_G, doc=(
+    "false = ไม่ค้นเว็บผ่าน Gemini grounding เลย (ไปเส้น Brave → DDG ตรง)\n"
+    "ตั้ง false เมื่อโปรเจกต์เป็น free tier (grounding = 429 limit: 0 ทุกครั้ง) · เปิด billing แล้วค่อยกลับเป็น true"))
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
@@ -893,7 +898,7 @@ def gemini_web_search(query: str, model: str = "") -> tuple[str, list[dict]]:
     """ค้นเว็บด้วย Gemini + Google Search grounding (Google จริง) แล้วคืน (สรุป, แหล่ง)
     ให้โมเดลอื่น (local/Claude/Kimi) เอาไป inject — แทน DDG. คืน ("", []) ถ้า Gemini ไม่พร้อม/ล้ม.
     ⚠️ กิน Gemini quota ต่อการค้น 1 ครั้ง (ตั้ง GEMINI_SEARCH_MODEL เป็นตัว quota สูงได้)"""
-    if not gemini_client:
+    if not gemini_client or not GEMINI_WEB_SEARCH_ENABLED:
         return "", []
     try:
         prompt = (

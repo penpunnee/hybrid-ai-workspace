@@ -75,3 +75,44 @@ def test_search_model_env_over_chat_default(monkeypatch):
 
 def test_search_model_falls_back_to_gemini_model(monkeypatch):
     assert _call_with(monkeypatch, env_val=None) == "chat-default"
+
+
+# ── สวิตช์ข้าม Gemini grounding (2026-10-01 ต่อ 57) ──
+# free tier ไม่เปิด google_search grounding (429 limit: 0) — prod ล้ม 66/66 ตั้งแต่ 08-27
+# ปิดสวิตช์ = ต้องไม่ยิง API เลย (คืนว่างให้ caller ไปเส้น Brave) · เปิด = พฤติกรรมเดิม
+
+class _BoomClient:
+    """fake ที่โยนทันทีถ้าถูกเรียก — พิสูจน์ว่า "ไม่ยิง" ไม่ใช่ "ยิงแล้วล้มเงียบ" """
+    def __init__(self, sink):
+        def _gen(model, contents, config):
+            sink["called"] = True
+            raise AssertionError("ไม่ควรเรียก Gemini เมื่อปิดสวิตช์")
+        self.models = SimpleNamespace(generate_content=_gen)
+
+
+def test_search_disabled_ไม่ยิง_api(monkeypatch):
+    from utils import llm
+    sink = {}
+    monkeypatch.setattr(llm, "gemini_client", _BoomClient(sink))
+    monkeypatch.setattr(llm, "GEMINI_WEB_SEARCH_ENABLED", False)
+    assert llm.gemini_web_search("ราคาทอง") == ("", [])
+    assert "called" not in sink
+
+
+def test_search_enabled_ยังยิงตามเดิม(monkeypatch):
+    from utils import llm
+    sink = {}
+    monkeypatch.setattr(llm, "gemini_client", _RecClient(sink))
+    monkeypatch.setattr(llm, "GEMINI_WEB_SEARCH_ENABLED", True)
+    monkeypatch.setattr(llm, "GEMINI_SEARCH_MODEL", "")
+    monkeypatch.setattr(llm, "GEMINI_MODEL", "chat-default")
+    assert llm.gemini_web_search("ราคาทอง")[0] == "ok"
+    assert sink["model"] == "chat-default"
+
+
+def test_search_switch_ลงทะเบียน_default_เปิด():
+    from core.env_registry import REGISTRY, load_all
+    load_all()
+    spec = REGISTRY["GEMINI_WEB_SEARCH_ENABLED"]
+    assert spec.default is True
+    assert spec.doc.strip()
