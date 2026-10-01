@@ -1,5 +1,33 @@
 ---
 
+## [2026-10-01 ต่อ 58] เครื่อง embed ดับต้องไม่ทำโหมดเสียงเงียบ 3.5 นาที (`fa3c784`) ✅ prod + CI · จำลองดับบน prod: 3.5 นาที → 8.7 / 2.8 วิ
+
+**ต้นเหตุ (ต่อ 56):** embed `timeout 30 × (1 + retry 2)` = 90 วิ ต่อ provider × 2 · rerank ล้ม → ผลไม่มีคะแนน → ตัดหมด → โมเดลได้ "หาไม่เจอ"
+
+**แก้ (user เคาะข้อ 1–4):**
+1. `utils/embed.py` client ทั้งสอง `max_retries=0` + `httpx.Timeout(read=30, connect=EMBED_CONNECT_TIMEOUT=3)` (fallback อีก provider ทำหน้าที่ retry แล้ว)
+2. `_embed_via()` — `APIConnectionError` (รวม timeout) → ข้าม provider นั้น `EMBED_DOWN_COOLDOWN=60` วิ · error อื่น (400/โมเดลไม่ตรง) ไม่ข้าม
+3. `utils/websearch.py:voice_search_payload()` — `asyncio.wait_for(…, VOICE_SEARCH_TIMEOUT=20)` → `VOICE_SEARCH_TIMED_OUT` · `server.py` เรียกตัวนี้ตัวเดียว
+4. `web_search_with_status()` → `ok`/`empty`/`unavailable` (`rerank_unavailable()` = มีผลแต่ไม่มีคะแนนเลย) · ข้อความถึงโมเดลต่างกัน ·
+   แก้คู่ `agents/tools.py:_t_web_search` (pipeline ที่ 2) · `web_search_with_results`/`web_search_context` สัญญาเดิม · `_web_search_impl` คืน 3 ค่า (แก้เทสเดิม 1 ตัว)
+
+**เทส:** `tests/test_websearch_outage.py` 22 ตัว (แดงก่อนแก้ 16+4 error) · mutation **12/12 KILLED** · ชุดเต็ม 2582 · ruff · CI เขียว
+- 🐛 ระหว่างทาง: เทสใน `test_embed.py` ที่ fallback ไป `localhost:1234` จริงทำให้ตัวข้ามจำ "LM Studio ดับ" แล้วรั่วไปเทสถัดไป (แดงเฉพาะตอนรันทั้งไฟล์)
+  → `tests/conftest.py` autouse ล้าง `_down_until` ทุกเทส
+- sha เสียง (`sha256(repr(cfg))[:16]` · `build_live_config("kwan","SYS",None)` / `build_reader_config(None)`) = live `dbff1a358e00ef03` · reader `8c5dbf9603eb3630`
+  ก่อน=หลัง ทั้ง Mac และในคอนเทนเนอร์ prod (สูตรนี้ตรงกับค่าที่จดไว้ 09-23 — ใช้ซ้ำได้)
+
+**deploy:** `--force-recreate` → healthy · inode `server.py` 279401 = 279401 · ไม่มีสายเสียงค้างตอน deploy
+**วัดบน prod (probe ในคอนเทนเนอร์ · LOG_FILE แยก · ลบแล้ว · ชี้ embed ไป blackhole `10.255.255.1` เฉพาะ process probe):**
+
+| เคส | ก่อน (log 06:00–06:03) | หลัง |
+|---|---|---|
+| ค้นครั้งแรกตอนเครื่อง embed ดับ | ~3.5 นาที → "หาไม่เจอ" | **8.67 วิ** → "ระบบค้นข้อมูลขัดข้องชั่วคราว (ไม่ใช่ว่าไม่มีข้อมูล)…" |
+| ค้นครั้งถัดไปในช่วงพัก | เท่าเดิม | **2.83 วิ** (ข้าม provider ที่ดับ) |
+| ค้นปกติ (.235 เปิด) | — | 8.37 วิ ได้ผล 6,623 ตัวอักษร (ตัวอย่างเดียว) |
+
+- ⚠️ ยังไม่ได้เห็นในสายเสียงจริง · ไม่ได้วัดเคส "เครื่องอยู่แต่ค้าง" (read timeout 30 วิ → เพดาน 20 วิ ของโหมดเสียงรับไว้ · แชท/agent ยังรอได้ถึง 60 วิ)
+
 ## [2026-10-01 ต่อ 57] สืบเส้นค้นเว็บโหมดเสียง → ปิด Gemini grounding + ปิด LLM rewrite บน prod · วัด A/B ~9.9 → ~3.6 วิ ✅ prod
 
 **สืบ (log prod ทั้ง 6 ไฟล์ 06-04 → วันนี้):**

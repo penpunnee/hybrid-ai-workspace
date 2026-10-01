@@ -191,14 +191,15 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → /scrutinize → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy → verify prod (ยืนยันว่าเส้นที่แก้ถูกวิ่งจริง)
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
-### 🥇 งานแรกเซสชันหน้า — ค้นเว็บค้างเมื่อ PC .235 ดับ: ข้อ 1–4 ที่เหลือ (ต่อ 58)
-ต่อ 57 ปิด Gemini grounding + LLM rewrite บน prod แล้ว (A/B ~9.9 → ~3.6 วิ) · ที่เหลือคือ rerank embed ค้าง ~3 นาทีตอน .235 ดับ:
-`max_retries=0` embed · ข้ามเครื่องที่ health บอกดับ · เพดานเวลารวมโหมดเสียง · "rerank ล้ม" ต้องไม่หน้าตาเหมือน "หาไม่เจอ" — devlog ต่อ 56–57
+### 🥇 งานแรกเซสชันหน้า — ดู log ค้นเว็บโหมดเสียงจากการใช้จริง (ต่อ 58)
+`grep -E "\[Voice WS\] ค้น|เกินเพดาน|ให้คะแนนไม่ได้|ต่อไม่ติด" /app/logs/server.log` — บรรทัด "ค้น" มีสถานะ + วินาทีแล้ว ·
+ปกติควร < 10 วิ · `unavailable` = embed .235 ล่ม (ขวัญต้องบอกว่าค้นไม่ได้ ไม่ใช่หาไม่เจอ)
 ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
 ### ✅ ปิดแล้ว (สรุป: devlog [2026-10-01 ปิดเซสชัน] · [2026-09-30 ปิดเซสชัน 2] · [2026-09-30 ปิดเซสชัน] · [2026-09-29 ปิดเซสชัน 2])
 **10-01:** CLAUDE.md 103→42 KB + เทสงบ 50 KB (ต่อ 48) · เทสตรึง go_away โหมดอ่าน (ต่อ 49) · verify ที่คั่นด้วยรอบฟังจริง (ต่อ 50) ·
-ถอด Google CSE → Brave → DDG + redact คีย์ Brave (ต่อ 51) · voice idle 1008-loop → client พักสาย (ต่อ 52–53) · ไมค์ถูก iOS ปิด → เสียงออกลำโพงปกติ ✅ iPhone (ต่อ 54–56 · ปุ่ม `end-call` ยังรอเคสจริง)
+ถอด Google CSE → Brave → DDG + redact คีย์ Brave (ต่อ 51) · voice idle 1008-loop → client พักสาย (ต่อ 52–53) · ไมค์ถูก iOS ปิด → เสียงออกลำโพงปกติ ✅ iPhone (ต่อ 54–56 · ปุ่ม `end-call` ยังรอเคสจริง) ·
+ค้นเว็บ: ปิด Gemini grounding + LLM rewrite บน prod (ต่อ 57) · embed ดับไม่ทำเงียบ 3.5 นาที + เพดาน 20 วิ + "ล่ม" ≠ "หาไม่เจอ" (ต่อ 58)
 **09-30 (2):** เอกสาร `:8080`/Gemini · agent ไม่แนะนำ "เปิด Agent mode" · ถอด `CHROMA_PATH` + ลบ collection ว่าง 3 · ที่คั่นโหมดอ่าน 0.6 วิ → 0 ms
 **09-30:** กุญแจกำพร้าหลัง Dream = 0 · ดิสก์ NAS busy = healthcheck exec (autoheal 5s→5m นอกรีโป) · REM 0 ธีม = AI ตัดสินใจเอง (log raw + SKIP เกม) ·
 insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBoundary` ครอบทั้งแอป
@@ -206,7 +207,8 @@ insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBounda
 
 ### 🔑 กติกาใหม่จากเซสชัน 10-01
 - `CLAUDE.md` งบ 50 KB มีเทส (`tests/test_claude_md_budget.py`) — **อย่าขยับเพดาน** ย้ายลง `docs/` · บล็อก env อยู่ `docs/reference/env-vars.md` (ratchet สแกน)
-- ค้นเว็บ = Brave → DDG · prod ปิด `GEMINI_WEB_SEARCH_ENABLED` + `QUERY_REWRITE_ENABLED` (ต่อ 57 · free tier grounding = 429) · ⛔ **ห้ามเอา Google CSE กลับ** (ปิดรับลูกค้าใหม่ · ปิดถาวร 2027-01-01) · log คีย์ผ่าน `_redact_secrets`
+- ค้นเว็บ = Brave → DDG · prod ปิด `GEMINI_WEB_SEARCH_ENABLED` + `QUERY_REWRITE_ENABLED` (ต่อ 57 · free tier grounding = 429) ·
+  โหมดเสียงค้นผ่าน `voice_search_payload()` ที่เดียว · สถานะ `unavailable` ≠ `empty` · embed client ห้ามเปิด retry กลับ · ⛔ **ห้ามเอา Google CSE กลับ** (ปิดรับลูกค้าใหม่ · ปิดถาวร 2027-01-01) · log คีย์ผ่าน `_redact_secrets`
 - Gemini 3.1 Live ตัดสายที่ไม่มี audio input ด้วย 1008 ที่ ~151 วิ (ไม่มีในเอกสาร) → client `parkIfUnused()` ·
   ⛔ ไม่แก้ด้วย keepalive/`audio_stream_end` (probe แล้วไม่ช่วย · keepalive กินโควตา)
 - iOS: mic track `ended` → เสียง WebAudio ออก earpiece (WebKit 218012) · ปุ่มเคส `ended` = `stopVoice()` อย่างเดียว ⛔ **ห้ามเติม `startVoice()`**
