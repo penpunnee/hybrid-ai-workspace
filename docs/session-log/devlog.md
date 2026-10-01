@@ -1,5 +1,17 @@
 ---
 
+## [2026-10-01 ต่อ 55] ไมค์ถูก iOS ปิด → ปุ่มพาไป "จบสายแล้วเริ่มใหม่" (ทาง 2 · appscript.ui `46ebfd7` · static `066c60e`) ✅ deploy + CI เขียว · 🧪 รอ user ลอง
+
+- ที่มา: ต่อ 54 (earpiece หลัง track `ended` · WebKit 218012 · iOS 27.2 ยังเป็น) · user เคาะทาง 2 (ไม่แตะเส้นเล่นเสียง)
+- `utils/micrecover.ts:micRecoveryMode()` — `ended` → `end-call` · `zeros`/`no-callback`/null → `recover` (ปุ่มเดิม · สำเร็จจริง 08-26)
+- `app.tsx:endCallForDeadMic` = `stopVoice()` อย่างเดียว + toast "กดเริ่มคุยด้วยเสียงอีกครั้ง" · **ห้ามเติม startVoice()** (stop+start ในแตะเดียว = ไม่ได้ยินเลย)
+  · ปุ่ม "⏹ ไมค์ถูก iOS ปิด — แตะเพื่อจบสาย แล้วกดเริ่มใหม่" · ป้าย "⚠️ ไมค์ถูก iOS ปิด — เสียงอาจออกลำโพงบน" · เหตุผลเข้า state `micSilentReason`
+- 🐛 เจอระหว่างทาง: `onMicEnded` ไม่ยิงถ้าป้ายขึ้นด้วย `zeros` แล้ว ⇒ แบบ A (04:12:44 zeros → 04:12:50 ended) UI ค้างที่ zeros ·
+  เทสเดิมตรึงกติกานี้ไว้ ("ไม่มีข้อมูลใหม่") → **แก้เทสโดยตั้งใจ**: `ended` ยกระดับได้ครั้งเดียว (ธง `micEndedReported` รีเซ็ตใน connect)
+- เทสใหม่ 5 แดงก่อนแก้ · mutation **6/6 KILLED** · vitest 647 · tsc ผ่าน · md5 bundle Mac = NAS = คอนเทนเนอร์ · public เสิร์ฟ `index-Cb-d6i3-.js`
+- 🧪 ให้ user ลอง: ปิดไมค์ → ล็อกจอ → กลับมา → ต้องเห็นป้าย/ปุ่ม "ไมค์ถูก iOS ปิด" → แตะ → กดเริ่มใหม่ → เสียงออกลำโพงล่าง
+  · log ต้องมี `recover-attempt … mode=end-call reason=ended`
+
 ## [2026-10-01 ต่อ 54] "เสียงขวัญไม่ออก แต่ข้อความมา" หลังล็อกจอ — แยกตัวแปรกับ user แล้ว (ยังไม่แก้)
 
 - **รอบแรก 03:55–04:00 UTC:** ปิดไมค์+ล็อกจอ → iOS ฆ่าไมค์ (`mic_probe ended` · cap/play `interrupted`) → พักสาย ✅ → เปิดไมค์ → ต่อใหม่
