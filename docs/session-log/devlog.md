@@ -1,6 +1,6 @@
 ---
 
-## [2026-10-01 ต่อ 51] ถอด Google CSE ออกจาก chain ค้นเว็บ (Brave → DDG) + ย้ายด่าน redact คีย์มาครอบ Brave
+## [2026-10-01 ต่อ 51] ถอด Google CSE ออกจาก chain ค้นเว็บ (Brave → DDG) + ย้ายด่าน redact คีย์มาครอบ Brave (`cbd9062`) ✅ deploy + verify prod + CI เขียว
 
 - **หลักฐานก่อนถอด:** probe จากคอนเทนเนอร์ prod → `403 PERMISSION_DENIED — This project does not have the access to Custom Search JSON API`
   · log 06-04→10-01: Brave สำเร็จ **34/34** ตั้งแต่ขึ้น 08-31 13:47 · `[Google]` ล่าสุด 08-31 13:03 · DDG ไม่ถูกเรียกเลยหลัง Brave ขึ้น
@@ -13,6 +13,10 @@
   → แดงก่อนแก้ (`token=BSAsecret…` หลุดลง log) → ห่อด้วย `_redact_secrets` แล้วเขียว
 - `.env` บน NAS ยังมีคีย์ CSE ค้าง — ไม่มีผลแล้ว ไม่ได้แตะ (user ลบเองได้)
 - ชุดเต็ม 2557 passed / 17 skipped · ruff ผ่าน
+- **deploy:** Mac หลุด LAN ระหว่างทำ (ping .49 ไม่ตอบ · public 200) ⇒ ใช้ `nas-cf` · `git reset` + `docker restart ai-backend-1`
+  (ไม่แตะ `server.py` จึงไม่ต้อง `--force-recreate`)
+- **verify prod:** `Up (healthy)` · log ไม่มี Traceback/ImportError · ในคอนเทนเนอร์ `hasattr(websearch, "_google_search") = False`
+  · ค้นจริง `search_web("Python latest stable version")` → 3 ผล อันดับ 1 `devguide.python.org/versions/` (ผ่าน Brave) · CI run 36807482601 เขียว
 
 ## [2026-10-01 ต่อ 50] verify ต่อ 47 ด้วยรอบฟังนิยายจริง — ที่คั่นเลิกบล็อก event loop แล้ว ✅
 

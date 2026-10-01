@@ -196,6 +196,8 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
 ### ✅ ปิดแล้ว (สรุป: devlog [2026-09-30 ปิดเซสชัน 2] · [2026-09-30 ปิดเซสชัน] · [2026-09-29 ปิดเซสชัน 2])
+**10-01:** CLAUDE.md 103→42 KB + เทสงบ 50 KB (ต่อ 48) · เทสตรึง go_away โหมดอ่าน (ต่อ 49) · verify ที่คั่นด้วยรอบฟังจริง (ต่อ 50) ·
+ถอด Google CSE → Brave → DDG + redact คีย์ Brave (ต่อ 51)
 **09-30 (2):** เอกสาร `:8080`/Gemini · agent ไม่แนะนำ "เปิด Agent mode" · ถอด `CHROMA_PATH` + ลบ collection ว่าง 3 · ที่คั่นโหมดอ่าน 0.6 วิ → 0 ms
 **09-30:** กุญแจกำพร้าหลัง Dream = 0 · ดิสก์ NAS busy = healthcheck exec (autoheal 5s→5m นอกรีโป) · REM 0 ธีม = AI ตัดสินใจเอง (log raw + SKIP เกม) ·
 insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBoundary` ครอบทั้งแอป
