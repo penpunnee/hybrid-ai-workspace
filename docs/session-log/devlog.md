@@ -10,6 +10,10 @@
 - ⇒ ตัด "getUserMedia ของปุ่มกู้ไมค์" ออกจากการเป็นต้นเหตุ: **route ย้ายไป earpiece เกิดตั้งแต่ iOS ฆ่าไมค์ตอนล็อกจอ** ตรงกับที่ vault
   `browser-echo-cancellation-ios.md` จดไว้ · ตัวพักสาย (ต่อ 53) ไม่แตะ audio graph — ก่อนแก้ ไมค์ก็ถูกฆ่าตอนล็อกจอเหมือนกัน (ยังพิสูจน์ 100% ไม่ได้)
 - ยังไม่รู้: ทำไมรอบแรก (หลังกดกู้) ไม่ได้ยินเลย ไม่ใช่แค่ earpiece · ⏭️ ต้องค้นวิธีบังคับ route กลับลำโพงบน iOS Safari ก่อนแก้ (ห้ามเดา)
+- **ค้นแล้ว (vault `ios-audio-interruption-recovery.md` หัวข้อ "แก้ข้อมูล 2026-10-01"):** WebKit bug 218012 = ปัญหาที่รู้กันมาตั้งแต่ 2020 ·
+  วิศวกร WebKit: fix ครอบแค่ MediaStreamTrack **ไม่ครอบ WebAudio** · workaround ที่รับรอง = เล่น WebAudio ผ่าน `MediaStreamAudioDestinationNode`
+  → `<audio>` · สลับ `audioSession.type` ได้ผลบางครั้ง · ไม่มี API เลือกลำโพงบน iOS · ⚠️ vault เคยเขียนว่า WebAudio ปลอดภัยกว่า = ผิด (แก้แล้ว)
+  · ⏳ รอ user เคาะ: เปลี่ยนเส้นเล่นเสียงโหมดคุย (แตะใกล้โซนเสียง 🔒 · ต้อง A/B บน iPhone)
 
 ## [2026-10-01 ต่อ 53] แก้ voice idle 1008-loop — client พักสายเมื่อไม่มีใครใช้ (appscript.ui `0eb2063` · static `04967cd`) ✅ deploy + CI เขียว · 🧪 รอใช้จริง
 
