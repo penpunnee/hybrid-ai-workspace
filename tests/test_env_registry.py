@@ -612,8 +612,6 @@ def test_websearch_cache_memory_อยู่ใน_MODULES(mod):
     ("WEB_SEARCH_MIN_SCORE", "0.35"),
     ("BRAVE_MIN_INTERVAL", "1.1"),
     ("BRAVE_SEARCH_API_KEY", ""),
-    ("GOOGLE_SEARCH_API_KEY", ""),
-    ("GOOGLE_SEARCH_CX", ""),
     # response_cache — DB ลง "" (default จริงคำนวณจาก NAS_DATA_PATH)
     ("RESPONSE_CACHE_DB", ""),
     ("RESPONSE_CACHE_ENABLED", True),

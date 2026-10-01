@@ -1,5 +1,19 @@
 ---
 
+## [2026-10-01 ต่อ 51] ถอด Google CSE ออกจาก chain ค้นเว็บ (Brave → DDG) + ย้ายด่าน redact คีย์มาครอบ Brave
+
+- **หลักฐานก่อนถอด:** probe จากคอนเทนเนอร์ prod → `403 PERMISSION_DENIED — This project does not have the access to Custom Search JSON API`
+  · log 06-04→10-01: Brave สำเร็จ **34/34** ตั้งแต่ขึ้น 08-31 13:47 · `[Google]` ล่าสุด 08-31 13:03 · DDG ไม่ถูกเรียกเลยหลัง Brave ขึ้น
+  · Google ปิด Custom Search JSON API รับลูกค้าใหม่ + ปิดถาวร 2027-01-01 (หน้า overview ทางการ · vault `google-custom-search-api-shutdown.md`)
+- ⚠️ แก้คำพูดตัวเอง: ที่เสนอว่า "CSE เสียหนึ่งรอบทุกการค้น" **ผิด** — `search_web` เรียก CSE เฉพาะเมื่อ Brave ว่าง
+- **ถอด:** `_google_search` + env `GOOGLE_SEARCH_API_KEY`/`GOOGLE_SEARCH_CX` (regen `.env.example`) · ลบ `tests/test_websearch_google_errors.py`
+  (บทเรียน "403 ≠ 0 results" มีเทสฝั่ง Brave คุมอยู่แล้ว) · เทสใหม่ `test_brave_ว่างแล้วไม่ยิง_google_cse_ที่ปิดตัวแล้ว` ตรวจคุณสมบัติ
+  = ไม่มีคำขอไป customsearch แม้ตั้งคีย์ (แดงก่อนแก้: เห็น URL `googleapis.com/customsearch/v1`)
+- **ด่าน redact (audit 09-24 ข้อ 3) ไม่ให้ตายตาม:** Brave เดิม log `{e}` ดิบ · เขียน `test_websearch_key_redaction.py` ใหม่ให้คุม Brave
+  → แดงก่อนแก้ (`token=BSAsecret…` หลุดลง log) → ห่อด้วย `_redact_secrets` แล้วเขียว
+- `.env` บน NAS ยังมีคีย์ CSE ค้าง — ไม่มีผลแล้ว ไม่ได้แตะ (user ลบเองได้)
+- ชุดเต็ม 2557 passed / 17 skipped · ruff ผ่าน
+
 ## [2026-10-01 ต่อ 50] verify ต่อ 47 ด้วยรอบฟังนิยายจริง — ที่คั่นเลิกบล็อก event loop แล้ว ✅
 
 รอบอ่าน `perfectworld.pdf#bdd0` 01:42:07–01:45:18 UTC (5 ท่อน @49619→52574 แล้ว user ปิด):

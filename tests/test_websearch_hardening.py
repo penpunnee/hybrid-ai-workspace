@@ -30,7 +30,7 @@ def test_retries_once_when_first_empty(monkeypatch):
         calls["n"] += 1
         return [] if calls["n"] == 1 else [{"title": "ราคาทอง", "href": "https://sanook.com"}]
 
-    monkeypatch.setattr(websearch, "_google_search", lambda q, n=5: [])
+    monkeypatch.setattr(websearch, "_brave_search", lambda q, n=5: [])
     monkeypatch.setattr(websearch, "_ddg_search", fake_ddg)
     out = websearch.search_web("ราคาทอง", 5)
     assert calls["n"] == 2
@@ -45,7 +45,7 @@ def test_no_retry_when_first_ok(monkeypatch):
         calls["n"] += 1
         return [{"title": "ok", "href": "https://x.com"}]
 
-    monkeypatch.setattr(websearch, "_google_search", lambda q, n=5: [])
+    monkeypatch.setattr(websearch, "_brave_search", lambda q, n=5: [])
     monkeypatch.setattr(websearch, "_ddg_search", fake_ddg)
     out = websearch.search_web("q", 5)
     assert calls["n"] == 1

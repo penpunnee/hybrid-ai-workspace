@@ -5,12 +5,14 @@
 
 ## Web Search (2026-06-04)
 `utils/websearch.py` อัปเดต:
-- **ลำดับ provider (2026-08-31): Brave → Google CSE → DDG** (`search_web`)
+- **ลำดับ provider (2026-10-01): Brave → DDG** (`search_web`) — เดิม 08-31 เป็น Brave → Google CSE → DDG
   · **Brave = ตัวหลัก** (`BRAVE_SEARCH_API_KEY`) เลือกเพราะ **ไม่ผูกกับ Google Cloud project**
   · ⚠️ free tier = **1 คำขอ/วินาที** แต่ `_web_search_impl` ยิง sub-query ติดกันในลูปเดียว
     → มีตัวหน่วง `BRAVE_MIN_INTERVAL` (default 1.1s, มี lock เพราะ enrich ใช้ threadpool)
     **ไม่หน่วง = ตัวที่ 2 ได้ 429 ทุกครั้ง แล้วจะสรุปผิดว่า "Brave ใช้ไม่ได้"**
-  · Google CSE (`GOOGLE_SEARCH_API_KEY` + `GOOGLE_SEARCH_CX`) เป็นชั้นสอง → fallback DDG
+  · ⛔ **Google CSE ถอดออกแล้ว 2026-10-01** — Google ปิดรับลูกค้าใหม่ + ปิดถาวร 2027-01-01 · project เรา 403 ทุกครั้ง
+    (probe prod 10-01) · ตั้งแต่ Brave ขึ้น สำเร็จ 34/34 จึงไม่เคยถึงชั้น CSE · **อย่าเอากลับมา** (vault `google-custom-search-api-shutdown.md`)
+    · ด่าน `_redact_secrets` (audit 09-24 ข้อ 3) ย้ายมาครอบ log exception ของ Brave แทน
 - **Domain credibility scoring** — `_domain_score(url)` คืน (score, label):
   - 🟢 แหล่งทางการ (1.2x): `.go.th`, `.gov.`, `.edu.`, `wikipedia.org`, `bbc.com`, `reuters.com` ฯลฯ
   - 🔵 ทั่วไป (1.0x): เว็บทั่วไป
@@ -23,8 +25,6 @@
 ```env
 BRAVE_SEARCH_API_KEY=       # ตัวหลัก · ปล่อยว่าง = ปิด (ไม่ยิงเน็ตเลย ไม่บ่น)
 BRAVE_MIN_INTERVAL=1.1      # วินาที · <=0 ถอยไปใช้ default พร้อม warning
-GOOGLE_SEARCH_API_KEY=AIza...
-GOOGLE_SEARCH_CX=44c7c0b7c3c5049a2
 WEB_SEARCH_MIN_SCORE=0.35   # พื้นคะแนนสัมบูรณ์ — ต่ำกว่านี้ไม่ฉีด/ไม่ cite (ปิดด้วย =off)
 ```
 

@@ -54,9 +54,6 @@ BRAVE_SEARCH_API_KEY = env_str("BRAVE_SEARCH_API_KEY", "", group=_G,
 BRAVE_MIN_INTERVAL = env_str("BRAVE_MIN_INTERVAL", "1.1", group=_G, doc=(
     "วินาทีหน่วงระหว่างคำขอ Brave · free tier = 1 คำขอ/วิ (sub-query ยิงติดกันในลูปเดียว)\n"
     "ค่า <=0 หรือพิมพ์ผิด ถอยไป 1.1 พร้อม warning — ไม่หน่วง = ตัวที่ 2 ได้ 429 ทุกครั้ง"))
-GOOGLE_SEARCH_API_KEY = env_str("GOOGLE_SEARCH_API_KEY", "", group=_G,
-                                doc="ชั้นสอง — คีย์ต้องอยู่ project ที่เปิด Custom Search JSON API · ว่าง = ข้าม")
-GOOGLE_SEARCH_CX = env_str("GOOGLE_SEARCH_CX", "", group=_G, doc="Programmable Search Engine ID คู่กับคีย์ข้างบน")
 
 _UNSET = object()
 
@@ -247,7 +244,9 @@ def _brave_search(query: str, max_results: int = 5) -> list[dict]:
         logger.info(f"[Brave] '{query}' → {len(results)} results")
         return results
     except Exception as e:
-        logger.error(f"[Brave] search failed: {type(e).__name__}: {e}")
+        # ห้ามมีคีย์ใน log ไม่ว่า exception จะสะท้อนอะไรกลับมา (audit 2026-09-24 ข้อ 3)
+        logger.error(f"[Brave] search failed: {type(e).__name__}: "
+                     f"{_redact_secrets(str(e), [token])}")
         return []
 
 
@@ -261,51 +260,6 @@ def _redact_secrets(text: str, secrets: list[str]) -> str:
         if sec:
             out = out.replace(sec, "***")
     return _KEY_PARAM_RE.sub(lambda m: f"{m.group(1)}=***", out)
-
-
-def _google_search(query: str, max_results: int = 5) -> list[dict]:
-    """ค้นผ่าน Google Custom Search API"""
-    import requests
-    api_key = GOOGLE_SEARCH_API_KEY
-    cx = GOOGLE_SEARCH_CX
-    if not api_key or not cx:
-        return []
-    try:
-        # คีย์ส่งทาง header ไม่ใช่ `?key=` — URL โผล่ใน str() ของทุก exception ของ requests
-        # (ConnectionError/Timeout) แล้วเคยถูก log ทั้งดุ้น (audit 2026-09-24 MEDIUM ข้อ 3 · วัดจริงบน prod)
-        # Google Cloud docs: REST รับ API key ได้ทั้ง `?key=` และ header `X-goog-api-key`
-        resp = requests.get(
-            "https://www.googleapis.com/customsearch/v1",
-            params={"cx": cx, "q": query, "num": min(max_results, 10)},
-            headers={"X-goog-api-key": api_key},
-            timeout=8,
-        )
-        # ⚠️ ห้ามอ่าน items โดยไม่ดูสถานะก่อน — body ของ error ไม่มีคีย์ "items"
-        # ⇒ 403/429 จะกลายเป็น "0 results" ระดับ INFO ซึ่งอ่านแล้วเหมือน
-        # "ค้นแล้วไม่เจอ" ทั้งที่จริงคือ "ค้นไม่ได้เลย"
-        # เกิดจริง 2026-08-31: คีย์อยู่ในโปรเจกต์ที่ไม่ได้เปิด Custom Search JSON API
-        # → 403 ทุกคำขอ **48/48 ครั้ง** เท่าที่ log ย้อนไปถึง โดยไม่มีสัญญาณอะไรเลย
-        # เหลือแต่ DDG ที่คืนเว็บโป๊มาเป็นผลค้นราคาเกม (ดู WEB_SEARCH_MIN_SCORE)
-        if resp.status_code != 200:
-            try:
-                err = resp.json().get("error", {})
-                detail = f"{err.get('status', '')} {err.get('message', '')}".strip()
-            except Exception:
-                detail = ""
-            logger.error(
-                f"[Google] ค้นไม่ได้ HTTP {resp.status_code}: {detail or 'ไม่มีรายละเอียด'}"
-                f" — ตกไปใช้ DDG ซึ่งคุณภาพต่ำกว่ามาก"
-            )
-            return []
-
-        items = resp.json().get("items", [])
-        results = [{"title": i.get("title", ""), "body": i.get("snippet", ""), "href": i.get("link", "")} for i in items]
-        logger.info(f"[Google] '{query}' → {len(results)} results")
-        return results
-    except Exception as e:
-        # ชั้นที่สอง: ไม่ว่า error จะสะท้อนอะไรกลับมา ห้ามมีคีย์ใน log
-        logger.warning(f"[Google] search failed: {_redact_secrets(str(e), [api_key])}")
-        return []
 
 
 def _ddg_search(query: str, max_results: int = 5, region: str = "th-th",
@@ -325,17 +279,12 @@ def _ddg_search(query: str, max_results: int = 5, region: str = "th-th",
 
 
 def search_web(query: str, max_results: int = 5, region: str = "th-th") -> list[dict]:
-    """ค้นหา — Brave → Google CSE → DDG (retry 1 ครั้งกัน throttle ชั่วคราว)
+    """ค้นหา — Brave → DDG (retry 1 ครั้งกัน throttle ชั่วคราว)
 
-    ลำดับสำคัญกว่าที่เห็น: `_google_search` log ERROR ทุกครั้งที่ล้ม ถ้ายังถูกเรียก
-    ทั้งที่ Brave สำเร็จแล้ว = ปลุกเสียงเตือนทุกคำค้นจนคนเลิกฟังเสียงเตือน
+    ⛔ Google CSE ถูกถอดออก 2026-10-01 — Google ปิดรับลูกค้าใหม่ + ปิดถาวร 2027-01-01
+    และ project ของเรา 403 ทุกครั้ง · อย่าเอากลับมาเป็นชั้นสำรอง (ไม่มีทางเปิดใช้ได้แล้ว)
     """
     results = _brave_search(query, max_results)
-    if results:
-        return results
-
-    # Google Custom Search — คงไว้เป็นชั้นสอง (ใช้ได้เมื่อคีย์อยู่ project ที่เปิด API)
-    results = _google_search(query, max_results)
     if results:
         return results
 

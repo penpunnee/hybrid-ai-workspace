@@ -161,15 +161,9 @@ def test_เว้นช่วงนานพอแล้วต้องไม�
 
 # ── ลำดับใน search_web ───────────────────────────────────────────────────────
 
-def test_มีคีย์_brave_แล้วต้องไม่แตะ_google(monkeypatch, brave_key):
-    """Brave มาก่อน — และเมื่อ Brave ได้ผล ต้องไม่ยิง Google ที่ 403 อยู่
-
-    สำคัญกว่าเรื่องลำดับ: _google_search ตอนนี้ log ERROR ทุกครั้งที่ล้ม
-    ถ้ายังถูกเรียกทั้งที่ Brave สำเร็จแล้ว = ปลุกเสียงเตือนทุกคำค้นจนคนเลิกฟัง
-    """
+def test_มีคีย์_brave_ได้ผลแล้วต้องไม่ยิง_ddg(monkeypatch, brave_key):
+    """Brave มาก่อน — ได้ผลแล้วต้องไม่ยิงชั้นล่างซ้ำ"""
     _patch_get(monkeypatch, _Resp(200, _OK))
-    monkeypatch.setattr(websearch, "_google_search",
-                        lambda *a, **k: pytest.fail("Brave สำเร็จแล้วแต่ยังเรียก Google"))
     monkeypatch.setattr(websearch, "_ddg_search",
                         lambda *a, **k: pytest.fail("Brave สำเร็จแล้วแต่ยังเรียก DDG"))
 
@@ -179,10 +173,27 @@ def test_มีคีย์_brave_แล้วต้องไม่แตะ_goo
         "https://store.steampowered.com/app/271590", "https://x.co/2"]
 
 
+def test_brave_ว่างแล้วไม่ยิง_google_cse_ที่ปิดตัวแล้ว(monkeypatch, brave_key):
+    """Google CSE ปิดรับลูกค้าใหม่ + ปิดถาวร 2027-01-01 · project ของเรา 403 ทุกครั้ง
+    (probe prod 2026-10-01) ⇒ ถอดออกจาก chain · ตรวจที่ *คุณสมบัติ* = ไม่มีคำขอไป
+    customsearch เลยแม้ตั้งคีย์ไว้ — ไม่ใช่ตรวจชื่อฟังก์ชัน"""
+    urls: list = []
+    _patch_get(monkeypatch, _Resp(200, {"web": {"results": []}}), sink=urls)
+    monkeypatch.setattr(websearch, "GOOGLE_SEARCH_API_KEY", "k", raising=False)
+    monkeypatch.setattr(websearch, "GOOGLE_SEARCH_CX", "cx", raising=False)
+    monkeypatch.setattr(websearch, "_ddg_search",
+                        lambda *a, **k: [{"title": "t", "body": "b", "href": "https://d/1"}])
+
+    got = websearch.search_web("q")
+
+    assert got == [{"title": "t", "body": "b", "href": "https://d/1"}]
+    assert urls, "ไม่มีคำขอไป Brave เลย — fake ไม่ได้ถูกใช้ เทสจะเขียวฟรี"
+    assert not [u for u, _ in urls if "customsearch" in u], f"ยังยิง Google CSE: {urls}"
+
+
 def test_brave_ล้มแล้วยังตกไป_ddg_ได้เหมือนเดิม(monkeypatch, brave_key):
     """กลุ่มควบคุม — เพิ่มชั้นบนสุดต้องไม่ทำให้ชั้นล่างที่ยังทำงานอยู่หายไป"""
     monkeypatch.setattr(websearch, "_brave_search", lambda *a, **k: [])
-    monkeypatch.setattr(websearch, "_google_search", lambda *a, **k: [])
     monkeypatch.setattr(websearch, "_ddg_search",
                         lambda *a, **k: [{"title": "t", "body": "b", "href": "https://d/1"}])
 

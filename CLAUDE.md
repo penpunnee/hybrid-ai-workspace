@@ -137,7 +137,7 @@ overlay แบบ vanilla (ไม่ต้อง build, ทำงานคู่
 | Request flow · Context assembly · Anti-hallucination · LLM routing · Data persistence/backups · Key files · SSE schema · Memory tiers · Dream · Caches · Image gen · Routing/classifier · OCR/สรุปเอกสาร · Fine-tune · Admin unlock · **Known Quirks** | [`docs/reference/architecture.md`](docs/reference/architecture.md) |
 | Environment Variables (บล็อก ```env เต็ม — `tests/test_env_docs_ratchet.py` สแกนไฟล์นี้) | [`docs/reference/env-vars.md`](docs/reference/env-vars.md) |
 | Voice WS · เสียงต้องเป็นคนเดิม (ตารางโมเดล × temperature/seed) · `/api/tts` + โควตา · `AudioLevelMeter` | [`docs/reference/voice-tts.md`](docs/reference/voice-tts.md) |
-| Web search (Brave → CSE → DDG) · บทเรียน 08-31 · พื้นคะแนน web/skills · `rewrite_query()` ตายกับ Qwen | [`docs/reference/web-search.md`](docs/reference/web-search.md) |
+| Web search (Brave → DDG · CSE ถอดแล้ว 10-01) · บทเรียน 08-31 · พื้นคะแนน web/skills · `rewrite_query()` ตายกับ Qwen | [`docs/reference/web-search.md`](docs/reference/web-search.md) |
 
 **ข้อเท็จจริงที่ใช้บ่อย (ที่มา/รายละเอียดในไฟล์ข้างบน):**
 - auth fail-closed ⇒ HTTP endpoint ใหม่ปลอดภัยโดย default · **WS endpoint ใหม่ต้อง gate เอง** (`websocket_auth_ok`)
@@ -192,7 +192,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า
-ไม่มีงานเร่ง — เลือกจาก 📋 / ⏳ รอ user เคาะ (แนะนำ: ถอด Google CSE ที่ 403 ทุกครั้งออกจาก chain ค้นเว็บ)
+ไม่มีงานเร่ง — เลือกจาก 📋 / ⏳ รอ user เคาะ
 ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
 ### ✅ ปิดแล้ว (สรุป: devlog [2026-09-30 ปิดเซสชัน 2] · [2026-09-30 ปิดเซสชัน] · [2026-09-29 ปิดเซสชัน 2])
@@ -230,8 +230,7 @@ insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBounda
 
 ### ⏳ รอ user เคาะ
 (ข) response cache ข้าม session · คิวเล็กจาก 09-24 (**เช็คสถานะจริงก่อน**): voice idle 1008-loop ตอนคุยธรรมดา (client reconnect วนทุก
-151 วิ · ทางแก้ keepalive ยังไม่เคาะ) · ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน · ถอด Google CSE จาก chain
-(`utils/websearch.py`) ถ้าไม่แก้ Cloud project
+151 วิ · ทางแก้ keepalive ยังไม่เคาะ) · ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน
 
 ### 🧪 รอ user ทดสอบด้วยมือ
 โหมดอ่าน **พัก → อ่านต่อ** หลังตั้ง `audioSession=playback` (เสียงดังพอไหม) · กดลิงก์ `export_file` · ChatBox pills ·
