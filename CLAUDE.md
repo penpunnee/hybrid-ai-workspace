@@ -243,12 +243,14 @@ insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBounda
 - **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 (รอ memory จากโหมดเสียงสะสม)
 
 ### ⏳ รอ user เคาะ
+**ใหม่ 10-02 (ต่อ 61):** ขาเข้าหนังสือ (`_ingest`) ไม่ซ่อมตระกูล 6 และไม่เตือน — เตือนใน log/UI หรือใส่ pythainlp (62 MB) ·
 **ใหม่ 10-01 (ต่อ 60):** โหมดเสียงใช้ผลค้นผิด (ค้นภาคเกมผิดหลัง user แก้ · แต่งชื่อ/เดาปุ่ม · ตอบกว้างทั้งที่ผลมีชื่อ) — แนะนำ (ก) แนบคำสั่งกับผลค้นใน `voice_search_payload` ไม่แตะโซนเสียงล็อก · user สั่ง "ทำทีหลัง" ·
 (ข) response cache ข้าม session · คิวเล็กจาก 09-24 (**เช็คสถานะจริงก่อน**): ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน ·
 ย้ายเสียงไป `gemini-3.8-live` (3.1 = legacy ยังไม่มีวันปิด · ติดล็อกเสียง 🔒 ต้องวัดเสียงใหม่ทั้งชุด) ·
 ทาง 1 earpiece: เล่นเสียงผ่าน `MediaStreamAudioDestinationNode` → `<audio>` (WebKit แนะนำ · อาจแก้เสียงเบาด้วย · ทำเป็นสวิตช์ปิดไว้ แล้ว A/B)
 
 ### 🧪 รอ user ทดสอบด้วยมือ
+**ใหม่ 10-02:** ฟังนิยายหลังกู้ข้อความที่ซ่อมแล้ว (ต่อ 61 · ถอยได้จาก `reader.db.bak-20261002-before-restore`) ·
 **ใหม่ 10-01:** พักสาย ✅ ยืนยันบน prod แล้ว (ต่อ 53) · ปุ่ม `end-call` "⏹ ไมค์ถูก iOS ปิด" ยังไม่เคยถูกกดจริง (ต่อ 56 วิ่งทาง `recoverMic` แทน — เห็นแถบเมื่อไหร่แตะแล้วเช็ค log) ·
 โหมดอ่าน **พัก → อ่านต่อ** หลังตั้ง `audioSession=playback` (เสียงดังพอไหม) · กดลิงก์ `export_file` · ChatBox pills ·
 File Manager drag&drop/กล้อง · voice retry ยังไม่เคยถูกกระตุ้นบน prod · "เสียงเบา" รอข้อมูลจาก user (ไม่แตะจอเลยไหม ·
@@ -256,7 +258,7 @@ Low Power/ความร้อน) — `underruns` อ่านแล้ว = �
 
 ### ⚪ งานเล็กค้าง
 `GEMINI_LIVE_MODEL` จะยกขึ้น `.env` ไหม · AnythingLLM ตกรุ่น (หรือปิดทิ้ง 3.34 GB) · โมเดล local ไม่มีใครใช้ ~14 GB ·
-`pythainlp` ไม่มีในอิมเมจ ⇒ เทส `utils/thaiscatter.py` 14 ตัวถูกข้ามทุกที่ · `enhanced.js` map สีตามตระกูลเฉด ·
+`pythainlp` ไม่มีในอิมเมจ (ตั้งใจ · รันมือ: `uv run --with pythainlp==5.3.8 --with pytest python -m pytest tests/test_thaiscatter.py --noconftest` 18/18 · ต่อ 61) · `enhanced.js` map สีตามตระกูลเฉด ·
 ป้าย "กำลังค้น" ในโหมดเสียง ·
 citations ราคาเกมอาจเป็นแหล่งรอง (Steam age-check) ·
 
