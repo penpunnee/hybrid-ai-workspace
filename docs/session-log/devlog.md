@@ -16,6 +16,7 @@
   · ⏳ รอ user เคาะ: เปลี่ยนเส้นเล่นเสียงโหมดคุย (แตะใกล้โซนเสียง 🔒 · ต้อง A/B บน iPhone)
 - **iOS 27.2 (user สั่งเช็ค):** ยังเป็น beta 2 (09-21) · Safari 27.2 beta แก้ getUserMedia `NotAllowedError` หลัง audio service reset ·
   Safari 27.0 แก้ AudioSession ให้ active ตลอดที่ไมค์ทำงาน (180505014) · **ไม่มีรายการแก้ output ไป earpiece** ⇒ อัปเดต iOS ไม่น่าแก้
+  · ✅ **user ใช้ iOS 27.2 (beta) อยู่แล้ว** ⇒ อาการ earpiece เกิดทั้งที่มี fix ล่าสุดครบ = ยืนยันว่าอัปเดตไม่แก้ · ⚠️ เป็น beta อาจมีบั๊กเฉพาะ beta ปน
 
 ## [2026-10-01 ต่อ 53] แก้ voice idle 1008-loop — client พักสายเมื่อไม่มีใครใช้ (appscript.ui `0eb2063` · static `04967cd`) ✅ deploy + CI เขียว · 🧪 รอใช้จริง
 
