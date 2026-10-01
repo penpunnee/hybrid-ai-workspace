@@ -191,16 +191,14 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → /scrutinize → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy → verify prod (ยืนยันว่าเส้นที่แก้ถูกวิ่งจริง)
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
-### 🥇 งานแรกเซสชันหน้า — 🧪 user เทสบน iPhone แล้วเช็ค log (ต่อ 55)
-1. โหมดเสียง → ปิดไมค์ → ล็อกจอ ~1 นาที → กลับมา → เปิดไมค์ → ต้องเห็นป้าย/ปุ่ม "ไมค์ถูก iOS ปิด" → แตะ → กดเริ่มใหม่ → ถามขวัญ
-   → เสียงต้องออก**ลำโพงล่าง** · log: `recover-attempt … mode=end-call reason=ended` (ถ้ารอบนั้นไมค์ไม่ถูกปิด ปุ่มจะไม่ขึ้น = ปกติ)
-2. ระหว่างพักสาย ต้องมี `mic_probe parked` และ**ไม่มี** `1008` วน (`grep -E "1008|parked|recover-attempt" /app/logs/server.log`)
-ไม่ผ่าน → ถามว่าเสียงออกลำโพงไหน แล้วพิจารณาทาง 1 (⏳) · ผ่าน → ปิดคดี earpiece แบบทาง 2
+### 🥇 งานแรกเซสชันหน้า — ค้นเว็บค้างหลายนาทีเมื่อ PC .235 ดับ (ต่อ 56–57)
+โหมดเสียงเงียบ 3.5 นาที: Gemini search 429 → Brave → QueryRewrite + rerank embed รอ .235 (timeout 30 วิ × retry) → ผลถูกตัดทิ้งหมด (fail-closed)
+· แผนที่เสนอ: ข้ามเครื่องที่ health บอกว่าดับ · `max_retries=0` · เพดานเวลารวมโหมดเสียง · "rerank ล้ม" ต้องไม่หน้าตาเหมือน "ไม่เจอ" — รายละเอียด devlog ต่อ 56–57
 ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
 ### ✅ ปิดแล้ว (สรุป: devlog [2026-10-01 ปิดเซสชัน] · [2026-09-30 ปิดเซสชัน 2] · [2026-09-30 ปิดเซสชัน] · [2026-09-29 ปิดเซสชัน 2])
 **10-01:** CLAUDE.md 103→42 KB + เทสงบ 50 KB (ต่อ 48) · เทสตรึง go_away โหมดอ่าน (ต่อ 49) · verify ที่คั่นด้วยรอบฟังจริง (ต่อ 50) ·
-ถอด Google CSE → Brave → DDG + redact คีย์ Brave (ต่อ 51) · voice idle 1008-loop → client พักสาย (ต่อ 52–53) · ไมค์ถูก iOS ปิด → จบสายแล้วเริ่มใหม่ (ต่อ 54–55 · 🧪 รอ iPhone)
+ถอด Google CSE → Brave → DDG + redact คีย์ Brave (ต่อ 51) · voice idle 1008-loop → client พักสาย (ต่อ 52–53) · ไมค์ถูก iOS ปิด → เสียงออกลำโพงปกติ ✅ iPhone (ต่อ 54–56 · ปุ่ม `end-call` ยังรอเคสจริง)
 **09-30 (2):** เอกสาร `:8080`/Gemini · agent ไม่แนะนำ "เปิด Agent mode" · ถอด `CHROMA_PATH` + ลบ collection ว่าง 3 · ที่คั่นโหมดอ่าน 0.6 วิ → 0 ms
 **09-30:** กุญแจกำพร้าหลัง Dream = 0 · ดิสก์ NAS busy = healthcheck exec (autoheal 5s→5m นอกรีโป) · REM 0 ธีม = AI ตัดสินใจเอง (log raw + SKIP เกม) ·
 insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBoundary` ครอบทั้งแอป
@@ -248,7 +246,7 @@ insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBounda
 ทาง 1 earpiece: เล่นเสียงผ่าน `MediaStreamAudioDestinationNode` → `<audio>` (WebKit แนะนำ · อาจแก้เสียงเบาด้วย · ทำเป็นสวิตช์ปิดไว้ แล้ว A/B)
 
 ### 🧪 รอ user ทดสอบด้วยมือ
-**ใหม่ 10-01:** พักสาย ✅ ยืนยันบน prod แล้ว (ต่อ 53) · ไมค์ถูก iOS ปิด → ปุ่ม "จบสายแล้วเริ่มใหม่" → เสียงต้องออกลำโพงล่าง (ต่อ 55) ·
+**ใหม่ 10-01:** พักสาย ✅ ยืนยันบน prod แล้ว (ต่อ 53) · ปุ่ม `end-call` "⏹ ไมค์ถูก iOS ปิด" ยังไม่เคยถูกกดจริง (ต่อ 56 วิ่งทาง `recoverMic` แทน — เห็นแถบเมื่อไหร่แตะแล้วเช็ค log) ·
 โหมดอ่าน **พัก → อ่านต่อ** หลังตั้ง `audioSession=playback` (เสียงดังพอไหม) · กดลิงก์ `export_file` · ChatBox pills ·
 File Manager drag&drop/กล้อง · voice retry ยังไม่เคยถูกกระตุ้นบน prod · "เสียงเบา" รอข้อมูลจาก user (ไม่แตะจอเลยไหม ·
 Low Power/ความร้อน) — `underruns` อ่านแล้ว = ไม่ใช่ต้นเหตุ
