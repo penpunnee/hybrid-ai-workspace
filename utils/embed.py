@@ -20,10 +20,12 @@ import os
 import sqlite3
 import struct
 import threading
+import time
 from functools import lru_cache
 from typing import Sequence
 
-from openai import OpenAI
+import httpx
+from openai import APIConnectionError, OpenAI
 
 from core.config import EMBED_CACHE_DB as _DEFAULT_CACHE_DB
 # ⬇️ อ่านจาก core/config.py ที่เดียว — เดิมไฟล์นี้มี default ของตัวเองที่ไม่ตรงกับที่อื่น
@@ -33,7 +35,7 @@ from core.config import EMBEDDING_MODEL as _CFG_EMBEDDING_MODEL
 from core.config import LMSTUDIO_API_KEY as _CFG_LMSTUDIO_API_KEY
 from core.config import LMSTUDIO_BASE_URL as _CFG_LMSTUDIO_BASE_URL
 from core.config import OLLAMA_BASE_URL as _CFG_OLLAMA_BASE_URL
-from core.env_registry import env_bool, env_int, env_str
+from core.env_registry import env_bool, env_float, env_int, env_str
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +63,47 @@ _CACHE_DB = env_str("EMBED_CACHE_DB", "", group=_G, doc=(
     "SQLite เก็บ embedding ที่เคยคำนวณ (Phase E) — ว่าง = <NAS_DATA_PATH>/embed_cache.db")) or _DEFAULT_CACHE_DB
 _CACHE_ENABLED = env_bool("EMBED_CACHE_ENABLED", True, group=_G, doc="false = คำนวณ embedding ใหม่ทุกครั้ง")
 
+# 🔴 เครื่อง embed ดับ (PC .235 · prod 2026-10-01) = โหมดเสียงเงียบ 3 นาทีครึ่ง:
+# timeout 30 วิ × (1 + retry 2 ของ openai) = 90 วิ ต่อ provider × 2 provider
+# ⇒ ไม่ retry เอง (fallback ไปอีก provider ทำหน้าที่นั้นแล้ว) + connect สั้น (LAN ต่อติดในหลัก ms)
+#   read ยังยาวเท่าเดิม — โหลดโมเดลครั้งแรกช้าได้
+_EMBED_CONNECT_TIMEOUT = env_float("EMBED_CONNECT_TIMEOUT", 3.0, group=_G, doc=(
+    "วินาทีรอต่อ TCP กับเครื่อง embed (Ollama/LM Studio) — เครื่องดับรู้ภายในเวลานี้\n"
+    "แยกจาก LMSTUDIO_EMBED_TIMEOUT ซึ่งเป็นเวลารอคำตอบ"))
+_EMBED_DOWN_COOLDOWN = env_int("EMBED_DOWN_COOLDOWN", 60, group=_G, doc=(
+    "วินาทีที่ข้าม provider embed หลังต่อไม่ติด (ไม่รอ timeout ซ้ำทุกคำขอ) · 0 = ไม่ข้าม"))
+_HTTP_TIMEOUT = httpx.Timeout(_EMBED_TIMEOUT, connect=_EMBED_CONNECT_TIMEOUT)
+
 _client = OpenAI(base_url=_LMSTUDIO_BASE_URL or "http://localhost:1234/v1",
-                 api_key=_LMSTUDIO_API_KEY, timeout=_EMBED_TIMEOUT)
-_ollama_client = OpenAI(base_url=_OLLAMA_BASE_URL, api_key="ollama", timeout=_EMBED_TIMEOUT)
+                 api_key=_LMSTUDIO_API_KEY, timeout=_HTTP_TIMEOUT, max_retries=0)
+_ollama_client = OpenAI(base_url=_OLLAMA_BASE_URL, api_key="ollama",
+                        timeout=_HTTP_TIMEOUT, max_retries=0)
+
+# provider ที่เพิ่งต่อไม่ติด → เวลาที่จะลองใหม่ได้ (monotonic) · เฉพาะ error ระดับเชื่อมต่อ
+# (APIConnectionError รวม timeout) — error อื่น (400/โมเดลไม่ตรง) แปลว่าเครื่องยังอยู่ ห้ามปิดทาง
+_down_until: dict[str, float] = {}
+_down_lock = threading.Lock()
+
+
+def _now() -> float:
+    return time.monotonic()
+
+
+def _embed_via(provider: str, client: OpenAI, inputs: list[str]):
+    with _down_lock:
+        until = _down_until.get(provider, 0.0)
+    if _now() < until:
+        raise APIConnectionError(
+            message=f"{provider} ต่อไม่ติดเมื่อไม่นานนี้ — ข้าม (เหลือ {until - _now():.0f} วิ)",
+            request=httpx.Request("POST", str(client.base_url)))
+    try:
+        return client.embeddings.create(model=_EMBED_MODEL, input=inputs)
+    except APIConnectionError:
+        if _EMBED_DOWN_COOLDOWN > 0:
+            with _down_lock:
+                _down_until[provider] = _now() + _EMBED_DOWN_COOLDOWN
+            logger.warning(f"[Embed] {provider} ต่อไม่ติด → ข้าม {_EMBED_DOWN_COOLDOWN} วิ")
+        raise
 
 
 class EmbedModelMismatch(RuntimeError):
@@ -106,7 +146,7 @@ def _create_embeddings(inputs: list[str]) -> tuple[list[list[float]], str]:
     cosine เพี้ยนเงียบๆ (ดู docstring ของโมดูล: บั๊กไทย nomic-embed-text)
     """
     try:
-        resp = _ollama_client.embeddings.create(model=_EMBED_MODEL, input=inputs)
+        resp = _embed_via("Ollama", _ollama_client, inputs)
         _verify_model(resp, _EMBED_MODEL, "Ollama")
         vecs = [list(d.embedding) for d in resp.data]
         with _metrics_lock:
@@ -116,7 +156,7 @@ def _create_embeddings(inputs: list[str]) -> tuple[list[list[float]], str]:
         if not _EMBED_FALLBACK_ENABLED:
             raise
         logger.warning(f"[Embed] Ollama embed fail ({e}) → fallback LM Studio (model เดิม {_EMBED_MODEL})")
-        resp = _client.embeddings.create(model=_EMBED_MODEL, input=inputs)
+        resp = _embed_via("LM Studio", _client, inputs)
         _verify_model(resp, _EMBED_MODEL, "LM Studio")
         vecs = [list(d.embedding) for d in resp.data]
         with _metrics_lock:

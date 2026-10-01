@@ -7,6 +7,7 @@ Flow:
   → inject เข้า system prompt
   → local model อ่านข้อมูลจริงแล้วตอบ
 """
+import asyncio
 import logging
 import re
 import threading
@@ -16,7 +17,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FuturesTimeout
 
-from core.env_registry import env_str
+from core.env_registry import env_float, env_str
 
 logger = logging.getLogger(__name__)
 
@@ -547,8 +548,14 @@ def web_search_with_results(query: str, max_results: int = 5, top_k: int = 3) ->
 
     weather/wiki → ไม่มี raw_results (คืน [])
     """
-    ctx, results = _web_search_impl(query, max_results, top_k)
+    ctx, results, _ = _web_search_impl(query, max_results, top_k)
     return ctx, results
+
+
+def web_search_with_status(query: str, max_results: int = 5, top_k: int = 3) -> tuple[str, list[dict], str]:
+    """เหมือน `web_search_with_results` + สถานะ: `"ok"` · `"empty"` (ค้นแล้วไม่มีผลที่เชื่อได้)
+    · `"unavailable"` (มีผลแต่ให้คะแนนไม่ได้เลย = ระบบ embed ล่ม) — สองอย่างหลังต้องบอกผู้ใช้ต่างกัน"""
+    return _web_search_impl(query, max_results, top_k)
 
 
 def web_search_context(query: str, max_results: int = 5, top_k: int = 3) -> str:
@@ -564,23 +571,23 @@ def web_search_context(query: str, max_results: int = 5, top_k: int = 3) -> str:
         max_results: ดึงผลลัพธ์ DDG ก่อน rerank (default 5)
         top_k: เก็บกี่ผลลัพธ์หลัง rerank (default 3)
     """
-    ctx, _ = _web_search_impl(query, max_results, top_k)
+    ctx, _, _ = _web_search_impl(query, max_results, top_k)
     return ctx
 
 
-def _web_search_impl(query: str, max_results: int = 5, top_k: int = 3) -> tuple[str, list[dict]]:
-    """internal — รวม logic ทั้งหมดและคืน (context, raw_results สำหรับ citations)"""
+def _web_search_impl(query: str, max_results: int = 5, top_k: int = 3) -> tuple[str, list[dict], str]:
+    """internal — รวม logic ทั้งหมดและคืน (context, raw_results สำหรับ citations, สถานะ)"""
     if _WEATHER_KEYWORDS.search(query):
         weather = fetch_weather(query)
         if weather:
             logger.info(f"[WebSearch] weather → wttr.in ({len(weather)} chars)")
-            return weather, []
+            return weather, [], "ok"
 
     if _WIKI_KEYWORDS.search(query):
         wiki = fetch_wikipedia(query)
         if wiki:
             logger.info(f"[WebSearch] wiki → Wikipedia ({len(wiki)} chars)")
-            return wiki, []
+            return wiki, [], "ok"
 
     # ── Query rewriting ──────────────────────────────────────────────────
     # ขยาย/ปรับ query → ค้นด้วย rewritten + sub_queries แล้วรวม
@@ -639,11 +646,67 @@ def _web_search_impl(query: str, max_results: int = 5, top_k: int = 3) -> tuple[
     # พื้นคะแนนสัมบูรณ์ — ต้องอยู่ "หลัง" rerank และ "ก่อน" format/citations
     # ไม่มีผลที่เชื่อได้ = คืน context ว่าง ให้โมเดลบอกว่าหาไม่เจอ ดีกว่าสรุปจากขยะ
     before = len(results)
+    unscored = rerank_unavailable(results)
     results = _drop_below_min_score(results)
+    if not results and unscored:
+        logger.error(
+            f"[WebSearch] '{query[:60]}' → ให้คะแนนไม่ได้ทั้ง {before} ผล (embed ล่ม) "
+            "— ไม่ฉีด context · แจ้งว่าระบบขัดข้อง ไม่ใช่หาไม่เจอ"
+        )
+        return "", [], "unavailable"
     if not results and before:
         logger.warning(
             f"[WebSearch] '{query[:60]}' → ทุกผล ({before}) ต่ำกว่าเกณฑ์ "
             f"{WEB_SEARCH_MIN_SCORE} — ไม่ฉีด context"
         )
 
-    return format_for_context(results, query), results
+    ctx = format_for_context(results, query)
+    return ctx, results, ("ok" if ctx else "empty")
+
+
+def rerank_unavailable(results: list[dict]) -> bool:
+    """มีผลค้น แต่ไม่มีผลไหนได้คะแนนเลย = rerank ล้ม (ไม่ใช่ "ไม่เกี่ยวข้อง")
+    ใช้ร่วมทั้ง 2 pipeline (ที่นี่ + `agents/tools.py:_t_web_search`)"""
+    return bool(results) and all(
+        not isinstance(r.get("_rerank_score"), (int, float)) for r in results)
+
+
+# ── โหมดเสียง: เพดานเวลารวม + ข้อความตอบโมเดลตามสถานะ ────────────────────────
+# prod 2026-10-01: ค้นค้าง 3.5 นาที → user วางสายก่อนได้คำตอบ (ระหว่างค้นโมเดลเงียบสนิท)
+VOICE_SEARCH_TIMEOUT_DEFAULT = 20.0
+VOICE_SEARCH_TIMEOUT = env_float("VOICE_SEARCH_TIMEOUT", VOICE_SEARCH_TIMEOUT_DEFAULT, group=_G, doc=(
+    "วินาทีสูงสุดที่โหมดเสียงรอผลค้นเว็บ — เกินแล้วบอกโมเดลว่าค้นไม่ทัน (ระหว่างรอขวัญเงียบสนิท)\n"
+    "ค้นปกติ 2–6 วิ (วัด prod 2026-10-01)"))
+VOICE_SEARCH_EMPTY = "หาไม่เจอ ให้บอกผู้ใช้ตรงๆ ว่าหาไม่เจอ ห้ามแต่ง"
+VOICE_SEARCH_UNAVAILABLE = ("ระบบค้นข้อมูลขัดข้องชั่วคราว (ไม่ใช่ว่าไม่มีข้อมูล) "
+                            "ให้บอกผู้ใช้ตรงๆ ว่าตอนนี้ค้นไม่ได้ ลองใหม่ภายหลัง ห้ามแต่งคำตอบ")
+VOICE_SEARCH_TIMED_OUT = ("ค้นนานเกินกำหนดจึงยกเลิก (ไม่ใช่ว่าไม่มีข้อมูล) "
+                          "ให้บอกผู้ใช้ตรงๆ ว่าค้นไม่ทัน ลองถามใหม่อีกครั้ง ห้ามแต่งคำตอบ")
+
+
+def _voice_search_sync(query: str) -> tuple[str, int, str]:
+    from utils.llm import gemini_web_search
+    ctx, srcs = gemini_web_search(query)
+    if ctx:
+        return ctx, len(srcs or []), "ok"
+    ctx, results, status = web_search_with_status(query)
+    return ctx, len(results), status
+
+
+async def voice_search_payload(query: str) -> dict:
+    """ค้นให้โหมดเสียง แล้วคืน payload ของ FunctionResponse — **ตอบทันทีเมื่อชนเพดาน**
+    (งานค้นใน thread วิ่งต่อจนจบเองเบื้องหลัง · เรียกซ้ำจะเจอ embed ที่ถูกข้ามแล้ว)"""
+    t0 = time.monotonic()
+    try:
+        ctx, n, status = await asyncio.wait_for(
+            asyncio.to_thread(_voice_search_sync, query), timeout=VOICE_SEARCH_TIMEOUT)
+    except asyncio.TimeoutError:
+        logger.error(f"[Voice WS] ค้น {query!r} เกินเพดาน {VOICE_SEARCH_TIMEOUT:.0f}s → ตอบว่าค้นไม่ทัน")
+        return {"error": VOICE_SEARCH_TIMED_OUT}
+    logger.info(f"[Voice WS] ค้น {query!r} → {len(ctx)} ตัวอักษร {n} แหล่ง · {status} · "
+                f"{time.monotonic() - t0:.1f}s")
+    if status == "ok" and ctx:
+        return {"result": ctx}
+    if status == "unavailable":
+        return {"error": VOICE_SEARCH_UNAVAILABLE}
+    return {"error": VOICE_SEARCH_EMPTY}

@@ -429,22 +429,10 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                         else:
                             try:
                                 search_count += 1
-                                from utils.llm import gemini_web_search
-                                ctx, srcs = await asyncio.to_thread(gemini_web_search, query)
-                                if not ctx:
-                                    from utils.websearch import web_search_with_results
-                                    ctx, srcs = await asyncio.to_thread(
-                                        web_search_with_results, query
-                                    )
-                                logger.info(
-                                    f"[Voice WS] ค้น {query!r} → {len(ctx)} ตัวอักษร "
-                                    f"{len(srcs or [])} แหล่ง"
-                                )
-                                payload = (
-                                    {"result": ctx}
-                                    if ctx
-                                    else {"error": "หาไม่เจอ ให้บอกผู้ใช้ตรงๆ ว่าหาไม่เจอ ห้ามแต่ง"}
-                                )
+                                # มีเพดานเวลา + แยก "ระบบล่ม" ออกจาก "หาไม่เจอ" (2026-10-01 ·
+                                # เดิมเครื่อง embed ดับ = เงียบ 3.5 นาทีแล้วบอกว่าหาไม่เจอ)
+                                from utils.websearch import voice_search_payload
+                                payload = await voice_search_payload(query)
                             except Exception as se:
                                 # ค้นล้มต้องไม่ทำให้ session ตาย — ปล่อยให้โมเดลพูดต่อได้
                                 logger.error(f"[Voice WS] ค้นล้ม {type(se).__name__}: {se}")

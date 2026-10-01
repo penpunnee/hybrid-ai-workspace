@@ -81,7 +81,8 @@ class TestNoContextWhenEverythingIsGarbage:
         monkeypatch.setattr(websearch, "_enrich_with_fetch", lambda r, **k: r)
         monkeypatch.setattr("utils.embed.rerank_by_similarity", lambda *a, **k: junk)
 
-        ctx, results = websearch._web_search_impl("Python เวอร์ชันล่าสุด", max_results=5, top_k=3)
+        ctx, results, status = websearch._web_search_impl("Python เวอร์ชันล่าสุด", max_results=5, top_k=3)
+        assert status == "empty", "คะแนนต่ำ = หาไม่เจอจริง ไม่ใช่ระบบล่ม"
 
         assert results == [], f"ยังคืนผลขยะออกไปให้ citation: {results}"
         assert ctx == "", f"ยังฉีด context จากผลขยะ: {ctx[:200]!r}"

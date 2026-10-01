@@ -21,7 +21,7 @@ def _t_web_search(query: str, max_results=5) -> str:
     """ค้น DDG + fetch top URLs + embedding rerank → คืน top 3"""
     from utils.websearch import (
         search_web, _enrich_with_fetch, format_for_context,
-        _drop_below_min_score, WEB_SEARCH_MIN_SCORE,
+        _drop_below_min_score, WEB_SEARCH_MIN_SCORE, rerank_unavailable,
     )
     try:
         max_results = int(max_results)
@@ -47,7 +47,15 @@ def _t_web_search(query: str, max_results=5) -> str:
     # พื้นคะแนนเดียวกับ utils/websearch.py — เส้นนี้เป็น pipeline คนละชุดกัน
     # แต่รูเดียวกัน (prod 2026-08-03: จัดอันดับอย่างเดียวไม่ตัดทิ้ง → เว็บโป๊หลุดเข้า context)
     before = len(results)
+    unscored = rerank_unavailable(results)
     results = _drop_below_min_score(results)
+    if not results and unscored:
+        # rerank ล้ม (embed ล่ม) ≠ ไม่เกี่ยวข้อง — บอกให้ต่างกัน ไม่งั้นโมเดลบอกผู้ใช้ว่า "ไม่มีข้อมูล"
+        logger.error(f"[Tool web_search] '{query[:60]}' → ให้คะแนนไม่ได้ทั้ง {before} ผล (embed ล่ม)")
+        return (
+            f"ระบบค้นเว็บขัดข้องชั่วคราวขณะค้น '{query}' (ให้คะแนนความเกี่ยวข้องไม่ได้ "
+            f"— ไม่ใช่ว่าไม่มีข้อมูล) — ห้ามเดาคำตอบ ให้บอกผู้ใช้ว่าตอนนี้ค้นไม่ได้ ลองใหม่ภายหลัง"
+        )
     if not results:
         logger.warning(
             f"[Tool web_search] '{query[:60]}' → ทุกผล ({before}) ต่ำกว่าเกณฑ์ {WEB_SEARCH_MIN_SCORE}"

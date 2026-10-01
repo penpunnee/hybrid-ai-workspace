@@ -11,6 +11,7 @@ GEMINI_MODEL=gemini-3.5-flash-lite   # ค่าที่ prod ตั้ง · d
 GEMINI_FALLBACK_MODEL=gemini-3.1-flash-lite   # สำรองเมื่อตัวหลัก transient-fail · ว่าง = ไม่สลับโมเดล
 GEMINI_SEARCH_MODEL=            # โมเดลเฉพาะ gemini_web_search() (grounding ให้ local/Claude/Kimi) — ว่าง = ใช้ GEMINI_MODEL; precedence: arg > env นี้ > GEMINI_MODEL (มีตั้งแต่ 7087f88, test ใน test_gemini_web_search.py)
 GEMINI_WEB_SEARCH_ENABLED=true    # false = ข้าม gemini_web_search ไปเส้น Brave ตรง — free tier grounding = 429 limit: 0 · prod ตั้ง false (2026-10-01)
+VOICE_SEARCH_TIMEOUT=20           # วินาทีสูงสุดที่โหมดเสียงรอผลค้น — เกิน = บอกโมเดลว่าค้นไม่ทัน (ระหว่างรอขวัญเงียบสนิท)
 GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview   # default อยู่ที่ `utils/voice.py:GEMINI_LIVE_MODEL_DEFAULT` ที่เดียว (ดูหัวข้อ "เสียงต้องเป็นคนเดิม") ⚠️ ห้ามสลับไปสาย native-audio โดยไม่ถอด `VOICE_TEMPERATURE` — วัดแล้วเสียงหายเงียบๆ 0 ไบต์ · gemini-2.0-flash-exp/gemini-live-2.0-flash-001 ถูกถอดจาก Live API แล้ว (1008 not found). เช็ค model ที่ใช้ได้: ListModels filter supportedGenerationMethods มี bidiGenerateContent
 GEMINI_TTS_MODEL=gemini-2.5-flash-preview-tts   # ⚠️ ต้องเป็นสาย `*-tts` เท่านั้น (`utils/tts.py` เรียก generateContent ไม่ใช่ bidi) · ห้ามใส่สาย native-audio เด็ดขาด = 404 ทุก request · free tier 10 req/วัน/โมเดล · ทางเลือกที่วัดแล้วใช้ได้: gemini-3.1-flash-tts-preview · ดูหัวข้อ "🔊 /api/tts"
 # Claude (Anthropic) — provider "claude"; ปล่อยว่าง=ปิด
@@ -39,6 +40,8 @@ SHOW_THINKING=false
 # Embeddings — **env ตัวเดียวคุมทั้ง Ollama (ตัวหลัก) และ LM Studio (fallback)**
 EMBEDDING_MODEL=paraphrase-multilingual   # ⛔ ห้ามใช้ `nomic-embed-text` เป็นตัวหลัก — พิสูจน์บน prod 2026-08-02 ว่าแมปประโยคไทยทุกประโยคเป็น vector เดียวกันหมด (cosine 1.0000) · ปล่อยว่างใน `utils/memory.py` = ปิด embedding_function ของ ChromaDB
 EMBED_FALLBACK_LMSTUDIO=true              # false = Ollama ล่มแล้วโยน error ไปเลย ไม่ลอง LM Studio
+EMBED_CONNECT_TIMEOUT=3                   # วินาทีรอต่อ TCP กับเครื่อง embed — เครื่องดับรู้ภายในเวลานี้ (client ไม่ retry เอง · 2026-10-01)
+EMBED_DOWN_COOLDOWN=60                    # วินาทีข้าม provider embed หลังต่อไม่ติด · 0 = ไม่ข้าม
 
 # Home Assistant
 HA_URL=https://ha.pawinhome.com   # หรือ http://192.168.51.x:8123 ถ้าใช้ LAN เท่านั้น

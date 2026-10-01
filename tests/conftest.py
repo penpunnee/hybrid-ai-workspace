@@ -31,3 +31,19 @@ try:
 except FileNotFoundError:
     pass
 os.environ["DB_PATH"] = _test_db
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_embed_down_state():
+    """ล้างสถานะ "provider embed ต่อไม่ติด" (utils/embed._down_until) ทุกเทส
+
+    เทสที่ fallback ไปเครื่องจริง (localhost ต่อไม่ติด) จะทำให้ provider ถูกข้าม 60 วิ
+    แล้วเทสถัดไปที่ fake provider นั้นไว้ได้ผลผิด — สถานะข้ามเทสต้องไม่รั่ว
+    """
+    yield
+    mod = sys.modules.get("utils.embed")
+    if mod is not None and hasattr(mod, "_down_until"):
+        mod._down_until.clear()
