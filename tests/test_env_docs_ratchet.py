@@ -28,6 +28,9 @@ _ROOT = Path(__file__).resolve().parent.parent
 # เอกสารที่ "สัญญากับคนอ่านว่าตั้งค่านี้แล้วมีผล"
 _DOC_FILES = [
     "CLAUDE.md",
+    # บล็อก ```env ย้ายจาก CLAUDE.md มาที่นี่ 2026-10-01 — ถ้าลืมบรรทัดนี้ เทสยังเขียว
+    # (อีกสองไฟล์ยังให้ชื่อ > 40) แต่เอกสารหลักหลุดจากการคุมเงียบๆ
+    "docs/reference/env-vars.md",
     "skills/env-variables-reference.md",
     ".env.example",
 ]

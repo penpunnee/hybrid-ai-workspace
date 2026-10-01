@@ -1,5 +1,18 @@
 ---
 
+## [2026-10-01 ต่อ 48] ย่อ CLAUDE.md 103 → 42 KB — ย้ายส่วนอ้างอิงลง `docs/reference/` + เทสคุมงบ ✅
+
+- **ทำไม:** `CLAUDE.md` ถูกฉีดเข้า context ทุกเซสชันที่แตะไฟล์ในรีโป · โตถึง 103,376 ไบต์ทั้งที่กฎข้อ 4 เตือนไว้แล้ว ⇒ เตือนอย่างเดียวไม่พอ
+- **ย้ายทั้งดุ้นไม่แก้เนื้อ** (ตรวจด้วย multiset ของบรรทัดไม่ว่าง: หายแค่ 2 บรรทัดที่ตั้งใจแก้ = แถวตาราง 🗺️ + ตัวเลขขนาดในกฎข้อ 4):
+  - `docs/reference/architecture.md` — Request flow → Caches, Image gen, Known Quirks, Routing/classifier, OCR, Fine-tune, Admin unlock
+  - `docs/reference/env-vars.md` — บล็อก Environment Variables
+  - `docs/reference/voice-tts.md` — Voice WS · เสียงคนเดิม · `/api/tts` · AudioLevelMeter
+  - `docs/reference/web-search.md` — Web search + บทเรียน 08-31 + พื้นคะแนน + rewrite_query
+- ที่เหลือใน `CLAUDE.md`: แผนที่ · Overview · Commands · ตารางชี้ + ข้อเท็จจริงที่ใช้บ่อย 9 บรรทัด · Coding Conventions · ▶️ ทั้งก้อน
+- **เทสใหม่ `tests/test_claude_md_budget.py`:** งบ 50,000 ไบต์ (แดงที่ 103,376 ก่อนย้าย) + ลิงก์ในไฟล์ต้องชี้ไฟล์ที่มีจริง (mutation: ใส่ลิงก์ตาย → แดง)
+- **`tests/test_env_docs_ratchet.py`:** เติม `docs/reference/env-vars.md` ใน `_DOC_FILES` — 🔑 ถ้าลืม เทสยังเขียว (อีกสองไฟล์ให้ชื่อ > 40) แต่บล็อก env หลักหลุดการคุมเงียบๆ · mutation: ใส่ `ZZ_GHOST_ENV` ในไฟล์ใหม่ → แดง
+- ชุดเต็ม 2561 passed / 17 skipped · ruff ผ่าน · ไม่แตะโค้ด prod (ไม่ต้อง deploy)
+
 ## [2026-09-30 ปิดเซสชัน 2] สรุป (ต่อ 44–47) — เอกสาร · agent ไม่แนะนำตัวเอง · กวาด config/collection · ที่คั่นโหมดอ่าน
 - **ต่อ 44** `c413f21` — curl `:8000`→`:8080` (verify unlock 200 / 404) · บล็อก env Gemini ตรง prod (2.5-flash ยัง *sunset 10-16* ไม่ใช่ retired)
 - **ต่อ 45** `8dc49c9` — `SUGGEST_AGENT_MODE` แยกจาก guard (byte-identical · sha `a74443c80e02def3`) · `_agent_system()` ตัดทั้ง 3 provider · mutation 4/4
