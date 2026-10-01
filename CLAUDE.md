@@ -197,7 +197,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 
 ### ✅ ปิดแล้ว (สรุป: devlog [2026-09-30 ปิดเซสชัน 2] · [2026-09-30 ปิดเซสชัน] · [2026-09-29 ปิดเซสชัน 2])
 **10-01:** CLAUDE.md 103→42 KB + เทสงบ 50 KB (ต่อ 48) · เทสตรึง go_away โหมดอ่าน (ต่อ 49) · verify ที่คั่นด้วยรอบฟังจริง (ต่อ 50) ·
-ถอด Google CSE → Brave → DDG + redact คีย์ Brave (ต่อ 51)
+ถอด Google CSE → Brave → DDG + redact คีย์ Brave (ต่อ 51) · voice idle 1008-loop → client พักสาย (ต่อ 52–53)
 **09-30 (2):** เอกสาร `:8080`/Gemini · agent ไม่แนะนำ "เปิด Agent mode" · ถอด `CHROMA_PATH` + ลบ collection ว่าง 3 · ที่คั่นโหมดอ่าน 0.6 วิ → 0 ms
 **09-30:** กุญแจกำพร้าหลัง Dream = 0 · ดิสก์ NAS busy = healthcheck exec (autoheal 5s→5m นอกรีโป) · REM 0 ธีม = AI ตัดสินใจเอง (log raw + SKIP เกม) ·
 insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBoundary` ครอบทั้งแอป
@@ -231,10 +231,11 @@ insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBounda
 - **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 (รอ memory จากโหมดเสียงสะสม)
 
 ### ⏳ รอ user เคาะ
-(ข) response cache ข้าม session · คิวเล็กจาก 09-24 (**เช็คสถานะจริงก่อน**): voice idle 1008-loop ตอนคุยธรรมดา (client reconnect วนทุก
-151 วิ · ทางแก้ keepalive ยังไม่เคาะ) · ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน
+(ข) response cache ข้าม session · คิวเล็กจาก 09-24 (**เช็คสถานะจริงก่อน**): ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน ·
+ย้ายเสียงไป `gemini-3.8-live` (3.1 = legacy ยังไม่มีวันปิด · ติดล็อกเสียง 🔒 ต้องวัดเสียงใหม่ทั้งชุด)
 
 ### 🧪 รอ user ทดสอบด้วยมือ
+**ใหม่ 10-01:** โหมดเสียง → ปิดไมค์/ล็อกจอ >3 นาที → log ต้องมี `mic_probe parked` และไม่มี 1008 วน · เปิดไมค์/กลับหน้าจอแล้วคุยต่อได้ (ต่อ 53) ·
 โหมดอ่าน **พัก → อ่านต่อ** หลังตั้ง `audioSession=playback` (เสียงดังพอไหม) · กดลิงก์ `export_file` · ChatBox pills ·
 File Manager drag&drop/กล้อง · voice retry ยังไม่เคยถูกกระตุ้นบน prod · "เสียงเบา" รอข้อมูลจาก user (ไม่แตะจอเลยไหม ·
 Low Power/ความร้อน) — `underruns` อ่านแล้ว = ไม่ใช่ต้นเหตุ

@@ -1,5 +1,18 @@
 ---
 
+## [2026-10-01 ต่อ 53] แก้ voice idle 1008-loop — client พักสายเมื่อไม่มีใครใช้ (appscript.ui `0eb2063` · static `04967cd`) ✅ deploy + CI เขียว · 🧪 รอใช้จริง
+
+- ต้นเหตุ/หลักฐาน: devlog ต่อ 52 (653/653 สาย · probe 150.7s/152.6s · เอกสารทางการไม่มี idle timeout)
+- **กติกา (`utils/voicelive.ts`):** สายปัจจุบัน**ไม่มี input เลย** (`inputSent` — ตั้งตอนส่งเสียงไมค์/ข้อความ · รีเซ็ตทุก `openSocket`)
+  **และ** (ปิดไมค์ หรือ `visibilityState === 'hidden'`) → `parkIfUnused()`: ไม่ต่อใหม่ · ไม่ยิง onError/onClose · status `idle` · probe `parked`
+  (ครอบทั้งเส้น `case 'error'` จาก server และ `ws.onclose` เปล่า) · ต่อใหม่ (`unpark`) เมื่อ: เปิดไมค์ · กลับมาหน้าจอ**และไมค์เปิด** ·
+  พิมพ์ข้อความ (เก็บใน `pendingText` ส่งตอน `connected`)
+- จงใจไม่พัก: จอเปิด + ไมค์เปิด (เน็ตสะดุดตอนจะพูด = ต่อใหม่ตามเดิม) · สายที่คุยไปแล้ว (มี input) แม้ปิดไมค์ทีหลัง
+- เทสใหม่ 10 ตัว (`describe('พักสายเมื่อไม่มีใครใช้ …')`) แดง 7 ก่อนแก้ · mutation **9/9 KILLED** · vitest 643 · tsc ผ่าน
+- deploy: push appscript.ui ผ่าน `github` + `nas-cf:` (อยู่นอก LAN) · md5 bundle ตรง Mac = NAS = คอนเทนเนอร์ · public เสิร์ฟ `index-BwjxNtY4.js` (มีโค้ด `parked`)
+- 🧪 **verify ครั้งหน้า:** หลังใช้โหมดเสียงแล้วปิดไมค์/ล็อกจอ ต้องเห็น `mic_probe parked` และ**ไม่มี** 1008 วนซ้ำ
+  (`grep -E "1008|parked" /app/logs/server.log`) · ยังไม่ได้แตะ server.py ไม่ต้อง recreate
+
 ## [2026-10-01 ต่อ 52] เช็คสถานะ voice idle 1008-loop — ยังเกิดจริง (หลักฐานอย่างเดียว ยังไม่แก้ · รอ user เคาะทางแก้)
 
 - จำนวน `send_loop APIError: 1008` ต่อวัน (log 06-04→10-01): 08-27 **159** · 08-28 **117** · 09-21 **353** · 09-30 **26** · วันอื่น 1–11
