@@ -120,6 +120,7 @@ class _MarkerFilter:
 
 from utils.llm import GEMINI_MODEL  # ที่เดียว (ดู utils/llm.py:GEMINI_MODEL_DEFAULT)
 from utils.llm import _stop_if_cancelled  # ธงยกเลิกของ request (ก้อน 10/12)
+from utils.llm import _fit_lmstudio_context  # ตัดประวัติให้พอดี context — กติกาเดียวกับแชท (ต่อ 75)
 from assistants.config import SUGGEST_AGENT_MODE
 # ⬇️ env ทุกตัวของไฟล์นี้มีเจ้าของอยู่ที่ core/config.py — import ค่า ห้ามอ่านซ้ำ
 # (ก้อน 4 · 2026-09-23 · ตัวกัน: tests/test_env_registry.py + test_orchestrator_config.py)
@@ -617,9 +618,15 @@ def _run_agent_lmstudio(
     else:
         messages.insert(0, {"role": "system", "content": AGENT_SYSTEM_HINT.strip()})
 
-    messages = _attach_image_openai(messages, image_b64, image_mime)
-
     tools_schema = get_openai_tools()
+    # เดิมส่งทั้งก้อน → เกิน context แล้ว LM Studio ตัดเองเงียบๆ (prod 10-02 09:31 · devlog ต่อ 75)
+    # tools schema ส่งไปทุก step แต่ไม่อยู่ใน messages ⇒ หักงบเอง (วัดจริง 2,482 token / 24 tools)
+    messages, dropped = _fit_lmstudio_context(
+        messages, model, extra_tokens=len(json.dumps(tools_schema, ensure_ascii=False)) // 3)
+    if dropped:
+        logger.info(f"[Agent/LM Studio] ตัดประวัติเก่า {dropped} ข้อความให้พอดี context")
+
+    messages = _attach_image_openai(messages, image_b64, image_mime)
 
     # loop กลาง (item E) — provider quirks (role:tool, MarkerFilter) อยู่ใน _LMStudioAdapter
     yield from _run_agent_fc(_LMStudioAdapter(client, model, messages, tools_schema, cancel=cancel), max_steps)

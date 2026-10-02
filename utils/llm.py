@@ -234,17 +234,18 @@ def _lmstudio_loaded_ctx(model: str) -> int | None:
     return ctx
 
 
-def _fit_lmstudio_context(messages: list[dict], model: str) -> tuple[list[dict], int]:
+def _fit_lmstudio_context(messages: list[dict], model: str, extra_tokens: int = 0) -> tuple[list[dict], int]:
     """ตัดประวัติเก่าสุดทิ้งจนพอดี context − reserve · คืน (messages, จำนวนที่ตัด)
 
     เก็บ system ต้นทาง + ข้อความล่าสุดเสมอ (ถึงจะเกินเอง — ให้ LM Studio ตัดสิน) ·
     ประวัติที่เหลือต้องเริ่มด้วย user ไม่ให้ qwen เห็นคำตอบลอยๆ ที่ไม่มีคำถามนำ ·
-    ถาม LM Studio เฉพาะเมื่อเกินงบของ default (แชทสั้นไม่เสียรอบ HTTP)"""
-    budget = _LMSTUDIO_CONTEXT_LENGTH - _LMSTUDIO_REPLY_RESERVE
+    ถาม LM Studio เฉพาะเมื่อเกินงบของ default (แชทสั้นไม่เสียรอบ HTTP) ·
+    `extra_tokens` = ของที่ส่งไปด้วยแต่ไม่อยู่ใน messages (agent: tools schema ~2.5k token)"""
+    budget = _LMSTUDIO_CONTEXT_LENGTH - _LMSTUDIO_REPLY_RESERVE - extra_tokens
     if count_tokens_approx(messages) <= budget:
         return messages, 0
     ctx = _lmstudio_loaded_ctx(model) or _LMSTUDIO_CONTEXT_LENGTH
-    budget = ctx - _LMSTUDIO_REPLY_RESERVE
+    budget = ctx - _LMSTUDIO_REPLY_RESERVE - extra_tokens
     head = 1 if messages and messages[0].get("role") == "system" else 0
     sys_part, rest = messages[:head], list(messages[head:])
     dropped = 0

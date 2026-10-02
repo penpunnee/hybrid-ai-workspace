@@ -146,3 +146,46 @@ def test_ลงทะเบียน_env():
     from core.env_registry import REGISTRY
     assert REGISTRY["LMSTUDIO_CONTEXT_LENGTH"].default == 8192
     assert REGISTRY["LMSTUDIO_REPLY_RESERVE"].default == 3072
+
+
+# ── เส้น agent (ต่อ 75) — prod 10-02 09:31: ปุ่ม agent เปิด → `_run_agent_lmstudio` ส่งประวัติทั้งก้อน
+# ~8.5k + system + tools schema (วัดจริง 2,482 token / 24 tools) เข้า context 8,192
+# → LM Studio ตัดเองเงียบๆ (prompt_tokens 7,142 → 3,826 เมื่อเพิ่มข้อความเดียว) = qwen ไม่เห็นบางส่วนโดยไม่มีใครรู้
+
+def test_fit_หักงบ_extra_tokens(rec):
+    msgs = _convo(3, reply_chars=4000)                 # ~4.1k token: พอดีงบ 5,120 ถ้าไม่หัก extra
+    out, dropped = llm._fit_lmstudio_context(msgs, "m")
+    assert dropped == 0
+    out2, dropped2 = llm._fit_lmstudio_context(msgs, "m", extra_tokens=2000)
+    assert dropped2 > dropped
+    assert count_tokens_approx(out2) + 2000 <= 8192 - 3072
+
+
+def test_agent_lmstudio_ตัดประวัติก่อนส่ง_และหักงบ_tools(monkeypatch):
+    from agents import orchestrator as orch
+    from tests.test_agents import FakeClient, _msg, _resp, _patch_lmstudio
+    monkeypatch.setattr(llm, "_LMSTUDIO_CONTEXT_LENGTH", 8192)
+    monkeypatch.setattr(llm, "_LMSTUDIO_REPLY_RESERVE", 3072)
+    monkeypatch.setattr(llm, "_lmstudio_loaded_ctx", lambda model: None)
+    fake = FakeClient([_resp(_msg(content="ตอบ"))])
+    _patch_lmstudio(monkeypatch, fake)
+    msgs = _convo(4, reply_chars=3000)
+    list(orch.run_agent(msgs, provider="lmstudio", model="m"))
+    sent = fake.calls[0]["messages"]
+    tools_tok = len(__import__("json").dumps(fake.calls[0]["tools"], ensure_ascii=False)) // 3
+    assert len(sent) < len(msgs)
+    assert sent[0]["role"] == "system" and "[Agent Mode]" in sent[0]["content"]
+    assert sent[-1]["content"] == "คำถามล่าสุด"
+    assert sent[1]["role"] == "user"
+    assert count_tokens_approx(sent) + tools_tok <= 8192 - 3072
+
+
+def test_agent_lmstudio_ประวัติสั้น_ส่งครบ(monkeypatch):
+    from agents import orchestrator as orch
+    from tests.test_agents import FakeClient, _msg, _resp, _patch_lmstudio
+    monkeypatch.setattr(llm, "_lmstudio_loaded_ctx", lambda model: None)
+    fake = FakeClient([_resp(_msg(content="ตอบ"))])
+    _patch_lmstudio(monkeypatch, fake)
+    msgs = [{"role": "system", "content": "base"}, {"role": "user", "content": "สวัสดี"}]
+    list(orch.run_agent(msgs, provider="lmstudio", model="m"))
+    assert [m["content"] for m in fake.calls[0]["messages"]][1:] == ["สวัสดี"]
