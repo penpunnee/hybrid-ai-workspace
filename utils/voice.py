@@ -518,6 +518,22 @@ def live_server_content_events(sc) -> tuple[list[dict], str, str]:
     return events, user_delta, ai_delta
 
 
+def live_error_text(e: Exception) -> str:
+    """ข้อความ error ของ Gemini Live → ข้อความที่ส่งให้ผู้ใช้เห็น (log ดิบยังอยู่ที่ฝั่ง server)
+
+    prod 10-01/10-02 (devlog ต่อ 64): client โชว์ "1011 None. Internal error encountered." ดิบๆ
+    · ขัดข้อง (ลองใหม่อีกสักครู่ได้) กับ โควตาหมด (ต้องรอนาน) ต้องบอกต่างกัน
+    · อย่างอื่นคงเดิมทุกตัวอักษร (เช่น 1008 — client ใช้ตัดสินใจพักสาย)
+    """
+    raw = str(e)
+    low = raw.lower()
+    if "1011" in raw and ("resource has been exhausted" in low or "quota" in low):
+        return "โควตาเสียงของ Google เต็มชั่วคราว (1011) — ลองใหม่ภายหลัง"
+    if "1011" in raw and "internal error" in low:
+        return "เซิร์ฟเวอร์เสียงของ Google ขัดข้อง (1011) — ลองใหม่อีกสักครู่"
+    return raw
+
+
 def live_control_signals(response) -> tuple[bool, float | None, str | None]:
     """ดึงสัญญาณควบคุม session ออกจาก `LiveServerMessage` — pure → เทสได้
 

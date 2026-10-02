@@ -557,7 +557,8 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                         logger.error(f"[Voice WS] send_loop {type(e).__name__}: {e}")
                         stop.set()
                         try:
-                            await websocket.send_json({"type": "error", "message": str(e)})
+                            from utils.voice import live_error_text
+                            await websocket.send_json({"type": "error", "message": live_error_text(e)})
                         except Exception:
                             pass
 
