@@ -1,5 +1,38 @@
 ---
 
+## [2026-10-02 ต่อ 74] แชท qwen ตัดกลางประโยค/ว่าง — ประวัติ 7.1k token ใน context 8k · ตัดประวัติเส้น LM Studio + แจ้ง `length` (`828e4ae`) ✅ prod + CI
+
+**อาการ (user แชท 08:18–08:51 UTC session `…5_d73044` · "การตัด token 4096 แล้วไม่ต่อเนื่อง"):**
+คำตอบ #2611 8546 ตัว จบ "…ขวัญพร้อมช่วยร่าง" · #2614 8304 จบกลางกล่อง ASCII · #2621 328 จบกลางตาราง · 08:47/08:51 `empty response`
+· 08:24:54 `Context size has been exceeded` · ใช้ regenerate บ่อย
+**วัด (ให้ LM Studio นับเอง `max_tokens=1`):** คำตอบ 1179/1479/2160/2071/94 token · **ประวัติทั้ง session 7,114** vs context ที่โหลด **8,192**
+· ไทยบน qwen ≈ 3.6–4 ตัวอักษร/token (`count_tokens_approx` = ÷3 ⇒ ประมาณเกิน ~25% ฝั่งปลอดภัย)
+**ต้นเหตุ:** `routers/chat.py:469` ตัดประวัติเฉพาะ `provider == "ollama"` · `_stream_lmstudio` ส่งทั้งก้อน + ไม่ดู `finish_reason` ⇒ เต็มแล้วจบเงียบ
+· เคยวินิจฉัยแล้ว 08-28 ("ชน context 8192") แต่ไม่ได้แก้โค้ด
+**"4096" บนจอ = ตัวนับ overlay หลอก** (`static/enhanced.js:1051`): `context_limit` ไม่เคยมีใน `/api/status` → fallback 4096 ·
+นับจากข้อความบนจอ ไม่ใช่ที่ส่งจริง ⇒ ไม่ได้ตัดอะไร (ยังไม่แก้ — งานเปิด)
+
+**วัด reasoning ของ qwen3.5-9b** (system สั้น · probe ในคอนเทนเนอร์):
+| คำถาม | reasoning | content | completion | วินาที |
+|---|---|---|---|---|
+| สั้น | 844 | 170 | 1,025 | 24.6 |
+| กลาง | 1,131 | 902 | 2,041 | 48.2 |
+| ยาว (UI) | 954 | 1,118 | 2,081 | 49.2 |
+LM Studio ส่ง `usage.completion_tokens_details.reasoning_tokens` · ~42 token/วิ
+
+**VRAM (คำนวณ · ยังไม่วัด `nvidia-smi`):** Qwen3.5-9B full attention 8/32 ชั้น (ที่เหลือ linear = state คงที่) · KV = 2×4 kv_heads×256×2B×8 = **32 KiB/token**
+⇒ 8k 0.25 GB · 16k 0.5 GB · 32k 1 GB · รวมโดยประมาณ ~10–10.5 GB ที่ 8k บน RTX 3060 12 GB ⇒ 16k น่าไหว · 32k ตึง ·
+LM Studio ไม่มี endpoint ฮาร์ดแวร์ (`/api/v1/system` 404)
+
+**แก้:** `_fit_lmstudio_context()` ใน `_stream_lmstudio` (แชท + regenerate ผ่านจุดนี้) ตัดเก่าสุดจน ≤ context − `LMSTUDIO_REPLY_RESERVE` (3072)
+· เก็บ system + ข้อความล่าสุดเสมอ · ประวัติเริ่มด้วย user · context อ่าน `/api/v1/models` (cache 5 นาที) **เฉพาะเมื่อเกินงบ default**
+· ไม่ได้ → `LMSTUDIO_CONTEXT_LENGTH` 8192 · `finish_reason=length` → ต่อท้าย "⚠️ คำตอบถูกตัด…" · log `finish/in/out/ตัดประวัติ` ต่อคำขอ
+- เทส 11 แดงก่อน · mutation 6/6 (M3 "เริ่มด้วย assistant" รอดรอบแรก — เทสเดิมคำตอบยาวกว่าคำถามเสมอ จุดตัดบังเอิญตกที่ user → เพิ่มเทสคำถามยาว)
+- ชุดเต็ม 2641 · ruff · CI ✅ · verify prod: อ่าน ctx จริง 8192 · dry-run ประวัติจริง 11 ข้อความ ~11k → 5 ข้อความ ~4.9k (system + 2 คู่ล่าสุด)
+- ⚠️ trade-off: ที่ 8k เหลือประวัติแค่ ~2 คู่ยาว · ถ้าอยากจำมากกว่านี้ = ขยาย context ใน LM Studio (user เคาะหลังดู `nvidia-smi`)
+- ยังไม่ครอบ: agent เส้น LM Studio (`agents/orchestrator.py` เรียก client เอง) · ตัวนับ "/4096" บนจอ
+- probe ทิ้งไว้: `/tmp/probe_reason.*` ในคอนเทนเนอร์ (ลบแล้ว — ดูท้าย)
+
 ## [2026-10-02 ต่อ 73] วัด LM Studio แชทแรก (งานเปิด จ) — cold 11.6 วิ · TTL เครื่อง 30 นาที · user เคาะ "ยังไม่แก้ รอดู"
 
 **วัดตรงจากคอนเทนเนอร์ prod** (qwen `not-loaded` ก่อนยิง · stream `max_tokens` 8): ถึง chunk แรก **#1 11.62 วิ** · #2/#3 0.09 วิ
