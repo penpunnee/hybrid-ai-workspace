@@ -624,6 +624,7 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
     _loop_timer = SyncCallTimer("reader", always=("books.text",))
     _books, _marks = _loop_timer.proxy(_books_raw, "books"), _loop_timer.proxy(_marks_raw, "marks")
     from utils.reader import next_block
+    from utils.voicepitch import PitchMeter, pitch_log_line   # วัดความทุ้มต่อท่อน (วัดอย่างเดียว)
     from utils.voice import (
         READER_FEED_PREFIX, build_reader_config, live_control_signals, next_read_action,
         READER_STALL_TIMEOUT, READER_INCOMPLETE_MAX_RETRY, run_until_both_done,
@@ -745,6 +746,9 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                 async def feed_loop():
                     """ป้อนท่อน → สตรีมเสียง → เลื่อนที่คั่น → ท่อนถัดไป"""
                     nonlocal incomplete_pos, incomplete_retries, reconnect_delay
+                    # feed_loop เกิดใหม่ทุก session ⇒ นับท่อนที่จบใน session นี้
+                    # (prod 10-02: เสียงผู้ชายมาที่ท่อนแรกหลัง go_away — ดูว่าผูกกันไหม)
+                    blocks_done_on_session = 0
                     try:
                         while not stop.is_set() and not regen.is_set():
                             pos = _marks.get(source)
@@ -773,6 +777,7 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                             logger.info(reader_feed_log_line(session_tag, pos, len(block)))
                             t_block = time.monotonic()
                             audio_bytes = 0
+                            pitch = PitchMeter()
                             await session.send_client_content(
                                 turns=types.Content(
                                     role="user", parts=[types.Part(text=READER_FEED_PREFIX + block)]
@@ -843,6 +848,7 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                     # นับตรงจุดที่ส่งออกสายจริง — นับที่อื่นคือนับสิ่งที่
                                     # ผู้ใช้ไม่ได้ยิน (เช่น chunk ที่ถูกทิ้งตอน abort)
                                     audio_bytes += len(r.data)
+                                    pitch.add(r.data)
                                 sc = getattr(r, "server_content", None)
                                 if sc and getattr(sc, "turn_complete", False):
                                     turn_done = True
@@ -907,6 +913,14 @@ async def reader_websocket(websocket: WebSocket, source: str = "", token: str = 
                                     session_tag, new_pos, len(block),
                                     time.monotonic() - t_block, audio_bytes,
                                 ))
+                                if pitch.enabled:
+                                    # FFT ทั้งท่อน = งาน CPU ⇒ นอก event loop · @pos = ท่อนที่เพิ่งอ่าน
+                                    first_on_session = blocks_done_on_session == 0
+                                    res = await asyncio.to_thread(pitch.result)
+                                    logger.info(pitch_log_line(
+                                        session_tag, pos, res, first_on_session=first_on_session,
+                                    ))
+                                blocks_done_on_session += 1
                                 await websocket.send_json({"type": "block", **_progress(new_pos)})
                     except Exception as e:
                         logger.error(f"[Reader WS] feed_loop {type(e).__name__}: {e}")
