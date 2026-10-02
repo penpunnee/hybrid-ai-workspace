@@ -233,7 +233,7 @@ insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBounda
 - งาน Chroma ที่ไม่ embed (get/delete/update meta) → `get_collection_noembed` · add/query ใช้ wrapper (มี EF) · "ไม่มี collection" = `NotFoundError`
 - `/ws/voice`: memory ผ่าน `remember_voice_turn` (daemon thread · ข้ามแค่ interrupted/no text) · `_save_msg` ผ่าน bgwriter (FIFO worker เดียว)
   · ห่อที่บรรทัด import เท่านั้น — call site `_save_msg(`/`_marks.set(` ถูกเทสยึดไว้ · แตะ server.py = `--force-recreate` + inode + sha เสียง
-  (`sha256(repr(cfg))[:16]` live `dbff1a358e00ef03` · reader `8c5dbf9603eb3630` · sysprompt `8bddd1cae4be22b1`)
+  (`sha256(repr(cfg))[:16]` live **`d7d0625566a84c63`** (10-02 เพิ่ม recall_memory · เดิม `dbff1a358e00ef03`) · reader `8c5dbf9603eb3630` · sysprompt `8bddd1cae4be22b1`)
 - `log_timing` ไม่เขียน log (contextvar ให้ /api/chat) — วัด WS ใช้ `utils/looptiming` · Gemini free **15 req/นาที/โมเดล**
 - เทส route ใช้ `app.openapi()["paths"]` (`app.routes` ห่อ `_IncludedRouter` = ผ่านฟรี) · เปลี่ยนเส้นทางโค้ดแล้วต้องพิสูจน์ว่าเทสเดิมวิ่งถึงจุดวัด
 - `nas-cf` ค้าง = Cloudflare Access หมดอายุ → ให้ user login · NAS ใช้ `sh` (ไม่มี `<(...)`)
@@ -244,12 +244,13 @@ insight object → จอขาว (แก้ 2 ชั้น) · `AppErrorBounda
 
 ### ⏳ รอ user เคาะ
 **ใหม่ 10-02 (ต่อ 61):** ขาเข้าหนังสือ (`_ingest`) ไม่ซ่อมตระกูล 6 และไม่เตือน — เตือนใน log/UI หรือใส่ pythainlp (62 MB) ·
-**ใหม่ 10-01 (ต่อ 60):** โหมดเสียงใช้ผลค้นผิด (ค้นภาคเกมผิดหลัง user แก้ · แต่งชื่อ/เดาปุ่ม · ตอบกว้างทั้งที่ผลมีชื่อ) — แนะนำ (ก) แนบคำสั่งกับผลค้นใน `voice_search_payload` ไม่แตะโซนเสียงล็อก · user สั่ง "ทำทีหลัง" ·
+**ใหม่ 10-02 (ต่อ 69):** ลบความจำผิด "กดสามเหลี่ยมบน PS5" ไหม (ข้อมูล user ห้ามลบเอง) ·
 (ข) response cache ข้าม session · คิวเล็กจาก 09-24 (**เช็คสถานะจริงก่อน**): ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน ·
 ย้ายเสียงไป `gemini-3.8-live` (3.1 = legacy ยังไม่มีวันปิด · ติดล็อกเสียง 🔒 ต้องวัดเสียงใหม่ทั้งชุด) ·
 ทาง 1 earpiece: เล่นเสียงผ่าน `MediaStreamAudioDestinationNode` → `<audio>` (WebKit แนะนำ · อาจแก้เสียงเบาด้วย · ทำเป็นสวิตช์ปิดไว้ แล้ว A/B)
 
 ### 🧪 รอ user ทดสอบด้วยมือ
+**ใหม่ 10-02:** โหมดเสียงนึกความจำได้ — ถาม "จำได้ไหมว่าเคยคุยเรื่อง…" (ต่อ 69) · ผลค้นแนบคำสั่งห้ามเดาชื่อ (ต่อ 68) ·
 **ใหม่ 10-02:** ป้าย "🔍 ขวัญกำลังค้นข้อมูล..." ระหว่างค้น (ต่อ 67 · รีเฟรชก่อน) ·
 **ใหม่ 10-02:** 1011 ซ้ำ → แอปต้องหยุดหลัง 3 ครั้ง + toast "Google ขัดข้อง" + กดเริ่มใหม่ได้ (ต่อ 66 · รอเกิดจริง) ·
 **ใหม่ 10-02:** ✅ user ฟังนิยายหลังกู้ข้อความแล้ว "ดี" (ต่อ 61–62) · เสียงผู้ชาย 1 ท่อน = ท่อนแรกหลัง `go_away` → มี log `ความทุ้ม` ต่อท่อนแล้ว (ต่อ 63 · เกณฑ์ 155 Hz ชั่วคราว · ดูหลังฟังจริง) ·
