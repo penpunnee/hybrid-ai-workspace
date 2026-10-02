@@ -16,6 +16,7 @@ Configuration:
 - OLLAMA_RETRY_DELAY: Initial retry delay in seconds (default: 2)
 """
 import base64, time, logging, socket, threading
+import httpx
 import openai
 from openai import OpenAI
 from google import genai
@@ -45,6 +46,7 @@ from core.config import LMSTUDIO_BASE_URL as _LMSTUDIO_BASE_URL
 from core.config import LMSTUDIO_TIMEOUT as _LMSTUDIO_TIMEOUT
 # env ที่ไฟล์นี้เป็นเจ้าของ — อ่านผ่าน registry เพื่อให้ .env.example generate ได้
 from core.env_registry import env_bool, env_int, env_str
+from utils.tokens import count_tokens_approx
 
 load_dotenv()
 
@@ -195,6 +197,64 @@ lmstudio_client = OpenAI(
     api_key=_LMSTUDIO_API_KEY,
     timeout=_LMSTUDIO_TIMEOUT,
 )
+
+# 🔴 เส้น LM Studio เคยส่งประวัติทั้งก้อนเสมอ (ตัดเฉพาะเส้น ollama ใน routers/chat.py) ⇒ prod 10-02
+# ประวัติ 7,114 token ใน context 8,192 → คำตอบถูกตัดกลางประโยคเงียบๆ แล้วว่าง (devlog ต่อ 74)
+# วัด qwen3.5-9b: คิดในใจ 844–1131 token/คำตอบ · คำตอบยาวสุดจริง ~2.2k ⇒ กันไว้ ~3k
+_G = "LM Studio"
+_LMSTUDIO_CONTEXT_LENGTH = env_int("LMSTUDIO_CONTEXT_LENGTH", 8192, group=_G, doc=(
+    "context (token) ที่ใช้คิดงบตัดประวัติ เมื่ออ่านค่าที่ LM Studio โหลดจริงไม่ได้ (โมเดลยังไม่โหลด/ต่อไม่ติด)\n"
+    "ค่าจริงอ่านจาก /api/v1/models (loaded_instances[].config.context_length) ก่อนเสมอ"))
+_LMSTUDIO_REPLY_RESERVE = env_int("LMSTUDIO_REPLY_RESERVE", 3072, group=_G, doc=(
+    "token ที่กันไว้ให้คำตอบ + ส่วนคิดในใจ (reasoning) — ประวัติแชทถูกตัดให้เหลือ context ลบค่านี้"))
+_LMSTUDIO_CTX_TTL = 300.0
+_lmstudio_ctx_cache: dict[str, tuple[float, int | None]] = {}
+
+
+def _lmstudio_loaded_ctx(model: str) -> int | None:
+    """context ที่ LM Studio โหลด `model` ไว้จริง · ไม่ได้โหลด/อ่านไม่ได้ = None (cache 5 นาที)"""
+    hit = _lmstudio_ctx_cache.get(model)
+    if hit and time.monotonic() - hit[0] < _LMSTUDIO_CTX_TTL:
+        return hit[1]
+    ctx = None
+    try:
+        root = str(lmstudio_client.base_url).rstrip("/")
+        root = root[:-len("/v1")] if root.endswith("/v1") else root
+        r = httpx.get(f"{root}/api/v1/models", timeout=2.0,
+                      headers={"Authorization": f"Bearer {_LMSTUDIO_API_KEY}"})
+        if r.status_code == 200:
+            for m in r.json().get("models") or []:
+                if m.get("key") == model:
+                    for inst in m.get("loaded_instances") or []:
+                        ctx = int((inst.get("config") or {}).get("context_length") or 0) or None
+                        break
+    except Exception as e:
+        logger.debug(f"[LMStudio] อ่าน context ที่โหลดไม่ได้: {e}")
+    _lmstudio_ctx_cache[model] = (time.monotonic(), ctx)
+    return ctx
+
+
+def _fit_lmstudio_context(messages: list[dict], model: str) -> tuple[list[dict], int]:
+    """ตัดประวัติเก่าสุดทิ้งจนพอดี context − reserve · คืน (messages, จำนวนที่ตัด)
+
+    เก็บ system ต้นทาง + ข้อความล่าสุดเสมอ (ถึงจะเกินเอง — ให้ LM Studio ตัดสิน) ·
+    ประวัติที่เหลือต้องเริ่มด้วย user ไม่ให้ qwen เห็นคำตอบลอยๆ ที่ไม่มีคำถามนำ ·
+    ถาม LM Studio เฉพาะเมื่อเกินงบของ default (แชทสั้นไม่เสียรอบ HTTP)"""
+    budget = _LMSTUDIO_CONTEXT_LENGTH - _LMSTUDIO_REPLY_RESERVE
+    if count_tokens_approx(messages) <= budget:
+        return messages, 0
+    ctx = _lmstudio_loaded_ctx(model) or _LMSTUDIO_CONTEXT_LENGTH
+    budget = ctx - _LMSTUDIO_REPLY_RESERVE
+    head = 1 if messages and messages[0].get("role") == "system" else 0
+    sys_part, rest = messages[:head], list(messages[head:])
+    dropped = 0
+    while len(rest) > 1 and count_tokens_approx(sys_part + rest) > budget:
+        rest.pop(0)
+        dropped += 1
+    while len(rest) > 1 and rest[0].get("role") != "user":
+        rest.pop(0)
+        dropped += 1
+    return sys_part + rest, dropped
 
 # --- Claude (Anthropic Cloud LLM) ---
 # opt-in: ตั้ง ANTHROPIC_API_KEY ใน .env ถึงจะใช้ได้ (provider="claude")
@@ -394,6 +454,10 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
     else:
         temperature = OLLAMA_TEMPERATURE
 
+    messages, dropped = _fit_lmstudio_context(messages, model)
+    if dropped:
+        logger.info(f"[LMStudio] ตัดประวัติเก่า {dropped} ข้อความให้พอดี context (เหลือ ~{count_tokens_approx(messages)} token)")
+
     # ถ้ามีรูป → แทรก image content เข้าไปใน user message ล่าสุด
     if image_b64:
         msgs = []
@@ -421,17 +485,27 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
         )
         if cancel is not None:
             cancel.register(stream)
+        finish = None
+        usage: dict = {}
         for chunk in stream:
             if _stop_if_cancelled(cancel):          # เช็คทุก raw chunk — รวม reasoning ที่ไม่ yield อะไรออกไป
                 logger.info("[LLM] LM Studio stream ถูกยกเลิก (client ตัดสาย)")
                 return
             _capture_openai_usage(chunk, usage_sink)
+            _capture_openai_usage(chunk, usage)
             if not chunk.choices:
                 continue  # chunk ท้ายจาก include_usage — มีแต่ตัวเลข ไม่มีข้อความ
+            finish = getattr(chunk.choices[0], "finish_reason", None) or finish
             delta = chunk.choices[0].delta.content
             if delta:
                 yield delta
-        logger.info(f"LM Studio stream OK (model={model}, vision={'yes' if image_b64 else 'no'})")
+        if finish == "length":
+            # context เต็มระหว่างตอบ — เดิมจบเงียบๆ กลางประโยค ผู้ใช้ไม่รู้ว่าถูกตัด
+            yield ("\n\n⚠️ คำตอบถูกตัดเพราะ context ของโมเดล local เต็ม — "
+                   "พิมพ์ \"ต่อ\" ให้ตอบต่อ หรือเริ่มแชทใหม่ถ้าบทสนทนายาวมากแล้ว")
+        logger.info(f"LM Studio stream OK (model={model}, vision={'yes' if image_b64 else 'no'}, "
+                    f"finish={finish}, in={usage.get('input_tokens', '?')}, "
+                    f"out={usage.get('output_tokens', '?')}, ตัดประวัติ={dropped})")
     except Exception as e:
         if _stop_if_cancelled(cancel):              # ReadError จาก socket ที่เราตัดเอง — ห้ามจัดเป็น "ต่อไม่ได้" แล้ว cascade
             logger.info("[LLM] LM Studio stream ถูกยกเลิก (client ตัดสาย)")
