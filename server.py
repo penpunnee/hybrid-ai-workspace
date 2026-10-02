@@ -293,6 +293,8 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     # นับจำนวนครั้งที่ค้นใน turn ปัจจุบัน — กันโมเดลวนค้นจนไม่ยอมพูด
     # (เกิดจริง 2026-08-10: ค้น 5 ครั้งใน 53 วิ แล้วไม่ส่งเสียงกลับมาเลย)
     search_count = 0
+    # turn นี้นึกความจำเก่า (recall_memory) → ไม่จดกลับลง memory (ความจำวนซ้ำทับถม · 2026-10-02)
+    turn_recalled = False
     # ── นาฬิกาสำหรับ log วินิจฉัยเท่านั้น (2026-08-18) ไม่มีโค้ดไหนตัดสินใจจากค่านี้ ──
     # `last_audio_at` = เวลาที่ส่ง audio chunk ล่าสุด**ออก WebSocket** — ตรงกับสิ่งที่
     # ขับ `playUntil` ของ `HalfDuplexGate` ฝั่ง client พอดี ⇒ "เงียบมากี่วินาที" ที่
@@ -393,8 +395,9 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                     """
                     from utils.voice import WEB_SEARCH_TOOL_NAME
 
-                    nonlocal search_count, search_done_at
-                    wanted = {cid: q for cid, _n, q in live_tool_call_queries(response)}
+                    nonlocal search_count, search_done_at, turn_recalled
+                    from utils.voice import MEMORY_TOOL_NAME
+                    wanted = {cid: (n, q) for cid, n, q in live_tool_call_queries(response)}
                     # 🔑 ขอบ**ซ้าย**ของช่วงเงียบ — เดิม log แค่ตอนค้นเสร็จ ⇒ รู้ว่าจบเมื่อไร
                     # แต่ไม่รู้ว่าเริ่มเมื่อไร = วัดความยาวช่วงเงียบไม่ได้ ซึ่งเป็นตัวเลข
                     # ทั้งหมดของสมมติฐาน "ประตูไมค์หมดอายุระหว่างค้น"
@@ -414,7 +417,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                     for fc in calls:
                         cid = getattr(fc, "id", "") or ""
                         name = getattr(fc, "name", "") or WEB_SEARCH_TOOL_NAME
-                        query = wanted.get(cid)
+                        tool_name, query = wanted.get(cid, (name, None))
                         if query is None:
                             logger.warning(f"[Voice WS] tool call ที่ไม่รับ: {name} → ตอบว่าใช้ไม่ได้")
                             payload = {"error": "เรียกเครื่องมือนี้ไม่ได้ ให้บอกผู้ใช้ตรงๆ ว่าค้นไม่ได้"}
@@ -429,10 +432,16 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                         else:
                             try:
                                 search_count += 1
-                                # มีเพดานเวลา + แยก "ระบบล่ม" ออกจาก "หาไม่เจอ" (2026-10-01 ·
-                                # เดิมเครื่อง embed ดับ = เงียบ 3.5 นาทีแล้วบอกว่าหาไม่เจอ)
-                                from utils.websearch import voice_search_payload
-                                payload = await voice_search_payload(query)
+                                if tool_name == MEMORY_TOOL_NAME:
+                                    # นึกความจำเก่า (ทางเลือก 1 · 2026-10-02) — มีเพดานเวลา + คำเตือนว่าความจำอาจผิด
+                                    from memory.voice_memory import voice_recall_payload
+                                    payload = await voice_recall_payload(asst_name, query, session_id)
+                                    turn_recalled = True
+                                else:
+                                    # มีเพดานเวลา + แยก "ระบบล่ม" ออกจาก "หาไม่เจอ" (2026-10-01 ·
+                                    # เดิมเครื่อง embed ดับ = เงียบ 3.5 นาทีแล้วบอกว่าหาไม่เจอ)
+                                    from utils.websearch import voice_search_payload
+                                    payload = await voice_search_payload(query)
                             except Exception as se:
                                 # ค้นล้มต้องไม่ทำให้ session ตาย — ปล่อยให้โมเดลพูดต่อได้
                                 logger.error(f"[Voice WS] ค้นล้ม {type(se).__name__}: {se}")
@@ -455,7 +464,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                     )
 
                 async def send_loop():
-                    nonlocal resume_handle, auto_count, search_count, last_audio_at
+                    nonlocal resume_handle, auto_count, search_count, last_audio_at, turn_recalled
                     import base64
                     user_transcript = ""
                     ai_transcript = ""
@@ -525,8 +534,10 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
                                         # episodic memory (user เคาะ 09-29 · เดิมโหมดเสียงไม่เคยบันทึก = 88% ของบทสนทนา)
                                         # daemon thread ไม่ await · ต้องก่อนล้างบัฟเฟอร์ข้อความ (ไม่ข้าม turn ที่ค้นเว็บแล้ว — 09-29)
                                         remember_voice_turn(asst_name, user_transcript, ai_transcript,
-                                                            interrupted=turn_interrupted)
+                                                            interrupted=turn_interrupted,
+                                                            recalled=turn_recalled)
                                         turn_interrupted = False
+                                        turn_recalled = False
                                         # เพดานค้นนับต่อ turn — คำถามใหม่เริ่มนับใหม่เสมอ
                                         # ไม่งั้นคุยยาวๆ จะชนเพดานถาวรแล้วค้นไม่ได้อีกทั้ง session
                                         search_count = 0

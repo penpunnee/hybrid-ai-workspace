@@ -91,6 +91,8 @@ GEMINI_LIVE_MODEL_DEFAULT = "gemini-3.1-flash-live-preview"
 # (ตัวเดียวกับที่ฝั่งพิมพ์ใช้ · วัดแล้วได้ 7 แหล่งบนคีย์นี้ผ่าน gemini-2.5-flash)
 # แล้วส่งผลกลับด้วย `session.send_tool_response()` — ดู `server.py` send_loop
 WEB_SEARCH_TOOL_NAME = "search_web"
+# นึกความจำบทสนทนาเก่า (user เคาะ 2026-10-02 ทางเลือก 1) — เดิมโหมดเสียงจดได้แต่นึกไม่ได้
+MEMORY_TOOL_NAME = "recall_memory"
 
 
 def web_search_tool():
@@ -203,13 +205,45 @@ def live_tool_call_queries(response) -> list[tuple[str, str, str]]:
     out: list[tuple[str, str, str]] = []
     for fc in (getattr(tc, "function_calls", None) or []):
         name = getattr(fc, "name", "") or ""
-        if name != WEB_SEARCH_TOOL_NAME:
+        if name not in (WEB_SEARCH_TOOL_NAME, MEMORY_TOOL_NAME):
             continue
         query = ((getattr(fc, "args", None) or {}).get("query") or "").strip()
         if not query:
             continue
         out.append((getattr(fc, "id", "") or "", name, query))
     return out
+
+
+def memory_recall_tool():
+    """ประกาศฟังก์ชันนึกความจำ — ผลจริงมาจาก `memory.voice_memory.voice_recall_payload`
+
+    ชื่อพารามิเตอร์ `query` ใช้ร่วมกับ `live_tool_call_queries()` เหมือนค้นเว็บ
+    ⚠️ คำอธิบายต้องเตือนว่าความจำอาจผิด (มีคำตอบที่ขวัญเคยเดาถูกจดไว้ — ต่อ 60)
+    """
+    from google.genai import types
+
+    return types.Tool(
+        function_declarations=[
+            types.FunctionDeclaration(
+                name=MEMORY_TOOL_NAME,
+                description=(
+                    "นึกความจำจากบทสนทนาเก่ากับพี่ปอย (ทั้งแชทพิมพ์และคุยเสียงครั้งก่อนๆ) "
+                    "ใช้เมื่อพี่ปอยพูดถึงเรื่องที่เคยคุยกัน ถามว่าจำได้ไหม หรืออ้างถึงสิ่งที่เคยเล่าให้ฟัง "
+                    "⚠️ ความจำอาจผิด (บางคำตอบในอดีตเป็นการเดา) — ใช้รู้ว่าเคยคุยอะไร ไม่ใช่ยืนยันข้อเท็จจริง"
+                ),
+                parameters=types.Schema(
+                    type="OBJECT",
+                    properties={
+                        "query": types.Schema(
+                            type="STRING",
+                            description="เรื่องที่จะนึก เขียนเป็นหัวข้อสั้นๆ ใส่ชื่อเฉพาะที่พี่ปอยพูดถึง",
+                        )
+                    },
+                    required=["query"],
+                ),
+            )
+        ]
+    )
 
 
 def build_live_config(slug: str, system_instruction: str, resume_handle: str | None):
@@ -225,7 +259,7 @@ def build_live_config(slug: str, system_instruction: str, resume_handle: str | N
 
     return types.LiveConnectConfig(
         response_modalities=["AUDIO"],
-        tools=[web_search_tool()],
+        tools=[web_search_tool(), memory_recall_tool()],
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=resolve_voice(slug))

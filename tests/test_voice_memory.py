@@ -124,7 +124,8 @@ def test_voice_เรียกในบล็อก_turn_complete_ก่อน�
     call = calls[0]
     assert [ast.unparse(a) for a in call.args[1:]] == ["user_transcript", "ai_transcript"]
     kw = {k.arg: ast.unparse(k.value) for k in call.keywords}
-    assert kw == {"interrupted": "turn_interrupted"}, kw           # ไม่ใช่ค่าคงที่ · ไม่มี searched แล้ว
+    # ไม่ใช่ค่าคงที่ · ไม่มี searched แล้ว · recalled = turn ที่นึกความจำ ไม่จดกลับ (2026-10-02)
+    assert kw == {"interrupted": "turn_interrupted", "recalled": "turn_recalled"}, kw
     clear_user = [i for i, s in enumerate(ast.unparse(block).splitlines()) if "user_transcript = ''" in s]
     assert clear_user, "ต้องยังล้างบัฟเฟอร์เหมือนเดิม"
 
