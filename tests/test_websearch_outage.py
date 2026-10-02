@@ -189,7 +189,36 @@ def _patch_search(monkeypatch, fn):
 
 def test_voice_ok_ส่งผล(monkeypatch):
     _patch_search(monkeypatch, lambda q: ("ผลค้น", [{"href": "x"}], "ok"))
-    assert _run(ws.voice_search_payload("ราคาทอง")) == {"result": "ผลค้น"}
+    p = _run(ws.voice_search_payload("ราคาทอง"))
+    assert set(p) == {"result"} and p["result"].endswith("ผลค้น")
+
+
+# ── ต่อ 60/68: แนบคำสั่งกับผลค้น (โหมดเสียงใช้ผลค้นผิด 3 แบบ · prod 10-01 20:19–20:32) ──
+# 1) ค้น "Warlords" ต่อ 5 ครั้งหลัง user บอก "Way of the Sword" → ตอบชื่อของภาคผิด
+# 2) "Reynaldo" ไม่มีในผลค้นเลย (แต่ง) · 3) ผลมี "Earth-Shakers" แต่ตอบกว้าง "ดาบใหญ่หรือค้อน"
+# ⚠️ ห้ามสั่ง "ค้นใหม่" — tool description สั่ง "ค้นครั้งเดียวต่อคำถาม" (เงียบ 10–15 วิทุกครั้งที่ค้น)
+
+def test_voice_ok_แนบคำสั่งก่อนผลค้น(monkeypatch):
+    _patch_search(monkeypatch, lambda q: ("ผลค้นจริง", [{"href": "x"}], "ok"))
+    r = _run(ws.voice_search_payload("ราคาทอง"))["result"]
+    assert r.startswith(ws.VOICE_SEARCH_GUIDE) and r.endswith("ผลค้นจริง")
+
+
+def test_คำสั่งครอบทั้ง_3_อาการ_และไม่สั่งค้นซ้ำ():
+    g = ws.VOICE_SEARCH_GUIDE
+    assert "ห้ามเดา" in g                                   # 2) แต่งชื่อ/ปุ่ม/ตัวเลข
+    assert "คนละ" in g and "บอก" in g                       # 1) ผลเป็นคนละภาค/รุ่น → บอกตรงๆ
+    assert "ชื่อเฉพาะ" in g                                  # 3) มีชื่อในผลแต่ตอบกว้าง
+    assert "ล่าสุดที่ผู้ใช้บอก" in g                          # 1) คำค้นครั้งต่อไป
+    assert "ค้นใหม่" not in g and "ค้นอีก" not in g
+
+
+def test_ผลค้นจาก_gemini_ก็แนบคำสั่งด้วย(monkeypatch):
+    import utils.llm as llm
+    monkeypatch.setattr(llm, "GEMINI_WEB_SEARCH_ENABLED", True)
+    monkeypatch.setattr(llm, "gemini_web_search", lambda q: ("จาก gemini", [{"href": "g"}]))
+    r = _run(ws.voice_search_payload("ราคาทอง"))["result"]
+    assert r.startswith(ws.VOICE_SEARCH_GUIDE) and r.endswith("จาก gemini")
 
 
 def test_voice_empty_บอกหาไม่เจอ(monkeypatch):
@@ -226,7 +255,7 @@ def test_voice_ใช้_gemini_ก่อนเมื่อเปิดสวิ
     monkeypatch.setattr(llm, "GEMINI_WEB_SEARCH_ENABLED", True)
     monkeypatch.setattr(llm, "gemini_web_search", lambda q: ("จาก gemini", [{"href": "g"}]))
     monkeypatch.setattr(ws, "web_search_with_status", lambda q: pytest.fail("ไม่ควรถึง Brave"))
-    assert _run(ws.voice_search_payload("ราคาทอง")) == {"result": "จาก gemini"}
+    assert _run(ws.voice_search_payload("ราคาทอง"))["result"].endswith("จาก gemini")
 
 
 def test_voice_เพดานลงทะเบียน_env():
