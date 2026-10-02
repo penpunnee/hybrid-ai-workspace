@@ -21,7 +21,8 @@ import sqlite3
 import struct
 import threading
 import time
-from functools import lru_cache
+from functools import cached_property, lru_cache
+from types import SimpleNamespace
 from typing import Sequence
 
 import httpx
@@ -39,7 +40,7 @@ from core.env_registry import env_bool, env_float, env_int, env_str
 
 logger = logging.getLogger(__name__)
 
-# env ที่ไฟล์นี้เป็นเจ้าของ 4 ชื่อ (ก้อน 4 · 2026-09-23)
+# env ที่ไฟล์นี้เป็นเจ้าของ (ก้อน 4 · 2026-09-23 · +OLLAMA_EMBED_KEEP_ALIVE 10-02)
 _G = "Embeddings"
 _LMSTUDIO_BASE_URL = _CFG_LMSTUDIO_BASE_URL
 # LM Studio รุ่นใหม่บังคับ API token — ค่ามาจาก core/config.py (ค่าว่างถอยไป placeholder
@@ -74,10 +75,45 @@ _EMBED_DOWN_COOLDOWN = env_int("EMBED_DOWN_COOLDOWN", 60, group=_G, doc=(
     "วินาทีที่ข้าม provider embed หลังต่อไม่ติด (ไม่รอ timeout ซ้ำทุกคำขอ) · 0 = ไม่ข้าม"))
 _HTTP_TIMEOUT = httpx.Timeout(_EMBED_TIMEOUT, connect=_EMBED_CONNECT_TIMEOUT)
 
+# 🔴 Ollama ปล่อยโมเดลออกจาก VRAM เมื่อว่าง 5 นาที (default) ⇒ ค้นเว็บครั้งแรกของทุกสายเสียง
+# ช้า 6.5–12.6 วิ (prod 10-01/02 · rerank รอโหลดโมเดล 4–11 วิ) · `/v1/embeddings` **เมิน
+# `keep_alive`** (วัดแล้ว) จึงต้องยิง `/api/embed` native · ตั้งที่นี่ ไม่ใช่ OLLAMA_KEEP_ALIVE
+# บนเครื่อง เพราะตัวนั้นตรึง llama3 (~4.7 GB) แย่ง GPU 12 GB กับ LM Studio ไปด้วย
+_OLLAMA_EMBED_KEEP_ALIVE = env_str("OLLAMA_EMBED_KEEP_ALIVE", "24h", group=_G, doc=(
+    "ให้ Ollama ค้างโมเดล embed ไว้ใน VRAM นานเท่านี้หลังใช้ล่าสุด (รูปแบบ Go duration เช่น 30m/24h)\n"
+    "ว่าง = ใช้ค่าของเครื่อง Ollama เอง (default 5m → embed ครั้งแรกหลังว่างช้า 4–11 วิ)"))
+
+
+class _OllamaNativeEmbeddings:
+    """`.create()` รูปเดียวกับ openai แต่ยิง `/api/embed` ของ Ollama (ส่ง keep_alive ได้)"""
+
+    def __init__(self, client: "OpenAI"):
+        self._client = client
+
+    def create(self, *, model: str, input: list[str]):
+        root = str(self._client.base_url).rstrip("/")
+        root = root[:-len("/v1")] if root.endswith("/v1") else root
+        body: dict = {"model": model, "input": input}
+        if _OLLAMA_EMBED_KEEP_ALIVE:
+            body["keep_alive"] = _OLLAMA_EMBED_KEEP_ALIVE
+        # ผ่าน `post` ของ openai ⇒ timeout/max_retries/ชนิด error (APIConnectionError →
+        # ข้ามเครื่องดับ · 404 → APIStatusError) เหมือนเส้นเดิมทุกอย่าง
+        raw = self._client.post(f"{root}/api/embed", body=body, cast_to=object)
+        return SimpleNamespace(
+            model=raw.get("model"),
+            data=[SimpleNamespace(embedding=v) for v in raw.get("embeddings") or []])
+
+
+class _OllamaNativeClient(OpenAI):
+    @cached_property
+    def embeddings(self):  # type: ignore[override]
+        return _OllamaNativeEmbeddings(self)
+
+
 _client = OpenAI(base_url=_LMSTUDIO_BASE_URL or "http://localhost:1234/v1",
                  api_key=_LMSTUDIO_API_KEY, timeout=_HTTP_TIMEOUT, max_retries=0)
-_ollama_client = OpenAI(base_url=_OLLAMA_BASE_URL, api_key="ollama",
-                        timeout=_HTTP_TIMEOUT, max_retries=0)
+_ollama_client = _OllamaNativeClient(base_url=_OLLAMA_BASE_URL, api_key="ollama",
+                                     timeout=_HTTP_TIMEOUT, max_retries=0)
 
 # provider ที่เพิ่งต่อไม่ติด → เวลาที่จะลองใหม่ได้ (monotonic) · เฉพาะ error ระดับเชื่อมต่อ
 # (APIConnectionError รวม timeout) — error อื่น (400/โมเดลไม่ตรง) แปลว่าเครื่องยังอยู่ ห้ามปิดทาง
