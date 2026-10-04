@@ -11,6 +11,7 @@
 """
 import asyncio
 import logging
+import re
 import threading
 import time
 
@@ -19,6 +20,10 @@ from memory.operations import recall, remember
 from reasoning.learn_gate import should_remember
 
 logger = logging.getLogger(__name__)
+
+# อักษรไทยเท่านั้น (ลาว U+0E80– อยู่นอกช่วง) — user พูดไทยเสมอ ⇒ ข้อความที่ไม่มีอักษรไทยเลย = ASR ฟังผิด/เสียงทีวี
+# (prod 06-18→10-04: เกาหลี/ญี่ปุ่น/ลาว/ฝรั่งเศส/อิตาลี 40+ turn · 10 รายการหลุดเข้า memory_kwan · "ขวัญ" → "Juan")
+_THAI_CHARS = re.compile(r"[\u0E00-\u0E7F]")
 
 
 def voice_memory_decision(user_text: str, ai_text: str, *, interrupted: bool = False,
@@ -30,6 +35,8 @@ def voice_memory_decision(user_text: str, ai_text: str, *, interrupted: bool = F
         return False, "no_user_text"          # auto-continue: AI เล่าต่อเองโดยไม่มีคำถาม
     if not (ai_text or "").strip():
         return False, "no_ai_text"
+    if not _THAI_CHARS.search(user_text):
+        return False, "no_thai_text"
     if interrupted:
         return False, "interrupted"
     if recalled:

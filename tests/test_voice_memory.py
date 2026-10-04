@@ -30,6 +30,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     ("เล่าเรื่องแมว", "กาลครั้ง…", {"interrupted": True}, (False, "interrupted")),
     ("คำว่า แม้ว่า เป็นภาษาราชการไหม", "เป็นคำเชื่อมที่ใช้ได้ทั้ง…", {}, (True, "ok")),   # เคสจริงที่เคยโดนข้ามเพราะโมเดลค้นเว็บ
     ("ราคาทองวันนี้เท่าไร", "ขายออก 41,000", {}, (False, "realtime_query")),   # ผ่าน should_remember จริง
+    # ── ถอดเสียงเป็นภาษาอื่น (prod: 40+ turn ตั้งแต่ 06-18 · 10 รายการหลุดเข้า memory_kwan) ──
+    # user พูดไทยเสมอ — ข้อความที่ไม่มีอักษรไทยเลย = ASR ฟังผิด/เสียงทีวี ไม่ใช่สิ่งที่ user พูด
+    ("환 아 니 아이러닝 부가한 영화관에서 애니메이션 상영 중인", "ขวัญหาให้แล้ว…", {}, (False, "no_thai_text")),
+    ("Quoi ? Bah quoi ? Allez, va chercher les détails", "ขวัญพยายามค้น…", {}, (False, "no_thai_text")),
+    ("Juan", "ขวัญอยู่นี่ค่ะ", {}, (False, "no_thai_text")),                   # "ขวัญ" ถูกถอดเป็น Juan
+    ("ໃນ ການ ຄວບຄຸມ ອຸປະກອນ", "…", {}, (False, "no_thai_text")),              # ลาว ≠ ช่วงอักษรไทย
+    ("さ いしゃい", "…", {}, (False, "no_thai_text")),
+    ("เปิด Raspberry Pi 5 ยังไง", "กดปุ่ม…", {}, (True, "ok")),                  # ไทยปนอังกฤษ = พูดจริง
 ])
 def test_decision(user, ai, kw, expected):
     assert vm.voice_memory_decision(user, ai, **kw) == expected
