@@ -1,5 +1,25 @@
 ---
 
+## [2026-10-04 ปิดเซสชันรอบ 5] สรุป (ต่อ 91–98) — เคลียร์งานเปิดทั้งหมด (user: "จัดการงานที่เหลือให้เสร็จทั้งหมด แล้ววัดผล")
+
+| ต่อ | งาน | ต้นเหตุ / ทางแก้ | วัดบน prod | commit |
+|---|---|---|---|---|
+| 91 | stream LM Studio `rid=-` `in=?` | = เธรด `_learn` (auto-learn) · `threading.Thread` ไม่สืบ contextvars + ไม่ขอ usage ⇒ `core.observability.spawn_bg` (copy_context) ใช้กับ `_shadow/_teach/_learn` · `_stream_lmstudio` ขอ `include_usage` เสมอ | log `rid=probe_…` + `in=46, out=2` · auto-learn ข้ามคิดแล้ว (เดิม 25 วิ–2.5 นาที **ทับแชทถัดไป**) | `b5b5156` |
+| 92 | (ข) 1011 เป็นชุด | ชุด 10-04 05:33 **ไม่มีตัวอ่านเปิด** ⇒ "หลังพักตัวอ่าน" ตก (2/4) · forum Google รายงาน 1011 `Internal error` ของ `3.1-flash-live-preview` หลายเธรด · client retry 3 รอบอยู่แล้ว (แบบ LiveKit) | ไม่แก้ — ฝั่ง Google | — |
+| 93 | (ค) เตือนนำเข้าหนังสือ | `scatter_suspects()` นับพยัญชนะเดี่ยวลอย (ไม่นับ ณ/ธ · ไม่ต้อง pythainlp) · เกณฑ์ ≥4/แสน และ ≥20 จุด · `_ingest` log WARNING + `scatter_warning` ใน JSON | ซ่อมแล้ว xianni 13 · PW 345 → ไม่เตือน · ฉบับก่อนกู้ 298 / 15,159 → เตือนทั้งคู่ | `6f3533d` |
+| 94 | (ง) สายเสียงเปิดซ้อน | iOS ซ่อนหน้า → socket client ตายเงียบ · server ถือ Live ไว้จนหมด ping uvicorn (38 วิ) ⇒ `VoiceLineRegistry` ห้องเดียว = สายเดียว · สายใหม่ตั้ง `stop` สายเก่า · ส่ง `{type:superseded}` + close 4000 · client จบสายไม่ retry (กัน 2 แท็บแย่งกันวน) | 2 สายจริงห้องเดียว: สายเก่าปิดใน **1.7 วิ** (เดิม 38) ได้ superseded/4000 · sha config เสียง `6b86ce2b…` ก่อน=หลัง · inode ตรง | `2cdef0b` `7f5838f` · ui `edee58d` |
+| 95 | (จ) โหลดเย็น | `POST /api/warmup` → `warm_lmstudio()` เช็คสด (ล้าง cache) · ไม่โหลด = ยิง `max_tokens=1` เบื้องหลัง · กันซ้ำ 60 วิ · React ยิงตอนเปิดแอป/visible (กันซ้ำ 2 นาที) · ไม่จอง VRAM ถาวร | unload แล้ววัด: คำตอบแรก **6.51 → 0.63 วิ** · อุ่นใช้ 6.1 วิ (ระหว่างพิมพ์) | `0a6844a` · ui `5b721f4` |
+| 96 | (ช) `↓ N tokens` รวมส่วนคิด (agent) | LM Studio ส่ง `completion_tokens_details.reasoning_tokens` · เก็บใน usage + รวมทุกคำขอ · UI `↓ <คำตอบ> tokens (+คิด N)` · t/s จากทั้งหมด | agent จริง: `output 83 · reasoning 65` | `786da8a` · ui `a995b2a` |
+| 97 | (ซ) Ollama ReAct ไม่ส่ง usage | non-stream มี `response.usage` แต่ทิ้ง → `_note_response_usage` ทุก step + รอบสรุป (ไม่ใส่ context_limit) | `input 705 · output 266` · ⚠️ รอบแรก llama3 เรียก tool พลาด → "ไม่ได้ข้อมูลจริง" · รอบสองถูก (5535) = ความไม่นิ่งของ llama3 ไม่เกี่ยวงานนี้ | `71f42c7` |
+| 98 | (ฌ) ไทม์ไลน์/สถิติหายหลังรีเฟรช | `messages.meta` TEXT (ALTER อัตโนมัติ) · `reply_meta()` = started_at_ms/elapsed_ms/usage/agent_steps (≤60 ขั้น · ≤300 ตัว) · แชท/agent/regenerate · React `historymeta.ts` สร้างคืน | handler จริง + WebKit โหลดประวัติ: `↓ 356 tokens (+คิด 178) · 17.4s · 30.8 t/s` · "ใช้ 1 tool" เปิดแล้วเห็น calculator · แถบ Context 3,506/16,384 กลับมาด้วย · ลบห้องทดสอบแล้ว | `f7a18b6` · ui `014d9b8` |
+
+**เทส:** ชุดเต็มสุดท้าย 2746 passed · vitest 706 · tsc · ruff · mutation ทุกก้อน (จับได้ทุกตัว) · CI เขียวทุก commit
+**บทเรียน:** งานเบื้องหลังที่ใช้ GPU เดียวกับแชท (auto-learn) เคยทับคำตอบถัดไป 25–150 วิ — มองไม่เห็นเพราะ log ไม่มี rid ·
+แก้ "ห้องเดียวสายเดียว" ฝั่ง server แล้วต้องคิดต่อว่าถ้าสายเก่า*ยังมีชีวิต*จะเกิดอะไร (probe แรกได้ 1006 → client จะต่อใหม่ไปแย่ง)
+**⏳ รอ user:** ลบ session `probe*` 1,011 แถว (6 ห้อง · รายการในรายงาน) · 🧪 iPhone: สถิติ/ไทม์ไลน์หลังรีเฟรช · แชทแรกหลังว่างนาน
+
+---
+
 ## [2026-10-04 ปิดเซสชันรอบ 4] สรุป (ต่อ 87–90)
 
 | ต่อ | งาน | ผล | commit |
