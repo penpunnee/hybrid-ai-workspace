@@ -92,6 +92,8 @@ def detect_preferences(prompt: str) -> list[tuple[str, str]]:
     return list(found.items())
 
 
+# 13 หลักติดกัน หรือรูป 1-2345-67890-12-3 · ไม่ติดตัวเลขอื่นทั้งสองข้าง (14 หลัก/ยาวกว่าไม่ใช่)
+_NATIONAL_ID_RE = re.compile(r"(?<![\d-])(?:\d{13}|\d-\d{4}-\d{5}-\d{2}-\d)(?![\d-])")
 _ATTACHMENT_RE = re.compile(r"\[(?:Excel|Sheet|DOCX|PDF(?: scan)?): ")
 
 
@@ -118,6 +120,10 @@ def should_remember(prompt: str, response: str) -> tuple[bool, str]:
         # ไม่ใช่บทสนทนา (prod: mem_20260724080137_540018 เก็บหัวสเปรดชีตครัวเรือนเปราะบาง+เลขบัตร · ต่อ 81)
         return False, "attachment"
     text = (response or "").strip()
+    if _NATIONAL_ID_RE.search(prompt or "") or _NATIONAL_ID_RE.search(text):
+        # รูปแบบเลขบัตรประชาชน — ผูกกับลักษณะข้อมูล ไม่ใช่ทางที่มันเข้ามา (prod: คำถามต่อเนื่องไม่มีไฟล์แนบ
+        # แต่คำตอบมีชื่อ+เลขบัตร 3 คน · mem_20260724080318_d44af4 · ต่อ 82)
+        return False, "national_id"
     if not text:
         return False, "empty_response"
     low = text.lower()

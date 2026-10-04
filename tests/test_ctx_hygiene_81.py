@@ -95,3 +95,23 @@ def test_attachment_prompt_not_remembered(marker):
 def test_plain_prompt_mentioning_excel_still_remembered():
     """พูดถึงคำว่า Excel เฉยๆ ไม่ใช่ไฟล์แนบ"""
     assert should_remember("สูตร Excel หาค่าซ้ำใช้อะไร", "ใช้ COUNTIF") == (True, "ok")
+
+
+# ── ง. เลข 13 หลัก (รูปแบบเลขบัตรประชาชน) ไม่จดความจำ — ทั้งในคำถามและคำตอบ ──────────
+# prod: mem_20260724080318_d44af4 คำถามต่อเนื่อง (ไม่มีไฟล์แนบ) แต่คำตอบมีชื่อ+เลขบัตร 3 คน — ตัวกัน ค. ไม่ครอบ
+@pytest.mark.parametrize("q,a", [
+    ("ที่เป็น 2026-02-11 แบบนี้ มีกี่ราย", "1. นาง ก (เลขบัตร: 5540000000524)"),
+    ("หาคนนี้ 3540400629704 ให้หน่อย", "พบ 1 ราย"),
+    ("เลขนี้ 1-5401-00012-34-5 ของใคร", "ไม่ทราบค่ะ"),          # เขียนแบบมีขีด
+])
+def test_national_id_not_remembered(q, a):
+    assert should_remember(q, a) == (False, "national_id")
+
+
+@pytest.mark.parametrize("q,a", [
+    ("เงินเดือนปีละ 1,250,000 บาท ตกเดือนละเท่าไร", "ประมาณ 104,167 บาท"),
+    ("timestamp 17848800720 คือวันไหน", "ปี 2026"),            # 11 หลัก
+    ("เลข 12345678901234 มีกี่หลัก", "14 หลัก"),                # 14 หลัก ไม่ใช่เลขบัตร
+])
+def test_other_numbers_still_remembered(q, a):
+    assert should_remember(q, a) == (True, "ok")
