@@ -214,3 +214,31 @@ def test_lmstudio_agent_sums_reasoning_tokens(monkeypatch):
     sink: dict = {}
     list(orch.run_agent([{"role": "system", "content": "base"}], provider="lmstudio", usage_sink=sink))
     assert sink == {"input_tokens": 3400, "output_tokens": 200, "reasoning_tokens": 160}
+
+
+# ── (ซ) Ollama ReAct agent ไม่ส่ง usage (งานเปิด ซ) — non-stream มี response.usage อยู่แล้วแต่ถูกทิ้ง ──
+
+class _OllamaFake:
+    def __init__(self, contents, usages):
+        self.contents, self.usages, self.calls = list(contents), list(usages), []
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+    def _create(self, **kw):
+        self.calls.append(kw)
+        pt, ct = self.usages.pop(0)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=self.contents.pop(0)))],
+            usage=SimpleNamespace(prompt_tokens=pt, completion_tokens=ct))
+
+
+def test_ollama_react_agent_reports_usage(monkeypatch):
+    import openai
+    fake = _OllamaFake(
+        ['Thought: คำนวณ\nAction: calculator\nAction Input: {"expression": "2+2"}', "Answer: ได้ 4"],
+        [(900, 40), (1100, 12)])
+    monkeypatch.setattr(openai, "OpenAI", lambda **kw: fake)
+    monkeypatch.setattr(orch, "execute_tool", lambda name, args: "2+2 = 4")
+    sink: dict = {}
+    events = list(orch.run_agent([{"role": "system", "content": "base"}], provider="ollama", usage_sink=sink))
+    assert [e[1] for e in events if e[0] == "chunk"] == ["ได้ 4"]
+    assert sink == {"input_tokens": 1100, "output_tokens": 52}

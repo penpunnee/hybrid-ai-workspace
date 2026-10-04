@@ -239,7 +239,7 @@ def run_agent(
             ใช้เฉพาะ lmstudio: เส้นอื่นหยุดที่ yield ถัดไปอยู่แล้ว (`_guard_disconnect` ปิด generator)
             ส่วน LM Studio step เดิมเป็น non-stream ที่ค้างได้ถึง LMSTUDIO_TIMEOUT และ GPU คิดต่อทิ้งเปล่า
         usage_sink: dict ที่เติม {"input_tokens","output_tokens"[,"context_limit"]} ให้แถบ Context (ต่อ 80) ·
-            gemini/lmstudio เท่านั้น (Ollama ReAct ไม่รายงาน)
+            ollama ReAct: ขาเข้า/ขาออกจาก response.usage (ไม่มี context_limit — ไม่ได้อ่านค่าที่โหลดจริง)
     """
     if provider == "gemini":
         yield from _run_agent_gemini(messages, model or GEMINI_MODEL, max_steps,
@@ -255,7 +255,7 @@ def run_agent(
             yield ("event", {"type": "warning",
                              "message": "โหมด agent บน Ollama อ่านรูปไม่ได้ — รูปที่แนบมาถูกข้าม "
                                         "(ใช้ provider gemini หรือ lmstudio ถ้าต้องการให้ดูรูป)"})
-        yield from _run_agent_ollama(messages, model or OLLAMA_MODEL, max_steps)
+        yield from _run_agent_ollama(messages, model or OLLAMA_MODEL, max_steps, usage_sink=usage_sink)
     else:
         yield ("event", {"type": "error", "message": f"ไม่รู้จัก agent provider: '{provider}'"})
         yield ("chunk", f"❌ ไม่รู้จัก agent provider: {provider}")
@@ -760,10 +760,17 @@ def _build_react_system(tool_names: list[str]) -> str:
     return _REACT_SYSTEM.format(tool_list=tool_list)
 
 
+def _note_response_usage(sink: dict | None, response) -> None:
+    """usage ของคำขอ non-stream (Ollama ReAct · งานเปิด ซ)"""
+    u = getattr(response, "usage", None)
+    _note_usage(sink, getattr(u, "prompt_tokens", None), getattr(u, "completion_tokens", None))
+
+
 def _run_agent_ollama(
     messages: list[dict],
     model: str,
     max_steps: int,
+    usage_sink: dict | None = None,
 ) -> Generator[tuple[str, Any], None, None]:
     try:
         from openai import OpenAI
@@ -811,6 +818,7 @@ def _run_agent_ollama(
             yield ("chunk", f"❌ Ollama agent error: {e}")
             return
 
+        _note_response_usage(usage_sink, response)
         content = (response.choices[0].message.content or "").strip()
         logger.debug(f"[Agent/Ollama] raw output: {content[:300]}")
 
@@ -870,6 +878,7 @@ def _run_agent_ollama(
             model=model, messages=messages, temperature=0.3, stream=False,
             extra_body={"options": {"num_ctx": OLLAMA_NUM_CTX}},
         )
+        _note_response_usage(usage_sink, final)
         final_content = (final.choices[0].message.content or "").strip()
         answer_match = _ANSWER_RE.search(final_content)
         yield ("chunk", answer_match.group(1).strip() if answer_match else final_content)
