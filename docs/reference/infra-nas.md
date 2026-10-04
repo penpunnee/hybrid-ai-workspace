@@ -69,6 +69,12 @@ ssh pawin@192.168.51.49 "sudo -n /usr/local/bin/docker compose -f /var/services/
 - **ChromaDB**: `192.168.51.49:8000` — ใช้ `/api/v2/heartbeat` (v1 → 410 Gone)
 - **Ollama**: `192.168.51.235:11434` (PC) — model `llama3`. ⚠️ port 11434 ไม่ใช่ 1234
 - **LMStudio**: `192.168.51.235:1234` (PC เดียวกับ Ollama) — เปิด LMStudio app + Start Server. มี gemma-4-e4b, llama-3.2-11b-vision ฯลฯ
+  - **context เริ่มต้น = 16384** (2026-10-04 · devlog ต่อ 77) — `C:\Users\penpu\.lmstudio\settings.json` → `defaultContextLength`
+    (ค่ารวมของแอป มีผลกับทุกโมเดล JIT · สำรองเดิม `settings.json.bak-20261004-ctx8192`) · แก้ไฟล์ตอนแอปเปิดอยู่แล้ว `lms unload --all`
+    → โหลดครั้งถัดไปได้ค่าใหม่ทันที (ไม่ต้อง restart แอป) · ⛔ อย่า restart แอปผ่าน SSH (server ไปรันผิด session)
+  - TTL โมเดล JIT = 1800 วิ · เช็ค context/TTL จริง: `GET /api/v1/models` → `loaded_instances[].config.context_length` / `remaining_ttl_seconds`
+  - VRAM วัดจริง (RTX 3060 12 GB): ว่าง 425 MiB · qwen 8k + embed 8,721 · **qwen 16k + embed 9,072 (เหลือ 3,042)**
+  - SSH เข้าเครื่อง (ในวง LAN): `ssh penpu@192.168.51.235` · PowerShell ส่งผ่าน `-EncodedCommand` (cmd quoting พัง) · `lms` = `%USERPROFILE%\.lmstudio\bin\lms.exe`
 - ⚠️ PC `.235` ต้องเปิดเครื่อง local LLM ถึงจะใช้ได้ — ถ้า PC ปิด → ollama+lmstudio ล่มหมด → ตกไป Gemini → quota หมดง่าย
 - **DSM Web**: `https://192.168.51.49:5001` (auto cert) หรือ `http://:5000`
 - **Cloudflare tunnel**: `https://ai.pawinhome.com` → routes ไป `localhost:8080` ใน NAS

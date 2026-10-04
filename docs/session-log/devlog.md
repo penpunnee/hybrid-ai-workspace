@@ -1,5 +1,17 @@
 ---
 
+## [2026-10-04 ต่อ 77] ขยาย context qwen 8k → 16k บน LM Studio (.235) — วัด VRAM จริงก่อน/หลัง ✅
+
+**.235 กลับมา** (02:38 UTC · LM Studio/Ollama 200) · Mac อยู่ในวง → `ssh penpu@192.168.51.235` ได้ตรง
+**VRAM จริง (`nvidia-smi`):** ว่าง 425 MiB · qwen 8k + embed **8,721 / 12,288** (เหลือ 3,393) — ที่เคยประมาณ ~10–10.5 GB สูงเกินจริง ~1.5 GB
+· cold หลังรีบูต PC: embed 12.0 วิ · qwen 24.6 วิ (โหลดจากดิสก์ — keep_alive ช่วยไม่ได้หลังรีบูต)
+**ที่อยู่ของค่า:** `user-concrete-model-default-config\` ว่าง (ไม่มีค่ารายโมเดล) · ค่า 8192 = `settings.json` → `defaultContextLength {"type":"custom","value":8192}` (ค่ารวมของแอป)
+**ทำ (user: "จัดการตั้งให้หน่อย"):** สำรอง `settings.json.bak-20261004-ctx8192` → แก้เป็น 16384 → `lms unload --all` → ยิงคำขอให้ JIT โหลด
+- ผล: `context_length 16384` · TTL 1800 คงเดิม · โหลด 5.8 วิ · VRAM **9,072** (+351 MiB) เหลือ **3,042**
+- dry-run ตัวตัด (ต่อ 74–75) กับประวัติจริง `…5_d73044` (system สมมติ ~2k): แชทปกติ **ส่งครบ 12/12** (เดิม 2 คู่) · agent **8 ข้อความ** (เดิม 0)
+- PowerShell ผ่าน SSH: cmd quoting พัง → ใช้ `-EncodedCommand` (UTF-16LE base64) · `\"` ใน PS ไม่ใช่ escape (รอบแรก script ไม่รันเลย — เช็คไฟล์ก่อนเชื่อ)
+- ⚠️ ยังไม่รู้: แอปเขียน `settings.json` ทับจากค่าในหน่วยความจำตอนปิดไหม → **เช็ค `/api/v1/models` หลัง PC รีบูตครั้งหน้า** · บันทึกไว้ใน `docs/reference/infra-nas.md`
+
 ## [2026-10-04 ต่อ 76] ทำไมแชทออกแบบ UI วิ่ง agent — โหมด Code ค้างใน localStorage · ไม่คืนค่า Code + ป้ายสถานะจริง (appscript.ui `ea0d5a6` · static `ec53d7b`) ✅ prod + CI
 
 **ต้นทาง `tool_agent`** (`~/appscript.ui/utils/chatflags.ts:19`): โหมด **Code** หรือ skill **Web Search** — ปุ่ม 🤖 ส่ง `agent_mode` (คนละ flag ไม่เข้า tools)
