@@ -124,7 +124,7 @@ from utils.llm import _fit_lmstudio_context  # ตัดประวัติใ
 from utils.llm import _capture_openai_usage, _create_stream_with_usage, _lmstudio_loaded_ctx  # usage ของแถบ Context (ต่อ 80)
 
 
-def _note_usage(sink: dict | None, input_tokens, output_tokens) -> None:
+def _note_usage(sink: dict | None, input_tokens, output_tokens, reasoning_tokens=None) -> None:
     """บันทึก usage ของคำขอหนึ่งครั้งลง sink ของทั้งเทิร์น — agent ยิงหลายคำขอ:
     ขาเข้า = คำขอที่**ใหญ่สุด** (ใกล้ context เต็มที่สุด · ไม่ใช่ล่าสุด — รอบ "ขอสรุปใหม่" ไม่ส่ง tools schema
     จึงเล็กกว่า step ก่อนหน้า: prod 10-04 รายงาน 1,133 ทั้งที่ step ที่มี tools ใหญ่กว่า) · ขาออก = รวมทุกคำขอ ·
@@ -133,6 +133,8 @@ def _note_usage(sink: dict | None, input_tokens, output_tokens) -> None:
         return
     sink["input_tokens"] = max(sink.get("input_tokens", 0), input_tokens)
     sink["output_tokens"] = sink.get("output_tokens", 0) + (output_tokens if type(output_tokens) is int else 0)
+    if type(reasoning_tokens) is int and reasoning_tokens > 0:   # ส่วนคิด (รวมอยู่ใน output แล้ว) — งานเปิด ช
+        sink["reasoning_tokens"] = sink.get("reasoning_tokens", 0) + reasoning_tokens
 
 
 def _gemini_usage(chunk, seen: dict) -> None:
@@ -477,7 +479,7 @@ class _LMStudioAdapter:
                     e["name"] = fn.name
                 if fn is not None and fn.arguments:
                     e["args"] += fn.arguments
-        _note_usage(self.usage_sink, u.get("input_tokens"), u.get("output_tokens"))
+        _note_usage(self.usage_sink, u.get("input_tokens"), u.get("output_tokens"), u.get("reasoning_tokens"))
         text = "".join(content)
         tool_calls = [acc[k] for k in acc]
         if not tool_calls:
@@ -530,7 +532,7 @@ class _LMStudioAdapter:
                 out = mf.feed(delta)
                 if out:
                     yield ("text", out)
-        _note_usage(self.usage_sink, u.get("input_tokens"), u.get("output_tokens"))
+        _note_usage(self.usage_sink, u.get("input_tokens"), u.get("output_tokens"), u.get("reasoning_tokens"))
         tail = mf.flush()
         if tail:
             yield ("text", tail)

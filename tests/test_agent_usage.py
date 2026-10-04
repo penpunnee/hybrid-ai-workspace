@@ -169,3 +169,48 @@ def test_lmstudio_agent_reports_largest_request_not_last(monkeypatch):
     sink: dict = {}
     list(orch.run_agent([{"role": "system", "content": "base"}], provider="lmstudio", max_steps=1, usage_sink=sink))
     assert sink == {"input_tokens": 4200, "output_tokens": 120}
+
+
+# ── (ช) ↓ N tokens ของ agent รวมส่วนคิด — แยก reasoning_tokens ออกมาให้ UI (งานเปิด ช · 10-04) ──
+# LM Studio รายงาน completion_tokens_details.reasoning_tokens (วัด prod: 170 จาก 178) · agent ยังคิดตามเดิม (user เคาะ ต่อ 90)
+
+def _usage_tail_r(pt, ct, rt):
+    return SimpleNamespace(choices=[], usage=SimpleNamespace(
+        prompt_tokens=pt, completion_tokens=ct,
+        completion_tokens_details=SimpleNamespace(reasoning_tokens=rt)))
+
+
+def test_capture_reads_reasoning_tokens():
+    from utils.llm import _capture_openai_usage
+    sink: dict = {}
+    _capture_openai_usage(_usage_tail_r(14, 178, 170), sink)
+    assert sink == {"input_tokens": 14, "output_tokens": 178, "reasoning_tokens": 170}
+
+
+def test_capture_without_details_has_no_reasoning_key():
+    from utils.llm import _capture_openai_usage
+    sink: dict = {}
+    _capture_openai_usage(_usage_tail(14, 8), sink)
+    assert "reasoning_tokens" not in sink
+
+
+def test_lmstudio_agent_sums_reasoning_tokens(monkeypatch):
+    class _RClient(FakeClient):
+        def __init__(self, responses, tails):
+            super().__init__(responses)
+            self.tails = list(tails)
+
+        def _create(self, **kwargs):
+            r = super()._create(**kwargs)
+            return list(r) + [_usage_tail_r(*self.tails.pop(0))]
+
+    fake = _RClient([
+        _resp(_msg(tool_calls=[_tool_call("c1", "calculator", '{"expression": "2+2"}')])),
+        _resp(_msg(content="ได้ 4")),
+    ], tails=[(3000, 120, 100), (3400, 80, 60)])
+    _patch_lmstudio(monkeypatch, fake)
+    monkeypatch.setattr(orch, "execute_tool", lambda name, args: "2+2 = 4")
+    monkeypatch.setattr(orch, "_lmstudio_loaded_ctx", lambda m: None)
+    sink: dict = {}
+    list(orch.run_agent([{"role": "system", "content": "base"}], provider="lmstudio", usage_sink=sink))
+    assert sink == {"input_tokens": 3400, "output_tokens": 200, "reasoning_tokens": 160}

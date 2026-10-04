@@ -477,6 +477,10 @@ def _capture_openai_usage(chunk, usage_sink: dict | None) -> None:
     if it is not None or ot is not None:
         usage_sink["input_tokens"] = int(it or 0)
         usage_sink["output_tokens"] = int(ot or 0)
+    # ส่วนคิด (qwen3 ผ่าน LM Studio) อยู่ใน completion_tokens ด้วย — แยกให้ UI โชว์ token คำตอบจริง (งานเปิด ช)
+    rt = getattr(getattr(u, "completion_tokens_details", None), "reasoning_tokens", None)
+    if type(rt) is int and rt > 0:
+        usage_sink["reasoning_tokens"] = rt
 
 
 def _create_stream_with_usage(completions_create, create_kwargs: dict, want_usage: bool):
