@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 def _t_web_search(query: str, max_results=5) -> str:
     """ค้น DDG + fetch top URLs + embedding rerank → คืน top 3"""
     from utils.websearch import (
-        search_web, _enrich_with_fetch, format_for_context,
+        search_web, _select_and_fetch, format_for_context,
         _drop_below_min_score, WEB_SEARCH_MIN_SCORE, rerank_unavailable,
     )
     try:
@@ -32,7 +32,7 @@ def _t_web_search(query: str, max_results=5) -> str:
     # ดึง 2x แล้ว rerank เพื่อให้ได้ผลลัพธ์ที่ตรงประเด็นที่สุด
     initial_n = max(max_results, 6)
     results = search_web(query, max_results=initial_n)
-    results = _enrich_with_fetch(results, query=query)  # 3 หน้า · เลือกช่วงที่ตรงคำค้น (10-04)
+    results = _select_and_fetch(results, query)  # เลือกหน้าที่ตรงก่อน fetch (10-05) · ช่วงที่ตรงคำค้น (10-04)
     try:
         from utils.embed import rerank_by_similarity
         reranked = rerank_by_similarity(

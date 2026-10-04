@@ -243,6 +243,31 @@ def _enrich_with_fetch(results: list[dict], top_n: int = _FETCH_TOP_N, query: st
     return results
 
 
+def _select_and_fetch(results: list[dict], query: str, top_n: int = _FETCH_TOP_N) -> list[dict]:
+    """เลือกหน้าที่จะ fetch จากความตรงคำถาม (title+snippet) **ก่อน** แล้วค่อย fetch — คืนเฉพาะผลที่ถูกเลือก
+
+    เดิม fetch `results[:top_n]` ตามลำดับ provider แล้วค่อย rerank ⇒ ผลที่ชนะ rerank ไม่เคยถูก fetch
+    (prod 10-04 โหมดเสียง: Brave ให้ YouTube/Facebook ก่อน หน้านิยายที่ตรงได้แค่ snippet บรรทัดเดียว)
+    · เก็บอันดับ 1 ของ provider ไว้เสมอ — ลำดับ provider มีสัญญาณความน่าเชื่อถือ
+    (วัด prod: pre-rank อย่างเดียวทำ goldtraders.or.th หลุดจาก "ราคาทองวันนี้")
+    · คะแนนรอบนี้ใช้แค่เลือก — rerank รอบสุดท้าย (title+fetched_text+body) ไม่เปลี่ยน ⇒ พื้น 0.35 ยังใช้ได้"""
+    if len(results) <= top_n:
+        return _enrich_with_fetch(results, top_n=top_n, query=query)
+    try:
+        from utils.embed import rerank_by_similarity
+        ranked = rerank_by_similarity(query, results, text_keys=("title", "body"), top_k=len(results))
+    except Exception as e:
+        logger.warning(f"[WebSearch] จัดอันดับก่อน fetch ล้ม ใช้ลำดับ provider: {e}")
+        return _enrich_with_fetch(results, top_n=top_n, query=query)
+    ranked = sorted(ranked, key=lambda r: -(r.get("_rerank_score") or 0)
+                    * _domain_score(r.get("href", ""))[0])
+    picked = ranked[:top_n]
+    first = results[0].get("href")
+    if first and all(r.get("href") != first for r in picked):
+        picked.append(results[0])
+    return _enrich_with_fetch(picked, top_n=len(picked), query=query)
+
+
 # ── Brave Search ─────────────────────────────────────────────────────────────
 # provider ตัวแรกของชั้นค้นเว็บ (2026-08-31) — user เลือกเพราะ **ไม่ผูกกับ Google
 # Cloud project**: ก่อนหน้านี้ Gemini grounding 429 ทุกครั้ง (free tier ไม่เปิด)
@@ -772,7 +797,7 @@ def _web_search_impl(query: str, max_results: int = 5, top_k: int = 3) -> tuple[
         if len(results) >= initial_n:
             break
 
-    results = _enrich_with_fetch(results, top_n=_FETCH_TOP_N, query=query)
+    results = _select_and_fetch(results, query)
 
     # ใส่ domain score ก่อน rerank เพื่อให้ embedding score × credibility
     for r in results:
@@ -842,7 +867,10 @@ VOICE_SEARCH_GUIDE = (
     "2. ถ้าข้อมูลด้านล่างเป็นคนละเรื่อง คนละภาค หรือคนละรุ่นกับที่ผู้ใช้ถาม ให้บอกผู้ใช้ตรงๆ ว่าที่ค้นเจอเป็นของอะไร "
     "อย่าเอามาตอบเหมือนเป็นเรื่องเดียวกัน\n"
     "3. ถ้าข้อมูลมีชื่อเฉพาะที่ตอบคำถามได้ (ชื่ออาวุธ ชื่อตัวละคร ชื่อสินค้า) ให้บอกชื่อนั้นตรงๆ ไม่ตอบกว้างๆ\n"
-    "4. คำค้นครั้งต่อไปในบทสนทนานี้ ให้ใช้ชื่อเรื่อง/ภาค/รุ่นล่าสุดที่ผู้ใช้บอก\n\n"
+    "4. คำค้นครั้งต่อไปในบทสนทนานี้ ให้ใช้ชื่อเรื่อง/ภาค/รุ่นล่าสุดที่ผู้ใช้บอก\n"
+    "5. ถ้าข้อมูลด้านล่างตอบได้แค่บางส่วน ให้ขึ้นต้นด้วยสิ่งที่ใกล้ที่สุดที่เจอทันที พร้อมบอกว่ามาจากไหน "
+    "(เช่น ชื่อบท เลขตอน ชื่อเว็บ) แล้วบอกสั้นๆ ว่าส่วนไหนในข้อมูลไม่มี — จบคำตอบตรงนั้น "
+    "ไม่ต้องถามกลับให้ผู้ใช้เล่ารายละเอียดเพิ่ม\n\n"
 )
 VOICE_SEARCH_EMPTY = "หาไม่เจอ ให้บอกผู้ใช้ตรงๆ ว่าหาไม่เจอ ห้ามแต่ง"
 VOICE_SEARCH_UNAVAILABLE = ("ระบบค้นข้อมูลขัดข้องชั่วคราว (ไม่ใช่ว่าไม่มีข้อมูล) "
