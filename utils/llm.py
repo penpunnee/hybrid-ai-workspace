@@ -207,6 +207,19 @@ _LMSTUDIO_CONTEXT_LENGTH = env_int("LMSTUDIO_CONTEXT_LENGTH", 8192, group=_G, do
     "ค่าจริงอ่านจาก /api/v1/models (loaded_instances[].config.context_length) ก่อนเสมอ"))
 _LMSTUDIO_REPLY_RESERVE = env_int("LMSTUDIO_REPLY_RESERVE", 3072, group=_G, doc=(
     "token ที่กันไว้ให้คำตอบ + ส่วนคิดในใจ (reasoning) — ประวัติแชทถูกตัดให้เหลือ context ลบค่านี้"))
+_LMSTUDIO_SKIP_THINKING = env_bool("LMSTUDIO_SKIP_THINKING", True, group=_G, doc=(
+    "เส้นแชท LM Studio: ข้ามช่วงคิด <think> ของ qwen3 (ต่อ assistant ที่ปิด think ไว้ท้ายคำขอ)\n"
+    "ไม่ข้าม = qwen คิด 13–58 วิก่อนตอบ (จอว่าง) · agent (โหมด Code) ไม่ผ่านเส้นนี้ ยังคิดตามเดิม"))
+# วัด prod 10-04 (devlog ต่อ 87): enable_thinking=False ทั้ง chat_template_kwargs / ระดับบน / `/no_think`
+# ยังคิด 6/6 (LM Studio #1990) · ต่อ assistant ที่ปิด think แล้ว = คิด 0 token 6/6
+# แท็กนี้เป็นรูปแบบ chat template ของ qwen3 — โมเดลตระกูลอื่นจะเห็นเป็นข้อความดิบ จึงจำกัดเฉพาะ qwen3
+_SKIP_THINKING_PREFILL = {"role": "assistant", "content": "<think>\n\n</think>\n\n"}
+
+
+def _skips_thinking(model: str) -> bool:
+    return _LMSTUDIO_SKIP_THINKING and "qwen3" in (model or "").lower()
+
+
 _LMSTUDIO_CTX_TTL = 300.0
 _lmstudio_ctx_cache: dict[str, tuple[float, int | None]] = {}
 
@@ -477,6 +490,10 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
                 msgs.append(m)
     else:
         msgs = messages
+    skip_think = _skips_thinking(model)
+    if skip_think:
+        # ต่อท้ายหลังแทรกรูป — เส้นรูปอ้าง "user ข้อความสุดท้าย" ด้วย index
+        msgs = list(msgs) + [_SKIP_THINKING_PREFILL]
 
     try:
         stream = _create_stream_with_usage(
@@ -512,7 +529,8 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
                 usage_sink["context_limit"] = ctx
         logger.info(f"LM Studio stream OK (model={model}, vision={'yes' if image_b64 else 'no'}, "
                     f"finish={finish}, in={usage.get('input_tokens', '?')}, "
-                    f"out={usage.get('output_tokens', '?')}, ตัดประวัติ={dropped})")
+                    f"out={usage.get('output_tokens', '?')}, ตัดประวัติ={dropped}, "
+                    f"ข้ามคิด={'ใช่' if skip_think else 'ไม่'})")
     except Exception as e:
         if _stop_if_cancelled(cancel):              # ReadError จาก socket ที่เราตัดเอง — ห้ามจัดเป็น "ต่อไม่ได้" แล้ว cascade
             logger.info("[LLM] LM Studio stream ถูกยกเลิก (client ตัดสาย)")
