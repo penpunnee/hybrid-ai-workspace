@@ -183,7 +183,7 @@ overlay แบบ vanilla (ไม่ต้อง build, ทำงานคู่
 > ⚠️ **ไฟล์นี้ถูกฉีดทุกเซสชัน** — ปิดเซสชันแล้วให้ย้ายรายละเอียดลง devlog เหลือบรรทัดเดียวต่อเรื่องที่นี่
 
 ### 🔧 ก่อนเริ่มทุกครั้ง
-`gh run list --limit 3` ต้องเขียว · venv ทดสอบสร้างจาก **`requirements.lock`** (ไม่ใช่ `.txt` — lib ใหม่กว่า prod) ·
+`gh run list --limit 3` ต้องเขียว (a.ui มี CI แล้ว: `gh run list -R penpunnee/appscript-ui --limit 3`) · venv ทดสอบสร้างจาก **`requirements.lock`** (ไม่ใช่ `.txt` — lib ใหม่กว่า prod) ·
 `ssh -o ConnectTimeout=10 nas-cf true` ก่อนงานที่แตะ prod
 ```bash
 uv venv /tmp/uivenv --python 3.12 && VIRTUAL_ENV=/tmp/uivenv uv pip install -r requirements.lock
@@ -220,10 +220,12 @@ Live ตัดสาย 1008 ~151 วิ → `parkIfUnused` · iOS `ended` = `st
 - **frontend (จาก `docs/ui-map.md` 10-05 · ยังไม่แก้):** ย้าย Vault Search (overlay §5 + ปุ่ม 🌿 + ตัวดัก `@vault`) เข้า React แล้ว gate §5 — toast ของ overlay (`#enh-toast`) จะหมดไปเอง ·
   ✅ toast สองระบบ ปิดแล้วโดยไม่แก้โค้ด (ต่อ 109 · ไม่ซ้อนจาก action เดียว · overlay เหลือจุดเดียวที่ Vault) ·
   ข้อสังเกต: §15 badge โมเดลยัง `appendChild` เข้า div ฟองของ React (เพิ่มอย่างเดียว ไม่ลบ ⇒ ไม่ใช่เงื่อนไขจอขาวครั้งก่อน · e2e ยังไม่ครอบ) · ✅ §6 Copy กล่องโค้ด ปิดแล้ว (ต่อ 108)
+- **a.ui build/CI (ต่อ 111):** ย้ายไป Node 24 LTS — ตอนนี้ตรึง 25.8.1 ใน `~/appscript.ui/.nvmrc` (รุ่นที่ build จริง · หมดซัพพอร์ต 2026-06-01) · เปลี่ยนแล้วต้อง build bundle ใหม่ + ตรวจซ้ำ
 - **backend:** ✅ reader `marks.set` verify รอบอ่านจริงแล้ว (ต่อ 50) · ข้อสังเกตเล็ก: `books.text` 90.9 ms บน loop ครั้งเดียวตอนเปิดเล่ม (ยังไม่คุ้มแก้)
 - **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 (รอ memory จากโหมดเสียงสะสม)
 
 ### ⏳ รอ user เคาะ
+**ใหม่ 10-05 (ต่อ 111):** ใส่ job e2e ใน CI ของ a.ui ไหม — รอปอยเช็คโควตานาที Actions (Settings → Billing · `phrae-data-map` ใช้ ~2,900 นาที/เดือน) ·
 **ใหม่ 10-02 (ต่อ 61):** ขาเข้าหนังสือ (`_ingest`) ไม่ซ่อมตระกูล 6 และไม่เตือน — เตือนใน log/UI หรือใส่ pythainlp (62 MB) ·
 (ข) response cache ข้าม session · คิวเล็กจาก 09-24 (**เช็คสถานะจริงก่อน**): ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน ·
 ย้ายเสียงไป `gemini-3.8-live` (3.1 = legacy ยังไม่มีวันปิด · ติดล็อกเสียง 🔒 ต้องวัดเสียงใหม่ทั้งชุด) ·
@@ -291,7 +293,7 @@ seek ต้อง**อ่านค่าก่อนเขียน** (user อ�
   ตัวยึดในแผนที่ตรึงด้วย `tests/test_ui_map_anchors.py` (static/) + `~/appscript.ui/utils/uimap.test.ts` (React) — rename แล้วต้องแก้แผนที่ตาม
 - overlay ที่ React ทำเองแล้วต้อง gate `if (window.__hwReactChatBox) return;` (ตอนนี้: tee/`_parseChatSSE` · Ctrl+E · ↑/↓ · paste · §6 · §19/§20 · §22) —
   เพิ่ม feature ใน React แล้วไล่ overlay ที่ทำซ้ำด้วย · เทส `tests/overlay_gating.test.js`
-- ก่อน commit การแก้ `static/*.js` (overlay) → รัน `npm run test:e2e` ใน `~/appscript.ui` ต้องเขียวครบ (ตอนนี้ 5/5) → ทำตาม skill verify-ui ใน ~/appscript.ui ·
+- ก่อน commit การแก้ `static/*.js` (overlay) → รัน `npm run test:e2e` ใน `~/appscript.ui` ต้องเขียวทั้งหมด → ทำตาม skill verify-ui ใน ~/appscript.ui ·
   ⛔ ธง `__hwReactChatBox` (`app.tsx`) ห้ามหาย — หายแล้ว overlay ฉีดปุ่มซ้ำ + ซ่อนช่องพิมพ์ (พิสูจน์ใน e2e 10-05)
 - bookreader: server ปิดสาย = เก็บกวาดหลังเสียงค้างเล่นหมด (`playEnd` + ticker) **ห้าม disconnect ทันที** (ตัดท้ายเล่ม) · สีผู้ช่วยผ่าน `paletteFor()` เท่านั้น
 - toast ของ React ผ่าน `showToast` (`utils/toast.ts » createToaster`) เท่านั้น ห้าม `setToast(` ตรงๆ (timer ตัวเก่าจะลบข้อความใหม่) · e2e ที่ขึ้นกับเวลาใช้ `page.clock` ⛔ ห้ามรอเวลาจริง

@@ -1,5 +1,34 @@
 ---
 
+## [2026-10-05 ต่อ 111] CI บน GitHub ให้ `~/appscript.ui` (job `unit`) + เทสที่อ่านไฟล์ backend เลิกข้ามเงียบ
+
+commit: a.ui `9695e55` (push GitHub + NAS) · ui = commit เดียวกับ entry นี้ (เอกสารอย่างเดียว ไม่ deploy) ·
+ลำดับ: สืบ → แผน → ปอยเคาะ (เริ่มแค่ `unit` · ตรึง Node 25.8.1 · เทสข้ามเงียบให้แดงทุกที่) → เทสแดง → แก้ → push → พิสูจน์ว่า CI แดงได้
+
+| งาน | ผล |
+|---|---|
+| `.github/workflows/ci.yml` | ทุก push ทุก branch + `workflow_dispatch` · job `unit` = `npm ci` → `npm run precommit` (ตัวเดียวกับ hook) · `concurrency` ยกเลิกรอบเก่าของ ref เดียวกัน |
+| ไฟล์ของ backend บน CI | checkout `penpunnee/hybrid-ai-workspace` (public · **ไม่ใช้ token**) ที่ `Desktop/ui/` ข้าง `appscript.ui/` ⇒ path `../../Desktop/ui/…` ในเทสใช้ได้โดยไม่แก้เทส |
+| `.nvmrc` | `25.8.1` = รุ่นที่ใช้ build bundle บน Mac (เดิมไม่มีอะไรกำกับ) · log CI ยืนยัน `node: v25.8.1` |
+| เทสที่ข้ามเงียบ (4 จุด) | `overlayversion.test.ts` · `palette.test.ts` · `contrast.test.ts` ×2 — `return`/`catch` เงียบเมื่อไม่เจอ backend → `expect(existsSync(…))` · พิสูจน์ในสำเนาที่ไม่มี backend ข้างๆ: ก่อนแก้แดง 4 (เขียวปลอม 4) → หลังแก้แดง 8 · มี backend: 722 ผ่าน |
+| CI รอบแรก (`main`) | เขียว · 46 ไฟล์ / 722 เทส = เท่ากับบน Mac · job 56 วิ |
+| พิสูจน์ว่าแดงได้ (branch `ci-proof-red` · ลบแล้วทั้ง local/remote) | (ก) เทสที่พังเฉพาะเมื่อ `process.env.CI` → CI แดง `1 failed | 46 passed` · (ข) ถอดขั้น checkout backend → CI แดง `8 failed | 714 passed` (ตรงกับที่วัดบนเครื่อง) |
+| เอกสาร | a.ui `CLAUDE.md` หัวข้อ 🤖 CI · จำนวน e2e → "ต้องเขียวทั้งหมด" (a.ui `CLAUDE.md` · skill `verify-ui` · ui `CLAUDE.md` · หัว `smoke.spec.ts`) |
+
+**ยังไม่ได้ทำ / ข้อจำกัด:**
+- **e2e ไม่รันบน CI** (ปอยเคาะ: รอเช็คโควตา) ⇒ ยังต้องรันมือตาม skill verify-ui · ประมาณการถ้าใส่: +2–3 นาที/push (ติดตั้ง WebKit · **ยังไม่ได้วัด**)
+- CI รันเฉพาะ push ที่ไป remote `github` (ก.ย. มี 17 commit แต่ push ไป GitHub ครั้งเดียว)
+- ตรวจกับ backend `main` ณ ตอนรัน: commit คู่ต้อง push backend ก่อนหรือ rerun · แก้ backend อย่างเดียวไม่ปลุก CI ของ a.ui (ช่องนี้ยังเปิด)
+- branch พิสูจน์ (ก) ใช้เทสที่พังเฉพาะบน CI เพราะ pre-commit hook บล็อก commit ที่เทสแดง และ ⛔ `--no-verify`
+
+**โควตานาที (วัดจาก billing API 10-05):** บัญชี GitHub Free = 2,000 นาที/เดือนสำหรับ private (docs) · `appscript-ui` private · `hybrid-ai-workspace` public (ไม่นับ) ·
+`phrae-data-map` (private) ใช้ 2,961 (ส.ค.) · 2,894 (ก.ย.) · 878 ใน 5 วันแรกของ ต.ค. · ยอดเรียกเก็บ $0 ทุกเดือน และรอบปลาย ก.ย. ไม่ถูกบล็อก — **ไม่รู้ว่าทำไมเกิน 2,000 ได้** ·
+job `unit` ≈ 1 นาที/push (ปัดขึ้นต่อ job) ⇒ ~20–80 นาที/เดือน
+
+**งานเปิดใหม่:** ย้ายไป Node 24 LTS (25 หมดซัพพอร์ต 2026-06-01 ตาม `nodejs/Release` schedule) · ⏳ job e2e บน CI
+
+---
+
 ## [2026-10-05 ต่อ 110] toast ของ React: ตัวที่มาทีหลังถูก timer ของตัวก่อนลบก่อนเวลา — แก้แล้ว
 
 commit: a.ui `76a9520` (push NAS+GitHub) · ui `034619a` (bundle `index-MFwC_ESP.js` · deploy = `static/` อย่างเดียว ไม่ restart) ·
