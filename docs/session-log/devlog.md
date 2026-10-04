@@ -1,5 +1,19 @@
 ---
 
+## [2026-10-04 ต่อ 103] `done.timings` เหลือแต่ `llm_stream` → ครบทุกขั้น + ลง log (`d3b7c73`) ✅ prod + CI
+
+**ต้นเหตุ:** `record_timing()` `set()` dict ใหม่ลง contextvar · starlette `iterate_in_threadpool` รัน `next()` แต่ละชิ้นใน `copy_context()` ของมัน
+⇒ `context_assembly`/`retrieval` (จดในชิ้นแรกๆ) ไม่ถึงชิ้นที่ส่ง `done` · เทสแดงได้ `{'llm_stream': 0.1}` ตรงกับ prod
+**แก้:** dict ต่อคำขอ**แก้ในที่** (ทุก copy ชี้ตัวเดียวกัน) · `default=None` (เดิม `{}` = dict เดียวทั้งโปรเซส → แก้ในที่แล้วจะปนข้ามคำขอ) ·
+middleware เรียก `start_request()` เสมอ (คำขอที่มี `x-request-id` เคยข้าม) · `[Chat] timings …` ลง `server.log`
+**เทส:** `test_done_timings.py` 5 (endpoint จริง · x-request-id · ไม่ปนข้าม context · copy_context · log) · mutation 5/5
+(รอบแรกรอด 1: dict ตัวกลางตอนไม่มี start_request — เทสเดิมแค่อ่านใน context ที่สอง → ให้จดด้วย) · ชุดเต็ม 2777 · ruff
+**deploy:** แตะ `server.py` ⇒ `--force-recreate` · inode host = container 287523 · sha `utils/voice.py` เท่าเดิม · healthy 32 วิ
+**verify prod:** `{'context_assembly': 2896, 'retrieval': 718, 'llm_stream': 1818}` · x-request-id → `rid=trace-vt` timings ครบ · log 2 บรรทัด
+(context_assembly 2.6–2.9 วิ = โปรเซสใหม่หลัง recreate + bump Chroma ต่อ 101 — ตอนนี้ดูย้อนจาก log ได้แล้ว: `grep "\[Chat\] timings"`)
+
+---
+
 ## [2026-10-04 ต่อ 102] ทดสอบ 🧪 แทน user ฝั่ง server → เจอ "ที่บ้าน" ถูกถามกลับ + agent บอก "พรุ่งนี้ = 4 ต.ค." (`644ade6` `75bf1fd`) ✅ prod + CI
 
 **user:** "ทดสอบ แล้ววัดผลให้ด้วย" (🧪 รอบ 5 / ต่อ 88–89) — ทุกคำขอ `X-Test-Request` · session ลบครบ (เหลือ 0)
