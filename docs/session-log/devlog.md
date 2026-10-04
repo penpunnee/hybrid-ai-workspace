@@ -1,5 +1,33 @@
 ---
 
+## [2026-10-04 ต่อ 78] แถบ Context หลอก ~1,532 / 4,096 → ย้ายมา React ใช้ `done.usage` จริง (`6a0b6fb` · appscript.ui `69be9f2`) ✅ prod + CI
+
+**อาการ (ภาพจอ user 09:54):** แชท qwen "ขวัญทำอะไรได้บ้าง" จอโชว์ `↓ 732 tokens · 1m30s` และแถบ `~1,532 / 4,096` ·
+log `req_27d4bd27`: `finish=stop, in=10146, out=2813, ตัดประวัติ=2` · LLM 77 วิ (02:53:13→02:54:30 UTC) ⇒ **ไม่ค้าง ไม่ถูกตัด**
+ช้าเพราะส่วนคิดในใจ ~2,080/2,813 token (74%) — ปิดผ่าน API ไม่ได้ (#1990)
+
+**ต้นเหตุแถบ (enhanced.js §9):** (1) ตัวหารอ่าน `localStorage.hw_status_cache` — grep ทั้ง backend/React/overlay **ไม่มีใครเขียน** ⇒ 4096 เสมอ ·
+(2) ตัวตั้งนับเฉพาะข้อความบนจอ (ไม่รวม system/ความจำ/RAG) · ขณะที่ `done.usage.input_tokens` จริงส่งมาทุกคำตอบอยู่แล้วแต่ไม่มีใครใช้
+
+**/scrutinize เปลี่ยนแผน:** แผนแรก (React เขียน localStorage → overlay อ่าน) = ค่าค้างข้าม session/แท็บ ⇒ หลอกแบบใหม่ ·
+user เลือกเก็บแถบแต่ย้ายมา React · ตัวเลขผูกกับ `messages` (ล้างเองตอนสลับ session)
+
+**แก้:**
+- `utils/llm.py` `_stream_lmstudio`: หลัง stream จบ เติม `usage["context_limit"]` จาก `_lmstudio_loaded_ctx()` (มี `input_tokens` + อ่านได้เท่านั้น · ห้ามใช้ default 8192)
+- `~/appscript.ui/utils/contextbar.ts` (pure + vitest 11): ดู**เฉพาะคำตอบล่าสุดที่จบแล้ว** — ไม่รายงาน (agent/cache) → "— คำตอบล่าสุดไม่รายงาน token" ไม่ถอยไปใช้ค่าเก่า ·
+  ประวัติจาก DB → "— ส่งข้อความเพื่อวัด" · ไม่รู้ ctx (Gemini) → "ขาเข้า N tokens" ไม่มี % · สี >65 warn >85 hot (เดิม)
+- `app.tsx`: done 3 จุดแนบ `...usageFromDone(obj.usage)` · render `#hw-context-bar` ตำแหน่ง/สีเดิม · `enhanced.js` §9 ครอบ `if (!window.__hwReactChatBox)`
+- mutation 7/7 ถูกจับ · pytest 2648 · vitest 675 · node 36
+
+**verify prod:** probe ในคอนเทนเนอร์ (`127.0.0.1:8000` — **ไม่ใช่ 8080** ซึ่งเป็นฝั่ง host · `localhost` = Errno 99) `X-Test-Request` →
+`usage: {input_tokens: 926, output_tokens: 1956, context_limit: 16384}` · session ลบแล้ว `deleted:2` · bundle `index-6fWKGORn.js` เสิร์ฟแล้ว
+⚠️ คำตอบ "สวัสดี" คำเดียวยังกิน output 1,956 token (ส่วนคิด) — ยืนยันว่าความช้าเป็นเรื่อง thinking
+
+**ค้าง:** เส้น agent (`routers/chat.py:518`) ไม่ส่ง usage → แถบโชว์ "ไม่รายงาน" ในเทิร์น agent (เสี่ยงล้นที่สุด) = ก้อนถัดไป ·
+`↓ N tokens` ตอนจบใช้ `output_tokens` ที่รวมส่วนคิด (732 → 2,813 กระโดด) ยังไม่แยก · 🧪 user ดูแถบบน iPhone
+
+---
+
 ## [2026-10-04 ปิดเซสชัน] สรุป (ต่อ 72–77) — embed keep_alive · qwen ตัดกลางประโยค · โหมด Code ค้าง · context 16k
 
 | ต่อ | งาน | ผล | commit |
