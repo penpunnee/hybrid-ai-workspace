@@ -1,0 +1,67 @@
+# แผนที่ UI — ส่วนบนจอ → ใครเป็นเจ้าของ
+
+จุดเริ่มของ subagent `ui-investigator` (`.claude/agents/ui-investigator.md`) · สร้าง 2026-10-05
+
+**อ่านก่อนใช้**
+- **React** = `~/appscript.ui` (แก้ → `npm run build` + `bash scripts/sync_static.sh`) · ทั้งแอปอยู่ในคอมโพเนนต์เดียว
+  `InteractiveLiquidGlass` ใน `app.tsx` · logic ย่อยอยู่ `utils/*.ts` (มี vitest) · ⛔ `src/app.tsx` = สำเนาเก่า ไม่ได้ใช้
+- **overlay** = `static/enhanced.js` (vanilla · แก้แล้ว bump `?v=` ใน `~/appscript.ui/index.html`) + `chat_intercept.js` + `dream_stats.js`
+- `app.tsx` ตั้ง `window.__hwReactChatBox = true` ⇒ section ของ overlay ที่ **gate** ด้วยธงนี้ = ตาย (เหลือไว้เป็น fallback ของ bundle เก่า)
+- ตัวยึด = backtick ครอบ "path ไฟล์ » ข้อความ" · path ขึ้นต้น `a.ui/` (= `~/appscript.ui/`) หรือ `static/` —
+  **grep ข้อความนั้นเจอในไฟล์จริงเสมอ** (ตรึงด้วย `tests/test_ui_map_anchors.py` + `~/appscript.ui/utils/uimap.test.ts`)
+  · ไม่ใช้เลขบรรทัดเพราะเลื่อนทุกครั้งที่แก้
+
+## 1. React — ส่วนบนจอ
+
+| ส่วนบนจอ | ตัวยึด (React) | API | overlay ที่แตะส่วนเดียวกัน |
+|---|---|---|---|
+| Sidebar: สลับผู้ช่วย · แชทใหม่ · รายการ session | `a.ui/app.tsx » {/* AI Switcher */}` · `a.ui/app.tsx » {/* Session list */}` · `a.ui/app.tsx » const loadSessions =` | `/api/sessions/{ai}` (GET/POST/DELETE) · `/api/history/{ai}/{sid}` | — |
+| Sidebar: ช่องค้นหา | `a.ui/app.tsx » {/* Search box */}` | `/api/search` | — |
+| Sidebar: Obsidian Sync | `a.ui/app.tsx » {/* Obsidian Sync */}` | `/api/vault/stats` · `/api/vault/sync` | — |
+| Sidebar: Dream Cycle (คลื่น Light/REM/Deep) | `a.ui/app.tsx » {/* Dream Cycle - Wave UI */}` · `a.ui/utils/dreamstats.ts » export` | `/api/dream` · `/api/dream/report` | §1.5 + `dream_stats.js` (gate แล้ว) |
+| Sidebar: Skills · Memory stats | `a.ui/app.tsx » {/* Skills Panel */}` · `a.ui/app.tsx » {/* Memory Stats */}` | `/api/skills` · `/api/memory/stats` · `/api/memory/cleanup` | — |
+| Header: ปุ่ม Share/Pinned/Home/Dashboard/Export/ล้างแชท | `a.ui/app.tsx » {/* Header */}` · `a.ui/app.tsx » title="Pinned"` · `a.ui/app.tsx » title="Export"` | `/api/share` · `/api/pinned/…` · `/api/export/…` · `/api/stats` | §3 Export (gate แล้ว) · FAB 🏠/🔍 ถูกลบเมื่อมีธง |
+| ฟองข้อความ (render markdown) | `a.ui/app.tsx » {/* Messages */}` · `a.ui/utils/markdown.tsx » md-pre` | — | ⚠️ §6 · §15 ฉีดเข้าฟอง (ดูข้อ 3) |
+| ปุ่ม 📋 คัดลอกทั้งข้อความ (ใต้ฟอง) | `a.ui/app.tsx » const copyMsg =` | — (clipboard) | §19 COPY MESSAGE (gate แล้ว) |
+| ปุ่ม ✏️ แก้ · ลบคู่ · 🔄 ตอบใหม่ | `a.ui/app.tsx » const deletePair =` · `a.ui/app.tsx » const regenerate =` | `/api/message/{id}` · `/api/truncate/{id}` · `/api/regenerate` | §19 EDIT/§20 DELETE PAIR (gate แล้ว) |
+| ปุ่ม 🔊 อ่านออกเสียง · 👍👎 · 📌 · บันทึกเป็น Skill | `a.ui/app.tsx » const speakMessage =` · `a.ui/app.tsx » title="ตอบดี (เก็บไว้เทรนโมเดล)"` · `a.ui/app.tsx » const togglePin =` · `a.ui/app.tsx » const saveAsSkill =` | `/api/tts` · `/api/feedback` · `/api/pin/{id}` · `/api/skills/extract` | §4 PIN (gate แล้ว) |
+| Agent timeline · citations · reflection ในฟอง | `a.ui/app.tsx » function AgentTimeline` · `a.ui/app.tsx » function CitationList` · `a.ui/app.tsx » function ReflectionPanel` | SSE ของ `/api/chat` | §17/F2 ตาย (tee ถูก gate) |
+| ChatBox: pill โหมด/โมเดล/Agent/Skills + จุดสถานะ | `a.ui/app.tsx » {/* Mode pill */}` · `a.ui/app.tsx » {/* Model pill` · `a.ui/app.tsx » {/* Agent pill */}` · `a.ui/app.tsx » {/* Skills pill */}` · `a.ui/utils/chatflags.ts » export function buildChatFlags` | `/api/chat` (body `tool_agent`/`plan_mode`/`obsidian_inject`) · `/api/status` · `/api/models` | §22 ตาย (gate แล้ว) |
+| ChatBox: ช่องพิมพ์ · ส่ง · แนบไฟล์/รูป/กล้อง · วางรูป | `a.ui/app.tsx » const handleSend =` · `a.ui/app.tsx » title="แนบไฟล์"` · `a.ui/utils/paste.ts » export` · `a.ui/utils/filemanager.ts » export` | `/api/chat` · `/api/upload` · `/api/documents/upload` | ⚠️ §5 @vault · §13 · §21 ยังทำงาน · §11/§18 gate แล้ว |
+| ChatBox: เมนู `/` · ตัวนับ token · draft | `a.ui/app.tsx » {/* Slash quick-prompts menu` · `a.ui/app.tsx » {/* Token/char counter pill` · `a.ui/utils/draft.ts » export` | — | SLASH/TOKEN/DRAFT ของ overlay (gate แล้ว) |
+| แถบ Context (ตัวเลขใต้ช่องพิมพ์) | `a.ui/app.tsx » {/* แถบ Context` · `a.ui/utils/contextbar.ts » export` | `done.usage` ใน SSE | §9 (gate แล้ว) |
+| **Toast (React)** — ข้อความลอยกลางล่าง | `a.ui/app.tsx » {/* Toast */}` · `a.ui/app.tsx » const [toast, setToast]` | — | ⚠️ overlay มี toast ของตัวเองแยก (ดูข้อ 3) |
+| Modal: Dream report · Stats · Global Search · Pinned · Daily Digest · Debate · Dream alert | `a.ui/app.tsx » {/* Dream Report Modal */}` · `a.ui/app.tsx » {/* Global Search modal` · `a.ui/app.tsx » {/* Pinned Messages Panel */}` · `a.ui/app.tsx » {/* Daily Digest Modal */}` · `a.ui/app.tsx » {/* Multi-AI Debate Overlay */}` | `/api/dream/history` · `/api/search` · `/api/digest` · `/api/chat` (debate) | §2 Ctrl+Shift+F (gate แล้ว) |
+| Home Panel (NAS/Docker/PC/WoL) | `a.ui/app.tsx » {/* Home Panel` · `a.ui/utils/homepanel.ts » export` | `/api/health` · `/api/tools/home/*` | §14 (gate แล้ว) |
+| โหมดเสียง (หน้าจอ Voice) 🔒 | `a.ui/app.tsx » {/* ===== Voice Mode Overlay ===== */}` · `a.ui/app.tsx » const startVoice =` · `a.ui/utils/voicelive.ts » /ws/voice/` | WS `/ws/voice/{slug}` | — · 🔒 ห้ามแตะค่าเสียง (CLAUDE.md) |
+| 📖 ขวัญอ่านหนังสือ 🔒 | `a.ui/app.tsx » const loadBooks =` · `a.ui/utils/bookreader.ts » /ws/reader` | `/api/reader/books` · WS `/ws/reader` | — · 🔒 |
+| อุ่นเครื่อง local model ตอนเปิดหน้า | `a.ui/utils/warmup.ts » export` | `/api/warmup` · `/api/config` | §16 (ไม่มีผลแล้ว ดูข้อ 2) |
+
+## 2. overlay ที่ยังทำงาน (ไม่ gate) — ของพวกนี้ React **ไม่มี**
+
+| ส่วนบนจอ | ตัวยึด (overlay) | API | หมายเหตุ |
+|---|---|---|---|
+| หน้า Login (เมื่อตั้ง `UI_PASSWORD`) | `static/enhanced.js » 0. AUTH` | `/api/auth/login` · `/api/auth/check` | แนบ token ทุก `/api/*` ผ่าน fetch override |
+| fetch override กลาง (auth · stop · history · typing) | `static/enhanced.js » Single unified fetch override` · `static/chat_intercept.js » applyChatBodyMutations` | ทุก `/api/*` | แก้ body `/api/chat` ได้ — เช็คก่อนแก้ flag ใน React |
+| @vault ในช่องพิมพ์ | `static/enhanced.js » 5. @vault SEARCH` | — | ฟัง keydown ของ textarea |
+| ปุ่ม **Copy บนกล่องโค้ด** | `static/enhanced.js » 6. COPY CODE BUTTON` · `static/enhanced.js » function _wireCopyButtons` | — | ⚠️ ฉีดเข้า `pre.md-pre` ของ React |
+| ปุ่มหยุด stream ⏹ | `static/enhanced.js » 7. STOP GENERATION` | — (abort fetch) | React ไม่มีปุ่มหยุด |
+| ปุ่มเลื่อนลงล่างสุด | `static/enhanced.js » 8. SCROLL TO BOTTOM BUTTON` | — | ปุ่มลอยบน `body` |
+| "กำลังคิด…" ก่อน chunk แรก | `static/enhanced.js » 12. TYPING INDICATOR` | — | ลอยบน `body` |
+| ปรับแต่งช่องพิมพ์/ปุ่ม (CSS) | `static/enhanced.js » 13. CHAT INPUT + BUTTON IMPROVEMENTS` | — | CSS ทับคลาสของ React |
+| badge ชื่อโมเดลใต้ฟอง AI | `static/enhanced.js » 15. MODEL INDICATOR` · `static/enhanced.js » function _injectModelBadge` | header `X-Model-Used` ของ `/api/chat` | ⚠️ ฉีดเข้าฟองของ React |
+| ป้าย "🦙 Llama" → ชื่อโมเดล | `static/enhanced.js » 16. แทน` | `/api/config` | แก้ text node ของ React · ตอนนี้ไม่มีผล (`app.tsx` ไม่มีคำว่า Llama แล้ว) |
+| เลื่อนช่องพิมพ์พ้นคีย์บอร์ด iOS | `static/enhanced.js » 21. MOBILE KEYBOARD SCROLL` | — | `visualViewport` |
+| FAB 🔎 Vault (ซ่อนไว้) | `static/enhanced.js » id="fab-vault"` | — | 🏠/🔍 ถูก `.remove()` เมื่อมีธง |
+| **Toast (overlay)** `#enh-toast` | `static/enhanced.js » function showToast(msg, ms = 2500)` | — | caller ส่วนใหญ่ (Export/Pin/upload/§22) อยู่ใน section ที่ gate แล้ว ⇒ ที่ยังขึ้นจริงคือ §5 @vault ("📋 คัดลอกแล้ว — วางใน chat ได้เลย") · เห็นข้อความอื่นของ overlay = bundle เก่าค้าง cache |
+
+## 3. จุดเสี่ยงที่รู้แล้ว (งานเปิดใน CLAUDE.md ▶️)
+1. **§6 Copy บนกล่องโค้ด** — ไม่ gate · `MutationObserver` บน `#root` แล้ว `appendChild` ปุ่มเข้า `<pre>` ที่ React เป็นเจ้าของ
+   = รูปแบบเดียวกับที่เคยทำจอขาว · §15 badge โมเดลก็ฉีดเข้าฟองแบบเดียวกัน
+2. **Toast สองระบบ** — React (`{/* Toast */}` ที่ `bottom-6` กลาง) กับ overlay (`#enh-toast`) · แยกด้วยข้อความ:
+   grep ข้อความบนจอใน `app.tsx` ก่อน (`showToast('…')`) ไม่เจอค่อย grep `enhanced.js` แล้วเช็คว่า section นั้น gate หรือไม่
+
+## 4. ตายแล้ว (gate ด้วย `__hwReactChatBox` · อย่าแก้ที่นี่ แก้ที่ React)
+§1.5 DREAM STATS · §2 GLOBAL SEARCH · §3 EXPORT · §4 PIN · §9 TOKEN USAGE BAR · §10 PROMPT HISTORY · §11 PASTE ·
+§14 HOME PANEL · §17 AGENT + F2 SSE (tee ที่ fetch override ถูก gate) · TOKEN COUNTER · DRAFT · SLASH · §18 FILE MANAGER ·
+§19 COPY/EDIT · §20 DELETE PAIR · §22 CHAT INPUT BAR

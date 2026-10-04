@@ -1,5 +1,15 @@
 ---
 
+## [2026-10-05 ต่อ 107] แผนที่ UI + subagent `ui-investigator` (อ่านอย่างเดียว)
+
+| งาน | ผล |
+|---|---|
+| `docs/ui-map.md` | ส่วนบนจอ → เจ้าของ (React/overlay) → API · อ้างด้วย **ตัวยึด** (`a.ui/<ไฟล์> » ข้อความ` / `static/…`) ไม่ใช้เลขบรรทัด · 53 React + 16 static |
+| เทสกันแผนที่เก่า | `tests/test_ui_map_anchors.py` (static/ · CI backend) + `~/appscript.ui/utils/uimap.test.ts` (React · pre-commit · หาแผนที่ไม่เจอ = แดง ไม่ skip) · mutation: แก้ตัวยึดฝั่งละตัว → แดงถูกตัวทั้งคู่ |
+| subagent | ตัวจริง `.claude/agents/ui-investigator.md` (git) · symlink `~/.claude/agents/ui-investigator.md` → เรียกได้ทุกรีโป · tools `Read, Grep, Glob` (ไม่ให้ Bash = อ่านอย่างเดียวจริง) · sonnet |
+| Done means | `claude -p --agent ui-investigator` จาก `~/appscript.ui` และ `~` · Q1 "ปุ่มคัดลอกในฟอง AI" → React `copyMsg` + แยก §6 Copy กล่องโค้ด (overlay) ✅ · Q2 "toast มาจากไหน" → สองระบบ (React :2383 / overlay `#enh-toast` :433) ✅ และจับได้ว่าแผนที่เขียนว่า toast ของ overlay ยังมาจาก Export/Pin/upload ทั้งที่ section พวกนั้น gate แล้ว (caller ที่เหลือจริง = §5 @vault) → แก้แผนที่ |
+| พบระหว่างทาง (งานเปิด ▶️ · ยังไม่แก้) | ① §6 `_wireCopyButtons` ไม่ gate + `appendChild` เข้า `<pre>` ของ React (§15 badge แบบเดียวกัน) ② toast สองระบบ · ข้อสังเกตจาก Q1: คอมเมนต์ `enhanced.js` ~:733 อ้างว่า "คัดลอก" เป็นป้ายปุ่ม React (จริงเป็น 📋) — ตกรุ่น |
+
 ## [2026-10-05 ปิดเซสชันรอบ 2] สรุป — เครื่องมือตรวจ frontend (pre-commit · e2e WebKit · skill verify-ui) + ลด CLAUDE.md 50 → 41 KB
 
 ไม่มีงานแตะ prod/โค้ดแอปเลยทั้งเซสชัน — งานเครื่องมือ/เอกสารล้วน · CI เขียวทุก commit

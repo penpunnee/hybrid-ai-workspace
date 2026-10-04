@@ -19,6 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | โหมดขวัญอ่านนิยาย (`/ws/reader`) | [`docs/reference/reader-mode.md`](docs/reference/reader-mode.md) |
 | แผนระยะยาว / ดีไซน์ / คู่มือ | [`ROADMAP.md`](ROADMAP.md) · [`DESIGN.md`](DESIGN.md) · [`GUIDE.md`](GUIDE.md) |
 | React source ของ SPA | `~/appscript.ui/` (มี `CLAUDE.md` ของตัวเอง) — **แก้ UI ที่นั่น ไม่ใช่ overlay** |
+| ส่วนบนจอนี้ใครเป็นเจ้าของ (React/overlay/API) | [`docs/ui-map.md`](docs/ui-map.md) · subagent `ui-investigator` |
 
 ### 🔴 กฎการจดตั้งแต่ 2026-08-17
 1. **จบเซสชัน → เขียน `docs/session-log/devlog.md`** แล้วอัปเดตหัวข้อ ▶️ ในไฟล์นี้
@@ -216,6 +217,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 Live ตัดสาย 1008 ~151 วิ → `parkIfUnused` · iOS `ended` = `stopVoice()` เท่านั้น · ⛔ Google CSE · Dream ไม่เก็บความรู้จากเน็ต
 
 ### 📋 งานเปิดอื่น
+- **frontend (จาก `docs/ui-map.md` 10-05 · ยังไม่แก้):** ① §6 ปุ่ม Copy บนกล่องโค้ด (`enhanced.js` `_wireCopyButtons`) ไม่ gate + `appendChild` เข้า `<pre>` ของ React = รูปแบบเดียวกับที่เคยจอขาว (§15 badge โมเดลก็แบบเดียวกัน) · ② toast สองระบบ (React `{/* Toast */}` + overlay `#enh-toast` ที่เหลือ caller จริงแค่ §5 @vault)
 - **backend:** ✅ reader `marks.set` verify รอบอ่านจริงแล้ว (ต่อ 50) · ข้อสังเกตเล็ก: `books.text` 90.9 ms บน loop ครั้งเดียวตอนเปิดเล่ม (ยังไม่คุ้มแก้)
 - **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 (รอ memory จากโหมดเสียงสะสม)
 
@@ -282,6 +284,8 @@ seek ต้อง**อ่านค่าก่อนเขียน** (user อ�
 - ❌ ห้ามรัน pytest ในคอนเทนเนอร์ prod (fixture ปน log)
 
 **frontend**
+- ก่อนแก้ UI ที่ไม่แน่ใจว่าอยู่ไหน (React หรือ overlay) → ใช้ subagent `ui-investigator` (แผนที่ [`docs/ui-map.md`](docs/ui-map.md) · ตัวจริง `.claude/agents/` symlink จาก `~/.claude/agents/` เรียกได้ทุกรีโป) ·
+  ตัวยึดในแผนที่ตรึงด้วย `tests/test_ui_map_anchors.py` (static/) + `~/appscript.ui/utils/uimap.test.ts` (React) — rename แล้วต้องแก้แผนที่ตาม
 - overlay ที่ React ทำเองแล้วต้อง gate `if (window.__hwReactChatBox) return;` (ตอนนี้: tee/`_parseChatSSE` · Ctrl+E · ↑/↓ · paste · §19/§20 · §22) —
   เพิ่ม feature ใน React แล้วไล่ overlay ที่ทำซ้ำด้วย · เทส `tests/overlay_gating.test.js`
 - ก่อน commit การแก้ `static/*.js` (overlay) → รัน `npm run test:e2e` ใน `~/appscript.ui` ต้องเขียว 3/3 → ทำตาม skill verify-ui ใน ~/appscript.ui ·
