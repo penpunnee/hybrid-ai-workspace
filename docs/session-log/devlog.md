@@ -1,5 +1,31 @@
 ---
 
+## [2026-10-05 ต่อ 104] ค้นเว็บเลือกหน้าผิดก่อน fetch + โหมดเสียงถามกลับแทนตอบ (`58e724f`) ✅ prod
+
+**ที่มา:** user คุยเสียง 10-04 23:45–23:57 ถาม "ผู้กล้าเหนือกาลเวลา · สวี่ชิงล้างแค้นเผ่าเงือก ตอนไหน" — ขวัญค้น 6 รอบ ตอบ
+"ไม่เจอ ช่วยบอกรายละเอียดเพิ่ม" ซ้ำ จน user: *"ก็รู้รายละเอียดในนิยายตอนนั้นน่ะสิ ไม่ใช่มาถามต่ออย่างนี้"* (`[Voice/memory] ข้าม reason=negative_feedback`)
+**ต้นเหตุ (ยิงคำค้นซ้ำบน prod):** (1) `_enrich_with_fetch` fetch 3 ผลแรก*ตามลำดับ Brave* (YouTube/Facebook) แล้วค่อย rerank
+⇒ หน้าที่ชนะ rerank (`aileen-novel`/`fictionlog`) `fetched_text`=0 ทั้งที่ยิงตรงดึงได้ 2,649/2,131 ตัวอักษร · `novel-fast` บท 130 = 404
+(2) `VOICE_SEARCH_GUIDE` มีแต่ "ห้ามเดา" ไม่มีกรณีตอบได้บางส่วน ⇒ ถามกลับ · "ตอน 130" ที่ขวัญพูด**ไม่ได้แต่ง** มาจากชื่อบทในผลค้น
+**ค้นข้อมูลก่อนแก้ (user สั่ง):** multi-search/Perplexica/Tavily/Brave LLM Context/Google (fan-out + passage ranking)/Claude (ค้นวนปรับคำค้น + dynamic filtering)
+ทุกเจ้า: จัดอันดับก่อน → fetch อันดับต้น → ตัดช่วงที่ตรง · vault `wiki/concepts/llm-web-search-pipeline-settings.md`
+**วัดก่อนออกแบบ:** pre-rank title+snippet บน prod: นิยาย→หน้านิยาย 3 ✅ · Python→`python.org` ติด top3 ✅ · ราคาทอง→`goldtraders.or.th` หลุด ⚠️
+⇒ เก็บอันดับ 1 ของ provider ด้วยเสมอ
+**แก้:** `_select_and_fetch()` (ใช้ทั้ง `_web_search_impl` + `agents/tools.py:_t_web_search`) — pre-rank `title+body` × domain → fetch top 3 + provider #1 (≤4 ขนาน)
+· คืนเฉพาะผลที่ถูกเลือก · **rerank รอบสุดท้ายไม่เปลี่ยน** ⇒ พื้น `WEB_SEARCH_MIN_SCORE` 0.35 ยังใช้ได้ (คาลิเบรตกับ title+fetched+body)
+· pre-rank ล้ม = ทางเดิม (fetch 3 แรก คืนทั้งหมด) · `VOICE_SEARCH_GUIDE` ข้อ 5: ตอบได้บางส่วน → ขึ้นต้นด้วยสิ่งที่ใกล้ที่สุด + ที่มา ไม่ถามกลับ
+(ข้อความใน payload ไม่ใช่ config เสียง 🔒)
+**เทส:** `test_websearch_prerank.py` 5 (แชท/agent เลือกหน้าตรง + #1 + ≤4 · ผลน้อยกว่าเพดาน · pre-rank ล้ม · คำสั่งเสียง) · mutation 5/5 ตาย · ชุดเต็ม 2782 · ruff
+**deploy:** `docker restart` (ไม่แตะ `server.py`) · healthy · `/api/config` 200
+**verify prod (`voice_search_payload`):** นิยาย 2,439 → **4,314** ตัวอักษร (หน้า aileen มีเนื้อหาแล้ว) · ราคาทองได้ราคา 5 ต.ค. จริง
+**ข้อจำกัด:** "ฉากนี้อยู่ตอนไหน" ยังขึ้นกับว่ามีเว็บเขียนไว้ไหม — นิยายจีนแปลไทยแทบไม่มี (Brave LLM Context ก็ได้แต่หน้าหลักเรื่อง)
+· ทางที่ตอบได้จริง = ค้นในตัวหนังสือ (`reader.db` มีแค่ xianni/perfectworld) — ฟีเจอร์ใหม่ ยังไม่ทำ
+**สังเกตเพิ่ม (ยังไม่แก้):** ASR ถอดเสียงเป็นเกาหลี (โฆษณาหนัง — น่าจะเสียงทีวี) และฝรั่งเศส แล้ว `[Voice/memory] บันทึก` ทั้งคู่ = ความจำขยะ
+· `[Chat] timings` ยังไม่มีข้อมูลจริง (โหมดเสียงไม่ผ่าน `/api/chat`)
+**🧪 รอ user:** ถามขวัญแนวเดิมในโหมดเสียง ดูว่าตอบ "ที่ใกล้สุดคือ…" แทนถามกลับไหม
+
+---
+
 ## [2026-10-04 ปิดเซสชันรอบ 7] สรุป (ต่อ 101–103) — วัด "คำขอแรกหลังว่างช้า" → ทดสอบ 🧪 แทน user → แก้อากาศ + เครื่องวัดเวลา
 
 | ต่อ | งาน | ผล | commit |
