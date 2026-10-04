@@ -30,7 +30,7 @@ def _t_web_search(query: str, max_results=5) -> str:
     # ดึง 2x แล้ว rerank เพื่อให้ได้ผลลัพธ์ที่ตรงประเด็นที่สุด
     initial_n = max(max_results, 6)
     results = search_web(query, max_results=initial_n)
-    results = _enrich_with_fetch(results)  # default _FETCH_TOP_N = 3 หน้า (2026-06-11)
+    results = _enrich_with_fetch(results, query=query)  # 3 หน้า · เลือกช่วงที่ตรงคำค้น (10-04)
     try:
         from utils.embed import rerank_by_similarity
         reranked = rerank_by_similarity(
@@ -389,21 +389,33 @@ def _t_generate_image(prompt: str) -> str:
     return f"สร้างรูปไม่สำเร็จ: {result.get('error', 'unknown')}"
 
 
-def _t_fetch_url(url: str) -> str:
-    """ดึงเนื้อหาเต็มจาก URL ที่ user วางในแชท — ผ่านเกราะ SSRF (utils/urlguard)"""
+_FETCH_TOOL_MAX_CHARS = 4200
+
+
+def _t_fetch_url(url: str, focus: str = "") -> str:
+    """ดึงเนื้อหาเต็มจาก URL ที่ user วางในแชท — ผ่านเกราะ SSRF (utils/urlguard)
+
+    `focus` = คำที่อยากหา → หน้ายาวได้เฉพาะช่วงที่เกี่ยว (ไม่ใช่หัวหน้า) ·
+    ดึงได้แทบไม่มีอะไร (เว็บ JS) ต้องบอกตรงๆ — เดิมขึ้น "ถูกตัดท้าย" ตามขนาด HTML ดิบ
+    ⇒ โมเดลคิดว่ายังมีเนื้อหาแล้วเปิดซ้ำ (prod 10-04 เสีย 2/4 รอบ)"""
     from utils import urlguard
-    from utils.websearch import _extract_text
+    from utils.websearch import _extract_text, focus_passages, _FETCH_RAW_MAX_CHARS, _THIN_TEXT_CHARS
     try:
         res = urlguard.fetch_url_safe(url)
     except urlguard.URLBlockedError as e:
         return f"❌ ดึง URL นี้ไม่ได้ (ถูกบล็อกเพื่อความปลอดภัย): {e} — ห้ามลองเลี่ยงด้วย URL อื่นของปลายทางเดิม"
     except Exception as e:
         return f"❌ ดึง {url} ไม่สำเร็จ: {e}"
-    if "html" in res.content_type:
-        body = _extract_text(res.text, max_chars=4200)
-    else:
-        body = res.text[:4200]
-    note = " (เนื้อหายาวเกิน ถูกตัดท้าย)" if res.truncated or len(res.text) > 4200 else ""
+    is_html = "html" in res.content_type
+    full = _extract_text(res.text, max_chars=_FETCH_RAW_MAX_CHARS) if is_html else res.text
+    if is_html and len(full) < _THIN_TEXT_CHARS:
+        return (f"⚠️ หน้านี้อ่านเนื้อหาไม่ได้ — ได้แค่ {len(full)} ตัวอักษร (มักเป็นเว็บที่โหลดเนื้อหาด้วย JavaScript) · "
+                f"ห้ามเปิดหน้านี้ซ้ำ ให้ใช้ผลค้นอื่นหรือค้นแหล่งอื่นแทน\n📄 {res.url}\n\n{full}")
+    body = focus_passages(full, focus, _FETCH_TOOL_MAX_CHARS)
+    note = ""
+    if res.truncated or len(full) > _FETCH_TOOL_MAX_CHARS:
+        note = (f" (หน้ายาว — แสดงเฉพาะช่วงที่เกี่ยวกับ \"{focus}\")" if focus and body != full[:len(body)]
+                else " (เนื้อหายาวเกิน ถูกตัดท้าย — ใส่ focus เพื่อเลือกช่วงที่ต้องการ)")
     return f"📄 เนื้อหาจาก {res.url}{note}\n\n{body}"
 
 
@@ -454,8 +466,10 @@ _ALL_TOOLS: dict[str, dict[str, Any]] = {
 
     "web_search": {
         "description": (
-            "ค้นหาข้อมูลจากอินเตอร์เน็ตด้วย DuckDuckGo + ดึงเนื้อหาหน้าเว็บจริง "
-            "ใช้สำหรับ: ข่าวล่าสุด, ราคา, ข้อมูลทั่วไป, เหตุการณ์ปัจจุบัน"
+            "ค้นหาข้อมูลจากอินเตอร์เน็ต + ดึงเนื้อหาหน้าเว็บจริง "
+            "ใช้สำหรับ: ข่าวล่าสุด, ราคา, ข้อมูลทั่วไป, เหตุการณ์ปัจจุบัน · "
+            "ถ้าผลภาษาไทยมีแค่เรื่องย่อ/ไม่ตอบสิ่งที่ถาม (เช่น เนื้อเรื่องนิยาย/อนิเมะจีน ญี่ปุ่น เกาหลี) "
+            "ให้ค้นอีกรอบเป็นภาษาอังกฤษด้วยชื่อภาษาอังกฤษของเรื่อง/ตัวละคร/สถานที่ แล้วตอบผู้ใช้เป็นภาษาไทย"
         ),
         "parameters": {
             "type": "object",
@@ -471,12 +485,15 @@ _ALL_TOOLS: dict[str, dict[str, Any]] = {
         "description": (
             "อ่านเนื้อหาเต็มจากหน้าเว็บตาม URL ที่ระบุ "
             "ใช้เมื่อ user วางลิงก์ในแชท หรือขอให้อ่าน/สรุปหน้าเว็บที่รู้ URL อยู่แล้ว "
-            "(ถ้ายังไม่รู้ URL ให้ใช้ web_search แทน)"
+            "(ถ้ายังไม่รู้ URL ให้ใช้ web_search แทน) · หน้ายาว (เช่น wiki) ให้ใส่ focus"
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "url": {"type": "string", "description": "URL เต็มของหน้าที่จะอ่าน (http/https)"},
+                "focus": {"type": "string", "description": (
+                    "คำสำคัญที่อยากหาในหน้า (ภาษาเดียวกับหน้าเว็บ) เช่น 'Thunder Celestial Realm' "
+                    "→ ได้เฉพาะย่อหน้าที่เกี่ยว · ไม่ใส่ = ต้นหน้า")},
             },
             "required": ["url"],
         },

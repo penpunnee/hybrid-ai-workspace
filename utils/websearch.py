@@ -9,6 +9,7 @@ Flow:
 """
 import asyncio
 import logging
+import math
 import re
 import threading
 import time
@@ -116,8 +117,15 @@ def _domain_score(url: str) -> tuple[float, str]:
     return 1.0, "🔵 ทั่วไป"
 
 
-def _extract_text(html: str, max_chars: int = _FETCH_MAX_CHARS) -> str:
-    """ดึง text จาก HTML แบบเร็ว (ไม่ใช้ BeautifulSoup)"""
+# เนื้อหาหลักใน <main> ต้องยาวพอถึงจะเชื่อ (เว็บ SPA มี <main> เปล่ารอ JS เติม)
+_MAIN_MIN_CHARS = 500
+# เนื้อหาสั้นกว่านี้ = หน้าอ่านไม่ได้ (เว็บ JS) — เติมคำอธิบายหน้าจาก meta แทน
+_THIN_TEXT_CHARS = 200
+_META_DESC = re.compile(
+    r'<meta[^>]+(?:property|name)=["\'](?:og:)?description["\'][^>]*content=["\']([^"\']*)', re.I)
+
+
+def _strip_html(html: str) -> str:
     html = re.sub(r"<script[^>]*>.*?</script>", " ", html, flags=re.DOTALL | re.IGNORECASE)
     html = re.sub(r"<style[^>]*>.*?</style>", " ", html, flags=re.DOTALL | re.IGNORECASE)
     html = re.sub(r"<nav[^>]*>.*?</nav>", " ", html, flags=re.DOTALL | re.IGNORECASE)
@@ -126,8 +134,66 @@ def _extract_text(html: str, max_chars: int = _FETCH_MAX_CHARS) -> str:
     text = re.sub(r"<[^>]+>", " ", html)
     # decode &#xE01; &amp; &nbsp; etc. → ภาษาไทยจริง
     text = html_lib.unescape(text)
-    text = re.sub(r"\s+", " ", text).strip()
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _extract_text(html: str, max_chars: int = _FETCH_MAX_CHARS) -> str:
+    """ดึง text จาก HTML แบบเร็ว (ไม่ใช้ BeautifulSoup)
+
+    มี <main> ที่มีเนื้อหาจริง → ใช้แค่ใน main (เดิมได้ปุ่ม Sign In/แชร์ 2,500 ตัวแรก · prod 10-04) ·
+    เนื้อหาเหลือน้อย (เว็บ JS) → เติม og:description ที่เว็บเขียนสรุปไว้ให้"""
+    text = _strip_html(html)
+    mains = re.findall(r"<main[\s>].*?</main>", html, flags=re.DOTALL | re.IGNORECASE)
+    if mains:
+        main_text = _strip_html(" ".join(mains))
+        if len(main_text) >= _MAIN_MIN_CHARS:
+            text = main_text
+    if len(text) < _THIN_TEXT_CHARS:
+        m = _META_DESC.search(html)
+        desc = re.sub(r"\s+", " ", html_lib.unescape(m.group(1))).strip() if m else ""
+        if desc and desc not in text:
+            text = f"{desc} {text}".strip()
     return text[:max_chars]
+
+
+_TERM_SPLIT = re.compile(r"[\s,.;:!?\"'()\[\]{}|/\\\-–—]+")
+
+
+def focus_passages(text: str, query: str, max_chars: int, window: int = 400) -> str:
+    """เลือกช่วงของหน้าที่ตรงคำค้น แทนการตัดหัวหน้า (หน้า wiki 76k ตัวอักษร เนื้อที่ถามอยู่ลึก)
+
+    แบ่งเป็นช่วงละ `window` ตัวอักษร · ช่วงได้คะแนนตามคำค้นที่มี ถ่วงด้วยความหายาก (idf)
+    — คำที่อยู่ทุกช่วง (เช่นชื่อตัวเอก) ได้ 0 · คืนช่วงคะแนนสูงสุดเรียงตามลำดับในหน้า
+    ไม่มีคำค้น/ไม่ตรงเลย = ตัดหัวหน้าแบบเดิม"""
+    if len(text) <= max_chars:
+        return text
+    terms = {t.lower() for t in _TERM_SPLIT.split(query or "") if len(t) >= 2}
+    if not terms:
+        return text[:max_chars]
+    chunks = [text[i:i + window] for i in range(0, len(text), window)]
+    low = [c.lower() for c in chunks]
+    n = len(chunks)
+    idf = {}
+    for t in terms:
+        df = sum(t in c for c in low)
+        if df:
+            idf[t] = math.log((n + 1) / (df + 1))
+    scores = [sum(w for t, w in idf.items() if t in c) for c in low]
+    ranked = [i for i in sorted(range(n), key=lambda i: -scores[i]) if scores[i] > 0]
+    if not ranked:
+        return text[:max_chars]
+    picked = sorted(ranked[:max(1, max_chars // window)])
+    out, prev = [], None
+    for i in picked:
+        if prev is not None and i != prev + 1:
+            out.append(" … ")
+        out.append(chunks[i])
+        prev = i
+    return "".join(out)
+
+
+# เพดานข้อความดิบต่อหน้าก่อนเลือกช่วง (หน้า wiki ~76k) — กัน regex/หน่วยความจำกับหน้าใหญ่ผิดปกติ
+_FETCH_RAW_MAX_CHARS = 200_000
 
 
 def _fetch_url(url: str) -> str:
@@ -142,14 +208,14 @@ def _fetch_url(url: str) -> str:
         res = fetch_url_safe(url, timeout=_FETCH_TIMEOUT, deadline=_FETCH_TIMEOUT)
         if "html" not in res.content_type and "text" not in res.content_type:
             return ""
-        return _extract_text(res.text)
+        return _extract_text(res.text, max_chars=_FETCH_RAW_MAX_CHARS)
     except Exception as e:
         logger.debug(f"[WebSearch] fetch {url} failed: {e}")
         return ""
 
 
-def _enrich_with_fetch(results: list[dict], top_n: int = _FETCH_TOP_N) -> list[dict]:
-    """ดึง HTML ของ top results ขนานกัน — เติม field 'fetched_text'"""
+def _enrich_with_fetch(results: list[dict], top_n: int = _FETCH_TOP_N, query: str = "") -> list[dict]:
+    """ดึง HTML ของ top results ขนานกัน — เติม field 'fetched_text' (ช่วงที่ตรง `query` ≤ _FETCH_MAX_CHARS)"""
     if not results:
         return results
     targets = results[:top_n]
@@ -160,7 +226,7 @@ def _enrich_with_fetch(results: list[dict], top_n: int = _FETCH_TOP_N) -> list[d
         for fut in as_completed(futures, timeout=_FETCH_TIMEOUT + 2):
             r = futures[fut]
             try:
-                r["fetched_text"] = fut.result() or ""
+                r["fetched_text"] = focus_passages(fut.result() or "", query, _FETCH_MAX_CHARS)
             except Exception:
                 r["fetched_text"] = ""
     except FuturesTimeout:
@@ -367,7 +433,7 @@ def format_for_context(results: list[dict], query: str) -> str:
         _, cred_label = _domain_score(href)
         score_tag = f" _(relevance: {score:.2f})_" if score is not None else ""
         lines.append(f"[{i}] **{title}** {cred_label}{score_tag}")
-        if fetched:
+        if fetched and len(fetched) >= len(snippet):   # ดึงได้แค่ชื่อเรื่อง (เว็บ JS) ห้ามแทน snippet ที่ยาวกว่า
             lines.append(f"    {fetched[:_FETCH_MAX_CHARS]}")
         elif snippet:
             lines.append(f"    {snippet}")
@@ -667,7 +733,7 @@ def _web_search_impl(query: str, max_results: int = 5, top_k: int = 3) -> tuple[
         if len(results) >= initial_n:
             break
 
-    results = _enrich_with_fetch(results, top_n=_FETCH_TOP_N)
+    results = _enrich_with_fetch(results, top_n=_FETCH_TOP_N, query=query)
 
     # ใส่ domain score ก่อน rerank เพื่อให้ embedding score × credibility
     for r in results:

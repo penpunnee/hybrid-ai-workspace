@@ -119,7 +119,7 @@ _HITS = [{"title": f"t{i}", "href": f"https://ex{i}.com", "body": "b"} for i in 
 @pytest.fixture()
 def fake_pipeline(monkeypatch):
     monkeypatch.setattr(ws, "search_web", lambda q, max_results=5: [dict(h) for h in _HITS])
-    monkeypatch.setattr(ws, "_enrich_with_fetch", lambda r, top_n=3: r)
+    monkeypatch.setattr(ws, "_enrich_with_fetch", lambda r, top_n=3, **k: r)
     import utils.query_rewrite as qr
     monkeypatch.setattr(qr, "_REWRITE_ENABLED", False)
 
