@@ -1,5 +1,25 @@
 ---
 
+## [2026-10-04 ต่อ 101] "คำขอแรกหลังว่าง retrieval 2.2 วิ" — วัดแล้ว: ช้าทุกคำขอ เพราะเขียน ChromaDB ไม่ใช่ embed เย็น · ⏸ user: ไม่ช้า → ไม่แก้
+
+**สมมติฐานเดิมตก:** `/api/ps` บน .235 = `paraphrase-multilingual` ค้างอยู่ (keep_alive 24h จากต่อ 72 ทำงาน) · embed 44–50 ms
+**SSE จริงเข้า `127.0.0.1:8000`** (ว่าง 35 นาที · 2 คำขอติดกัน): recall→retrieval **1.77 / 1.98 วิ** (คำขอสองไม่เร็วขึ้น = ไม่ใช่ cold) ·
+retrieval→thinking 2.1 วิ → 0.06 วิ (อันนี้ cold จริง ยังไม่ไล่ · `search_skills`/`load_history`) · คำแรก 3.9 / 2.0 วิ
+**แยกขั้น (โปรเซสแยกในคอนเทนเนอร์):** lessons 110 · skills 44 · user_facts 95 · long_term 44 · **episodic `search_entries` ~1,500 ms**
+→ ปิด `bump_access_count` เหลือ 103 ms · `col.get` 3 ms · **`col.update(metadatas)` 1 แถว 1,700–1,800 ms**
+⚠️ probe รอบแรกส่ง assistant `"ขวัญ"` (คีย์จริง `'🧡 ขวัญ (Logic)'`) → ข้าม episodic ดูเร็วหลอกตา 350 ms
+**ต้นเหตุชั้นล่าง:** `dd oflag=dsync` บน volume1 = **225–330 ms/fsync** (btrfs บน RAID5 HDD 4 ลูก · VM qemu เขียน ~40 ครั้ง/วิ/ลูก) ·
+Chroma server = **1.4.4** (`chroma --version` · `/api/v2/version` "1.0.0" = เวอร์ชัน API) · ซอร์ส `cli-1.4.4`: `push_logs` รอ commit log → backfill → purge
+(หลาย transaction) · ไม่ตั้ง pragma → ไฟล์เป็น **rollback journal** (header 18/19 = `1 1`) · HNSW persist ทุก 1000 ไม่ใช่ตัวการ
+**ไม่แก้ (user 10-04: "มันก็ไม่ช้านะตอนนี้")** — ถ้าวันหลังจะแก้:
+- **A** `search_entries` เรียก bump ผ่าน `spawn_bg` (คาดคำแรกเร็วขึ้น ~1.4–1.8 วิ) · ⚠️ rollback journal: commit ล็อกบล็อก reader → ต้องวัดคำขอติดกันว่า query ไม่พุ่ง ·
+  เทสที่ต้องปรับ: `tests/test_memory_package.py` (คาด bump แบบ sync) · A2 = รวม bump เป็นชุด
+- **B** ย้าย volume Chroma (48 MB) ไป SSD / ดู VM · **C** แปลง WAL ด้วยมือ (upstream ไม่รองรับ · ไม่แนะนำ)
+**ผลข้างเคียงการวัด:** access_count ของ memory บางแถว +1 หลายครั้ง (probe เรียก bump จริง) · update ทดสอบ 1 แถวเขียน meta เดิม · session ทดสอบลบแล้ว
+vault: `wiki/concepts/chroma-write-latency-hdd.md`
+
+---
+
 ## [2026-10-04 ต่อ 100] agent ค้นเนื้อเรื่องนิยายได้แต่เรื่องย่อ — เนื้อหาเว็บเป็นเมนู/ตัดหัวหน้า + ไม่ค้นอังกฤษ (`b442d75` `0783635`) ✅ prod + CI
 
 **user (ภาพ 16:58):** ถาม agent qwen "หวังหลินออกจากแดนอัสนีแล้วเนื้อเรื่องเป็นยังไงต่อ" → ได้แต่เรื่องย่อหน้าปก
