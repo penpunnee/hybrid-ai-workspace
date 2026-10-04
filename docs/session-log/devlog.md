@@ -1,5 +1,24 @@
 ---
 
+## [2026-10-04 ต่อ 80] โหมด agent ส่ง token จริงใน `done.usage` (`42ba43d` · `782fd15`) ✅ prod + CI
+
+**ต้นเหตุ:** done ของ agent (`routers/chat.py`) ไม่แนบ usage · `run_agent` ไม่มีช่องรับ · adapter ไม่ขอ `include_usage`
+⇒ แถบ Context (ต่อ 78) โชว์ "ไม่รายงาน" ตรงเส้นที่เสี่ยงล้นที่สุด
+
+**แก้:** `run_agent(usage_sink=)` → `_GeminiAdapter`/`_LMStudioAdapter` · `_note_usage()`: ขาเข้า = **คำขอที่ใหญ่สุด**ในเทิร์น · ขาออก = รวมทุกคำขอ ·
+LM Studio ใช้ `_create_stream_with_usage` (fallback เดิม) + `context_limit` จาก `_lmstudio_loaded_ctx` หลังจบเทิร์น ·
+Gemini เก็บ `usage_metadata` ชุดล่าสุดต่อคำขอ (มาหลายชิ้นแบบสะสม — ห้ามบวกทุกชิ้น) · รับเฉพาะ `int` (`int(MagicMock()) == 1`) ·
+รอบสรุป LM Studio ข้ามชิ้นที่ `choices` ว่าง (เดิม `choices[0]` = IndexError เมื่อขอ usage) · Ollama ReAct ไม่รายงาน (คงเดิม)
+
+**บทเรียน — mutant ที่รอดไม่ใช่ "เทียบเท่า" เสมอ:** รอบแรกใช้ "ค่าล่าสุด" · mutant `max` รอด ผมตีว่าเทียบเท่า (ประวัติโตทุก step) ·
+probe prod จริงได้ `input_tokens: 1133` — รอบ "ขอสรุปใหม่" (qwen ตอบค้างใน reasoning · LM Studio #1602) **ไม่ส่ง tools schema**
+จึงเล็กกว่า step ก่อนหน้า ⇒ เปลี่ยนเป็น max + เทสเคสนี้ · probe ซ้ำได้ **3,573 / 16,384** (tools ~2.5k + system)
+
+**verify prod:** agent qwen เรียก `calculator` จริง · `done.usage = {input_tokens: 3573, output_tokens: 106, context_limit: 16384}` ·
+session probe ลบแล้ว (`deleted:2`) · pytest 2656 · CI เขียวทั้ง 2 commit
+
+---
+
 ## [2026-10-04 ต่อ 79] markdown ใน bubble: ตาราง / หัวข้อ / รายการ / เส้นคั่น (appscript.ui `534e8f0` · `d443ce2`) ✅ prod
 
 **อาการ (ภาพจอ user 10:14):** qwen ตอบเป็นตาราง → ขึ้น `| หมวดหมู่ |…` + `|---|---|---|` ดิบ · ภาพ 09:54 ก็มี `## 💬` และ `* ` ดิบ ·
