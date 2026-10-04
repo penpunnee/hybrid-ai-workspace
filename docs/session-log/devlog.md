@@ -1,5 +1,24 @@
 ---
 
+## [2026-10-04 ปิดเซสชันรอบ 3] สรุป (ต่อ 86) — ยืนยันผล 🧪 บน iPhone · ตารางตัดกลางคำ · เวลาแถบข้างเป็น UTC
+
+| เรื่อง | ต้นเหตุ | ผล | commit |
+|---|---|---|---|
+| ตาราง markdown `Route\|r` · `Onlin\|e` | overlay `enhanced.js` ตั้ง `word-break: break-word !important` ทั้ง bubble → `td`/`strong` สืบ → auto layout บีบคอลัมน์ | ✅ iPhone 12:20 (ข้อความ 11:52 ตัวจริง) | ui `da826c0` · `ac17f9d` |
+| เวลาแถบข้าง `04:52` แทน 11:52 | `app.tsx` ตัดสตริง `started_at.substring(11,16)` จาก ISO UTC | ✅ iPhone 12:21 (12:04 / 11:52 / 10:37) | ui `bf01738` · `7eeb40e` |
+| 🧪 ต่อ 78/79/80/81 | — | ✅ ทั้งหมด (Context `1,299` = log app · `4,286` = log LM Studio · ping จริงทั้ง Ask/Code) | — |
+
+**บทเรียนของเซสชัน**
+- ภาพจาก user ที่ "ดูถูก" ไม่ใช่หลักฐานถ้า (1) เคสนั้นไม่เคยพังอยู่แล้ว (ตารางแคบ) หรือ (2) เครื่องยังรัน build เก่า — เช็ค `GET /` หลังเวลา deploy ทุกครั้ง
+- ตารางจำลองต้องมาจากข้อมูลจริง (markdown จาก DB → `renderMarkdown`) — แต่งเองต่างนิดเดียว (ตัวหนา) ผลกลับด้าน · ผมถอนข้อสรุปไป 2 ครั้ง (ภาพ 12:04 · ห้อง 10:36)
+- หาห้อง/ข้อความจาก `messages.created_at` ใน DB ไม่ใช่จาก log การเปิดหน้า
+- usage ของเส้น agent ไม่มีใน log app → เทียบกับ `server-logs` ของ LM Studio บน .235 (prompt eval + `f_keep` ของ cache)
+- vault: [[css-break-word-cascade-into-tables]] (`wiki/concepts/`)
+
+**งานเปิดใหม่:** (ฌ) ไทม์ไลน์ tool + บรรทัดสถิติหายหลังรีเฟรช (ไม่ลง DB)
+
+---
+
 ## [2026-10-04 ต่อ 86] ตารางใน bubble ตัดกลางคำ ("Route|r" · "Onlin|e") — ยกเว้นเซลล์จาก break-word ของ overlay (ui `da826c0` · `ac17f9d`) ✅ prod + CI
 
 - **ผล 🧪 จาก iPhone 11:52:** แถบ Context `1,299 / 16,384` = log `in=1299, out=379` ✅ · ถาม "เช็คเครื่อข่าย" ใน **Ask** → `detect_home_tools` → `ping_network()` จริงก่อนเรียก qwen
