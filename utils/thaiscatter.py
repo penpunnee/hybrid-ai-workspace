@@ -60,6 +60,21 @@ def shift_bookmark(pos: int, positions: list[int]) -> int:
     return pos - sum(1 for p in positions if p < pos)
 
 
+# ── ตัวบ่งชี้ขาเข้า: ไม่มี dependency ───────────────────────────────────────
+# ซ่อมไม่ได้ในอิมเมจ แต่ต้องไม่เงียบ (devlog ต่อ 61) · พยัญชนะเดี่ยวยืนลอยเป็นลายเซ็นที่หยาบแต่แยกได้
+# วัดเล่มจริง 10-04: ซ่อมแล้ว xianni 0.3 · PW 1.7 — ยังเสีย xianni 6.5 · PW 74.6 (ต่อแสนตัวอักษร)
+_LONE_CONSONANT = _re.compile(r"(?<!\S)[ก-ฮ](?!\S)")
+SCATTER_WARN_PER_100K = 4.0
+SCATTER_WARN_MIN = 20  # เล่มสั้นมาก: ไม่กี่จุดอย่าเตือน
+
+
+def scatter_suspects(text: str) -> tuple[int, bool]:
+    """(จำนวนพยัญชนะเดี่ยวลอย ไม่นับ ณ/ธ, ควรเตือนไหม)"""
+    n = sum(1 for m in _LONE_CONSONANT.finditer(text) if m.group() not in _STANDALONE)
+    rate = n * 100_000 / len(text) if text else 0.0
+    return n, n >= SCATTER_WARN_MIN and rate >= SCATTER_WARN_PER_100K
+
+
 # ── ฝั่ง compute: ต้องมี pythainlp ───────────────────────────────────────────
 
 def compute_removals(text: str) -> list[int]:

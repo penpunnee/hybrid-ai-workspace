@@ -25,6 +25,7 @@ from core.config import READER_DB_PATH as _CFG_READER_DB_PATH
 from core.env_registry import env_int
 from utils.http_limits import MAX_BODY_BYTES, json_body_capped
 from utils.reader import BookmarkStore, BookStore, next_block
+from utils.thaiscatter import scatter_suspects
 from utils.thaipdf import (
     fix_inserted_spaces,
     fix_leading_vowel_gaps,
@@ -77,6 +78,17 @@ def _ingest(source: str, content: str) -> dict:
     _books.put(source, content)
     _marks.set(source, 0)
 
+    suspects, flagged = scatter_suspects(content)
+    scatter_warning = None
+    if flagged:
+        scatter_warning = {
+            "suspects": suspects,
+            "hint": "ข้อความยังมีพยัญชนะกระจาย (ตระกูล 6) ที่ซ่อมในเซิร์ฟเวอร์ไม่ได้ — "
+                    "รัน scripts/fix_scatter_dict.py (ต้องมี pythainlp) นอกคอนเทนเนอร์ก่อนอ่านจริง",
+        }
+        logger.warning(f"[Reader] เล่ม {source!r} ยังมีโรคกระจายตระกูล 6 ~{suspects} จุด "
+                       f"(พยัญชนะเดี่ยวลอย) — ตัวอ่านจะออกเสียงเพี้ยน · ซ่อมด้วย scripts/fix_scatter_dict.py")
+
     blocks, p = 0, 0
     while p < len(content):
         _b, p = next_block(content, p)
@@ -86,7 +98,7 @@ def _ingest(source: str, content: str) -> dict:
         f" (ซ่อมช่องว่างแทรก: {'ใช่' if spacing_fixed else 'ไม่จำเป็น'})"
     )
     return {"ok": True, "source": source, "chars": len(content), "blocks": blocks,
-            "spacing_fixed": spacing_fixed}
+            "spacing_fixed": spacing_fixed, "scatter_warning": scatter_warning}
 
 
 def _require_book(source: str) -> str:

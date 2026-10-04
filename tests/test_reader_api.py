@@ -270,3 +270,34 @@ class TestAddFromDisk:
         (sandbox / "big.txt").write_text("ยาวเกินเพดานสิบไบต์แน่นอน", encoding="utf-8")
         assert client.post("/api/reader/add-from-disk",
                            json={"path": "big.txt"}).status_code == 413
+
+
+class TestScatterWarningOnIngest:
+    """ตระกูล 6 ("เท่านั้ น หาก" · "ก ร ะต่าย") ซ่อมในอิมเมจไม่ได้ (ต้อง pythainlp) — ต้องเตือน ไม่เงียบ
+
+    devlog ต่อ 61: เล่มใหม่/import ซ้ำได้ข้อความเพี้ยนแบบไม่มีอะไรบอก · ตัวบ่งชี้ไม่ต้องพึ่งพจนานุกรม:
+    พยัญชนะเดี่ยวยืนลอย (ไม่นับ ณ/ธ) — วัดเล่มจริง 10-04: สะอาด 0.3–1.7 · ยังเสีย 6.5–74.6 ต่อแสนตัวอักษร
+    """
+
+    DIRTY = "เขาบอกว่าเท่านั้ น หากเจ้าเห็นก ร ะต่ายตัวนั้นจงตามไป " * 40
+
+    def test_scattered_book_is_flagged(self, client, caplog):
+        import logging
+        with caplog.at_level(logging.WARNING):
+            r = _add(client, source="scatter.pdf", text=self.DIRTY)
+        assert r.status_code == 200
+        warn = r.json()["scatter_warning"]
+        assert warn and warn["suspects"] >= 40, warn
+        assert "scripts/fix_scatter_dict.py" in warn["hint"]
+        assert any("ตระกูล 6" in rec.getMessage() for rec in caplog.records)
+
+    def test_clean_book_has_no_warning(self, client):
+        r = _add(client)
+        assert r.json()["scatter_warning"] is None
+
+    def test_rare_single_letters_in_a_big_book_are_not_flagged(self):
+        from utils.thaiscatter import scatter_suspects
+        # อัตราของเล่มสะอาดจริง (PW 1.7/แสน) ต้องไม่เตือน
+        text = ("ข้าเป็นวิหคเพลิงที่ตื่นขึ้นสามครั้ง " * 3000) + "ข้อ ก และ ข้อ ข"
+        n, flagged = scatter_suspects(text)
+        assert n == 2 and flagged is False
