@@ -142,6 +142,52 @@ def test_อ่าน_context_ไม่ได้_คืน_None(monkeypatch):
     assert llm._lmstudio_loaded_ctx("qwen/qwen3.5-9b") is None
 
 
+def _ctx_server(monkeypatch, state):
+    """LM Studio จำลอง: state["ctx"] = None (ยังไม่โหลด) หรือ context ที่โหลด · นับจำนวนครั้งที่ถาม"""
+    def fake_get(url, **kw):
+        state["hits"] += 1
+        inst = [{"config": {"context_length": state["ctx"]}}] if state["ctx"] else []
+        return SimpleNamespace(status_code=200, json=lambda: {
+            "models": [{"key": "qwen/qwen3.5-9b", "loaded_instances": inst}]})
+    monkeypatch.setattr(llm.httpx, "get", fake_get)
+    llm._lmstudio_ctx_cache.clear()
+
+
+def test_ยังไม่โหลด_ไม่จำค่าว่างนาน_โหลดเสร็จแล้วต้องเห็นค่าจริง(monkeypatch):
+    """prod 10-04: warmup ถามตอนโมเดลถูกปล่อย → จำ None 5 นาที → แชทหลังเปิดแอป
+    ไม่มี context_limit + ตัดประวัติด้วย 8192 แทน 16384 ทั้งที่โหลดเสร็จใน 6.4 วิ"""
+    state = {"ctx": None, "hits": 0}
+    _ctx_server(monkeypatch, state)
+    now = [1000.0]
+    monkeypatch.setattr(llm.time, "monotonic", lambda: now[0])
+    assert llm._lmstudio_loaded_ctx("qwen/qwen3.5-9b") is None
+    state["ctx"] = 16384          # JIT โหลดเสร็จ (warmup ~6 วิ)
+    now[0] += 15
+    assert llm._lmstudio_loaded_ctx("qwen/qwen3.5-9b") == 16384
+
+
+def test_ค่าที่โหลดแล้ว_ยัง_cache_5_นาที(monkeypatch):
+    state = {"ctx": 16384, "hits": 0}
+    _ctx_server(monkeypatch, state)
+    now = [1000.0]
+    monkeypatch.setattr(llm.time, "monotonic", lambda: now[0])
+    assert llm._lmstudio_loaded_ctx("qwen/qwen3.5-9b") == 16384
+    now[0] += 240
+    assert llm._lmstudio_loaded_ctx("qwen/qwen3.5-9b") == 16384
+    assert state["hits"] == 1, "ค่าจริงต้องไม่ถาม LM Studio ซ้ำทุกแชท"
+
+
+def test_ค่าว่าง_cache_สั้นๆ_ไม่ถามรัวทุกคำขอ(monkeypatch):
+    state = {"ctx": None, "hits": 0}
+    _ctx_server(monkeypatch, state)
+    now = [1000.0]
+    monkeypatch.setattr(llm.time, "monotonic", lambda: now[0])
+    llm._lmstudio_loaded_ctx("qwen/qwen3.5-9b")
+    now[0] += 2
+    llm._lmstudio_loaded_ctx("qwen/qwen3.5-9b")
+    assert state["hits"] == 1
+
+
 def test_ลงทะเบียน_env():
     from core.env_registry import REGISTRY
     assert REGISTRY["LMSTUDIO_CONTEXT_LENGTH"].default == 8192

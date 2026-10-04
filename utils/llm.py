@@ -221,13 +221,17 @@ def _skips_thinking(model: str) -> bool:
 
 
 _LMSTUDIO_CTX_TTL = 300.0
+# "ยังไม่โหลด" จำแค่สั้นๆ — warmup/แชทแรกถามตอนโมเดลถูกปล่อย แล้ว JIT โหลดเสร็จใน ~6 วิ ·
+# เดิมจำ None 5 นาที ⇒ แชทหลังเปิดแอปไม่มี context_limit + ตัดประวัติด้วย 8192 แทน 16384 (prod 10-04)
+_LMSTUDIO_CTX_NONE_TTL = 10.0
 _lmstudio_ctx_cache: dict[str, tuple[float, int | None]] = {}
 
 
 def _lmstudio_loaded_ctx(model: str) -> int | None:
-    """context ที่ LM Studio โหลด `model` ไว้จริง · ไม่ได้โหลด/อ่านไม่ได้ = None (cache 5 นาที)"""
+    """context ที่ LM Studio โหลด `model` ไว้จริง · ไม่ได้โหลด/อ่านไม่ได้ = None
+    (cache ค่าจริง 5 นาที · ค่าว่าง 10 วิ)"""
     hit = _lmstudio_ctx_cache.get(model)
-    if hit and time.monotonic() - hit[0] < _LMSTUDIO_CTX_TTL:
+    if hit and time.monotonic() - hit[0] < (_LMSTUDIO_CTX_TTL if hit[1] else _LMSTUDIO_CTX_NONE_TTL):
         return hit[1]
     ctx = None
     try:
