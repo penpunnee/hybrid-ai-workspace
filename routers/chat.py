@@ -483,9 +483,10 @@ async def chat(request: Request):
                 yield f"data: {json.dumps({'citations': citations.to_list()}, ensure_ascii=False)}\n\n"
             try:
                 agent_provider = provider if provider in ("gemini", "lmstudio", "ollama") else "gemini"
+                agent_usage: dict = {}      # token จริงของทั้งเทิร์น → แถบ Context (ต่อ 80)
                 for kind, payload in run_agent(messages, provider=agent_provider,
                                                image_b64=image_b64, image_mime=image_mime,
-                                               cancel=st["cancel"]):
+                                               cancel=st["cancel"], usage_sink=agent_usage):
                     if kind == "event":
                         # SSE agent event → React parse เป็น AgentTimeline (utils/agentsteps.ts, 2026-06-16)
                         yield f"data: {json.dumps({'agent': payload}, ensure_ascii=False)}\n\n"
@@ -515,7 +516,7 @@ async def chat(request: Request):
             except Exception as e:
                 logger.warning(f"[Chat/agent] persist failed: {e}")
 
-            yield f"data: {json.dumps({'done': True, 'model': 'agent', 'provider': 'agent', 'message_id': agent_msg_id}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'done': True, 'model': 'agent', 'provider': 'agent', 'message_id': agent_msg_id, 'usage': agent_usage or None}, ensure_ascii=False)}\n\n"
             return
 
         # ── Get routing decision ก่อน stream เพื่อส่ง model info ─────────────────

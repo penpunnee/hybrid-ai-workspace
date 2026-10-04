@@ -121,6 +121,24 @@ class _MarkerFilter:
 from utils.llm import GEMINI_MODEL  # ที่เดียว (ดู utils/llm.py:GEMINI_MODEL_DEFAULT)
 from utils.llm import _stop_if_cancelled  # ธงยกเลิกของ request (ก้อน 10/12)
 from utils.llm import _fit_lmstudio_context  # ตัดประวัติให้พอดี context — กติกาเดียวกับแชท (ต่อ 75)
+from utils.llm import _capture_openai_usage, _create_stream_with_usage, _lmstudio_loaded_ctx  # usage ของแถบ Context (ต่อ 80)
+
+
+def _note_usage(sink: dict | None, input_tokens, output_tokens) -> None:
+    """บันทึก usage ของคำขอหนึ่งครั้งลง sink ของทั้งเทิร์น — agent ยิงหลายคำขอ:
+    ขาเข้า = ของคำขอล่าสุด (ประวัติ + ผล tool สะสม = ใกล้ context เต็มที่สุด) · ขาออก = รวมทุกคำขอ ·
+    รับเฉพาะ int (int(MagicMock()) == 1 · ค่าแปลกต้องไม่กลายเป็นตัวเลขบนจอ)"""
+    if sink is None or type(input_tokens) is not int:
+        return
+    sink["input_tokens"] = input_tokens
+    sink["output_tokens"] = sink.get("output_tokens", 0) + (output_tokens if type(output_tokens) is int else 0)
+
+
+def _gemini_usage(chunk, seen: dict) -> None:
+    """usage_metadata มากับหลายชิ้นแบบสะสม — เก็บชุดล่าสุดของคำขอ (ห้ามบวกทุกชิ้น)"""
+    um = getattr(chunk, "usage_metadata", None)
+    if um is not None and type(getattr(um, "prompt_token_count", None)) is int:
+        seen["in"], seen["out"] = um.prompt_token_count, getattr(um, "candidates_token_count", None)
 from assistants.config import SUGGEST_AGENT_MODE
 # ⬇️ env ทุกตัวของไฟล์นี้มีเจ้าของอยู่ที่ core/config.py — import ค่า ห้ามอ่านซ้ำ
 # (ก้อน 4 · 2026-09-23 · ตัวกัน: tests/test_env_registry.py + test_orchestrator_config.py)
@@ -203,6 +221,7 @@ def run_agent(
     image_b64: str = "",
     image_mime: str = "",
     cancel=None,
+    usage_sink: dict | None = None,
 ) -> Generator[tuple[str, Any], None, None]:
     """รัน agent loop
 
@@ -216,13 +235,16 @@ def run_agent(
         cancel: `utils.llm.StreamCancel` ของ request (ก้อน 12) — ผู้ใช้กด Stop แล้วตัด LM Studio ทันที
             ใช้เฉพาะ lmstudio: เส้นอื่นหยุดที่ yield ถัดไปอยู่แล้ว (`_guard_disconnect` ปิด generator)
             ส่วน LM Studio step เดิมเป็น non-stream ที่ค้างได้ถึง LMSTUDIO_TIMEOUT และ GPU คิดต่อทิ้งเปล่า
+        usage_sink: dict ที่เติม {"input_tokens","output_tokens"[,"context_limit"]} ให้แถบ Context (ต่อ 80) ·
+            gemini/lmstudio เท่านั้น (Ollama ReAct ไม่รายงาน)
     """
     if provider == "gemini":
         yield from _run_agent_gemini(messages, model or GEMINI_MODEL, max_steps,
-                                     image_b64=image_b64, image_mime=image_mime)
+                                     image_b64=image_b64, image_mime=image_mime, usage_sink=usage_sink)
     elif provider == "lmstudio":
         yield from _run_agent_lmstudio(messages, model, max_steps,
-                                       image_b64=image_b64, image_mime=image_mime, cancel=cancel)
+                                       image_b64=image_b64, image_mime=image_mime, cancel=cancel,
+                                       usage_sink=usage_sink)
     elif provider == "ollama":
         if image_b64:
             # ReAct/llama3 ไม่มี vision — เงียบไปเฉยๆ = user ไม่รู้ว่ารูปไม่ถูกอ่าน
@@ -339,15 +361,18 @@ def _run_agent_fc(adapter, max_steps: int) -> Generator[tuple[str, Any], None, N
 class _GeminiAdapter:
     name = "Gemini"
 
-    def __init__(self, chat, last_user, base_config=None):
+    def __init__(self, chat, last_user, base_config=None, usage_sink=None):
         self.chat = chat
+        self.usage_sink = usage_sink
         self._pending = last_user      # str (step1/synth) | list[Part] (หลัง tool)
         self._unsent_results = False   # add_tool_results แล้วแต่ step ยังไม่ได้ส่ง
         self._base_config = base_config
 
     def step(self):
         self._unsent_results = False
+        seen: dict = {}
         for chunk in _gemini_stream_with_retry(self.chat, self._pending):
+            _gemini_usage(chunk, seen)
             for part in _chunk_parts(chunk):
                 fc = getattr(part, "function_call", None)
                 if fc:
@@ -356,6 +381,7 @@ class _GeminiAdapter:
                 txt = getattr(part, "text", None)
                 if txt:
                     yield ("text", txt)
+        _note_usage(self.usage_sink, seen.get("in"), seen.get("out"))
 
     def add_tool_results(self, results):
         # list[Part] ตรงๆ — SDK ห่อเป็น Content(role=user) เอง (ห้ามส่ง types.Content)
@@ -385,18 +411,22 @@ class _GeminiAdapter:
         # คั่น (API 400 · ข้อมูลที่เพิ่งค้นมาหาย) ⇒ ส่ง function responses ที่ค้าง + config ห้ามเรียก tool
         message = self._pending if self._unsent_results else _FORCE_SYNTH_PROMPT
         self._unsent_results = False
+        seen: dict = {}
         for chunk in _gemini_stream_with_retry(self.chat, message, config=self._synth_config()):
+            _gemini_usage(chunk, seen)
             for part in _chunk_parts(chunk):
                 txt = getattr(part, "text", None)
                 if txt:
                     yield ("text", txt)
+        _note_usage(self.usage_sink, seen.get("in"), seen.get("out"))
 
 
 class _LMStudioAdapter:
     name = "LM Studio"
 
-    def __init__(self, client, model, messages, tools_schema, cancel=None):
+    def __init__(self, client, model, messages, tools_schema, cancel=None, usage_sink=None):
         self.client = client
+        self.usage_sink = usage_sink
         self.model = model
         self.messages = messages
         self.tools = tools_schema
@@ -406,7 +436,10 @@ class _LMStudioAdapter:
     def _open(self, **kw):
         """เปิด stream แล้วลงทะเบียนกับธงยกเลิก — `cancel()` จะ shutdown socket ให้ตัวอ่านที่ค้างหลุดทันที
         (ลงทะเบียนหลังยกเลิกไปแล้ว = ตัดทันที เช่นยกเลิกระหว่างโหลดโมเดลที่ header ยังไม่มา)"""
-        stream = self.client.chat.completions.create(model=self.model, messages=self.messages, stream=True, **kw)
+        stream = _create_stream_with_usage(
+            self.client.chat.completions.create,
+            {"model": self.model, "messages": self.messages, "stream": True, **kw},
+            want_usage=self.usage_sink is not None)
         if self.cancel is not None:
             self.cancel.register(stream)
         return stream
@@ -420,6 +453,7 @@ class _LMStudioAdapter:
         stream = self._open(tools=self.tools, tool_choice="auto", temperature=0.3)
         content: list[str] = []
         acc: dict = {}                 # index → {"id","name","args"} ตามลำดับที่มาถึง
+        u: dict = {}
         for chunk in stream:
             if _stop_if_cancelled(self.cancel):   # เช็คทุก raw chunk — รวม reasoning ที่ไม่มี content
                 stream.close()                    # เผื่อ cancel() หา socket ไม่เจอ — ปิดเองใน thread นี้ให้ LM Studio หยุด
@@ -427,6 +461,7 @@ class _LMStudioAdapter:
             if _monotonic() > deadline:
                 stream.close()
                 raise TimeoutError(f"LM Studio ตอบเกิน {LMSTUDIO_TIMEOUT} วินาที")
+            _capture_openai_usage(chunk, u)
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta
@@ -441,6 +476,7 @@ class _LMStudioAdapter:
                     e["name"] = fn.name
                 if fn is not None and fn.arguments:
                     e["args"] += fn.arguments
+        _note_usage(self.usage_sink, u.get("input_tokens"), u.get("output_tokens"))
         text = "".join(content)
         tool_calls = [acc[k] for k in acc]
         if not tool_calls:
@@ -480,15 +516,20 @@ class _LMStudioAdapter:
         self.messages.append({"role": "user", "content": _FORCE_SYNTH_PROMPT})
         stream = self._open(temperature=0.3)      # เส้นนี้เป็น stream มาแต่เดิม — ไม่มีเพดานรวม คงไว้เหมือนเดิม
         mf = _MarkerFilter()
+        u: dict = {}
         for chunk in stream:
             if _stop_if_cancelled(self.cancel):
                 stream.close()
                 return
+            _capture_openai_usage(chunk, u)
+            if not chunk.choices:
+                continue  # ชิ้นท้ายจาก include_usage — มีแต่ตัวเลข
             delta = chunk.choices[0].delta.content
             if delta:
                 out = mf.feed(delta)
                 if out:
                     yield ("text", out)
+        _note_usage(self.usage_sink, u.get("input_tokens"), u.get("output_tokens"))
         tail = mf.flush()
         if tail:
             yield ("text", tail)
@@ -502,6 +543,7 @@ def _run_agent_gemini(
     max_steps: int,
     image_b64: str = "",
     image_mime: str = "",
+    usage_sink: dict | None = None,
 ) -> Generator[tuple[str, Any], None, None]:
     if not GEMINI_API_KEY:
         yield ("event", {"type": "error", "message": "GEMINI_API_KEY ไม่ได้ตั้งค่า"})
@@ -535,7 +577,8 @@ def _run_agent_gemini(
     pending = _gemini_pending_with_image(last_user, image_b64, image_mime)
 
     # loop กลาง (item E) — streaming (A) + retry (F) + Content-fix อยู่ใน _GeminiAdapter
-    yield from _run_agent_fc(_GeminiAdapter(chat, pending, base_config=gen_config), max_steps)
+    yield from _run_agent_fc(_GeminiAdapter(chat, pending, base_config=gen_config, usage_sink=usage_sink),
+                             max_steps)
 
 
 def _gemini_pending_with_image(last_user: str, image_b64: str, image_mime: str):
@@ -593,6 +636,7 @@ def _run_agent_lmstudio(
     image_b64: str = "",
     image_mime: str = "",
     cancel=None,
+    usage_sink: dict | None = None,
 ) -> Generator[tuple[str, Any], None, None]:
     if not LMSTUDIO_BASE_URL:
         yield ("event", {"type": "error", "message": "LMSTUDIO_BASE_URL ไม่ได้ตั้งค่า"})
@@ -629,7 +673,13 @@ def _run_agent_lmstudio(
     messages = _attach_image_openai(messages, image_b64, image_mime)
 
     # loop กลาง (item E) — provider quirks (role:tool, MarkerFilter) อยู่ใน _LMStudioAdapter
-    yield from _run_agent_fc(_LMStudioAdapter(client, model, messages, tools_schema, cancel=cancel), max_steps)
+    yield from _run_agent_fc(_LMStudioAdapter(client, model, messages, tools_schema, cancel=cancel,
+                                              usage_sink=usage_sink), max_steps)
+    # ตัวหารของแถบ Context — ถามหลังจบเทิร์น (cache 5 นาที) · อ่านไม่ได้ = ไม่ใส่ (เหมือนเส้นแชท)
+    if usage_sink is not None and "input_tokens" in usage_sink:
+        ctx = _lmstudio_loaded_ctx(model)
+        if ctx:
+            usage_sink["context_limit"] = ctx
 
 
 def _attach_image_openai(messages: list[dict], image_b64: str, image_mime: str) -> list[dict]:
