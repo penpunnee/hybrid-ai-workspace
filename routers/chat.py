@@ -174,10 +174,10 @@ async def _guard_disconnect(inner, on_cut, cancel=None):
 
 def persist_agent_turn(assistant: str, prompt: str, full_response: str, session_id: str,
                         is_test_request: bool = False, user_msg_id: int | None = None) -> int:
-    """persist คำตอบ agent → save_message + push_working เสมอ, แต่ **gate** remember()
-    (episodic) ด้วย should_auto_learn — คำตอบ agent มาจาก tool real-time เสมอ
-    ดังนั้นงาน realtime/home-tool ไม่ควรตกผลึกลง episodic (กันปนเปื้อน volatile).
-    is_test_request (P2-9): smoke test ผ่าน X-Test-Request ก็ข้าม remember เหมือนกัน"""
+    """persist คำตอบ agent → save_message + push_working เสมอ · **ไม่** remember() ลง episodic เลย
+    คำตอบ agent มาจากผล tool สด (หรืออ้างว่าใช้ tool) — จดไว้ = ป้อนของเน่า/ของแต่งให้ตัวเองรอบหน้า ·
+    เดิม gate ด้วย should_auto_learn ซึ่งเช็คคำสะกด ⇒ prod 10-04 "เช็คเครื่อข่าย" (พิมพ์ผิด) หลุด → คำตอบแต่ง
+    "เพิ่งดึงสถานะสด" ถูกจดแล้ว recall ให้ลอกทุกรอบ (devlog ต่อ 81) · ความรู้ทั่วไปจากเน็ต user เคาะ 09-30 ว่าไม่เก็บ"""
     if user_msg_id is None:
         agent_msg_id = save_message(assistant, "assistant", full_response, "agent", session_id)
     else:
@@ -188,14 +188,8 @@ def persist_agent_turn(assistant: str, prompt: str, full_response: str, session_
             return 0
     push_working(session_id, "user", prompt)
     push_working(session_id, "assistant", full_response)
-    if is_test_request:
-        logger.info("[Chat/agent] skip remember (episodic): test_request")
-        return agent_msg_id
-    ok, reason = should_auto_learn(prompt)
-    if ok:
-        remember(assistant, prompt, full_response)
-    else:
-        logger.info(f"[Chat/agent] skip remember (episodic): {reason}")
+    logger.info("[Chat/agent] skip remember (episodic): agent_turn"
+                + (" · test_request" if is_test_request else ""))
     return agent_msg_id
 
 
@@ -506,7 +500,7 @@ async def chat(request: Request):
             if st["cancel"].aborted:
                 return
 
-            # persist เหมือน /api/chat ปกติ (gate remember ด้วย should_auto_learn)
+            # persist ประวัติ + working memory · ไม่จด episodic (persist_agent_turn · ต่อ 81)
             agent_msg_id = 0
             try:
                 agent_msg_id = persist_agent_turn(assistant, prompt, full_response, session_id,
@@ -761,7 +755,7 @@ async def chat(request: Request):
         # empty-guard notice ห้ามเข้า episodic memory/teach — ไม่ใช่คำตอบจริง
         # (กัน contamination แบบเดียวกับ clarify ของ active learning)
         # is_test_request: smoke test ผ่าน X-Test-Request ก็ข้ามเหมือนกัน (P2-9)
-        # gate ให้ตรงกับเส้น agent (persist_agent_turn) ที่ผ่าน should_auto_learn อยู่แล้ว
+        # (เส้น agent ไม่จด episodic เลยตั้งแต่ 10-04 · persist_agent_turn)
         # เดิมเส้นนี้ไม่มี gate เลย → episodic เก็บข้อมูลสด/error ทุกเทิร์น
         # (วัดจริง 2026-08-02: memory_kwan 57/92 · memory_logic 47/62 เป็นข้อมูลสดเน่า)
         if not empty_guard_fired and not is_test_request:

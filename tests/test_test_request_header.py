@@ -96,7 +96,8 @@ def test_persist_agent_turn_skips_remember_when_test_request():
         mock_remember.assert_not_called()
 
 
-def test_persist_agent_turn_calls_remember_when_not_test_request(monkeypatch):
+def test_persist_agent_turn_never_remembers_even_when_not_test_request(monkeypatch):
+    """เทิร์น agent ไม่จด episodic เลยตั้งแต่ 10-04 (ต่อ 81 · ดู tests/test_agent_persist.py)"""
     import routers.chat as chatmod
     monkeypatch.setattr(chatmod, "should_auto_learn", lambda p: (True, "ok"))
     with patch("routers.chat.save_message", return_value=42), \
@@ -104,4 +105,4 @@ def test_persist_agent_turn_calls_remember_when_not_test_request(monkeypatch):
          patch("routers.chat.remember") as mock_remember:
         from routers.chat import persist_agent_turn
         persist_agent_turn("kwan", "prompt", "response", "sess1", is_test_request=False)
-        mock_remember.assert_called_once()
+        mock_remember.assert_not_called()
