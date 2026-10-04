@@ -34,6 +34,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    · `MEMORY.md` ในถัง = หน้าแรก (ตัวชี้/ข้อห้าม/งานค้าง) · โน้ตข้างเคียงเป็น **symlink
    ไปถังกลาง** = ไฟล์เดียวกัน **ห้ามแทนที่ด้วยสำเนา**
    · **จบเซสชัน → จดที่ `docs/session-log/devlog.md` แล้วอัปเดตหัวข้อ ▶️** ห้ามจดเนื้อหาลง memory
+6. **กติกาใหม่ → ใส่หมวดใน "🔑 กติกาที่ยังมีผล" (backend/config/เทส/frontend/deploy/Gemini/หลักคิด)
+   หรือลง `docs/reference/<เรื่อง>.md` ตามเรื่อง** ⛔ ห้ามสร้างหัวข้อแบบลงวันที่ (`กติกาใหม่จากเซสชัน MM-DD`) อีก
 
 ---
 
@@ -192,50 +194,24 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า — เลือกจากงานเปิด (ถาม user)
-**ไม่มีงานโค้ดค้าง (ต่อ 104–105 ปิด 10-05)** · เลือกจาก ⏳/🧪 ข้างล่าง หรือถาม user
+**ไม่มีงานโค้ดค้าง (ต่อ 104–105 ปิด 10-05)** · เลือกจาก ⏳ ข้างล่าง/🧪 (docs) หรือถาม user
 1. 🧪 (ต่อ 104) user ถามขวัญแนวเดิมในโหมดเสียง → ตอบ "ที่ใกล้สุดคือ…" แทนถามกลับไหม · ✅ ความจำขยะ ASR (ต่อ 105) · ⏳ ค้นในตัวหนังสือ (`reader.db`) แทนเว็บ · ⏳ e2e smoke WebKit (Playwright ยังไม่มีในรีโป)
 2. 🧪 log ที่ควรดูรอบหน้า: ~~`[LMStudio] อุ่นเครื่อง`~~ ✅ (ต่อ 102) · `[Chat] timings` ใหม่ (ช้าตรงไหน · 10-05 ยังมีแค่ probe) · `[Voice WS] ห้อง … มีสายเก่ายังค้าง` (เกิดจริงไหม · 10-05 มีแค่ probe) · `[Reader] … ตระกูล 6` (ตอนนำเข้าเล่มใหม่)
 3. 🧪 (ต่อ 100) qwen แปลชื่อเฉพาะผิด (Gemini ถูก) — ถาม user ว่าใช้ Gemini เองไหม (⛔ ห้าม redirect)
 4. ⏸ (ต่อ 101) ~1.8 วิทุกแชท = `bump_access_count` เขียน Chroma (fsync HDD) · user: ไม่ช้า → พัก · cold ~1.3 วิ ในโปรเซสแอป warmup กันแล้ว (ต่อ 102)
 ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
-### ✅ ปิดแล้ว (รายละเอียด: devlog [2026-10-05 ปิดเซสชัน] · [2026-10-04 ปิดเซสชันรอบ 7] · [2026-10-04 ปิดเซสชันรอบ 5] · [2026-10-04 ปิดเซสชันรอบ 4] · [2026-10-04 ต่อ 87] · [2026-10-04 ปิดเซสชันรอบ 3] · [2026-10-04 ปิดเซสชัน] · [2026-10-02 ปิดเซสชัน] · ก่อนหน้านั้นดู devlog)
-**10-04 ต่อ 101–103:** retrieval ช้า = bump Chroma (พัก) · "ที่บ้าน" ไม่ถูกถามกลับ + agent ไม่ส่ง city = แพร่ · ป้าย "พรุ่งนี้ (จันทร์ 5 ต.ค.)" ในผลอากาศ · `done.timings` ครบ + log `[Chat] timings`
-**10-04 รอบ 5 (ต่อ 91–98):** stream `rid=-` = เธรด auto-learn → `spawn_bg` + usage เสมอ · (ข) 1011 = ฝั่ง Google ไม่แก้ · (ค) เตือนตระกูล 6 ตอนนำเข้า ·
-(ง) ห้องเดียวสายเดียว (สายเก่าปิด 38→1.7 วิ + `superseded`) · (จ) `/api/warmup` คำตอบแรกหลังว่าง 6.5→0.6 วิ · (ช) `(+คิด N)` · (ซ) Ollama agent usage · (ฌ) `messages.meta` สถิติ/ไทม์ไลน์รอดรีเฟรช
-**10-04 ต่อ 89:** อากาศได้เมืองที่ถาม (77 จังหวัด · บ้าน=แพร่ · `X,Thailand` ห้ามวรรค) — agent ด้วย
-**10-04 ต่อ 88:** แชท qwen ข้ามช่วงคิด → คำตอบแรก 13–79 วิ เหลือ 0.1–1.0 วิ · ขวัญในแชทลงท้าย ค่ะ 9/9
+### ✅ ปิดแล้ว → ก่อนเช็คว่าเรื่องไหนปิดแล้ว/ดูประวัติ → อ่าน [`docs/session-log/devlog.md`](docs/session-log/devlog.md)
+(รายการ 10-02→10-05 ยกไว้ที่ entry [2026-10-05 ต่อ 106])
 
-### 🔑 กติกาใหม่จากเซสชัน 10-04/05
-- **voice memory (10-05):** ไม่จดเมื่อข้อความผู้ใช้ไม่มีอักษรไทย (`no_thai_text` · ASR ฟังเสียงทีวีเป็นภาษาอื่น)
-- **ค้นเว็บ (10-05):** เลือกหน้าที่จะ fetch ผ่าน `_select_and_fetch()` ที่เดียว (pre-rank title+snippet → top 3 + provider #1) ⛔ ห้าม fetch ตามลำดับ provider · rerank รอบท้ายเปลี่ยน text_keys = ต้องคาลิเบรตพื้น 0.35 ใหม่
-- **qwen3 ปิดคิดได้ทางเดียว = ต่อ assistant `<think>\n\n</think>\n\n` ท้ายคำขอ** (`_skips_thinking` · `LMSTUDIO_SKIP_THINKING`) · `enable_thinking`/`/no_think` ผ่าน API ไม่มีผล (#1990 · วัดซ้ำ 10-04) · agent ยังคิด ·
-  กติกาเฉพาะแชทใส่ `chat_system_prompt()` ⛔ ห้ามใส่ `ASSISTANTS[…]["system_prompt"]` (เสียงต่อจากตัวนั้น) · วัดเวลาแยกช่วงด้วย wrap `lmstudio_client…create` (TestClient บัฟเฟอร์ SSE)
-- **ยืนยันบนเครื่อง user:** ต้องมี `GET /` ใน log หลังเวลา deploy (ไม่มี SW · index ไม่มี cache header) + เคสที่*เคยพังจริง* · ทดสอบ layout ด้วย WebKit (Playwright ใน `@playwright/cli` global) + ข้อความจริงจาก DB ผ่าน `renderMarkdown` · overlay ฉีด `<style>` ทีหลัง bundle ⇒ จะชนะกฎ overlay ต้อง specificity มากกว่า (เท่ากันแพ้)
-- เส้น LM Studio (แชท/regenerate/agent) ตัดประวัติผ่าน `_fit_lmstudio_context()` ที่เดียว · ctx อ่าน `/api/v1/models` · agent หักงบ tools · ⛔ ห้ามส่งทั้งก้อนกลับ (LM Studio ตัดเองเงียบๆ)
-- ctx qwen = `settings.json` → `defaultContextLength` บน .235 (ไม่ใช่ env) · รายละเอียด/สำรอง: `docs/reference/infra-nas.md`
-- Ollama embed ผ่าน `/api/embed` native เท่านั้น (`/v1` เมิน `keep_alive`)
-- **รอบ 5:** เธรดเบื้องหลังใน `routers/chat.py` ผ่าน `core.observability.spawn_bg` เท่านั้น (เทส ast) · `/ws/voice` ห้องเดียวสายเดียว (`VoiceLineRegistry` claim/release) ·
-  usage มี `reasoning_tokens` (เฉพาะเมื่อ >0) · คำตอบเก็บ `messages.meta` ผ่าน `reply_meta()` (แชท/agent/regenerate) — เส้นใหม่ที่บันทึกคำตอบต้องเก็บด้วย
-- **usage:** `done.usage = {input_tokens, output_tokens[, context_limit]}` ทุกเส้น (แชท/regenerate/agent) · `context_limit` เฉพาะ LM Studio ที่อ่านได้จริง (ห้าม default) ·
-  agent: ขาเข้า = **คำขอใหญ่สุด** (รอบ "ขอสรุปใหม่" ไม่ส่ง tools จึงเล็กกว่า) · แถบ Context อยู่ React `utils/contextbar.ts` ดูเฉพาะคำตอบล่าสุด · overlay §9 gate แล้ว
-- **ความจำ:** เทิร์น agent **ไม่จด episodic** · ตัวกันผูกกับ*คุณสมบัติข้อมูล*: `has_national_id()` (episodic/บทเรียน/บันทึกการแก้ไข · "จำไว้ว่า" ตั้งใจไม่กัน) ·
-  ไฟล์แนบ `[Excel:/PDF:/DOCX:` ไม่จด · keyword ไทยผ่าน `utils/thaikw.contains_kw` (ไม่สนวรรณยุกต์เฉพาะคำ ≥6 — คำสั้นชน "ว่าง/วาง")
-- **RAG เอกสาร:** แชทไม่ดึงเอกสารตาราง (`exclude_tabular`) — แถวตารางเป็น hub ใกล้ทุกคำถาม แยกด้วยเกณฑ์ไม่ได้ · คลังเอกสารว่างแล้ว (ต้นฉบับสเปรดชีตบน Mac)
-- **markdown:** block (ตาราง/หัวข้อ/รายการ/hr) ใน `renderBlocks` — หลัง escape+stash โค้ด · **ก่อน**กฎ inline (`* ` ต้องหายก่อน `<em>`)
-- **probe prod:** app ในคอนเทนเนอร์ฟัง `127.0.0.1:8000` (ไม่ใช่ 8080 · `localhost` = Errno 99) · handler จริง: โปรเซสแยก `TestClient(server.app)` +
-  `UI_PASSWORD=""` + `X-Test-Request` + ลบ session ทุกรอบ · ไฟล์ใน `data/` ลบผ่าน `docker exec` (host `sudo` ต้องรหัส) · scan PII: hex hash ติด 13 หลักได้ (false positive)
+### 🔑 กติกา 10-02 → 10-05 · ก่อนทำงาน LM Studio/qwen · ค้นเว็บ · usage/meta · ความจำ/RAG · markdown · Live/เสียง · embed · หนังสือ · probe prod → อ่าน [`docs/reference/rules-1002-1005.md`](docs/reference/rules-1002-1005.md)
+ข้อห้ามกันความเสียหาย (รายละเอียด/เหตุผลอยู่ในไฟล์นั้น):
+- ⛔ อย่าเพิ่งย้ายเสียงไป 3.8 Live · ⛔ ตัวนับ retry 1011 นับข้าม `connected` ห้ามย้ายกลับ · ⛔ ห้ามเปิด retry ของ embed client กลับ
+- ⛔ ลบความจำ: แสดง user ก่อนเสมอ ห้ามลบเอง (`memory.store.delete_entry`) · ⛔ ห้ามส่งประวัติทั้งก้อนให้ LM Studio (`_fit_lmstudio_context()`)
+- ⛔ กติกาแชทห้ามใส่ `ASSISTANTS[…]["system_prompt"]` (เสียงใช้ร่วม) · ⛔ ห้าม fetch ตามลำดับ provider (`_select_and_fetch()`) · ⛔ คำสั่งเสียงห้ามชวน "ค้นใหม่"
+- probe prod: `127.0.0.1:8000` · `X-Test-Request` + ลบ session ทุกรอบ · ไฟล์ `data/` ลบผ่าน `docker exec` · เธรดเบื้องหลังผ่าน `spawn_bg` เท่านั้น
 
-### 🔑 กติกาใหม่จากเซสชัน 10-02
-- **3.1 Live** ยังเป็นตัวหลัก · ⛔ อย่าเพิ่งย้าย 3.8 (forum: ตอบมีข้อความไม่มีเสียง 23/29 · probe โหมดอ่านเสียงยาว 3 เท่า · ต่อ 65)
-- 1011 `Internal error` = ฝั่ง Google (ไม่มี fix) · client นับ retry ข้าม `connected` (รีเซ็ตที่ `done`) ⛔ ห้ามย้ายกลับ · `live_error_text()` แปลข้อความ
-- โหมดเสียง: ผลค้นแนบ `VOICE_SEARCH_GUIDE` · ความจำแนบ `VOICE_MEMORY_GUIDE` · turn ที่ `recalled` ไม่จดกลับ · ⛔ คำสั่งห้ามชวน "ค้นใหม่" (tool สั่งค้นครั้งเดียว)
-- embed client `max_retries=0` + connect 3 วิ + ข้าม provider ดับ 60 วิ ⛔ ห้ามเปิด retry กลับ · เส้น Ollama ยิง `/api/embed` native (`/v1` เมิน `keep_alive`) · prod ปิด `GEMINI_WEB_SEARCH_ENABLED`/`QUERY_REWRITE_ENABLED`
-- หนังสือ: ไฟล์สำรองชื่อ `-rebuild` = **ก่อน** rebuild (ชื่อหลอก) · เทียบ/กู้ด้วยวรรคคู่ + `replace(" ","")` · `_ingest` ไม่ซ่อมตระกูล 6
-- ลบความจำ: `memory.store.delete_entry(slug, id)` (ลบ `__keys` คู่) · แสดง user ก่อนลบเสมอ · ⛔ ห้ามลบเอง
-- probe Live: โควตา free tier ตึง (ทดสอบติดๆ ไม่กี่สาย = 1011 Resource exhausted) · `session.receive()` จบทุก turn ต้องวน
-
-### 🔑 กติกาเซสชัน 10-01 / 09-30 / 09-29 → [`docs/reference/rules-0929-1001.md`](docs/reference/rules-0929-1001.md) (ยังมีผลทุกข้อ)
+### 🔑 กติกา 09-29 → 10-01 · ก่อนทำงาน Live/iOS ไมค์ · sqlite/`chat_history.db` · `save_reply` · `server.py` deploy · Dream → อ่าน [`docs/reference/rules-0929-1001.md`](docs/reference/rules-0929-1001.md)
 ย่อ: `chat_history.db` เป็น WAL ห้าม cp ไฟล์เดี่ยว · `save_reply(…, user_msg_id)` · แตะ server.py = `--force-recreate` + inode + sha เสียง ·
 Live ตัดสาย 1008 ~151 วิ → `parkIfUnused` · iOS `ended` = `stopVoice()` เท่านั้น · ⛔ Google CSE · Dream ไม่เก็บความรู้จากเน็ต
 
@@ -249,17 +225,8 @@ Live ตัดสาย 1008 ~151 วิ → `parkIfUnused` · iOS `ended` = `st
 ย้ายเสียงไป `gemini-3.8-live` (3.1 = legacy ยังไม่มีวันปิด · ติดล็อกเสียง 🔒 ต้องวัดเสียงใหม่ทั้งชุด) ·
 ทาง 1 earpiece: เล่นเสียงผ่าน `MediaStreamAudioDestinationNode` → `<audio>` (WebKit แนะนำ · อาจแก้เสียงเบาด้วย · ทำเป็นสวิตช์ปิดไว้ แล้ว A/B)
 
-### 🧪 รอ user ทดสอบด้วยมือ
-**รอบ 5 / ต่อ 88–89:** ✅ ฝั่ง server วัดแทนแล้ว (ต่อ 102: warmup→แชทแรก 0.33 วิ · `reasoning_tokens` · meta รอดใน history · อากาศเมืองถูก · โจทย์ยากถูก 2/2) เหลือดูด้วยตาบน iPhone: `↓ N tokens`/ไทม์ไลน์หลังรีเฟรช · `(+คิด N)` · ไม่พอใจความเร็ว/คุณภาพ → `LMSTUDIO_SKIP_THINKING=false` ·
-**(ต่อ 76–77):** รีเฟรช → dropdown ขึ้น Ask · Ask + Web Search → ป้าย "Agent" (ต่อ 76) · แชทยาวผ่าน qwen ไม่ตัดกลางประโยค (ต่อ 77) ·
-**ใหม่ 10-02:** โหมดเสียงนึกความจำได้ — ถาม "จำได้ไหมว่าเคยคุยเรื่อง…" (ต่อ 69) · ผลค้นแนบคำสั่งห้ามเดาชื่อ (ต่อ 68) ·
-**ใหม่ 10-02:** ป้าย "🔍 ขวัญกำลังค้นข้อมูล..." ระหว่างค้น (ต่อ 67 · รีเฟรชก่อน) ·
-**ใหม่ 10-02:** 1011 ซ้ำ → ต่อใหม่ตามรอบ 1/2 วิ ✅ (ต่อ 87 · log) · ยังไม่เคยลองครบ 3 จน give-up จริง (10-04 user กดออกเองระหว่างรอรอบ 3) ⇒ toast "Google ขัดข้อง" ยังรอเกิดจริง ·
-**ใหม่ 10-02:** ✅ user ฟังนิยายหลังกู้ข้อความแล้ว "ดี" (ต่อ 61–62) · เสียงผู้ชาย 1 ท่อน = ท่อนแรกหลัง `go_away` → มี log `ความทุ้ม` ต่อท่อนแล้ว (ต่อ 63 · เกณฑ์ 155 Hz ชั่วคราว · ดูหลังฟังจริง) ·
-**ใหม่ 10-01:** พักสาย ✅ ยืนยันบน prod แล้ว (ต่อ 53) · ปุ่ม `end-call` "⏹ ไมค์ถูก iOS ปิด" ยังไม่เคยถูกกดจริง (ต่อ 56 วิ่งทาง `recoverMic` แทน — เห็นแถบเมื่อไหร่แตะแล้วเช็ค log) ·
-โหมดอ่าน **พัก → อ่านต่อ** หลังตั้ง `audioSession=playback` (เสียงดังพอไหม) · กดลิงก์ `export_file` · ChatBox pills ·
-File Manager drag&drop/กล้อง · voice retry ยังไม่เคยถูกกระตุ้นบน prod · "เสียงเบา" รอข้อมูลจาก user (ไม่แตะจอเลยไหม ·
-Low Power/ความร้อน) — `underruns` อ่านแล้ว = ไม่ใช่ต้นเหตุ
+### 🧪 รอ user ทดสอบด้วยมือ → ก่อนเลือกงาน / เมื่อปอยรายงานผลทดสอบ / ก่อนแตะฟีเจอร์ในรายการ → อ่าน [`docs/session-log/pending-manual-tests.md`](docs/session-log/pending-manual-tests.md)
+(เสียง Live/1011 · โหมดอ่าน · สถิติ token/ไทม์ไลน์ · dropdown/ป้าย Agent · File Manager · ChatBox pills)
 
 ### ⚪ งานเล็กค้าง
 `GEMINI_LIVE_MODEL` จะยกขึ้น `.env` ไหม · AnythingLLM ตกรุ่น (หรือปิดทิ้ง 3.34 GB) · โมเดล local ไม่มีใครใช้ ~14 GB ·
