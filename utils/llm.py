@@ -247,6 +247,50 @@ def _lmstudio_loaded_ctx(model: str) -> int | None:
     return ctx
 
 
+# อุ่นเครื่องตอนผู้ใช้เปิด/กลับมาที่แอป (งานเปิด จ) — ว่าง >30 นาที LM Studio ปล่อยโมเดล (TTL JIT)
+# แชทแรกรอโหลด 5.7–11.6 วิ · ไม่จอง VRAM ถาวร: อุ่นเฉพาะเมื่อมีคนเปิดแอป (โหลดระหว่างที่เขาพิมพ์)
+_WARMUP_MIN_GAP = 60.0
+_warmup_lock = threading.Lock()
+_warmup_state = {"at": -1e9, "running": False}
+
+
+def warm_lmstudio(model: str = "", spawn=None) -> str:
+    """'loaded' (โหลดอยู่แล้ว) · 'warming' (สั่งโหลดเบื้องหลัง) · 'skipped' (เพิ่งอุ่น/กำลังอุ่น)"""
+    model = model or _CFG_LMSTUDIO_CHAT_MODEL
+    with _warmup_lock:
+        if _warmup_state["running"] or time.monotonic() - _warmup_state["at"] < _WARMUP_MIN_GAP:
+            return "skipped"
+        _warmup_state["running"] = True
+        _warmup_state["at"] = time.monotonic()
+    try:
+        _lmstudio_ctx_cache.pop(model, None)   # cache 5 นาทีอาจบอก "โหลดอยู่" ทั้งที่ถูกปล่อยไปแล้ว
+        loaded = _lmstudio_loaded_ctx(model) is not None
+    except Exception:
+        loaded = False
+    if loaded:
+        _warmup_state["running"] = False
+        return "loaded"
+
+    def _load():
+        t0 = time.monotonic()
+        try:
+            # 1 token พอให้ JIT โหลด · ปิดคิดแบบเดียวกับแชท (ไม่งั้น qwen คิดก่อนได้ token แรก)
+            msgs = [{"role": "user", "content": "สวัสดี"}]
+            if _skips_thinking(model):
+                msgs.append(_SKIP_THINKING_PREFILL)
+            lmstudio_client.chat.completions.create(model=model, messages=msgs, max_tokens=1)
+            logger.info(f"[LMStudio] อุ่นเครื่อง {model} เสร็จ {time.monotonic() - t0:.1f} วิ")
+        except Exception as e:
+            logger.info(f"[LMStudio] อุ่นเครื่อง {model} ไม่สำเร็จ ({type(e).__name__}: {e})")
+        finally:
+            _warmup_state["running"] = False
+
+    if spawn is None:
+        from core.observability import spawn_bg as spawn
+    spawn(_load)
+    return "warming"
+
+
 def _fit_lmstudio_context(messages: list[dict], model: str, extra_tokens: int = 0) -> tuple[list[dict], int]:
     """ตัดประวัติเก่าสุดทิ้งจนพอดี context − reserve · คืน (messages, จำนวนที่ตัด)
 

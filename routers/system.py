@@ -11,7 +11,7 @@ from core.config import GEMINI_API_KEY, DB_PATH, NAS_DATA_PATH, LMSTUDIO_BASE_UR
 from core.scheduler import scheduler
 from assistants.config import ASSISTANTS
 import utils.llm as _llm
-from utils.llm import OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health, check_lmstudio_health, _last_failover, stream_response
+from utils.llm import OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health, check_lmstudio_health, _last_failover, stream_response, warm_lmstudio
 from utils.memory import is_memory_available, get_memory_stats
 from utils.skills import get_skill_count
 from utils.dream import get_latest_report
@@ -119,6 +119,12 @@ def list_models():
     cloud = [{**m, "available": key_for.get(m["provider"], False)} for m in _CLOUD_MODELS]
 
     return {"local": local, "cloud": cloud}
+
+
+@router.post("/warmup")
+async def warmup():
+    """แอปเปิด/กลับมาที่หน้าจอ → อุ่นโมเดลแชท local ถ้าถูกปล่อยไปแล้ว (คืนทันที โหลดเบื้องหลัง)"""
+    return {"status": await run_in_threadpool(warm_lmstudio)}
 
 
 @router.get("/status")
