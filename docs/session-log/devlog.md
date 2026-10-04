@@ -1,5 +1,37 @@
 ---
 
+## [2026-10-04 ต่อ 88] งานเปิด (จ) แชทช้า — ต้นเหตุจริงคือ qwen คิดเงียบ 13–79 วิ → ข้ามช่วงคิด (`62f9710`) + คำลงท้าย ค่ะ (`24aca2c`) ✅ prod + CI
+
+**วัดแยกช่วง (handler แชทจริงในคอนเทนเนอร์ · `TestClient` + `X-Test-Request` · ลบ session ทุกรอบ · wrap `lmstudio_client...create` จับเวลา `reasoning_content`/`content`):**
+| คำถาม | โหลด/เริ่ม | **คิด (จอว่าง)** | ตอบ | token คิด : ตอบ |
+|---|---|---|---|---|
+| สวัสดี | 1.2 วิ | **58 วิ** | 8 วิ | 2,456 : 325 |
+| ตอนนี้ขวัญทำอะไรได้บ้าง | 1.5 วิ | **44 วิ** | 10 วิ | 1,855 : 415 |
+| เช็คเครื่อข่าย | 0.9 วิ | **13 วิ** | 5 วิ | 565 : 192 |
+- ส่วนคิด = 70–80% ของเวลารอ · `_stream_lmstudio` ทิ้ง `reasoning_content` (`SHOW_THINKING` ปิด) ⇒ จอขึ้นแค่ "กำลังคิดคำตอบ… (N วิ)" (`PHASE_LABELS.generating` — ทางเลือก 3 "บอกว่ากำลังคิด" **มีอยู่แล้ว**)
+- โหลดเย็นตอนนี้ 5.7 วิ (เดิม 11.6 · ต่อ 73) · ก่อนเรียก LLM 2–3 วิคงที่ (ต่อ 72 แก้แล้ว) ⇒ แผนอุ่นเครื่อง (scrutinize แล้ว) **พักไว้** — ได้แค่ 6–8 วิจาก 20–80
+- LM Studio โหลดซ้อน? ยิง 2 คำขอตอนไม่โหลด → instance เดียว คำขอที่สองรอโหลดเดิม · `POST /api/v1/models/unload {"instance_id"}` ใช้ได้
+
+**วิธีปิดการคิด (วัดตรง LM Studio .235 · 3 คำถาม × 2):**
+- ❌ `chat_template_kwargs.enable_thinking=False` · ❌ + `enable_thinking` ระดับบน · ❌ `/no_think` (system+user) — ยังคิด 300–1,500 token (5/12 คิดจนหมด `max_tokens` ไม่ได้คำตอบ) = LM Studio #1990
+- ✅ **ต่อ `{"role":"assistant","content":"<think>\n\n</think>\n\n"}` ท้ายคำขอ** → คิด 0 token 6/6 · คำตอบแรก 0.1–0.4 วิ · ไม่มีแท็กหลุด
+- ที่ไม่ได้ลอง: แก้ prompt template ใน GUI (`{%- set enable_thinking = false %}`) — ทำจากฝั่งแอปได้แล้วไม่ต้องแตะ PC ·
+  `model.yaml` ของ qwen3.5-9b มี customField `enableThinking` (`setJinjaVariable`) — #1990 รายงานว่า `defaultValue:false` ไม่ได้ผล
+- **แก้:** `utils/llm.py` `_skips_thinking(model)` (สวิตช์ `LMSTUDIO_SKIP_THINKING` default เปิด · เฉพาะชื่อมี `qwen3` เพราะแท็กเป็นรูปแบบ template ของ qwen3) ·
+  ต่อท้าย**หลัง**แทรกรูป · `list(msgs)+[…]` ไม่แก้ list ผู้เรียก · log `ข้ามคิด=ใช่/ไม่` · มีผลทุกเส้นที่ผ่าน `_stream_lmstudio` (แชท · regenerate · auto→lmstudio — Dream/summarize ถ้า route มา LM Studio ด้วย) ·
+  **agent (โหมด Code) ไม่ผ่านเส้นนี้ ยังคิดตามเดิม**
+- **ผลข้างเคียงที่เจอ:** A/B handler จริง 3 คำถาม × 2: "ครับ" ข้ามคิด **4/6** vs คิด 2/6 (persona ไม่เคยกำหนดคำลงท้าย · DB ก่อนหน้า 0/10 แต่ตัวอย่างน้อย) ·
+  "พูดถึง Context ที่ไม่เกี่ยว" มีอยู่แล้ว 5/10 ใน DB ก่อนแก้ (ไม่ใช่ผลของงานนี้ · ยังไม่แก้)
+- **แก้คำลงท้าย:** `assistants/config.py` `chat_system_prompt(cfg)` = persona + `_CHAT_SPEECH` ใช้ที่ `/api/chat` + `/api/regenerate` ·
+  ⛔ ไม่ใส่ใน `system_prompt` (โหมดเสียงต่อจากตัวนั้น) · sha `voice_system_prompt("kwan")` ก่อน=หลัง `8bddd1ca…` · persona `a74443c8…`
+- **เทส:** `test_lmstudio_skip_thinking.py` 6 (mutation 6/6) · `test_chat_feminine_endings.py` 3 (mutation 4/4 รวม "รั่วเข้าเสียง") · ชุดเต็ม 2688 · ruff
+- **verify prod หลัง deploy (handler จริง · 3 คำถาม × 3):** คิด **0** ทุกครั้ง · คำตอบแรก **0.1–1.0 วิ** (เดิม 13–79) · จบ 3–23 วิ · "ค่ะ" **9/9** · โจทย์เลขถูก (14 ชิ้น · 1,190 · เหลือ 60) ·
+  log `ข้ามคิด=ใช่` · ⚠️ `TestClient` บัฟเฟอร์ SSE — เวลาเห็นบนจอวัดจาก `content` แรกของ LM Studio ไม่ใช่ SSE
+- **ผลต่องานเปิด (ช):** เส้นแชทไม่มี token คิดแล้ว ⇒ `↓ N tokens` = คำตอบจริง · เหลือเส้น agent
+- **🧪 รอ user:** แชทจริงบน iPhone — ตอบเร็วขึ้นไหม · คุณภาพคำตอบยากๆ ยังพอใจไหม (ถ้าไม่ → ปิด `LMSTUDIO_SKIP_THINKING=false` ใน `.env` แล้ว `--force-recreate`)
+
+---
+
 ## [2026-10-04 ต่อ 87] ตรวจผลใช้จริงของงาน 10-02/04 จาก log prod (🥇 งานแรก) — ผ่านทุกข้อ · 1011 เป็นชุดอีกรอบ (ฝั่ง Google)
 
 ไม่มีการแก้โค้ด · log เป็น UTC (+7 = เวลาไทย) · เทียบเวลากับ commit ด้วย `git log --date=format:'%m-%d %H:%M %z'`
