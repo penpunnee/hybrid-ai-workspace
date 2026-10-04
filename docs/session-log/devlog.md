@@ -13,7 +13,16 @@
 - **เทส:** `utils/tablewrap.test.ts` (postcss อ่าน index.css) แดง→เขียว · mutation 4/4 แดง (ไม่มี !important · specificity เท่า · ไม่มี `td *` · `anywhere`) ·
   vitest 692/692 · tsc · WebKit กับ build ใหม่ + overlay prod = Router 1 · Online 2 · JS bundle เนื้อเดิมทุกไบต์ (เปลี่ยนแค่ชื่อ hash)
 - **prod:** `https://ai.pawinhome.com/` เสิร์ฟ `index-C1gCJIq7.css` ที่มีกฎใหม่ · md5 NAS = Mac · CI เขียว
-- 🧪 รอ user: เปิดแชทเดิมบน iPhone (รีเฟรช) → "Router"/"Online" ต้องไม่หักกลางคำ
+- **ตรวจผล 🧪 รอบ 2 (12:04–12:08):**
+  - ✅ โหมด **Code** "เช็คเครื่อข่าย" (ต่อ 80–81): `[Tool] ping_network({})` 05:04:56 · ตัวเลขในตาราง = ผล tool ทุกตัว · `skip remember (episodic): agent_turn`
+  - ✅ แถบ Context agent `4,286` = log LM Studio บน .235: step1 prompt 4,137 · step2 cache ~4,134 + ใหม่ 153 ≈ 4,287 (= คำขอใหญ่สุด ตามกติกาต่อ 80) ·
+    `↓ 377` ≈ ขาออก 108 + ~267 · ⚠️ เส้น agent ไม่ log usage ฝั่ง app — ต้องเทียบกับ `C:\Users\penpu\.lmstudio\server-logs\YYYY-MM\*.log`
+  - ❌ **ถอนข้อสรุปตัวเอง:** ภาพ 12:04 "ตารางไม่หัก" ไม่ใช่หลักฐาน — (1) ตารางจำลองที่ "หัก" ยังมี `<strong>` (BSD sed ไม่รองรับ `\|`)
+    ตารางที่ตรงจอจริงกับ CSS เก่าก็ไม่หัก "Router" (2) iPhone ยังไม่รีเฟรช: หลัง deploy ไม่มี `GET /` นอกจาก curl ของผม ·
+    ไม่มี service worker + index ไม่มี cache header ⇒ รีเฟรชต้องขึ้น `GET /` เสมอ (ใช้ยืนยันว่า client โหลด build ใหม่หรือยัง)
+  - iPhone รีเฟรชจริง 05:08:18 (`GET /` + โหลดครบชุด) แต่เปิดห้อง 12:04 · ตัวทดสอบจริง = ข้อความ 11:52 ห้อง `s_20261004_033648_bdc9da`
+- **งานเปิดใหม่ (ฌ):** ไทม์ไลน์ tool (`agentSteps` · `app.tsx:758/804/1398`) + บรรทัดสถิติหายหลังรีเฟรช — เก็บแค่ตอน stream ไม่ลง DB (พฤติกรรมเดิม ไม่ใช่ regression · user ขอจดไว้)
+- 🧪 รอ user: เปิดห้องที่เริ่ม 10:36 → ข้อความ 11:52 → "Router"/"Online" ต้องไม่หักกลางคำ
 
 ---
 
