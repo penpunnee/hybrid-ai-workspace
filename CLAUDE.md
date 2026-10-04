@@ -173,7 +173,7 @@ overlay แบบ vanilla (ไม่ต้อง build, ทำงานคู่
 - ⚠️ **DELETE `/api/skills/{id}`**: lebt `delete_file` query param (default false). ส่ง `?delete_file=true` ถ้าต้องลบ .md ด้วย — กัน data loss
 
 
-## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-04 ปิดเซสชัน · **ที่เดียว**)
+## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-04 ปิดเซสชันรอบ 2 · ต่อ 78–85 · **ที่เดียว**)
 
 > บล็อก ▶️ ทั้งหมดจนถึง 09-28 (ก้อน 1–11 · config ก้อน 1–4 · reader/voice 08-17→09-22 · ไมค์ 08-24/26)
 > ถูกยก**ทั้งดุ้นไม่แก้**ไปไว้ที่ devlog **[2026-09-28 ต่อ 24]** — ที่นี่เหลือแค่งานเปิด + กติกาที่ยังมีผล
@@ -192,13 +192,16 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า — ดูผลใช้จริงของงาน 10-02/04
-1. **log:** `grep -E "\[Voice WS\] ค้น|Rerank|LM Studio stream OK|ตัดประวัติ|ความทุ้ม|1011" /app/logs/server.log` — ค้นครั้งแรกของสายเสียง ~2–3 วิ? (ต่อ 72) ·
-   แชท qwen: `finish=length` ยังเกิดไหม · ตัดประวัติกี่ข้อความที่ ctx 16k (ต่อ 74–77) · `ssh nas`/`nas-cf` + `/api/v1/models` ctx ยัง 16384 หลัง PC รีบูต
-2. **งานเปิด:** (ก) ความจำรับคำตอบที่เดา — ✅ เส้น agent ปิดแล้ว (ต่อ 81) · ✅ เส้นแชท/RAG/ไฟล์แนบ (ต่อ 82) · ลบ PII + ตัวกันเลขบัตร (ต่อ 83) · (ข) 1011 เป็นชุด ~2 นาที หลังพักตัวอ่าน 2/3 (ต่อ 72) · (ค) เตือนตอนนำเข้าหนังสือ (ต่อ 61) ·
-   (ง) สายเสียงเปิดซ้อน (10-01 13:36) · (จ) แชทแรกหลังว่าง >30 นาที +11.6 วิ (ต่อ 73 · รอดู) · (ฉ) ✅ แถบ Context ย้าย React ใช้ usage จริง (ต่อ 78) + agent (ต่อ 80) — เหลือ: `↓ N tokens` รวมส่วนคิด · Ollama ReAct ไม่รายงาน
+1. **log:** `grep -E "\[Voice WS\] ค้น|Rerank|LM Studio stream OK|ตัดประวัติ|ความทุ้ม|1011|skip remember|retrieved .* doc" /app/logs/server.log` —
+   ค้นครั้งแรกสายเสียง ~2–3 วิ? (ต่อ 72) · qwen `finish=length` ยังเกิดไหม · ctx ยัง 16384 หลัง PC รีบูต (`/api/v1/models`) ·
+   เทิร์น agent ต้องขึ้น `skip remember (episodic): agent_turn` · `[Chat] retrieved … doc chunks` ต้องไม่ขึ้นอีก (คลังเอกสารว่าง · ต่อ 82–83)
+2. **ถาม user ผล 🧪 ของ 10-04** (แถบ Context · ตาราง markdown · "เช็คเครื่อข่าย" ใน Code ได้ ping จริง)
+3. **งานเปิด:** (ข) 1011 เป็นชุด ~2 นาที หลังพักตัวอ่าน 2/3 (ต่อ 72) · (ค) เตือนตอนนำเข้าหนังสือ (ต่อ 61) · (ง) สายเสียงเปิดซ้อน (10-01 13:36) ·
+   (จ) แชทแรกหลังว่าง >30 นาที +11.6 วิ (ต่อ 73) · (ช) `↓ N tokens` ตอนจบรวมส่วนคิดของ qwen (732 → 2,813 · ต่อ 78) · (ซ) Ollama ReAct agent ไม่ส่ง usage
 ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
 ### ✅ ปิดแล้ว (รายละเอียด: devlog [2026-10-04 ปิดเซสชัน] · [2026-10-02 ปิดเซสชัน] · ก่อนหน้านั้นดู devlog)
+**10-04 รอบ 2 (ต่อ 78–85):** แถบ Context ใช้ `done.usage` จริง (React · แชท+agent) · markdown ตาราง/หัวข้อ/รายการ · agent ลอกความจำเก่า → agent ไม่จดความจำ (A/B tool 1/6→6/6) · คำพิมพ์ผิดวรรณยุกต์ · ไม่ดึงเอกสารตาราง (17→0) · ตัวกันเลขบัตรทุกทางเขียน · ลบ PII (user อนุญาต)
 **10-04 (ต่อ 72–77):** embed `keep_alive` 24h · qwen ตัดประวัติให้พอดี ctx (แชท + agent) + แจ้ง length · โหมด Code ไม่ค้าง + ป้ายจริง · qwen ctx 16k
 **10-02 (ต่อ 57–70):** ค้นเว็บเสียง ~3.6 วิ · embed ดับไม่เงียบ · กู้ข้อความหนังสือ · log ความทุ้ม · 1011 ไม่วน · ป้ายค้น · ผลค้นห้ามเดา · `recall_memory` · ลบความจำผิด
 
@@ -206,6 +209,14 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 - เส้น LM Studio (แชท/regenerate/agent) ตัดประวัติผ่าน `_fit_lmstudio_context()` ที่เดียว · ctx อ่าน `/api/v1/models` · agent หักงบ tools · ⛔ ห้ามส่งทั้งก้อนกลับ (LM Studio ตัดเองเงียบๆ)
 - ctx qwen = `settings.json` → `defaultContextLength` บน .235 (ไม่ใช่ env) · รายละเอียด/สำรอง: `docs/reference/infra-nas.md`
 - Ollama embed ผ่าน `/api/embed` native เท่านั้น (`/v1` เมิน `keep_alive`)
+- **usage:** `done.usage = {input_tokens, output_tokens[, context_limit]}` ทุกเส้น (แชท/regenerate/agent) · `context_limit` เฉพาะ LM Studio ที่อ่านได้จริง (ห้าม default) ·
+  agent: ขาเข้า = **คำขอใหญ่สุด** (รอบ "ขอสรุปใหม่" ไม่ส่ง tools จึงเล็กกว่า) · แถบ Context อยู่ React `utils/contextbar.ts` ดูเฉพาะคำตอบล่าสุด · overlay §9 gate แล้ว
+- **ความจำ:** เทิร์น agent **ไม่จด episodic** · ตัวกันผูกกับ*คุณสมบัติข้อมูล*: `has_national_id()` (episodic/บทเรียน/บันทึกการแก้ไข · "จำไว้ว่า" ตั้งใจไม่กัน) ·
+  ไฟล์แนบ `[Excel:/PDF:/DOCX:` ไม่จด · keyword ไทยผ่าน `utils/thaikw.contains_kw` (ไม่สนวรรณยุกต์เฉพาะคำ ≥6 — คำสั้นชน "ว่าง/วาง")
+- **RAG เอกสาร:** แชทไม่ดึงเอกสารตาราง (`exclude_tabular`) — แถวตารางเป็น hub ใกล้ทุกคำถาม แยกด้วยเกณฑ์ไม่ได้ · คลังเอกสารว่างแล้ว (ต้นฉบับสเปรดชีตบน Mac)
+- **markdown:** block (ตาราง/หัวข้อ/รายการ/hr) ใน `renderBlocks` — หลัง escape+stash โค้ด · **ก่อน**กฎ inline (`* ` ต้องหายก่อน `<em>`)
+- **probe prod:** app ในคอนเทนเนอร์ฟัง `127.0.0.1:8000` (ไม่ใช่ 8080 · `localhost` = Errno 99) · handler จริง: โปรเซสแยก `TestClient(server.app)` +
+  `UI_PASSWORD=""` + `X-Test-Request` + ลบ session ทุกรอบ · ไฟล์ใน `data/` ลบผ่าน `docker exec` (host `sudo` ต้องรหัส) · scan PII: hex hash ติด 13 หลักได้ (false positive)
 
 ### 🔑 กติกาใหม่จากเซสชัน 10-02
 - **3.1 Live** ยังเป็นตัวหลัก · ⛔ อย่าเพิ่งย้าย 3.8 (forum: ตอบมีข้อความไม่มีเสียง 23/29 · probe โหมดอ่านเสียงยาว 3 เท่า · ต่อ 65)
@@ -216,38 +227,9 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 - ลบความจำ: `memory.store.delete_entry(slug, id)` (ลบ `__keys` คู่) · แสดง user ก่อนลบเสมอ · ⛔ ห้ามลบเอง
 - probe Live: โควตา free tier ตึง (ทดสอบติดๆ ไม่กี่สาย = 1011 Resource exhausted) · `session.receive()` จบทุก turn ต้องวน
 
-### 🔑 กติกาใหม่จากเซสชัน 10-01
-- `CLAUDE.md` งบ 50 KB มีเทส (`tests/test_claude_md_budget.py`) — **อย่าขยับเพดาน** ย้ายลง `docs/` · บล็อก env อยู่ `docs/reference/env-vars.md` (ratchet สแกน)
-- ค้นเว็บ = Brave → DDG · prod ปิด `GEMINI_WEB_SEARCH_ENABLED` + `QUERY_REWRITE_ENABLED` (ต่อ 57 · free tier grounding = 429) ·
-  โหมดเสียงค้นผ่าน `voice_search_payload()` ที่เดียว · สถานะ `unavailable` ≠ `empty` · embed client ห้ามเปิด retry กลับ · ⛔ **ห้ามเอา Google CSE กลับ** (ปิดรับลูกค้าใหม่ · ปิดถาวร 2027-01-01) · log คีย์ผ่าน `_redact_secrets`
-- Gemini 3.1 Live ตัดสายที่ไม่มี audio input ด้วย 1008 ที่ ~151 วิ (ไม่มีในเอกสาร) → client `parkIfUnused()` ·
-  ⛔ ไม่แก้ด้วย keepalive/`audio_stream_end` (probe แล้วไม่ช่วย · keepalive กินโควตา)
-- iOS: mic track `ended` → เสียง WebAudio ออก earpiece (WebKit 218012) · ปุ่มเคส `ended` = `stopVoice()` อย่างเดียว ⛔ **ห้ามเติม `startVoice()`**
-- push `~/appscript.ui` นอก LAN: `git push github main` + `git push nas-cf:/var/services/homes/pawin/git/appscript.ui.git main`
-- probe Live API บน prod: `docker exec -d -e PYTHONPATH=/app -w /app` เขียนผลลงไฟล์ (ssh ผ่าน cf หลุดเมื่อรอนาน) · ทีละสาย (สองสายพร้อมกัน = 1011) · ลบไฟล์ probe ทิ้ง
-
-### 🔑 กติกาใหม่จากเซสชัน 09-30
-- system ของ agent ประกอบผ่าน `orchestrator._agent_system()` เท่านั้น (ตัด `SUGGEST_AGENT_MODE`) · ห้ามแก้ถ้อยคำ `_NO_FABRICATION` (sha persona/เสียง)
-- sqlite ที่เขียนถี่บน NAS: ตัวที่ได้ผลคือ **connection ค้าง** + WAL + NORMAL (WAL อย่างเดียวช้ากว่าเดิม) · **เช็คผล `PRAGMA journal_mode`** (เปลี่ยนไม่สำเร็จแบบเงียบได้)
-- โหมดอ่าน: 📖 = พัก (WS ค้างโดยตั้งใจ ไม่มี log "ปิด") · ⏹ = ปิดจริง · log `งาน sync บน loop` ขึ้นเฉพาะตอนปิด
-- Dream/REM: **ไม่เก็บความรู้ทั่วไปที่หาจากเน็ตได้ + เนื้อหาเกม** (user เคาะ) · ข้อมูลส่วนตัวให้ user สั่ง "จำไว้ว่า" → `user_facts` ·
-  อย่าลด temperature ของ Gemini 3 (docs แนะนำ 1.0 · วัดแล้ว 0.0 ยังแกว่ง) · insight ต้องผ่าน `_normalize_insights`
-- ค่าจาก API ที่ render ใน React ต้องเป็น string/number — object เป็น child = จอขาว (ตอนนี้เหลือหน้าแจ้งของ `AppErrorBoundary`) · ใช้ `dreamText` แบบเดียวกันเมื่อเจอ
-- verify frontend บน prod: ดัก `window.fetch` ในหน้า**ตอบแทนทั้งหมด** (ห้าม pass-through เส้นที่มีผลข้างเคียง เช่น `/api/dream`) · อย่าใช้ "เริ่มแชทใหม่" (สร้างเซสชันจริง)
-- NAS: healthcheck ทุกครั้ง = `docker exec` เขียนดิสก์ ~2.3 MB (RAID5) · วัดด้วย `/proc/diskstats` md2 + `docker events --filter event=exec_start`
-
-### 🔑 กติกาใหม่จากเซสชัน 09-29 (ที่มาใน devlog)
-- 🔴 **`chat_history.db` เป็น WAL** (`DB_PATH=/app/data/chat_history.db` · mount โฟลเดอร์) — **ห้าม cp ไฟล์ DB เดี่ยวๆ** (ใช้ `sqlite3 .backup`/backup API)
-  · **ห้าม mount ไฟล์เดี่ยวกลับ** (`tests/test_db_path_dir_mount.py`) · NAS ไม่มี UPS (user รับความเสี่ยง NORMAL) · ถอย: `PRAGMA journal_mode=DELETE`
-- บันทึกคำตอบหลังรอ LLM → `save_reply(…, user_msg_id)` · short-circuit ใหม่ที่ save user → ส่ง `user_message_id` · error ที่ save แถว → ส่ง `message_id`
-  · เทสที่ mock `save_message` ด้วย id ปลอมต้อง mock `save_reply` คู่
-- งาน Chroma ที่ไม่ embed (get/delete/update meta) → `get_collection_noembed` · add/query ใช้ wrapper (มี EF) · "ไม่มี collection" = `NotFoundError`
-- `/ws/voice`: memory ผ่าน `remember_voice_turn` (daemon thread · ข้ามแค่ interrupted/no text) · `_save_msg` ผ่าน bgwriter (FIFO worker เดียว)
-  · ห่อที่บรรทัด import เท่านั้น — call site `_save_msg(`/`_marks.set(` ถูกเทสยึดไว้ · แตะ server.py = `--force-recreate` + inode + sha เสียง
-  (`sha256(repr(cfg))[:16]` live **`d7d0625566a84c63`** (10-02 เพิ่ม recall_memory · เดิม `dbff1a358e00ef03`) · reader `8c5dbf9603eb3630` · sysprompt `8bddd1cae4be22b1`)
-- `log_timing` ไม่เขียน log (contextvar ให้ /api/chat) — วัด WS ใช้ `utils/looptiming` · Gemini free **15 req/นาที/โมเดล**
-- เทส route ใช้ `app.openapi()["paths"]` (`app.routes` ห่อ `_IncludedRouter` = ผ่านฟรี) · เปลี่ยนเส้นทางโค้ดแล้วต้องพิสูจน์ว่าเทสเดิมวิ่งถึงจุดวัด
-- `nas-cf` ค้าง = Cloudflare Access หมดอายุ → ให้ user login · NAS ใช้ `sh` (ไม่มี `<(...)`)
+### 🔑 กติกาเซสชัน 10-01 / 09-30 / 09-29 → [`docs/reference/rules-0929-1001.md`](docs/reference/rules-0929-1001.md) (ยังมีผลทุกข้อ)
+ย่อ: `chat_history.db` เป็น WAL ห้าม cp ไฟล์เดี่ยว · `save_reply(…, user_msg_id)` · แตะ server.py = `--force-recreate` + inode + sha เสียง ·
+Live ตัดสาย 1008 ~151 วิ → `parkIfUnused` · iOS `ended` = `stopVoice()` เท่านั้น · ⛔ Google CSE · Dream ไม่เก็บความรู้จากเน็ต
 
 ### 📋 งานเปิดอื่น
 - **backend:** ✅ reader `marks.set` verify รอบอ่านจริงแล้ว (ต่อ 50) · ข้อสังเกตเล็ก: `books.text` 90.9 ms บน loop ครั้งเดียวตอนเปิดเล่ม (ยังไม่คุ้มแก้)
@@ -260,7 +242,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 ทาง 1 earpiece: เล่นเสียงผ่าน `MediaStreamAudioDestinationNode` → `<audio>` (WebKit แนะนำ · อาจแก้เสียงเบาด้วย · ทำเป็นสวิตช์ปิดไว้ แล้ว A/B)
 
 ### 🧪 รอ user ทดสอบด้วยมือ
-**ใหม่ 10-04 (ต่อ 79):** ตาราง/หัวข้อ/รายการใน bubble บน iPhone (เลื่อนตารางแนวนอนได้) · **(ต่อ 78):** แถบ Context ล่างจอหลังตอบ qwen ต้องเป็น `N / 16,384 tokens` (ไม่มี ~) · รีเฟรช → dropdown ขึ้น Ask · Ask + Web Search → ป้าย "Agent" (ต่อ 76) · แชทยาวผ่าน qwen ไม่ตัดกลางประโยค (ต่อ 77) ·
+**ใหม่ 10-04 (ต่อ 80–81):** โหมด Code "เช็คเครื่อข่าย" → ไทม์ไลน์มี ping + latency จริง · แถบ Context ในเทิร์น agent ขึ้นตัวเลข (ไม่ใช่ "ไม่รายงาน") · **(ต่อ 79):** ตาราง/หัวข้อ/รายการใน bubble บน iPhone (เลื่อนตารางแนวนอนได้) · **(ต่อ 78):** แถบ Context ล่างจอหลังตอบ qwen ต้องเป็น `N / 16,384 tokens` (ไม่มี ~) · รีเฟรช → dropdown ขึ้น Ask · Ask + Web Search → ป้าย "Agent" (ต่อ 76) · แชทยาวผ่าน qwen ไม่ตัดกลางประโยค (ต่อ 77) ·
 **ใหม่ 10-02:** โหมดเสียงนึกความจำได้ — ถาม "จำได้ไหมว่าเคยคุยเรื่อง…" (ต่อ 69) · ผลค้นแนบคำสั่งห้ามเดาชื่อ (ต่อ 68) ·
 **ใหม่ 10-02:** ป้าย "🔍 ขวัญกำลังค้นข้อมูล..." ระหว่างค้น (ต่อ 67 · รีเฟรชก่อน) ·
 **ใหม่ 10-02:** 1011 ซ้ำ → แอปต้องหยุดหลัง 3 ครั้ง + toast "Google ขัดข้อง" + กดเริ่มใหม่ได้ (ต่อ 66 · รอเกิดจริง) ·
