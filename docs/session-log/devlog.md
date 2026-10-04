@@ -1,5 +1,22 @@
 ---
 
+## [2026-10-04 ต่อ 86] ตารางใน bubble ตัดกลางคำ ("Route|r" · "Onlin|e") — ยกเว้นเซลล์จาก break-word ของ overlay (ui `da826c0` · `ac17f9d`) ✅ prod + CI
+
+- **ผล 🧪 จาก iPhone 11:52:** แถบ Context `1,299 / 16,384` = log `in=1299, out=379` ✅ · ถาม "เช็คเครื่อข่าย" ใน **Ask** → `detect_home_tools` → `ping_network()` จริงก่อนเรียก qwen
+  (log `ข้าม episodic — reason=realtime_home_tool` · ตัวเลข latency ไม่ถูก log จึงเทียบรายตัวไม่ได้) · ⚠️ ยังไม่ใช่เทส **โหมด Code** (agent คนละเส้น)
+- **ต้นเหตุ (พิสูจน์ใน WebKit = เอนจิน iOS · CSS ตัวจริง md5 ตรง prod):** `enhanced.js:285-295` ตั้ง
+  `[class*="rounded-3xl"] { word-break: break-word !important }` (= `overflow-wrap:anywhere` → ลด min-content) ให้ทั้ง bubble →
+  `td`/`strong` สืบค่า → auto layout บีบคอลัมน์ · `th` รอดเพราะ `nowrap` · A ไม่มี overlay / B มี / C มี+fix:
+  Router 1/**2**/1 บรรทัด · Online 2/**3**/2 — B ตรงภาพจาก iPhone ทุกเซลล์
+- **แก้:** `~/appscript.ui/index.css` `.md-table-wrap .md-table td, … td * { word-break/overflow-wrap: normal !important }`
+  (specificity (0,2,1) > overlay (0,1,1) — **เท่ากันแพ้** เพราะ overlay ฉีด `<style>` ต่อท้าย head ทีหลัง) · ไม่แตะ overlay (ข้อความไทยยาวยังต้องใช้)
+- **เทส:** `utils/tablewrap.test.ts` (postcss อ่าน index.css) แดง→เขียว · mutation 4/4 แดง (ไม่มี !important · specificity เท่า · ไม่มี `td *` · `anywhere`) ·
+  vitest 692/692 · tsc · WebKit กับ build ใหม่ + overlay prod = Router 1 · Online 2 · JS bundle เนื้อเดิมทุกไบต์ (เปลี่ยนแค่ชื่อ hash)
+- **prod:** `https://ai.pawinhome.com/` เสิร์ฟ `index-C1gCJIq7.css` ที่มีกฎใหม่ · md5 NAS = Mac · CI เขียว
+- 🧪 รอ user: เปิดแชทเดิมบน iPhone (รีเฟรช) → "Router"/"Online" ต้องไม่หักกลางคำ
+
+---
+
 ## [2026-10-04 ปิดเซสชันรอบ 2] สรุป (ต่อ 78–85) — ตัวเลข token จริง · markdown · ความจำ/RAG ปนเปื้อน · ลบข้อมูลส่วนบุคคล
 
 | ต่อ | งาน | ผล | commit |
