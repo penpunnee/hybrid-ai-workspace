@@ -29,7 +29,10 @@ from core.config import LOG_FILE, LOG_FORMAT, LOG_LEVEL
 
 # context-bound request id — ปลอดภัยสำหรับ async/threading
 _request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="")
-_timing_var: contextvars.ContextVar[dict] = contextvars.ContextVar("timings", default={})
+# dict ต่อคำขอ **แก้ในที่** (ไม่ set ใหม่) — starlette `iterate_in_threadpool` รัน generator แต่ละชิ้นใน
+# copy_context() ของตัวเอง ⇒ set() ในชิ้นหนึ่งไม่ถึงชิ้นที่ส่ง done (prod 10-04: done.timings เหลือแต่ llm_stream)
+# แต่ทุก copy ชี้ dict ตัวเดียวกัน · default ต้องเป็น None ไม่ใช่ {} (dict เดียวทั้งโปรเซส = ปนข้ามคำขอ)
+_timing_var: contextvars.ContextVar[dict | None] = contextvars.ContextVar("timings", default=None)
 
 logger = logging.getLogger(__name__)
 
@@ -58,14 +61,16 @@ def spawn_bg(target, *args) -> threading.Thread:
 
 
 def get_timings() -> dict:
-    return dict(_timing_var.get())
+    return dict(_timing_var.get() or {})
 
 
 def record_timing(name: str, ms: float) -> None:
-    """บันทึก timing ลง context (สะสมต่อ request)"""
-    timings = dict(_timing_var.get())
+    """บันทึก timing ลง dict ของ request (สะสม · เห็นข้าม copy_context)"""
+    timings = _timing_var.get()
+    if timings is None:              # ไม่ผ่าน start_request (เทส/งานนอก request) — ได้แค่ใน context นี้
+        timings = {}
+        _timing_var.set(timings)
     timings[name] = round(ms, 1)
-    _timing_var.set(timings)
 
 
 @contextmanager
@@ -188,7 +193,7 @@ def install_logging(level: Optional[str] = None) -> None:
 
 def timing_summary() -> str:
     """สรุป timing ของ request ปัจจุบัน — เรียกตอนปิด request"""
-    t = _timing_var.get()
+    t = _timing_var.get() or {}
     if not t:
         return ""
     parts = [f"{k}={v}ms" for k, v in sorted(t.items())]

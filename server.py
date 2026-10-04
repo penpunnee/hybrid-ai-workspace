@@ -55,9 +55,11 @@ app.add_middleware(CORSMiddleware, allow_origins=CORS_ORIGINS_LIST,
 async def _request_id_middleware(request: Request, call_next):
     """กำหนด request_id + log start/end + timing"""
     # respect client-provided ID (สำหรับ end-to-end tracing) ไม่งั้น generate ใหม่
-    rid = request.headers.get("x-request-id") or start_request()
+    # start_request() เสมอ (ได้ dict timing ใหม่ต่อคำขอ) — เดิมคำขอที่มี header ข้ามไป
+    rid = start_request()
     if request.headers.get("x-request-id"):
         from core.observability import _request_id_var
+        rid = request.headers["x-request-id"]
         _request_id_var.set(rid)
 
     start = time.perf_counter()

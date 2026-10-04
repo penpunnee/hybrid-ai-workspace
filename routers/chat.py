@@ -836,12 +836,14 @@ async def chat(request: Request):
 
         _store_reply_meta(message_id, reply_meta(t_start, usage_sink))
 
-        # ใส่ timing + request_id ใน done event เพื่อ debug / metrics
+        # ใส่ timing + request_id ใน done event เพื่อ debug / metrics · ลง log ด้วย (done ไปถึงแค่เบราว์เซอร์)
+        timings = get_timings()
+        logger.info("[Chat] timings " + " ".join(f"{k}={v:.0f}ms" for k, v in timings.items()))
         done_payload = {
             "done": True, "model": model_used, "provider": provider_used,
             "message_id": message_id,
             "request_id": current_request_id(),
-            "timings": get_timings(),
+            "timings": timings,
             # token จริงจาก provider (None = ไม่รายงาน → UI ถอยไปใช้ค่าประมาณ)
             "usage": usage_sink or None,
         }
