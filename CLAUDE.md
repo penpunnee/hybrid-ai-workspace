@@ -183,7 +183,7 @@ overlay แบบ vanilla (ไม่ต้อง build, ทำงานคู่
 > ⚠️ **ไฟล์นี้ถูกฉีดทุกเซสชัน** — ปิดเซสชันแล้วให้ย้ายรายละเอียดลง devlog เหลือบรรทัดเดียวต่อเรื่องที่นี่
 
 ### 🔧 ก่อนเริ่มทุกครั้ง
-`gh run list --limit 3` ต้องเขียว (a.ui มี CI แล้ว: `gh run list -R penpunnee/appscript-ui --limit 3`) · venv ทดสอบสร้างจาก **`requirements.lock`** (ไม่ใช่ `.txt` — lib ใหม่กว่า prod) ·
+`gh run list --limit 3` ต้องเขียว (a.ui มี CI แล้ว: `gh run list -R penpunnee/appscript-ui --branch main --limit 3`) · venv ทดสอบสร้างจาก **`requirements.lock`** (ไม่ใช่ `.txt` — lib ใหม่กว่า prod) ·
 `ssh -o ConnectTimeout=10 nas-cf true` ก่อนงานที่แตะ prod
 ```bash
 uv venv /tmp/uivenv --python 3.12 && VIRTUAL_ENV=/tmp/uivenv uv pip install -r requirements.lock
