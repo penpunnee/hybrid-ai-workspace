@@ -195,7 +195,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า — เลือกจากงานเปิด (ถาม user)
-**ไม่มีงานโค้ดค้าง** (10-05 รอบ 4 = ปุ่ม Copy กล่องโค้ดย้ายเข้า React + gate §6 · devlog [2026-10-05 ต่อ 108] · ✅ ปอยลองบน iPhone ผ่าน 4/4) · ตัวเลือก: 📋 frontend ย้าย Vault Search เข้า React · เลือกจาก ⏳ ข้างล่าง/🧪 (docs) หรือถาม user
+**ไม่มีงานโค้ดค้าง** (10-05 ล่าสุด = toast สองระบบปิดโดยไม่แก้โค้ด [ต่อ 109] + แก้ timer ของ toast React [ต่อ 110 · deploy แล้ว] · ก่อนหน้า: ปุ่ม Copy กล่องโค้ด [ต่อ 108]) · ตัวเลือก: 📋 frontend ย้าย Vault Search เข้า React · เลือกจาก ⏳ ข้างล่าง/🧪 (docs) หรือถาม user
 1. 🧪 (ต่อ 104) user ถามขวัญแนวเดิมในโหมดเสียง → ตอบ "ที่ใกล้สุดคือ…" แทนถามกลับไหม · ✅ ความจำขยะ ASR (ต่อ 105) · ⏳ ค้นในตัวหนังสือ (`reader.db`) แทนเว็บ · ✅ e2e smoke WebKit (a.ui `npm run test:e2e`)
 2. 🧪 log ที่ควรดูรอบหน้า: ~~`[LMStudio] อุ่นเครื่อง`~~ ✅ (ต่อ 102) · `[Chat] timings` ใหม่ (ช้าตรงไหน · 10-05 ยังมีแค่ probe) · `[Voice WS] ห้อง … มีสายเก่ายังค้าง` (เกิดจริงไหม · 10-05 มีแค่ probe) · `[Reader] … ตระกูล 6` (ตอนนำเข้าเล่มใหม่)
 3. 🧪 (ต่อ 100) qwen แปลชื่อเฉพาะผิด (Gemini ถูก) — ถาม user ว่าใช้ Gemini เองไหม (⛔ ห้าม redirect)
@@ -294,6 +294,7 @@ seek ต้อง**อ่านค่าก่อนเขียน** (user อ�
 - ก่อน commit การแก้ `static/*.js` (overlay) → รัน `npm run test:e2e` ใน `~/appscript.ui` ต้องเขียวครบ (ตอนนี้ 5/5) → ทำตาม skill verify-ui ใน ~/appscript.ui ·
   ⛔ ธง `__hwReactChatBox` (`app.tsx`) ห้ามหาย — หายแล้ว overlay ฉีดปุ่มซ้ำ + ซ่อนช่องพิมพ์ (พิสูจน์ใน e2e 10-05)
 - bookreader: server ปิดสาย = เก็บกวาดหลังเสียงค้างเล่นหมด (`playEnd` + ticker) **ห้าม disconnect ทันที** (ตัดท้ายเล่ม) · สีผู้ช่วยผ่าน `paletteFor()` เท่านั้น
+- toast ของ React ผ่าน `showToast` (`utils/toast.ts » createToaster`) เท่านั้น ห้าม `setToast(` ตรงๆ (timer ตัวเก่าจะลบข้อความใหม่) · e2e ที่ขึ้นกับเวลาใช้ `page.clock` ⛔ ห้ามรอเวลาจริง
 - stream ใหม่ใช้ `sseEvents()` + `settleStream()` ใน finally + `streamFailureText()` ใน catch — ห้ามลูป `getReader()` เอง
 - overlay ห้าม `.remove()`/แก้ DOM ที่ React เป็นเจ้าของ (จอขาว) · แก้ `enhanced.js` แล้ว `?v=YYYYMMDD-<md5 8 ตัว>`
 - เครื่องหลักคือ iPhone ไม่มี hover → สถานะต้องเป็นแถบข้อความ ไม่ใช่ tooltip

@@ -1,5 +1,33 @@
 ---
 
+## [2026-10-05 ต่อ 110] toast ของ React: ตัวที่มาทีหลังถูก timer ของตัวก่อนลบก่อนเวลา — แก้แล้ว
+
+commit: a.ui `76a9520` (push NAS+GitHub) · ui `034619a` (bundle `index-MFwC_ESP.js` · deploy = `static/` อย่างเดียว ไม่ restart) ·
+prod: `index.html` ชี้ bundle ใหม่ · sha256 ของ bundle ที่ prod เสิร์ฟ = ไฟล์ใน repo · ในไฟล์มี `clearTimeout(t),e(n),t=setTimeout(…)` ·
+**ไม่ได้**เปิดเบราว์เซอร์ลองบน prod และ**ไม่ส่ง checklist iPhone** (ปอยเคาะ: ไม่ต้อง · ตาราง verify-ui ไม่บังคับ — แก้ state ไม่แตะ CSS)
+
+**ต้นเหตุ:** `app.tsx` `showToast` = `setToast(msg); setTimeout(() => setToast(''), ms)` ไม่เก็บ handle ⇒ A@0 แล้ว B@1 วิ → B หายที่ 2.5 วิ แทน 3.5 วิ ·
+กระทบมากสุดกับ toast ที่ตั้งเวลายาว (คำเตือนไมค์ 4–5 วิ) · ลำดับ: สืบ → แผน → /scrutinize → ปอยเคาะ → เทสแดง → แก้ → mutation → deploy
+
+| งาน | ผล |
+|---|---|
+| `utils/toast.ts` (ใหม่) | `createToaster(set).show(msg, ms = 2500)` — `clearTimeout` ตัวก่อนแล้วตั้งใหม่ · ถือ timer ตัวเดียว |
+| `app.tsx` | `const showToast = useRef(createToaster(setToast)).current.show` (แบบเดียวกับ `createLatest`) · จุดเรียก 54 จุดไม่เปลี่ยน · identity คงที่ขึ้นเป็นผลพลอยได้ |
+| เทส (แดงก่อนแก้) | e2e ⑤ แดงที่ "ครั้งหลังต้องยังเห็นหลังเวลาของครั้งแรกหมด" (กับแอปที่ยังไม่แก้) · `utils/toast.test.ts` แดง 3/4 (ย้ายพฤติกรรมเดิมไป util ทั้งดุ้นก่อน เพื่อให้แดงเพราะบั๊ก ไม่ใช่ import ไม่เจอ) · `appwiring` แดง 1 |
+| เทส (หลังแก้) | vitest 722 · e2e 5/5 (⑤ รันซ้ำ 8 รอบเขียว) · node 38 · pytest 2790 passed |
+| mutation (4 ตัวตายครบ ทั้ง unit และ e2e ⑤) | ถอด `clearTimeout` (unit แดง 3) · ไม่ตั้ง timer (แดง 4) · ตั้งแต่ไม่เก็บ handle (แดง 3) · `app.tsx` กลับไปตั้ง `setTimeout` เอง (wiring แดง 1) |
+| เอกสาร | e2e 4/4 → 5/5 (`CLAUDE.md` ทั้งสองรีโป + skill `verify-ui` + หัวไฟล์ `smoke.spec.ts`) · กติกา frontend ใหม่ 1 บรรทัด |
+
+**🔑 ที่เจอระหว่างทาง:**
+- `page.clock` (Playwright 1.63 · WebKit) ใช้กับ harness นี้ได้: `install({time})` → `pauseAt()` **หลัง stream จบ** (clock หยุด rAF/`setInterval` ของแอปด้วย) → `fastForward()` ·
+  ปอยเคาะ: e2e ที่ขึ้นกับเวลา ⛔ ห้าม fallback เป็นรอเวลาจริง (ใช้ไม่ได้ให้ตัดเทสทิ้ง · unit + wiring ใน pre-commit ถือว่าพอ)
+- กดปุ่มครั้งที่สองแล้ว toast ยัง "เห็นอยู่" จากครั้งแรก ⇒ `toBeVisible()` ไม่ได้พิสูจน์ว่า `showToast` ครั้งที่สองถูกเรียกก่อนเลื่อนเวลา — ต้องรอจากฝั่งที่ส่งไป (`__copied.length === 2`)
+- assertion ใน wiring test เขียนผิดเองรอบแรก (`setToast(` ต้องเหลือ 1) — `createToaster(setToast)` ไม่มี `setToast(` ⇒ ที่ถูกคือ "ไม่มี `setToast(` ตรงๆ เลย" (แดงก่อนแก้เพราะเดิมมี 2)
+
+**ไม่ได้แตะ:** `#enh-toast` ของ overlay (บั๊ก timer แบบเดียวกันยังอยู่ · เหลือ caller จุดเดียวที่ Vault จึงเกิดยาก) · §15 badge · หน้าตา/ตำแหน่ง toast
+
+---
+
 ## [2026-10-05 ต่อ 109] toast สองระบบ: สืบแล้วปิดโดยไม่แก้โค้ด (ปอยเลือกทาง D)
 
 **ผล:** งานเปิด "toast สองระบบ" ปิด · แก้เอกสารอย่างเดียว (`docs/ui-map.md` + `CLAUDE.md` ▶️) · ไม่แตะ `static/` ไม่ deploy ·
