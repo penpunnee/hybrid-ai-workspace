@@ -2,6 +2,7 @@ import asyncio
 import math
 import struct
 import time
+import weakref
 
 from core.env_registry import env_float, env_str
 
@@ -468,6 +469,7 @@ class VoiceLineRegistry:
 
     def __init__(self):
         self._lines: dict[str, "asyncio.Event"] = {}
+        self._kicked: "weakref.WeakSet[asyncio.Event]" = weakref.WeakSet()
 
     def __len__(self) -> int:
         return len(self._lines)
@@ -477,9 +479,14 @@ class VoiceLineRegistry:
         old = self._lines.get(session_id)
         self._lines[session_id] = stop
         if old is not None and old is not stop and not old.is_set():
+            self._kicked.add(old)
             old.set()
             return True
         return False
+
+    def superseded(self, stop) -> bool:
+        """สายนี้ถูกปิดเพราะมีสายใหม่ (ไม่ใช่ผู้ใช้กดปิด) — ต้องบอก client ไม่ให้ต่อใหม่ไปแย่ง"""
+        return stop in self._kicked
 
     def release(self, session_id: str, stop) -> None:
         if self._lines.get(session_id) is stop:

@@ -603,6 +603,13 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
         except Exception:
             pass
     finally:
+        if _VOICE_LINES.superseded(stop):
+            # client ตัวเก่าอาจยังมีชีวิต (อีกแท็บ) — บอกให้จบ ไม่งั้นต่อใหม่ไปเตะสายใหม่วนไม่จบ
+            try:
+                await websocket.send_json({"type": "superseded"})
+                await websocket.close(code=4000)
+            except Exception:
+                pass
         _VOICE_LINES.release(session_id, stop)
         # สรุปเป็นงานสุดท้ายในคิวของ writer = ออกหลังบันทึกครบ · ไม่รอ (ปิดสายไม่ค้างรอ DB · งานค้างไม่ถูกยกเลิก)
         _writer.close(then=lambda: logger.info(f"[Voice WS] งาน sync (บันทึกใน worker): {_loop_timer.summary()}"))

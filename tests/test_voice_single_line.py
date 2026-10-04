@@ -40,6 +40,13 @@ class TestRegistry:
         third = asyncio.Event()
         assert reg.claim("s1", third) is True and new.is_set(), "สายที่ยังใช้อยู่ต้องยังถูกจำ"
 
+    def test_superseded_is_remembered_for_the_old_line_only(self):
+        reg = VoiceLineRegistry()
+        old, new = asyncio.Event(), asyncio.Event()
+        reg.claim("s1", old)
+        reg.claim("s1", new)
+        assert reg.superseded(old) and not reg.superseded(new)
+
     def test_released_lines_are_forgotten(self):
         reg = VoiceLineRegistry()
         e = asyncio.Event()
@@ -105,5 +112,7 @@ def test_second_line_in_same_room_closes_the_first(fake_live):
             assert ws2.receive_json()["type"] == "connected"
             assert _wait(lambda: fake_live["n"] == 1), (
                 f"Live เปิดค้าง {fake_live['n']} สายในห้องเดียว — สายเก่าต้องถูกปิด")
+            # client เก่าที่ยังมีชีวิต (อีกแท็บ) ต้องรู้ว่าถูกแทนที่ ไม่งั้นต่อใหม่ไปแย่งสายใหม่วนไม่จบ
+            assert ws1.receive_json() == {"type": "superseded"}
             ws2.send_json({"type": "close"})
     assert _wait(lambda: fake_live["n"] == 0)
