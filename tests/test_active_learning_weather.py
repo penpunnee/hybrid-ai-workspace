@@ -73,3 +73,19 @@ def test_existing_ambiguity_still_works():
     assert d.should_ask is True
     # bare ambiguity ไม่ใช่ weather → ไม่ short-circuit แบบ deterministic
     assert d.clarify_directly is False
+
+
+# ── 6. "ที่บ้าน" = ระบุพื้นที่แล้ว (เมืองบ้าน WEATHER_HOME_CITY) → ไม่ถามกลับ ──────────
+# prod 10-04 (ต่อ 102): "ที่บ้านพรุ่งนี้ฝนตกไหม" โดนถามจังหวัดทั้งแชทและ agent
+# ทั้งที่ utils/websearch._extract_city แปล "ที่บ้าน" เป็นเมืองบ้านอยู่แล้ว (ต่อ 89)
+def test_home_reference_counts_as_location():
+    for q in ("ที่บ้านพรุ่งนี้ฝนตกไหม", "อากาศที่บ้านเป็นไงบ้าง",
+              "แถวบ้านวันนี้ร้อนไหม", "บ้านเราคืนนี้ฝนจะตกไหม"):
+        d = decide(q)
+        assert d.clarify_directly is False, f"ไม่ควร clarify (บอกว่าที่บ้าน): {q!r}"
+
+
+def test_bare_weather_still_asks_back():
+    # คำทั่วไปที่มี "บ้าน" ซ้อนอยู่ไม่ใช่การบอกที่ — ยังต้องถามกลับ
+    for q in ("พรุ่งนี้ฝนตกไหม", "หมู่บ้านไหนฝนตกหนักสุดวันนี้"):
+        assert decide(q).clarify_directly is True, q

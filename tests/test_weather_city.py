@@ -102,3 +102,46 @@ def test_fetch_weather_by_city_ยิงชื่อไทยแลนด์_แ
     out = ws.fetch_weather_by_city("Nan")
     assert seen["url"].startswith("https://wttr.in/Nan,Thailand?")
     assert "สภาพอากาศจริงของ Nan**" in out
+
+
+# ── ป้ายวัน + เวลาสังเกตการณ์ (ต่อ 102) ──────────────────────────────────────────
+# prod 10-04 21:4x น.: agent ตอบ "พรุ่งนี้ (4 ตุลาคม)" — tool ส่งวันที่ดิบ 2026-10-04/05/06
+# โดยไม่บอกว่าวันไหนคือวันนี้ (agent ไม่รู้วันที่ปัจจุบัน) · "ปัจจุบัน ()" วงเล็บว่าง
+# เพราะ wttr.in j1 ไม่มี localObsDateTime แล้ว (มีแต่ observation_time เป็น UTC)
+def _fake_wttr(monkeypatch, body):
+    import requests
+
+    class R:
+        status_code = 200
+        text = body
+
+    monkeypatch.setattr(requests, "get", lambda url, **k: R())
+
+
+def test_พยากรณ์ติดป้าย_วันนี้_พรุ่งนี้_มะรืนนี้_ตามเวลาไทย(monkeypatch):
+    import datetime as dt
+    import json
+    days = [{"date": d, "avgtempC": "25", "maxtempC": "30", "mintempC": "22", "sunHour": "5", "hourly": []}
+            for d in ("2026-10-04", "2026-10-05", "2026-10-06")]
+    _fake_wttr(monkeypatch, json.dumps({"current_condition": [{"temp_C": "24", "observation_time": "02:38 PM"}],
+                                         "weather": days}))
+    # 21:44 น. เวลาไทย = 14:44 UTC วันเดียวกัน
+    monkeypatch.setattr(ws, "_now_bkk", lambda: dt.datetime(2026, 10, 4, 21, 44))
+    out = ws.fetch_weather_by_city("Chiang Mai")
+    assert "**2026-10-04 (วันนี้)**" in out
+    assert "**2026-10-05 (พรุ่งนี้)**" in out
+    assert "**2026-10-06 (มะรืนนี้)**" in out
+    assert "()" not in out
+    assert "21:38 น." in out                       # observation_time UTC → เวลาไทย
+
+
+def test_ข้ามเที่ยงคืนเวลาไทย_ป้ายเลื่อนตาม(monkeypatch):
+    import datetime as dt
+    import json
+    days = [{"date": d, "hourly": []} for d in ("2026-10-04", "2026-10-05")]
+    _fake_wttr(monkeypatch, json.dumps({"current_condition": [{}], "weather": days}))
+    monkeypatch.setattr(ws, "_now_bkk", lambda: dt.datetime(2026, 10, 5, 0, 30))
+    out = ws.fetch_weather_by_city("Phrae")
+    assert "**2026-10-04 (เมื่อวาน)**" not in out and "**2026-10-04**" in out
+    assert "**2026-10-05 (วันนี้)**" in out
+    assert "()" not in out                         # ไม่มีเวลาสังเกตการณ์ = ไม่มีวงเล็บ

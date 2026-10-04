@@ -75,6 +75,9 @@ _PROVINCES = (
 )
 # marker ที่ตามด้วยชื่อพื้นที่ = มี location แน่ๆ
 _LOC_MARKERS = ("จังหวัด", "อำเภอ", "ตำบล", "จ.", "อ.", "ต.")
+# "ที่บ้าน" = เมืองบ้านของผู้ใช้ (`utils/websearch.WEATHER_HOME_CITY` แปลให้) — ไม่ใช่ "ไม่บอกที่"
+# ต้องเป็นวลีบอกที่ ไม่ใช่ "บ้าน" เดี่ยว ("หมู่บ้านไหนฝนตกหนัก" ยังต้องถามกลับ)
+_HOME_MARKERS = ("ที่บ้าน", "แถวบ้าน", "บ้านเรา")
 
 
 def _has_thai_substring(text: str, needles: tuple[str, ...]) -> bool:
@@ -99,6 +102,8 @@ def _has_location(text: str) -> bool:
     if any(p.lower() in low for p in _PROVINCES):
         return True
     if any(m in text for m in _LOC_MARKERS):
+        return True
+    if any(m in text for m in _HOME_MARKERS):
         return True
     return False
 

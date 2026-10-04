@@ -12,6 +12,8 @@ import re
 from datetime import datetime
 from typing import Any
 
+from utils.websearch import WEATHER_HOME_CITY as _WEATHER_HOME_CITY
+
 logger = logging.getLogger(__name__)
 
 
@@ -82,10 +84,11 @@ _EN_RETRY_HINT = (
 )
 
 
-def _t_weather(city: str = "Bangkok") -> str:
-    """ดึงพยากรณ์อากาศจาก wttr.in"""
-    from utils.websearch import fetch_weather_by_city
-    result = fetch_weather_by_city(city)
+def _t_weather(city: str = "") -> str:
+    """ดึงพยากรณ์อากาศจาก wttr.in · ไม่ส่ง city = เมืองบ้าน (เดิม Bangkok → "ที่บ้าน" ได้อากาศกรุงเทพ)"""
+    from utils import websearch
+    city = (city or "").strip() or websearch.WEATHER_HOME_CITY
+    result = websearch.fetch_weather_by_city(city)
     return result or f"ไม่พบข้อมูลอากาศของ {city}"
 
 
@@ -522,8 +525,9 @@ _ALL_TOOLS: dict[str, dict[str, Any]] = {
             "properties": {
                 "city": {
                     "type": "string",
-                    "description": "ชื่อเมืองภาษาอังกฤษ เช่น Bangkok, Chiang Mai, Phuket",
-                    "default": "Bangkok",
+                    "description": (f"ชื่อเมืองภาษาอังกฤษ เช่น Bangkok, Chiang Mai, Phuket · "
+                                    f"user พูดว่า \"ที่บ้าน\" = {_WEATHER_HOME_CITY}"),
+                    "default": _WEATHER_HOME_CITY,
                 },
             },
             "required": [],

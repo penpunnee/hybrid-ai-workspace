@@ -14,7 +14,7 @@ import re
 import threading
 import time
 import html as html_lib
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FuturesTimeout
 
@@ -616,6 +616,32 @@ def _wttr_location(city: str) -> str:
     return city
 
 
+# agent ไม่รู้วันที่ปัจจุบัน — วันที่ดิบ 2026-10-04/05/06 ⇒ เดาว่าวันแรกคือ "พรุ่งนี้" (prod 10-04 ต่อ 102)
+# ⇒ ติดป้ายตามเวลาไทยให้เลย · wttr.in j1 ไม่มี localObsDateTime แล้ว มีแต่ observation_time (UTC)
+_DAY_LABELS = {0: "วันนี้", 1: "พรุ่งนี้", 2: "มะรืนนี้"}
+_BKK = timezone(timedelta(hours=7))
+
+
+def _now_bkk() -> datetime:
+    return datetime.now(_BKK).replace(tzinfo=None)
+
+
+def _day_offset(date: str, today) -> int | None:
+    try:
+        return (datetime.strptime(date, "%Y-%m-%d").date() - today).days
+    except (TypeError, ValueError):
+        return None
+
+
+def _obs_time_bkk(obs_utc: str) -> str:
+    """"02:38 PM" (UTC) → "21:38 น." · อ่านไม่ได้ = "" (ไม่ใส่วงเล็บว่าง)"""
+    try:
+        t = datetime.strptime((obs_utc or "").strip(), "%I:%M %p")
+    except ValueError:
+        return ""
+    return f"{(t.hour + 7) % 24:02d}:{t.minute:02d} น."
+
+
 def fetch_weather_by_city(city: str) -> str:
     """ดึงข้อมูลอากาศจาก wttr.in ด้วยชื่อเมืองตรงๆ (ไม่ผ่าน text parsing)"""
     try:
@@ -630,13 +656,15 @@ def fetch_weather_by_city(city: str) -> str:
         forecast = d.get("weather", [])
 
         lines = [f"📍 **สภาพอากาศจริงของ {city}** (จาก wttr.in)\n"]
-        lines.append(f"**ปัจจุบัน** ({cur.get('localObsDateTime','')})")
+        obs = _obs_time_bkk(cur.get("observation_time", ""))
+        lines.append(f"**ปัจจุบัน** (ข้อมูล ณ {obs})" if obs else "**ปัจจุบัน**")
         lines.append(f"- อุณหภูมิ: {cur.get('temp_C','-')}°C (รู้สึกเหมือน {cur.get('FeelsLikeC','-')}°C)")
         lines.append(f"- สภาพ: {cur.get('lang_th',[{}])[0].get('value', cur.get('weatherDesc',[{}])[0].get('value',''))}")
         lines.append(f"- ความชื้น: {cur.get('humidity','-')}% | ลม: {cur.get('windspeedKmph','-')} km/h")
         lines.append(f"- ฝน: {cur.get('precipMM','-')} mm | เมฆ: {cur.get('cloudcover','-')}%")
         lines.append("")
 
+        today = _now_bkk().date()
         for day in forecast[:3]:
             date = day.get("date", "")
             avg = day.get("avgtempC", "-")
@@ -645,6 +673,8 @@ def fetch_weather_by_city(city: str) -> str:
             sun = day.get("sunHour", "-")
             noon = day.get("hourly", [{}])[4] if len(day.get("hourly", [])) > 4 else {}
             desc = noon.get("lang_th", [{}])[0].get("value", "") if noon else ""
+            label = _DAY_LABELS.get(_day_offset(date, today))
+            date = f"{date} ({label})" if label else date
             lines.append(f"**{date}**: {mn}-{mx}°C เฉลี่ย {avg}°C | {desc} | แดด {sun} ชม.")
 
         return "\n".join(lines)
