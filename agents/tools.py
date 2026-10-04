@@ -66,7 +66,20 @@ def _t_web_search(query: str, max_results=5) -> str:
             f"(ผลที่เจอทั้งหมดคะแนนความเกี่ยวข้องต่ำกว่าเกณฑ์) "
             f"— ห้ามเดาคำตอบ ให้บอกผู้ใช้ว่าค้นไม่เจอ และเสนอให้ลองคำค้นอื่น"
         )
-    return format_for_context(results, query)
+    out = format_for_context(results, query)
+    if _THAI_CHARS.search(query):
+        out += _EN_RETRY_HINT
+    return out
+
+
+# คำแนะนำนี้ต้องอยู่ใน "ผล" ไม่ใช่แค่ description — prod 10-04 วัด 2/2: qwen 9B ค้นไทยรอบเดียว
+# แล้วตอบ "ไม่พบ" ทั้งที่ค้นอังกฤษ (Renegade Immortal …) ได้เนื้อเรื่องจริงจาก wiki
+_THAI_CHARS = re.compile(r"[\u0E00-\u0E7F]")
+_EN_RETRY_HINT = (
+    "\n\n💡 ถ้าผลข้างบนไม่ตอบสิ่งที่ผู้ใช้ถามตรงๆ (เช่น มีแค่เรื่องย่อ/หน้าปก) ให้เรียก web_search "
+    "ค้นซ้ำเป็นภาษาอังกฤษ ด้วยชื่อภาษาอังกฤษของเรื่อง/ตัวละคร/สถานที่ ก่อนตอบว่าไม่พบ "
+    "— แล้วตอบผู้ใช้เป็นภาษาไทย"
+)
 
 
 def _t_weather(city: str = "Bangkok") -> str:

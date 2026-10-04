@@ -156,3 +156,20 @@ def test_แชท_web_search_ส่งคำค้นให้_enrich(monkeypat
     _capture_enrich(monkeypatch, seen)
     websearch._web_search_impl("Renegade Immortal Thunder Celestial Realm", max_results=5, top_k=3)
     assert seen and seen[0], f"ไม่ได้ส่งคำค้น: {seen}"
+
+
+# ── คำแนะนำค้นอังกฤษต้องอยู่ใน "ผลของ tool" (prod วัดซ้ำ 2/2: คำแนะนำใน description ไม่มีผล
+#    qwen ค้นไทยรอบเดียวแล้วตอบ "ไม่พบ" — โมเดลเล็กตัดสินใจรอบถัดไปจากผลที่เพิ่งได้) ──
+
+def test_ผลค้นภาษาไทย_แนะให้ค้นซ้ำภาษาอังกฤษ(monkeypatch):
+    from agents import tools as agent_tools
+    _capture_enrich(monkeypatch, [])
+    out = agent_tools._t_web_search("ฝืนลิขิตฟ้า หวังหลิน ออกจากแดนอัสนี")
+    assert "ภาษาอังกฤษ" in out and "web_search" in out
+
+
+def test_ผลค้นภาษาอังกฤษ_ไม่มีคำแนะนำซ้ำ(monkeypatch):
+    from agents import tools as agent_tools
+    _capture_enrich(monkeypatch, [])
+    out = agent_tools._t_web_search("Renegade Immortal Thunder Celestial Realm")
+    assert "ค้นซ้ำเป็นภาษาอังกฤษ" not in out
