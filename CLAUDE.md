@@ -193,7 +193,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 
 ### 🥇 งานแรกเซสชันหน้า — เลือกจากงานเปิด (ถาม user)
 **งานเปิดเดิมปิดครบแล้ว (รอบ 5 · ต่อ 91–98)** — ไม่มีงานโค้ดค้าง · เลือกจาก ⏳/🧪 ข้างล่าง หรือถาม user
-1. ⏳ ลบ session `probe*` 1,011 แถว (6 ห้อง · `probe_item19` 993) — แสดงรายการแล้วในรายงานรอบ 5 · **รอ user เคาะ** · สำรอง DB ด้วย backup API ก่อนลบ (WAL)
+1. ✅ ลบ session `probe*` 1,011 แถวแล้ว (user สั่ง 10-04 · สำรอง `data/chat_history.db.bak-20261004-before-probe-delete`)
 2. 🧪 log ที่ควรดูรอบหน้า: `[LMStudio] อุ่นเครื่อง` (เปิดแอปหลังว่าง) · `[Voice WS] ห้อง … มีสายเก่ายังค้าง` (เกิดจริงไหม) · `[Reader] … ตระกูล 6` (ตอนนำเข้าเล่มใหม่)
 ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
@@ -241,7 +241,7 @@ Live ตัดสาย 1008 ~151 วิ → `parkIfUnused` · iOS `ended` = `st
 
 ### ⏳ รอ user เคาะ
 **ใหม่ 10-02 (ต่อ 61):** ขาเข้าหนังสือ (`_ingest`) ไม่ซ่อมตระกูล 6 และไม่เตือน — เตือนใน log/UI หรือใส่ pythainlp (62 MB) ·
-(ข) response cache ข้าม session · **ใหม่ ต่อ 90:** ลบ session ทดสอบเก่า `probe_*`/`probe-*` 1,011 แถวใน DB (แสดงรายการก่อนลบ) · คิวเล็กจาก 09-24 (**เช็คสถานะจริงก่อน**): ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน ·
+(ข) response cache ข้าม session · คิวเล็กจาก 09-24 (**เช็คสถานะจริงก่อน**): ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน ·
 ย้ายเสียงไป `gemini-3.8-live` (3.1 = legacy ยังไม่มีวันปิด · ติดล็อกเสียง 🔒 ต้องวัดเสียงใหม่ทั้งชุด) ·
 ทาง 1 earpiece: เล่นเสียงผ่าน `MediaStreamAudioDestinationNode` → `<audio>` (WebKit แนะนำ · อาจแก้เสียงเบาด้วย · ทำเป็นสวิตช์ปิดไว้ แล้ว A/B)
 
