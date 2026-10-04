@@ -1,5 +1,31 @@
 ---
 
+## [2026-10-04 ต่อ 102] ทดสอบ 🧪 แทน user ฝั่ง server → เจอ "ที่บ้าน" ถูกถามกลับ + agent บอก "พรุ่งนี้ = 4 ต.ค." (`644ade6` `75bf1fd`) ✅ prod + CI
+
+**user:** "ทดสอบ แล้ววัดผลให้ด้วย" (🧪 รอบ 5 / ต่อ 88–89) — ทุกคำขอ `X-Test-Request` · session ลบครบ (เหลือ 0)
+| ทดสอบ | ผล |
+|---|---|
+| warmup → แชทแรก (ว่าง 46 นาที · ลำดับเดียวกับแอป) | warmup 26 ms · โหลด 6.1 วิ (log `อุ่นเครื่อง`) · แชทแรก 5 วิต่อมา recall→retrieval 0.27 วิ · retrieval→thinking 0.05 วิ |
+| agent `reasoning_tokens` | 106–383 ทุกครั้ง |
+| meta รอดรีเฟรช (`GET /api/history`) | usage + `agent_steps` 8 ขั้น ครบ |
+| โจทย์ยาก (แชท qwen ข้ามคิด) | เงินทอน 417.50 ✓ · อายุ 8 ✓ · คำแรก 0.9–3.3 วิ · จบ 15–22 วิ |
+| อากาศ | จังหวัดถูก · ❌ "ที่บ้าน…" ถูกถามจังหวัด (แชท+agent) · ❌ agent "พรุ่งนี้ (4 ต.ค.) วันศุกร์" ตอน 4 ต.ค. |
+
+**cold ~1.3 วิ (ต่อ 101 ค้าง):** probe โปรเซสแยกหลังว่าง 46 นาที = เท่าตอนอุ่นทุกขั้น ⇒ Chroma/Ollama/page cache **ไม่เย็น** (Chroma 1.4.4 เก็บ HNSW ใน memory
+ไม่มี TTL · `local_segment_manager.rs` capacity 65536) · ส่วนที่เย็นอยู่ในโปรเซสแอป และ warmup ของแอปทำให้ไม่โดน ⇒ หยุดไล่
+⚠️ เครื่องวัดเสีย: `done.timings` มีแต่ `llm_stream` (contextvar ไม่ข้าม `iterate_in_threadpool` ต่อชิ้น) — ต้องซ่อมก่อนถ้าจะไล่ต่อ
+**ต้นเหตุ 1:** `reasoning/active_learning._has_location` รู้จักแค่จังหวัด/marker → "ที่บ้าน" ไม่ผ่าน ทั้งที่ `websearch._extract_city` แปลเป็น
+`WEATHER_HOME_CITY` (ต่อ 89 verify ด้วย "ที่บ้าน **แพร่**" จึงไม่เจอ) · tool `weather` ของ agent default `"Bangkok"`
+**แก้:** `_HOME_MARKERS` ("ที่บ้าน" "แถวบ้าน" "บ้านเรา" — ไม่ใช่ "บ้าน" เดี่ยว: "หมู่บ้านไหน…" ยังถามกลับ) · `_t_weather` ไม่ส่ง city = เมืองบ้าน + schema บอกเมืองบ้าน
+**ต้นเหตุ 2:** agent ไม่รู้วันที่ · tool ส่ง ISO ดิบ · `localObsDateTime` ไม่มีใน wttr.in j1 แล้ว → "ปัจจุบัน ()"
+**แก้รอบแรก (`644ade6`):** ป้าย "(พรุ่งนี้)" ข้าง ISO → verify: qwen ยังแปลงเองผิด 2/3 ("4 ต.ค. วันศุกร์")
+**แก้รอบสอง (`75bf1fd`):** `_day_label` → "พรุ่งนี้ (จันทร์ 5 ต.ค.)" ไม่เหลือ ISO (นอกช่วงคง ISO) · เวลาจาก `observation_time` UTC→ไทย
+**เทส:** +8 (AL 2 · weather 2 · agent 2 ไฟล์ใหม่ `test_agent_weather_home.py`) · mutation 12/12 · ชุดเต็ม 2772 · ruff
+**verify prod (8 คำขอ):** "ที่บ้าน" → แพร่ ทั้งแชท/agent (`weather({"city":"Phrae"})`) · "พรุ่งนี้ฝนตกไหม" ยังถามกลับ · วันพรุ่งนี้ถูก **8/8**
+(regex ตัดสิน BAD 1 = ตารางมีแถววันนี้ 4 ต.ค. + พรุ่งนี้ 5 ต.ค. ถูกจริง) · Gemini quota หมดวันนี้ (ภูเก็ต auto→gemini→fallback qwen)
+
+---
+
 ## [2026-10-04 ต่อ 101] "คำขอแรกหลังว่าง retrieval 2.2 วิ" — วัดแล้ว: ช้าทุกคำขอ เพราะเขียน ChromaDB ไม่ใช่ embed เย็น · ⏸ user: ไม่ช้า → ไม่แก้
 
 **สมมติฐานเดิมตก:** `/api/ps` บน .235 = `paraphrase-multilingual` ค้างอยู่ (keep_alive 24h จากต่อ 72 ทำงาน) · embed 44–50 ms
