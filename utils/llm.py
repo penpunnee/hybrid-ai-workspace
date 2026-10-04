@@ -504,6 +504,12 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
             # context เต็มระหว่างตอบ — เดิมจบเงียบๆ กลางประโยค ผู้ใช้ไม่รู้ว่าถูกตัด
             yield ("\n\n⚠️ คำตอบถูกตัดเพราะ context ของโมเดล local เต็ม — "
                    "พิมพ์ \"ต่อ\" ให้ตอบต่อ หรือเริ่มแชทใหม่ถ้าบทสนทนายาวมากแล้ว")
+        # ตัวหารของแถบ Context ใน UI — ถามหลัง stream จบ (ไม่ให้ผู้ใช้รอ HTTP ก่อนคำตอบแรก) ·
+        # อ่านไม่ได้ = ไม่ใส่ ห้ามใช้ default มาแสดงเหมือนค่าจริง
+        if usage_sink is not None and "input_tokens" in usage_sink:
+            ctx = _lmstudio_loaded_ctx(model)
+            if ctx:
+                usage_sink["context_limit"] = ctx
         logger.info(f"LM Studio stream OK (model={model}, vision={'yes' if image_b64 else 'no'}, "
                     f"finish={finish}, in={usage.get('input_tokens', '?')}, "
                     f"out={usage.get('output_tokens', '?')}, ตัดประวัติ={dropped})")

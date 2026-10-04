@@ -113,3 +113,13 @@ test("bundle เก่ายังมี history ↑/↓ · paste · Ctrl+E · t
   assert.match(slice("// 3. EXPORT SESSION", "// 4. PIN MESSAGE"), /doExport\(\)/);
   assert.match(slice("// Tee stream", "return resp;"), /_parseChatSSE\(/);
 });
+
+// ── §9 TOKEN USAGE BAR ย้ายไป React แล้ว (2026-10-04) ──────────────────────────────
+// overlay นับแค่ข้อความบนจอแล้วหาร 4096 (hw_status_cache ไม่มีใครเขียน) · prod 10-04 จอ ~1,532/4,096 ของจริง 10,146/16,384
+test("§9 แถบ token ของ overlay ถูก gate ด้วย __hwReactChatBox (React มีแถบ Context ที่ใช้ done.usage)", () => {
+  const sec = slice("9. TOKEN USAGE BAR", "10. PROMPT HISTORY");
+  const gate = sec.search(/if\s*\(\s*!\s*window\.__hwReactChatBox\s*\)\s*\{/);
+  assert.ok(gate > -1, "ไม่มี `if (!window.__hwReactChatBox) {` ครอบ §9");
+  assert.ok(sec.indexOf("appendChild(tokenBar)") > gate, "appendChild ต้องอยู่ใต้ gate");
+  assert.ok(sec.indexOf("setInterval(_updateTokenBar") > gate, "setInterval ต้องอยู่ใต้ gate");
+});

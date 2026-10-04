@@ -162,3 +162,45 @@ def test_gemini_fills_usage_sink_from_usage_metadata(monkeypatch):
     got = "".join(llm._stream_gemini([{"role": "user", "content": "hi"}], usage_sink=sink))
     assert got == "คำตอบ"
     assert sink == {"input_tokens": 7, "output_tokens": 3}
+
+
+# ── context_limit: แถบ Context ใน UI ต้องหารด้วย context ที่ LM Studio โหลดจริง (2026-10-04) ──
+# เดิม overlay หาร 4096 คงที่ (ไม่มีใครเขียน hw_status_cache) · prod 10-04 ขาเข้าจริง 10,146 / 16,384
+# แต่จอโชว์ ~1,532 / 4,096
+
+def _lmstudio_with_tail(monkeypatch, tail):
+    class FakeCompletions:
+        def create(self, **kwargs):
+            return iter([_oai_chunk("ตอบ"), tail])
+
+    monkeypatch.setattr(llm, "lmstudio_client",
+                        SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions())))
+
+
+def test_lmstudio_usage_includes_loaded_context_limit(monkeypatch):
+    _lmstudio_with_tail(monkeypatch, _OAI_USAGE_TAIL)
+    asked = []
+    monkeypatch.setattr(llm, "_lmstudio_loaded_ctx", lambda m: asked.append(m) or 16384)
+    sink: dict = {}
+    "".join(llm._stream_lmstudio([{"role": "user", "content": "hi"}], model="qwen", usage_sink=sink))
+    assert sink == {"input_tokens": 10, "output_tokens": 5, "context_limit": 16384}
+    assert asked == ["qwen"], "ต้องถาม context ของโมเดลที่ใช้ตอบจริง"
+
+
+def test_lmstudio_context_limit_absent_when_unreadable(monkeypatch):
+    """อ่าน context ที่โหลดไม่ได้ → ไม่ใส่ (ห้ามเอา default 8192 มาแสดงเหมือนค่าจริง)"""
+    _lmstudio_with_tail(monkeypatch, _OAI_USAGE_TAIL)
+    monkeypatch.setattr(llm, "_lmstudio_loaded_ctx", lambda m: None)
+    sink: dict = {}
+    "".join(llm._stream_lmstudio([{"role": "user", "content": "hi"}], model="qwen", usage_sink=sink))
+    assert "context_limit" not in sink
+    assert sink == {"input_tokens": 10, "output_tokens": 5}
+
+
+def test_lmstudio_context_limit_absent_without_input_tokens(monkeypatch):
+    """ไม่มีตัวตั้ง (เซิร์ฟเวอร์ไม่ส่ง usage) → ไม่มีตัวหารลอยๆ · usage ต้องว่างให้ done ส่ง null"""
+    _lmstudio_with_tail(monkeypatch, _oai_chunk(""))
+    monkeypatch.setattr(llm, "_lmstudio_loaded_ctx", lambda m: 16384)
+    sink: dict = {}
+    "".join(llm._stream_lmstudio([{"role": "user", "content": "hi"}], model="qwen", usage_sink=sink))
+    assert sink == {}

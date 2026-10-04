@@ -993,8 +993,11 @@
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 9. TOKEN USAGE BAR — อ่านจาก localStorage ที่ React เก็บไว้
+  // 9. TOKEN USAGE BAR — fallback ของ bundle เก่าเท่านั้น
   // ─────────────────────────────────────────────────────────────────────────────
+  // React มีแถบ Context ที่ใช้ done.usage จริงแล้ว (utils/contextbar.ts · 2026-10-04) — ตัวนี้นับแค่
+  // ข้อความบนจอแล้วหาร 4096 (hw_status_cache ไม่มีใครเขียน) ⇒ prod 10-04 โชว์ ~1,532/4,096 ของจริง 10,146/16,384
+  if (!window.__hwReactChatBox) {
   const tokenCSS = `
     #enh-token-bar {
       position:fixed; bottom:0; left:0; right:0; z-index:8998;
@@ -1062,6 +1065,7 @@
 
   setInterval(_updateTokenBar, 3000);
   setTimeout(_updateTokenBar, 3000); // รอ React render ก่อน
+  }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 10. PROMPT HISTORY — ↑/↓ เรียก prompt ก่อนหน้า (เหมือน terminal)
