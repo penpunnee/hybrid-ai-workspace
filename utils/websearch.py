@@ -626,11 +626,21 @@ def _now_bkk() -> datetime:
     return datetime.now(_BKK).replace(tzinfo=None)
 
 
-def _day_offset(date: str, today) -> int | None:
+_TH_WEEKDAYS = ("จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์", "อาทิตย์")
+_TH_MONTHS = ("ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.")
+
+
+def _day_label(date: str, today) -> str:
+    """"2026-10-05" → "พรุ่งนี้ (จันทร์ 5 ต.ค.)" · นอกช่วงวันนี้–มะรืนนี้/อ่านไม่ได้ = คงเดิม
+    ห้ามเหลือ ISO ข้างป้าย — ป้าย "(พรุ่งนี้)" ข้าง 2026-10-05 แล้ว qwen ยังแปลงเป็น "4 ต.ค. วันศุกร์" เอง"""
     try:
-        return (datetime.strptime(date, "%Y-%m-%d").date() - today).days
+        d = datetime.strptime(date, "%Y-%m-%d").date()
     except (TypeError, ValueError):
-        return None
+        return date
+    label = _DAY_LABELS.get((d - today).days)
+    if not label:
+        return date
+    return f"{label} ({_TH_WEEKDAYS[d.weekday()]} {d.day} {_TH_MONTHS[d.month - 1]})"
 
 
 def _obs_time_bkk(obs_utc: str) -> str:
@@ -673,8 +683,7 @@ def fetch_weather_by_city(city: str) -> str:
             sun = day.get("sunHour", "-")
             noon = day.get("hourly", [{}])[4] if len(day.get("hourly", [])) > 4 else {}
             desc = noon.get("lang_th", [{}])[0].get("value", "") if noon else ""
-            label = _DAY_LABELS.get(_day_offset(date, today))
-            date = f"{date} ({label})" if label else date
+            date = _day_label(date, today)
             lines.append(f"**{date}**: {mn}-{mx}°C เฉลี่ย {avg}°C | {desc} | แดด {sun} ชม.")
 
         return "\n".join(lines)

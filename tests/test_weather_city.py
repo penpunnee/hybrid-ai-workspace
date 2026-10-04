@@ -128,9 +128,12 @@ def test_พยากรณ์ติดป้าย_วันนี้_พรุ
     # 21:44 น. เวลาไทย = 14:44 UTC วันเดียวกัน
     monkeypatch.setattr(ws, "_now_bkk", lambda: dt.datetime(2026, 10, 4, 21, 44))
     out = ws.fetch_weather_by_city("Chiang Mai")
-    assert "**2026-10-04 (วันนี้)**" in out
-    assert "**2026-10-05 (พรุ่งนี้)**" in out
-    assert "**2026-10-06 (มะรืนนี้)**" in out
+    # วันที่ภาษาไทยสำเร็จรูป — prod ต่อ 102 รอบสอง: ป้าย "(พรุ่งนี้)" ข้าง ISO แล้ว qwen ยังแปลง
+    # 2026-10-05 เป็น "4 ต.ค. วันศุกร์" เอง (4 ต.ค. 2026 = อาทิตย์) ⇒ ให้ลอก ไม่ให้คำนวณ
+    assert "**วันนี้ (อาทิตย์ 4 ต.ค.)**" in out
+    assert "**พรุ่งนี้ (จันทร์ 5 ต.ค.)**" in out
+    assert "**มะรืนนี้ (อังคาร 6 ต.ค.)**" in out
+    assert "2026-10-0" not in out                  # ไม่เหลือ ISO ให้โมเดลแปลงเองอีก
     assert "()" not in out
     assert "21:38 น." in out                       # observation_time UTC → เวลาไทย
 
@@ -142,6 +145,6 @@ def test_ข้ามเที่ยงคืนเวลาไทย_ป้า�
     _fake_wttr(monkeypatch, json.dumps({"current_condition": [{}], "weather": days}))
     monkeypatch.setattr(ws, "_now_bkk", lambda: dt.datetime(2026, 10, 5, 0, 30))
     out = ws.fetch_weather_by_city("Phrae")
-    assert "**2026-10-04 (เมื่อวาน)**" not in out and "**2026-10-04**" in out
-    assert "**2026-10-05 (วันนี้)**" in out
+    assert "**2026-10-04**" in out                # นอกช่วง วันนี้–มะรืนนี้ = วันที่ดิบเหมือนเดิม
+    assert "**วันนี้ (จันทร์ 5 ต.ค.)**" in out
     assert "()" not in out                         # ไม่มีเวลาสังเกตการณ์ = ไม่มีวงเล็บ
