@@ -487,24 +487,74 @@ def fetch_wikipedia(query: str) -> str:
         return ""
 
 
+WEATHER_HOME_CITY = env_str("WEATHER_HOME_CITY", "Phrae", group=_G, doc=(
+    "เมืองบ้านของผู้ใช้ (ชื่อที่ wttr.in รู้จัก) — คำถามอากาศที่ไม่ระบุเมือง/พูดว่า \"ที่บ้าน\" ใช้เมืองนี้"))
+
+# 77 จังหวัด (ชื่อที่ wttr.in รู้จัก) — เดิมมีแค่ 8 เมือง ไม่เจอ = Bangkok ⇒ prod 10-04 ถามแพร่ได้อากาศกรุงเทพ (ต่อ 89)
+_TH_PROVINCES = {
+    "กรุงเทพ": "Bangkok", "กระบี่": "Krabi", "กาญจนบุรี": "Kanchanaburi", "กาฬสินธุ์": "Kalasin",
+    "กำแพงเพชร": "Kamphaeng Phet", "ขอนแก่น": "Khon Kaen", "จันทบุรี": "Chanthaburi", "ฉะเชิงเทรา": "Chachoengsao",
+    "ชลบุรี": "Chonburi", "ชัยนาท": "Chai Nat", "ชัยภูมิ": "Chaiyaphum", "ชุมพร": "Chumphon",
+    "เชียงราย": "Chiang Rai", "เชียงใหม่": "Chiang Mai", "ตรัง": "Trang", "ตราด": "Trat", "ตาก": "Tak",
+    "นครนายก": "Nakhon Nayok", "นครปฐม": "Nakhon Pathom", "นครพนม": "Nakhon Phanom",
+    "นครราชสีมา": "Nakhon Ratchasima", "นครศรีธรรมราช": "Nakhon Si Thammarat", "นครสวรรค์": "Nakhon Sawan",
+    "นนทบุรี": "Nonthaburi", "นราธิวาส": "Narathiwat", "น่าน": "Nan", "บึงกาฬ": "Bueng Kan",
+    "บุรีรัมย์": "Buriram", "ปทุมธานี": "Pathum Thani", "ประจวบคีรีขันธ์": "Prachuap Khiri Khan",
+    "ปราจีนบุรี": "Prachinburi", "ปัตตานี": "Pattani", "พระนครศรีอยุธยา": "Ayutthaya", "พะเยา": "Phayao",
+    "พังงา": "Phang Nga", "พัทลุง": "Phatthalung", "พิจิตร": "Phichit", "พิษณุโลก": "Phitsanulok",
+    "เพชรบุรี": "Phetchaburi", "เพชรบูรณ์": "Phetchabun", "แพร่": "Phrae", "ภูเก็ต": "Phuket",
+    "มหาสารคาม": "Maha Sarakham", "มุกดาหาร": "Mukdahan", "แม่ฮ่องสอน": "Mae Hong Son", "ยโสธร": "Yasothon",
+    "ยะลา": "Yala", "ร้อยเอ็ด": "Roi Et", "ระนอง": "Ranong", "ระยอง": "Rayong", "ราชบุรี": "Ratchaburi",
+    "ลพบุรี": "Lopburi", "ลำปาง": "Lampang", "ลำพูน": "Lamphun", "เลย": "Loei", "ศรีสะเกษ": "Sisaket",
+    "สกลนคร": "Sakon Nakhon", "สงขลา": "Songkhla", "สตูล": "Satun", "สมุทรปราการ": "Samut Prakan",
+    "สมุทรสงคราม": "Samut Songkhram", "สมุทรสาคร": "Samut Sakhon", "สระแก้ว": "Sa Kaeo", "สระบุรี": "Saraburi",
+    "สิงห์บุรี": "Sing Buri", "สุโขทัย": "Sukhothai", "สุพรรณบุรี": "Suphan Buri", "สุราษฎร์ธานี": "Surat Thani",
+    "สุรินทร์": "Surin", "หนองคาย": "Nong Khai", "หนองบัวลำภู": "Nong Bua Lamphu", "อ่างทอง": "Ang Thong",
+    "อำนาจเจริญ": "Amnat Charoen", "อุดรธานี": "Udon Thani", "อุตรดิตถ์": "Uttaradit", "อุทัยธานี": "Uthai Thani",
+    "อุบลราชธานี": "Ubon Ratchathani",
+}
+# ชื่อเรียกอื่น/เมืองที่ไม่ใช่จังหวัด (ไม่นับใน 77)
+_CITY_ALIASES = {"กทม": "Bangkok", "โคราช": "Nakhon Ratchasima", "อยุธยา": "Ayutthaya",
+                 "พัทยา": "Pattaya", "หาดใหญ่": "Hat Yai"}
+# ชื่อที่เป็นคำทั่วไปด้วย ("ตากผ้า" "ได้เลย" "เผยแพร่" "น่านน้ำ") — นับเป็นจังหวัดเมื่อมีคำบอกสถานที่นำหน้าเท่านั้น
+_AMBIGUOUS_CITY = {"ตาก", "เลย", "แพร่", "น่าน"}
+_PLACE_MARKERS = ("จังหวัด", "จ.", "ที่", "ใน", "แถว", "เมือง", "บ้าน", "อำเภอ", "อ.")
+_CITY_NAMES = {**_TH_PROVINCES, **_CITY_ALIASES}.items()
+
+
 def _extract_city(query: str) -> str:
-    """หาเมืองจากคำถาม — default Bangkok"""
-    cities = {
-        "กรุงเทพ": "Bangkok", "เชียงใหม่": "Chiang Mai", "ภูเก็ต": "Phuket",
-        "พัทยา": "Pattaya", "ขอนแก่น": "Khon Kaen", "หาดใหญ่": "Hat Yai",
-        "นครราชสีมา": "Nakhon Ratchasima", "ชลบุรี": "Chonburi",
-    }
-    for th, en in cities.items():
-        if th in query:
-            return en
-    return "Bangkok"
+    """หาเมืองจากคำถาม — ไม่ระบุ = `WEATHER_HOME_CITY` · คำกำกวมดูทุกตำแหน่งที่เจอ ("เผยแพร่…ที่แพร่")"""
+    for th, en in _CITY_NAMES:
+        start = query.find(th)
+        while start != -1:
+            before = query[:start].rstrip()
+            if th not in _AMBIGUOUS_CITY or before.endswith(_PLACE_MARKERS):
+                return en
+            start = query.find(th, start + 1)
+    return WEATHER_HOME_CITY
+
+
+# ชื่อเปล่าบางจังหวัด wttr.in เดาผิดประเทศ (Nan/Loei → ฝรั่งเศส · Tak → อัฟกานิสถาน · วัด 10-04)
+# "X,Thailand" ห้ามมีวรรคหลังจุลภาค ("Nan, Thailand" → สระบุรี) · Surat Thani,Thailand คลาด ~82 กม. → พิกัด
+_WTTR_COORDS = {"surat thani": "9.14,99.33"}
+_TH_CITY_EN = {en.lower(): en for en in {**_TH_PROVINCES, **_CITY_ALIASES}.values()}
+
+
+def _wttr_location(city: str) -> str:
+    """ชื่อเมือง → ตัวระบุที่ส่งให้ wttr.in · เมืองไทยที่รู้จัก = "X,Thailand" · อื่นๆ คงเดิม"""
+    key = (city or "").strip().lower()
+    if key in _WTTR_COORDS:
+        return _WTTR_COORDS[key]
+    if key in _TH_CITY_EN:
+        return f"{_TH_CITY_EN[key]},Thailand"
+    return city
 
 
 def fetch_weather_by_city(city: str) -> str:
     """ดึงข้อมูลอากาศจาก wttr.in ด้วยชื่อเมืองตรงๆ (ไม่ผ่าน text parsing)"""
     try:
         import requests
-        url = f"https://wttr.in/{city}?lang=th&format=j1"
+        url = f"https://wttr.in/{_wttr_location(city)}?lang=th&format=j1"
         resp = requests.get(url, timeout=8, headers={"User-Agent": _UA})
         if resp.status_code != 200:
             return ""
