@@ -1,4 +1,6 @@
+import json
 import sqlite3
+import time
 import logging
 import threading
 from datetime import datetime
@@ -108,6 +110,11 @@ def _init_schema(conn: sqlite3.Connection) -> None:
                 conn.execute(f"ALTER TABLE messages ADD COLUMN {col} {col_type} DEFAULT {default}")
             except sqlite3.OperationalError:
                 pass  # column มีอยู่แล้ว — ปกติ
+        # meta (JSON) ของคำตอบ: เวลา/usage/ไทม์ไลน์ tool — ให้รอดรีเฟรช (งานเปิด ฌ · 10-04) · NULL = ไม่มี
+        try:
+            conn.execute("ALTER TABLE messages ADD COLUMN meta TEXT")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
         _schema_ready = True
 
@@ -146,17 +153,59 @@ def save_reply(assistant: str, content: str, provider: str, session_id: str, use
     return new_id if rowcount == 1 and new_id else 0
 
 
+_META_MAX_STEPS = 60
+_META_MAX_TEXT = 300
+
+
+def reply_meta(started: float, usage: dict | None, agent_steps: list | None = None) -> dict:
+    """meta ของคำตอบหนึ่งแถว · `started` = time.time() ตอนรับคำขอ (ตรงกับ t0 ฝั่ง client)
+    ไทม์ไลน์ถูกตัด (จำนวน/ความยาวข้อความ) — event ของ agent มาจากผล tool ซึ่งยาวได้ไม่จำกัด"""
+    now = time.time()
+    meta: dict = {"started_at_ms": int(started * 1000), "elapsed_ms": max(0, int((now - started) * 1000))}
+    if usage:
+        meta["usage"] = dict(usage)
+    if agent_steps:
+        steps = []
+        for ev in agent_steps[:_META_MAX_STEPS]:
+            ev = dict(ev)
+            for k in ("preview", "message"):
+                if isinstance(ev.get(k), str):
+                    ev[k] = ev[k][:_META_MAX_TEXT]
+            if "args" in ev and len(json.dumps(ev["args"], ensure_ascii=False)) > _META_MAX_TEXT:
+                ev["args"] = {"_truncated": json.dumps(ev["args"], ensure_ascii=False)[:_META_MAX_TEXT]}
+            steps.append(ev)
+        meta["agent_steps"] = steps
+    return meta
+
+
+def save_message_meta(db_id: int, meta: dict) -> None:
+    if not db_id:
+        return
+    _write("UPDATE messages SET meta = ? WHERE id = ?", (json.dumps(meta, ensure_ascii=False), db_id))
+
+
+def _parse_meta(raw):
+    if not raw:
+        return None
+    try:
+        v = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    return v if isinstance(v, dict) else None
+
+
 def load_history(assistant: str, session_id: str = "default", include_meta: bool = False) -> list[dict]:
     """โหลดประวัติแชทของ session นั้นจาก DB"""
     conn = _get_conn()
     rows = conn.execute(
-        "SELECT id, role, content, pinned, created_at FROM messages WHERE assistant = ? AND session_id = ? ORDER BY id ASC",
+        "SELECT id, role, content, pinned, created_at, meta FROM messages WHERE assistant = ? AND session_id = ? ORDER BY id ASC",
         (assistant, session_id),
     ).fetchall()
     conn.close()
     if include_meta:
         return [
-            {"db_id": r[0], "role": r[1], "content": r[2], "pinned": bool(r[3]), "created_at": r[4]}
+            {"db_id": r[0], "role": r[1], "content": r[2], "pinned": bool(r[3]), "created_at": r[4],
+             "meta": _parse_meta(r[5])}
             for r in rows
         ]
     return [{"role": r[1], "content": r[2]} for r in rows]

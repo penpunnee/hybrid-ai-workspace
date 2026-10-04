@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 import anyio
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -16,6 +17,7 @@ from utils.skills_select import select_skills
 from utils.skills_shadow import should_shadow_log as _shadow_should_log
 from utils.history import (
     save_message, save_reply, load_history, pop_replies_after_last_user, has_reply_after, message_exists,
+    reply_meta, save_message_meta,
 )
 from utils.memory import save_lesson, save_preference, get_lessons, get_preferences, search_memory
 from memory.operations import remember, recall, teach, push_working
@@ -192,8 +194,17 @@ def persist_agent_turn(assistant: str, prompt: str, full_response: str, session_
     return agent_msg_id
 
 
+def _store_reply_meta(message_id: int, meta: dict) -> None:
+    """เวลา/usage/ไทม์ไลน์ของคำตอบ → DB ให้รอดรีเฟรช (งานเปิด ฌ) · ล้ม = แค่หายตอนรีเฟรช ห้ามล้มคำตอบ"""
+    try:
+        save_message_meta(message_id, meta)
+    except Exception as e:
+        logger.warning(f"[Chat] บันทึก meta ของคำตอบ {message_id} ไม่ได้: {e}")
+
+
 @router.post("/chat")
 async def chat(request: Request):
+    t_start = time.time()          # = t0 ฝั่ง client (ส่งคำขอ) — บรรทัดสถิติหลังรีเฟรชต้องตรงกับตอน stream
     data = await json_body_capped(request, MAX_BODY_BYTES)
     is_test_request = _is_test_request(request)
     assistant   = data.get("assistant", list(ASSISTANTS.keys())[0])
@@ -478,10 +489,12 @@ async def chat(request: Request):
             try:
                 agent_provider = provider if provider in ("gemini", "lmstudio", "ollama") else "gemini"
                 agent_usage: dict = {}      # token จริงของทั้งเทิร์น → แถบ Context (ต่อ 80)
+                agent_steps: list = []      # ไทม์ไลน์ tool → meta ของคำตอบ (รอดรีเฟรช · งานเปิด ฌ)
                 for kind, payload in run_agent(messages, provider=agent_provider,
                                                image_b64=image_b64, image_mime=image_mime,
                                                cancel=st["cancel"], usage_sink=agent_usage):
                     if kind == "event":
+                        agent_steps.append(payload)
                         # SSE agent event → React parse เป็น AgentTimeline (utils/agentsteps.ts, 2026-06-16)
                         yield f"data: {json.dumps({'agent': payload}, ensure_ascii=False)}\n\n"
                     elif kind == "chunk":
@@ -509,6 +522,8 @@ async def chat(request: Request):
                 st["assistant_saved"] = True
             except Exception as e:
                 logger.warning(f"[Chat/agent] persist failed: {e}")
+            if agent_msg_id:
+                _store_reply_meta(agent_msg_id, reply_meta(t_start, agent_usage, agent_steps))
 
             yield f"data: {json.dumps({'done': True, 'model': 'agent', 'provider': 'agent', 'message_id': agent_msg_id, 'usage': agent_usage or None}, ensure_ascii=False)}\n\n"
             return
@@ -819,6 +834,8 @@ async def chat(request: Request):
                     logger.debug(f"Auto-learn failed: {e}")
             spawn_bg(_learn)
 
+        _store_reply_meta(message_id, reply_meta(t_start, usage_sink))
+
         # ใส่ timing + request_id ใน done event เพื่อ debug / metrics
         done_payload = {
             "done": True, "model": model_used, "provider": provider_used,
@@ -870,6 +887,7 @@ async def chat(request: Request):
 
 @router.post("/regenerate")
 async def regenerate_response(request: Request):
+    t_start = time.time()
     data = await json_body_capped(request, MAX_BODY_BYTES)
     assistant  = data.get("assistant", list(ASSISTANTS.keys())[0])
     session_id = data.get("session_id", "default")
@@ -940,6 +958,8 @@ async def regenerate_response(request: Request):
             st["saved"] = True
             if not mid:
                 logger.info("[Regenerate] user message ถูกลบระหว่างตอบ — ไม่บันทึก")
+            else:
+                _store_reply_meta(mid, reply_meta(t_start, usage_sink))
             yield f"data: {json.dumps({'done': True, 'message_id': mid, 'usage': usage_sink or None})}\n\n"
         finally:
             _REGEN_INFLIGHT.discard(rkey)
