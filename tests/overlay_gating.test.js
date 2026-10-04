@@ -123,3 +123,21 @@ test("§9 แถบ token ของ overlay ถูก gate ด้วย __hwReac
   assert.ok(sec.indexOf("appendChild(tokenBar)") > gate, "appendChild ต้องอยู่ใต้ gate");
   assert.ok(sec.indexOf("setInterval(_updateTokenBar") > gate, "setInterval ต้องอยู่ใต้ gate");
 });
+
+// ── §6 COPY CODE BUTTON ย้ายไป React แล้ว (2026-10-05) ─────────────────────────────
+// React วางปุ่มในสตริงของ renderMarkdown (`utils/markdown.tsx` · `.md-copy`) + toast ของ React
+// overlay เดิม: ปุ่ม opacity:0 โผล่ตอน hover (iPhone ไม่มี hover) · ไม่ gate = ได้ 2 ปุ่มต่อกล่อง
+test("§6 COPY CODE BUTTON ถูก gate ก่อนแตะ pre.md-pre (React มีปุ่ม Copy ของกล่องโค้ดเองแล้ว)", () => {
+  const sec = slice("// 6. COPY CODE BUTTON", "// 7. STOP GENERATION");
+  const gate = sec.search(GATE);
+  assert.ok(gate > -1, "ไม่มี `if (window.__hwReactChatBox) return;` ใน §6");
+  assert.ok(gate > sec.indexOf("function _wireCopyButtons"), "gate ต้องอยู่ในตัว _wireCopyButtons (เช็คตอนถูกเรียก ไม่ใช่ตอนโหลดไฟล์)");
+  assert.ok(gate < sec.indexOf('querySelectorAll("pre.md-pre")'), "gate ต้องมาก่อนจุดที่เริ่มแตะ pre.md-pre");
+});
+
+// กลุ่มควบคุม — bundle เก่า (ไม่มีธง) ยังได้ปุ่ม Copy ของ overlay
+test("§6 ยังฉีดปุ่ม Copy ให้ bundle เก่าที่ไม่ตั้ง __hwReactChatBox", () => {
+  const sec = slice("// 6. COPY CODE BUTTON", "// 7. STOP GENERATION");
+  assert.match(sec, /pre\.appendChild\(btn\)/);
+  assert.match(sec, /new MutationObserver\(_wireCopyButtons\)/);
+});

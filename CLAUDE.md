@@ -176,7 +176,7 @@ overlay แบบ vanilla (ไม่ต้อง build, ทำงานคู่
 - ⚠️ **DELETE `/api/skills/{id}`**: lebt `delete_file` query param (default false). ส่ง `?delete_file=true` ถ้าต้องลบ .md ด้วย — กัน data loss
 
 
-## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-05 ปิดเซสชันรอบ 3 · **ที่เดียว**)
+## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-05 รอบ 4 · **ที่เดียว**)
 
 > บล็อก ▶️ ทั้งหมดจนถึง 09-28 (ก้อน 1–11 · config ก้อน 1–4 · reader/voice 08-17→09-22 · ไมค์ 08-24/26)
 > ถูกยก**ทั้งดุ้นไม่แก้**ไปไว้ที่ devlog **[2026-09-28 ต่อ 24]** — ที่นี่เหลือแค่งานเปิด + กติกาที่ยังมีผล
@@ -195,7 +195,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า — เลือกจากงานเปิด (ถาม user)
-**ไม่มีงานโค้ดค้าง** (10-05 รอบ 3 = แผนที่ UI + subagent `ui-investigator` · devlog [2026-10-05 ต่อ 107]) · ตัวเลือกใหม่: 📋 frontend ① §6 Copy กล่องโค้ดไม่ gate (มาก่อน) ② toast สองระบบ · เลือกจาก ⏳ ข้างล่าง/🧪 (docs) หรือถาม user
+**ไม่มีงานโค้ดค้าง** (10-05 รอบ 4 = ปุ่ม Copy กล่องโค้ดย้ายเข้า React + gate §6 · devlog [2026-10-05 ต่อ 108] · 🧪 รอปอยลองบน iPhone) · ตัวเลือก: 📋 frontend toast สองระบบ · เลือกจาก ⏳ ข้างล่าง/🧪 (docs) หรือถาม user
 1. 🧪 (ต่อ 104) user ถามขวัญแนวเดิมในโหมดเสียง → ตอบ "ที่ใกล้สุดคือ…" แทนถามกลับไหม · ✅ ความจำขยะ ASR (ต่อ 105) · ⏳ ค้นในตัวหนังสือ (`reader.db`) แทนเว็บ · ✅ e2e smoke WebKit (a.ui `npm run test:e2e`)
 2. 🧪 log ที่ควรดูรอบหน้า: ~~`[LMStudio] อุ่นเครื่อง`~~ ✅ (ต่อ 102) · `[Chat] timings` ใหม่ (ช้าตรงไหน · 10-05 ยังมีแค่ probe) · `[Voice WS] ห้อง … มีสายเก่ายังค้าง` (เกิดจริงไหม · 10-05 มีแค่ probe) · `[Reader] … ตระกูล 6` (ตอนนำเข้าเล่มใหม่)
 3. 🧪 (ต่อ 100) qwen แปลชื่อเฉพาะผิด (Gemini ถูก) — ถาม user ว่าใช้ Gemini เองไหม (⛔ ห้าม redirect)
@@ -217,7 +217,8 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 Live ตัดสาย 1008 ~151 วิ → `parkIfUnused` · iOS `ended` = `stopVoice()` เท่านั้น · ⛔ Google CSE · Dream ไม่เก็บความรู้จากเน็ต
 
 ### 📋 งานเปิดอื่น
-- **frontend (จาก `docs/ui-map.md` 10-05 · ยังไม่แก้):** ① §6 ปุ่ม Copy บนกล่องโค้ด (`enhanced.js` `_wireCopyButtons`) ไม่ gate + `appendChild` เข้า `<pre>` ของ React = รูปแบบเดียวกับที่เคยจอขาว (§15 badge โมเดลก็แบบเดียวกัน) · ② toast สองระบบ (React `{/* Toast */}` + overlay `#enh-toast` ที่เหลือ caller จริงแค่ §5 @vault)
+- **frontend (จาก `docs/ui-map.md` 10-05 · ยังไม่แก้):** toast สองระบบ (React `{/* Toast */}` + overlay `#enh-toast` ที่เหลือ caller จริงแค่ §5 @vault) ·
+  ข้อสังเกต: §15 badge โมเดลยัง `appendChild` เข้า div ฟองของ React (เพิ่มอย่างเดียว ไม่ลบ ⇒ ไม่ใช่เงื่อนไขจอขาวครั้งก่อน · e2e ยังไม่ครอบ) · ✅ §6 Copy กล่องโค้ด ปิดแล้ว (ต่อ 108)
 - **backend:** ✅ reader `marks.set` verify รอบอ่านจริงแล้ว (ต่อ 50) · ข้อสังเกตเล็ก: `books.text` 90.9 ms บน loop ครั้งเดียวตอนเปิดเล่ม (ยังไม่คุ้มแก้)
 - **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 (รอ memory จากโหมดเสียงสะสม)
 
@@ -284,11 +285,12 @@ seek ต้อง**อ่านค่าก่อนเขียน** (user อ�
 - ❌ ห้ามรัน pytest ในคอนเทนเนอร์ prod (fixture ปน log)
 
 **frontend**
-- ก่อนแก้ UI ที่ไม่แน่ใจว่าอยู่ไหน (React หรือ overlay) → ใช้ subagent `ui-investigator` (แผนที่ [`docs/ui-map.md`](docs/ui-map.md) · ตัวจริง `.claude/agents/` symlink จาก `~/.claude/agents/` เรียกได้ทุกรีโป) ·
+- ก่อนแก้ UI ที่ไม่แน่ใจว่าอยู่ไหน (React หรือ overlay) → ใช้ subagent `ui-investigator` (แผนที่ [`docs/ui-map.md`](docs/ui-map.md) · ตัวจริง `.claude/agents/` symlink จาก `~/.claude/agents/` เรียกได้ทุกรีโป ·
+  เครื่องใหม่/ลิงก์หาย: `mkdir -p ~/.claude/agents && ln -sfn ~/Desktop/ui/.claude/agents/ui-investigator.md ~/.claude/agents/ui-investigator.md`) ·
   ตัวยึดในแผนที่ตรึงด้วย `tests/test_ui_map_anchors.py` (static/) + `~/appscript.ui/utils/uimap.test.ts` (React) — rename แล้วต้องแก้แผนที่ตาม
-- overlay ที่ React ทำเองแล้วต้อง gate `if (window.__hwReactChatBox) return;` (ตอนนี้: tee/`_parseChatSSE` · Ctrl+E · ↑/↓ · paste · §19/§20 · §22) —
+- overlay ที่ React ทำเองแล้วต้อง gate `if (window.__hwReactChatBox) return;` (ตอนนี้: tee/`_parseChatSSE` · Ctrl+E · ↑/↓ · paste · §6 · §19/§20 · §22) —
   เพิ่ม feature ใน React แล้วไล่ overlay ที่ทำซ้ำด้วย · เทส `tests/overlay_gating.test.js`
-- ก่อน commit การแก้ `static/*.js` (overlay) → รัน `npm run test:e2e` ใน `~/appscript.ui` ต้องเขียว 3/3 → ทำตาม skill verify-ui ใน ~/appscript.ui ·
+- ก่อน commit การแก้ `static/*.js` (overlay) → รัน `npm run test:e2e` ใน `~/appscript.ui` ต้องเขียวครบ (ตอนนี้ 4/4) → ทำตาม skill verify-ui ใน ~/appscript.ui ·
   ⛔ ธง `__hwReactChatBox` (`app.tsx`) ห้ามหาย — หายแล้ว overlay ฉีดปุ่มซ้ำ + ซ่อนช่องพิมพ์ (พิสูจน์ใน e2e 10-05)
 - bookreader: server ปิดสาย = เก็บกวาดหลังเสียงค้างเล่นหมด (`playEnd` + ticker) **ห้าม disconnect ทันที** (ตัดท้ายเล่ม) · สีผู้ช่วยผ่าน `paletteFor()` เท่านั้น
 - stream ใหม่ใช้ `sseEvents()` + `settleStream()` ใน finally + `streamFailureText()` ใน catch — ห้ามลูป `getReader()` เอง

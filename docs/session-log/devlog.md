@@ -1,5 +1,31 @@
 ---
 
+## [2026-10-05 ต่อ 108] ปุ่ม Copy บนกล่องโค้ด: ย้ายจาก overlay §6 เข้า React + gate §6
+
+commit: a.ui `0ae2630` + ui (commit เดียวกับ entry นี้) · deploy = `static/` อย่างเดียว ไม่ restart · 🧪 รอปอยลองบน iPhone (`pending-manual-tests.md`)
+
+**สืบก่อนแก้ (subagent `ui-investigator` + เปิดโค้ดยืนยันเอง) — ข้อที่จดไว้ใน ▶️/`ui-map.md` ไม่ตรง:**
+- เดิมจดว่า §6 "`appendChild` เข้า `<pre>` ที่ React เป็นเจ้าของ = รูปแบบเดียวกับที่เคยจอขาว" · จริง: `<pre>` มาจากสตริงของ
+  `renderMarkdown` ผ่าน `dangerouslySetInnerHTML` (React ไม่ได้จัดการลูกชั้นนั้น) และจอขาวครั้งก่อน [09-25 ต่อ 15] คือ overlay
+  `.remove()` node ที่ React render ด้วย JSX — คนละเงื่อนไข (ส่วน "append ไม่พัง" เป็นการอนุมาน + e2e รอบแดงที่ overlay ฉีดปุ่มแล้วแอปยังอยู่ · ไม่ได้ไล่ทุกจังหวะ re-render)
+- ปัญหาจริงของ §6: ปุ่ม `opacity:0` โผล่เฉพาะ `:hover` (iPhone ไม่มี) · `clipboard.writeText` ไม่มี `.catch` · ไม่ขึ้น toast (ต่างจาก 📋 ใต้ฟอง)
+- §15 badge โมเดล: ฉีดเข้า div ฟองที่ React จัดการลูกจริง แต่เพิ่มอย่างเดียว ไม่ลบ · ยังไม่แก้ · e2e ยังไม่ครอบ (mock ไม่ส่ง `X-Model-Used`)
+
+| งาน | ผล |
+|---|---|
+| React (`utils/markdown.tsx`) | กล่องโค้ด = `<div class="md-pre-wrap"><button class="md-copy" data-md-copy>Copy</button><pre class="md-pre">…` · ไม่มี handler ในสตริง · delegation ที่ div ของ `<Markdown>` → `codeFromCopyClick()` (แปลง `<br>` กลับเป็น `\n` — `textContent` ทิ้ง `<br>`) → `onCopyCode` |
+| `app.tsx` | `copyCode` identity คงที่ (ref → `copyMsg`) ส่งให้ `<Markdown>` ทั้งฟองแชทและ debate · CSS `.md-copy` เห็นตลอด · `.md-pre` padding บน 32px (ปุ่มไม่ทับโค้ด) |
+| overlay | `_wireCopyButtons` return ทันทีเมื่อมีธง `__hwReactChatBox` · โค้ดเดิมคงไว้เป็น fallback ของ bundle เก่า · `?v=20261005-803bcea7` |
+| เทส (แดงก่อนแก้) | e2e ④ แดง 3 จุด: `.enh-copy-btn` อยู่ใน `#root` · opacity 0 · ไม่มี toast (ส่วน "มี 1 ปุ่ม" + "clipboard ได้โค้ดถูก" ผ่านอยู่แล้วกับ overlay) · vitest 8 ตัวใหม่แดง · `overlay_gating` §6 แดง |
+| เทส (หลังแก้) | vitest 717 · node 38 · e2e 4/4 · pytest 2790 passed · mutation 4 ตัวตายครบ: ถอด gate → ปุ่มซ้ำ · ไม่ส่ง `onCopyCode` → ไม่มี toast · ไม่แปลง `<br>` → clipboard ผิด · `opacity:0` → แดง |
+| `markdown.test.tsx:143` | อัปเดต `toBe` เป็น output ใหม่ทั้งสตริง (ยังเทียบทุกไบต์ ไม่ได้ทำให้หลวม) |
+| เอกสาร | `ui-map.md` (แถว React ใหม่ · §6 ย้ายไปหมวดตาย · ข้อ 3 แก้ถ้อยคำ) · `CLAUDE.md` (งานเปิด · e2e 4/4 · คำสั่งสร้าง symlink `ui-investigator`) · a.ui `CLAUDE.md` + skill `verify-ui` (4/4) |
+
+**🔑 ที่เจอระหว่างทาง:**
+- Playwright `toBeVisible()` นับ `opacity:0` ว่า "เห็น" และ `click()` hover ให้ก่อน ⇒ เทส "มีปุ่มและกดได้" ผ่านทั้งที่คนบน iPhone หาปุ่มไม่เจอ — ต้องอ่าน `getComputedStyle(el).opacity` โดยยังไม่ hover
+- ปุ่ม `position:absolute` ที่เป็นลูกของ `<pre>` (overflow-x:auto) ไหลตามโค้ดตอนเลื่อนแนวนอน → ต้องเป็นพี่น้องใน wrapper
+- callback ที่ส่งให้คอมโพเนนต์ `React.memo` ต้อง identity คงที่ ไม่งั้น markdown ถูกคำนวณใหม่ทั้งประวัติทุก token (มีเทส memo คุม)
+
 ## [2026-10-05 ต่อ 107] แผนที่ UI + subagent `ui-investigator` (อ่านอย่างเดียว)
 
 **ปิดเซสชันรอบ 3** — commit `cb5e6e5` (ui · CI เขียว) + `77d58ed` (appscript.ui · push NAS+GitHub) · ไม่แตะ prod · ยังไม่ได้ลองเรียกผ่าน Agent tool ในเซสชันใหม่ (ลองผ่าน `--agent` แล้ว)

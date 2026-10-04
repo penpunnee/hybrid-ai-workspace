@@ -889,6 +889,8 @@
   document.head.appendChild(Object.assign(document.createElement("style"), { textContent: copyCSS }));
 
   function _wireCopyButtons() {
+    // React วางปุ่ม Copy ในกล่องโค้ดเองแล้ว (utils/markdown.tsx · .md-copy + toast) — ที่นี่เหลือเป็น fallback ของ bundle เก่า
+    if (window.__hwReactChatBox) return;
     document.querySelectorAll("pre.md-pre").forEach((pre) => {
       if (pre.dataset.copyWired) return;
       pre.dataset.copyWired = "1";
