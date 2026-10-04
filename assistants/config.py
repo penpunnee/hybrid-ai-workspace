@@ -92,6 +92,16 @@ _VOICE_MODE = (
 )
 
 
+# คำลงท้ายของขวัญ — เติมเฉพาะแชท (ต่อ 87) · persona ข้างบนไม่ได้กำหนดไว้ ⇒ qwen หลุด "ครับ" 2/6
+# (4/6 เมื่อข้ามช่วงคิด) · ห้ามย้ายเข้า `system_prompt` — โหมดเสียงต่อจากตัวนั้น (เสียงล็อก 🔒)
+_CHAT_SPEECH = "\n[ภาษา] ขวัญเป็นผู้หญิง ลงท้ายด้วย ค่ะ/คะ เสมอ ห้ามใช้ ครับ หรือแทนตัวเองว่า ผม"
+
+
+def chat_system_prompt(cfg: dict) -> str:
+    """system prompt ของเส้นแชท/regenerate = persona + กติกาเฉพาะแชท (เสียงใช้ `voice_system_prompt`)"""
+    return cfg.get("system_prompt", "") + _CHAT_SPEECH
+
+
 def voice_system_prompt(slug: str) -> str:
     """system prompt สำหรับ Gemini Live — persona เดิม + กติกาโหมดเสียง
 

@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from starlette._utils import create_collapsing_task_group
 from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 
-from assistants.config import ASSISTANTS
+from assistants.config import ASSISTANTS, chat_system_prompt
 from core.env_registry import env_float
 from core.config import SKILLS_DIR
 from utils.llm import StreamCancel, stream_response
@@ -218,7 +218,7 @@ async def chat(request: Request):
     active_learning = data.get("active_learning", True)  # default ON
 
     config = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])
-    base_prompt = config["system_prompt"]
+    base_prompt = chat_system_prompt(config)
     # plan_mode bypass cache — คำตอบ plan-style คนละความหมายกับคำตอบปกติของ prompt เดียวกัน
     use_response_cache = bool(data.get("response_cache", True)) and not (tool_agent or agent_mode or image_b64 or plan_mode)
 
@@ -892,7 +892,7 @@ async def regenerate_response(request: Request):
     cfg = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])
     mem_ctx = await run_in_threadpool(search_memory, assistant, last_prompt)
     system_prompt = inject_context_to_system(
-        cfg["system_prompt"],
+        chat_system_prompt(cfg),
         "\n\n".join(filter(None, [mem_ctx])),
     )
     # history หลังลบจบด้วย user ล่าสุด (= last_prompt) อยู่แล้ว — ห้าม append ซ้ำ
