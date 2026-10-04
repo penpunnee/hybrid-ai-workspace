@@ -2,6 +2,8 @@
 
 ## [2026-10-05 ต่อ 107] แผนที่ UI + subagent `ui-investigator` (อ่านอย่างเดียว)
 
+**ปิดเซสชันรอบ 3** — commit `cb5e6e5` (ui · CI เขียว) + `77d58ed` (appscript.ui · push NAS+GitHub) · ไม่แตะ prod · ยังไม่ได้ลองเรียกผ่าน Agent tool ในเซสชันใหม่ (ลองผ่าน `--agent` แล้ว)
+
 | งาน | ผล |
 |---|---|
 | `docs/ui-map.md` | ส่วนบนจอ → เจ้าของ (React/overlay) → API · อ้างด้วย **ตัวยึด** (`a.ui/<ไฟล์> » ข้อความ` / `static/…`) ไม่ใช้เลขบรรทัด · 53 React + 16 static |
