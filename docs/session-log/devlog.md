@@ -1,5 +1,19 @@
 ---
 
+## [2026-10-04 ต่อ 84] ตรวจทุกทางที่เขียนลงคลัง — ตัวกันเลขบัตรครอบบทเรียน + บันทึกการแก้ไข (`03f4cf1`) ✅ prod + CI
+
+**ทางเขียนลงคลัง:** episodic `remember` (กันแล้ว ต่อ 83) · บทเรียน `_learn`→`save_lesson` (gate ดูแค่**คำถาม** แต่ LLM สรุปจาก**คำตอบ**) ·
+`teach()` เส้น correction (LLM สรุปจากคำตอบก่อนหน้า → `user_facts`) · "จำไว้ว่า" (`detect_teaching` → `user_facts` · ผู้ใช้สั่งเอง) · auto-skill จากไฟล์อัปโหลด
+
+**สแกนของจริงบน prod:** `skills_db.json` 0/22 · `skills/*.md` 0/22 · `response_cache.db` 0 · Chroma ทุก collection 0 (ต่อ 83) ·
+`embed_cache.db` 61 แถว = **false positive** (คอลัมน์ `key` เป็น sha256 hex มีตัวเลขติดกัน 13 ตัวโดยบังเอิญ · ตารางไม่เก็บข้อความ) ·
+`chat_history.db` 2 แถวใน session `test-grounding-local` (70 ข้อความ · 06-19 → 07-24) = ประวัติแชทของ user — **ไม่แตะ** รอ user ตัดสิน
+
+**แก้:** `has_national_id()` ตัวเดียวใช้ทุกทาง — `clean_lesson` ทิ้งบทเรียนที่มีเลขบัตร · `process_teaching` ข้ามบันทึกการแก้ไขที่มีเลขบัตร ·
+"จำไว้ว่า" ตั้งใจไม่กัน (มีเทสตรึง) · mutation 2/2 · pytest 2679 · verify ในคอนเทนเนอร์: `clean_lesson`→`None` · `should_remember`→`national_id`
+
+---
+
 ## [2026-10-04 ต่อ 83] ลบข้อมูลส่วนบุคคลออกจากคลัง + ตัวกันเลขบัตร (`9b6ca3e`) ✅ prod + CI
 
 **ลบ (user อนุญาต · ตรวจซ้ำว่าหายจริงทุกตัว):** ความจำ `mem_20260724080137_540018` (Q มีหัวสเปรดชีต) ·
