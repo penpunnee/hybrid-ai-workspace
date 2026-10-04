@@ -24,6 +24,10 @@
 - **งานเปิดใหม่ (ฌ):** ไทม์ไลน์ tool (`agentSteps` · `app.tsx:758/804/1398`) + บรรทัดสถิติหายหลังรีเฟรช — เก็บแค่ตอน stream ไม่ลง DB (พฤติกรรมเดิม ไม่ใช่ regression · user ขอจดไว้)
 - **ข้อความจริง msg 2671** (markdown จาก DB → `renderMarkdown` ของแอป → WebKit + overlay prod): CSS เก่า Router **2** · Online **3** บรรทัด ทุกความกว้าง 375/393/430 ·
   CSS ใหม่ Router 1 · Online 2 ⇒ fix ได้ผลกับข้อความที่พังจริง (ยังเหลือยืนยันบนเครื่อง user)
+- **เวลาในแถบข้างเป็น UTC** (user เห็น "04:52" แทน 11:52): `app.tsx` แสดง `s.started_at?.substring(11,16)` — `started_at` = `MIN(created_at)`
+  ISO UTC `+00:00` (`utils/history.py:169`) · bubble ถูกเพราะใช้ `formatMsgTime()` → แก้เป็น `formatMsgTime(s.started_at) || 'เมื่อนี้'`
+  (ห้องเก่ากว่าวันนี้ขึ้นวันที่ด้วย · แถวเก่าไม่มี offset 1,274 แถว formatMsgTime ถือเป็น UTC อยู่แล้ว) · เทส wiring `appwiring.test.ts` แดง→เขียว ·
+  mutant `slice(11,16)` แดง · TZ=Asia/Bangkok ค่าจริง `04:52:21+00:00` → `11:52` · vitest 693 · tsc · ui `bf01738` · static `7eeb40e` ✅ prod
 - 🧪 รอ user: เปิดห้องที่เริ่ม 11:52 → "Router"/"Online" ต้องไม่หักกลางคำ (เช็ค `GET /api/history/…/s_20261004_045203_3e33f5` ใน log)
 
 ---
