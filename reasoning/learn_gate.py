@@ -92,6 +92,9 @@ def detect_preferences(prompt: str) -> list[tuple[str, str]]:
     return list(found.items())
 
 
+_ATTACHMENT_RE = re.compile(r"\[(?:Excel|Sheet|DOCX|PDF(?: scan)?): ")
+
+
 def should_remember(prompt: str, response: str) -> tuple[bool, str]:
     """ควรเก็บ exchange นี้ลง episodic memory ไหม → (ok, reason)
 
@@ -110,6 +113,10 @@ def should_remember(prompt: str, response: str) -> tuple[bool, str]:
     ok, reason = should_auto_learn(prompt)
     if not ok:
         return False, reason
+    if _ATTACHMENT_RE.search(prompt or ""):
+        # เนื้อหาไฟล์แนบ (routers/documents.py ใส่หัวแบบนี้) — ความจำตัด 200 ตัวแรก = เก็บแถวข้อมูลดิบ
+        # ไม่ใช่บทสนทนา (prod: mem_20260724080137_540018 เก็บหัวสเปรดชีตครัวเรือนเปราะบาง+เลขบัตร · ต่อ 81)
+        return False, "attachment"
     text = (response or "").strip()
     if not text:
         return False, "empty_response"

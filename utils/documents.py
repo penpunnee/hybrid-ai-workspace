@@ -113,11 +113,21 @@ def index_document(
         return {"ok": False, "error": str(e), "source": source}
 
 
+_TABULAR_TYPES = ("spreadsheet", "ms-excel", "text/csv")
+_TABULAR_EXT = (".xlsx", ".xls", ".csv")
+
+
+def _is_tabular(meta: dict) -> bool:
+    ct = str(meta.get("content_type") or "").lower()
+    return any(t in ct for t in _TABULAR_TYPES) or str(meta.get("source") or "").lower().endswith(_TABULAR_EXT)
+
+
 def retrieve_chunks(
     query: str,
     top_k: int = 5,
     source_filter: Optional[str] = None,
     min_score: float = 0.0,
+    exclude_tabular: bool = False,
 ) -> list[dict]:
     """ค้น chunks ที่ตรงกับ query → คืน list พร้อม score+source
 
@@ -126,6 +136,9 @@ def retrieve_chunks(
         top_k: คืนกี่ chunks
         source_filter: filter เฉพาะ source ที่ระบุ
         min_score: คะแนน similarity ขั้นต่ำ (0-1)
+        exclude_tabular: ตัดเอกสารตาราง (xlsx/xls/csv) — แชทอัตโนมัติใช้ (ต่อ 81): แถวชื่อ+เลขเป็น hub
+            ที่ใกล้ทุกคำถาม (คำถามไม่เกี่ยวได้ 0.50–0.675 ซ้อนคำถามที่เกี่ยว) แยกด้วยคะแนนไม่ได้ ·
+            กรองหลัง query (เอกสารเก่าอาจไม่มี content_type → `where` ของ Chroma จะทิ้งเงียบ) จึงขอ 20 ตัว
 
     Returns:
         list[dict] — {text, source, chunk_index, score, start, end}
@@ -152,7 +165,7 @@ def retrieve_chunks(
     where = {"source": source_filter} if source_filter else None
     try:
         # query มากกว่า top_k เพื่อ rerank
-        n = min(top_k * 2, 20)
+        n = 20 if exclude_tabular else min(top_k * 2, 20)
         kwargs = {"n_results": n}
         if query_vec:
             kwargs["query_embeddings"] = query_vec
@@ -172,6 +185,8 @@ def retrieve_chunks(
     items: list[dict] = []
     for doc, meta, dist in zip(docs, metas, dists):
         meta = meta or {}
+        if exclude_tabular and _is_tabular(meta):
+            continue
         score = round(1 - float(dist), 4)  # cosine sim
         if score < min_score:
             continue

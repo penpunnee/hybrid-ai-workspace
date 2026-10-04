@@ -344,7 +344,8 @@ async def chat(request: Request):
                     # คำถามที่ไม่เกี่ยวกับเอกสารได้ 0.33-0.42 (outlier 0.55 คือคำถามตัวเลข
                     # ไปตรงกับสเปรดชีตตัวเลข) ส่วนคำถามที่เกี่ยวจริงได้ 0.56-0.73
                     # ที่ 0.3 เดิม = ดึงเอกสารมาแปะเป็น citation ทุกข้อความแม้ไม่เกี่ยวเลย
-                    doc_chunks = retrieve_chunks(prompt, top_k=3, min_score=_DOC_MIN_SCORE)
+                    # exclude_tabular: แถวตารางเป็น hub ใกล้ทุกคำถาม (ต่อ 81 · คำถามจริง 17/106 ดึงสเปรดชีตเลขบัตรเข้ามา)
+                    doc_chunks = retrieve_chunks(prompt, top_k=3, min_score=_DOC_MIN_SCORE, exclude_tabular=True)
                     if doc_chunks:
                         _retr_store(session_id, prompt, doc_chunks)
 

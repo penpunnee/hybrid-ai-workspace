@@ -371,19 +371,20 @@ def _join_with_guard(parts: list[str]) -> str:
 
 
 def detect_home_tools(prompt: str) -> list[str]:
-    """คืน list ของ tools ที่ควรเรียกตาม prompt"""
+    """คืน list ของ tools ที่ควรเรียกตาม prompt (keyword ยาวทนวรรณยุกต์พิมพ์ผิด · utils/thaikw)"""
+    from utils.thaikw import contains_kw
     p = prompt.lower()
     tools = []
-    if any(kw in p for kw in _DISK_KW | _NAS_KW):
+    if contains_kw(p, _DISK_KW | _NAS_KW):
         tools.append("disk")
-    if any(kw in p for kw in _DOCKER_KW):
+    if contains_kw(p, _DOCKER_KW):
         tools.append("docker")
-    if any(kw in p for kw in _WOL_KW):
+    if contains_kw(p, _WOL_KW):
         tools.append("wol")
     # network → ping router+NAS+PC จริง; ไม่งั้น ping PC อย่างเดียว (กัน ping ซ้ำ)
-    if any(kw in p for kw in _NETWORK_KW):
+    if contains_kw(p, _NETWORK_KW):
         tools.append("ping_network")
-    elif any(kw in p for kw in _PING_KW):
+    elif contains_kw(p, _PING_KW):
         tools.append("ping_pc")
     return tools
 

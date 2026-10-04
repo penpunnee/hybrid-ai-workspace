@@ -44,8 +44,9 @@ def is_realtime_query(prompt: str) -> bool:
        ถูกเสิร์ฟซ้ำเหมือนเป็นข้อมูลปัจจุบัน — อันตรายเป็นพิเศษกับข้อมูลภัยพิบัติ)
     2. keyword ของสดที่ค้นเว็บไม่ได้ (ping/disk/docker/สถานะ NAS)
     """
+    from utils.thaikw import contains_kw
     text = prompt.lower()
-    if any(kw in text for kw in _REALTIME_KW):
+    if contains_kw(text, _REALTIME_KW):
         return True
     try:
         from reasoning.classifier import needs_internet
