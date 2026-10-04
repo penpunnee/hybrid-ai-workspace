@@ -1,5 +1,28 @@
 ---
 
+## [2026-10-05 ต่อ 109] toast สองระบบ: สืบแล้วปิดโดยไม่แก้โค้ด (ปอยเลือกทาง D)
+
+**ผล:** งานเปิด "toast สองระบบ" ปิด · แก้เอกสารอย่างเดียว (`docs/ui-map.md` + `CLAUDE.md` ▶️) · ไม่แตะ `static/` ไม่ deploy ·
+**งานเปิดใหม่:** ย้าย Vault Search เข้า React (ทาง B) — toast ของ overlay จะหมดไปเอง
+
+**สืบ (subagent `ui-investigator` + เปิดโค้ดยืนยันเอง):**
+- `#enh-toast` (`static/enhanced.js » function showToast`) ตอน React เปิด (`__hwReactChatBox`) ถึงได้จริง**จุดเดียว**: §5 @vault —
+  คลิกผลลัพธ์ใน Vault Search → "📋 คัดลอกแล้ว — วางใน chat ได้เลย" · เส้นนี้ใช้จริงบน prod (`/api/config` ตอบ `has_vault = true` ⇒ ปุ่ม 🌿 แสดง ·
+  พิมพ์ `@vault <คำ>` ในช่องใดก็เปิดได้ — listener ฟัง `input` บน `document`)
+- caller ที่เหลือตายหมดเพราะ gate: §3 Export · §4 Pin · §11 Paste · §18 File Manager · §19/§20 แก้/ลบข้อความ · §22 (กลับมาเฉพาะ bundle เก่าค้าง cache) ·
+  `ui-map.md` เดิมจดรายชื่อไม่ครบ (ขาด §11/§18/§19/§20) — แก้แล้ว · นอกนั้นแผนที่ตรงโค้ด
+- หน้าตา: overlay `bottom:64px` · 12px · z 9999 · fade .3s | React `bottom-6` (24px) · 14px · z-50 · ไม่มี fade · ทั้งคู่กลางจอ ไม่มี `safe-area-inset`
+- **ไม่มี action ใดที่ได้ toast ทั้งสองระบบ** (React ไม่มี toast ในเส้น Vault Search) · ซ้อนได้เฉพาะจังหวะชน (toast React ค้างอยู่แล้วคลิกผล Vault) —
+  คำนวณจากสไตล์ได้ว่าขอบแตะ/เหลื่อม ~2px · **ยังไม่ได้ดูบนจอจริง**
+- React ไม่มีช่องให้โค้ดนอกเรียก toast (`app.tsx` expose แค่ธง `__hwReactChatBox`)
+
+**ทางเลือกที่เสนอ:** A overlay ส่งต่อไป toast ของ React (`window.__hwToast` + fallback) · B ย้าย Vault Search เข้า React · C ปรับ CSS ให้เหมือนกัน · D ไม่แก้โค้ด ·
+**ปอยเลือก D** — เหตุผล: ไม่ซ้อนจาก action เดียว เหลือจุดเดียวที่ Vault · B จดเป็นงานเปิดแทน
+
+**พบระหว่างสืบ (แยกเป็นก้อนถัดไป):** `showToast` ทั้งสองฝั่งไม่เคลียร์ timer ⇒ เรียก 2 ครั้งติดกัน ครั้งหลังหายก่อนเวลา · ก้อนถัดไปแก้เฉพาะฝั่ง React (ปอยสั่ง: ไม่แตะ `#enh-toast`)
+
+---
+
 ## [2026-10-05 ต่อ 108] ปุ่ม Copy บนกล่องโค้ด: ย้ายจาก overlay §6 เข้า React + gate §6
 
 **ปิดเซสชันรอบ 4** — ui `900410b` (โค้ด+bundle · deploy แล้ว) · `744dcfe` (ปิดงานเปิด §6) · a.ui `0ae2630` (push NAS+GitHub) · CI เขียวทั้งสอง commit ·

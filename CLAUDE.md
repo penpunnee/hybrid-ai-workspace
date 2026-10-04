@@ -195,7 +195,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า — เลือกจากงานเปิด (ถาม user)
-**ไม่มีงานโค้ดค้าง** (10-05 รอบ 4 = ปุ่ม Copy กล่องโค้ดย้ายเข้า React + gate §6 · devlog [2026-10-05 ต่อ 108] · ✅ ปอยลองบน iPhone ผ่าน 4/4) · ตัวเลือก: 📋 frontend toast สองระบบ · เลือกจาก ⏳ ข้างล่าง/🧪 (docs) หรือถาม user
+**ไม่มีงานโค้ดค้าง** (10-05 รอบ 4 = ปุ่ม Copy กล่องโค้ดย้ายเข้า React + gate §6 · devlog [2026-10-05 ต่อ 108] · ✅ ปอยลองบน iPhone ผ่าน 4/4) · ตัวเลือก: 📋 frontend ย้าย Vault Search เข้า React · เลือกจาก ⏳ ข้างล่าง/🧪 (docs) หรือถาม user
 1. 🧪 (ต่อ 104) user ถามขวัญแนวเดิมในโหมดเสียง → ตอบ "ที่ใกล้สุดคือ…" แทนถามกลับไหม · ✅ ความจำขยะ ASR (ต่อ 105) · ⏳ ค้นในตัวหนังสือ (`reader.db`) แทนเว็บ · ✅ e2e smoke WebKit (a.ui `npm run test:e2e`)
 2. 🧪 log ที่ควรดูรอบหน้า: ~~`[LMStudio] อุ่นเครื่อง`~~ ✅ (ต่อ 102) · `[Chat] timings` ใหม่ (ช้าตรงไหน · 10-05 ยังมีแค่ probe) · `[Voice WS] ห้อง … มีสายเก่ายังค้าง` (เกิดจริงไหม · 10-05 มีแค่ probe) · `[Reader] … ตระกูล 6` (ตอนนำเข้าเล่มใหม่)
 3. 🧪 (ต่อ 100) qwen แปลชื่อเฉพาะผิด (Gemini ถูก) — ถาม user ว่าใช้ Gemini เองไหม (⛔ ห้าม redirect)
@@ -217,7 +217,8 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 Live ตัดสาย 1008 ~151 วิ → `parkIfUnused` · iOS `ended` = `stopVoice()` เท่านั้น · ⛔ Google CSE · Dream ไม่เก็บความรู้จากเน็ต
 
 ### 📋 งานเปิดอื่น
-- **frontend (จาก `docs/ui-map.md` 10-05 · ยังไม่แก้):** toast สองระบบ (React `{/* Toast */}` + overlay `#enh-toast` ที่เหลือ caller จริงแค่ §5 @vault) ·
+- **frontend (จาก `docs/ui-map.md` 10-05 · ยังไม่แก้):** ย้าย Vault Search (overlay §5 + ปุ่ม 🌿 + ตัวดัก `@vault`) เข้า React แล้ว gate §5 — toast ของ overlay (`#enh-toast`) จะหมดไปเอง ·
+  ✅ toast สองระบบ ปิดแล้วโดยไม่แก้โค้ด (ต่อ 109 · ไม่ซ้อนจาก action เดียว · overlay เหลือจุดเดียวที่ Vault) ·
   ข้อสังเกต: §15 badge โมเดลยัง `appendChild` เข้า div ฟองของ React (เพิ่มอย่างเดียว ไม่ลบ ⇒ ไม่ใช่เงื่อนไขจอขาวครั้งก่อน · e2e ยังไม่ครอบ) · ✅ §6 Copy กล่องโค้ด ปิดแล้ว (ต่อ 108)
 - **backend:** ✅ reader `marks.set` verify รอบอ่านจริงแล้ว (ต่อ 50) · ข้อสังเกตเล็ก: `books.text` 90.9 ms บน loop ครั้งเดียวตอนเปิดเล่ม (ยังไม่คุ้มแก้)
 - **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 (รอ memory จากโหมดเสียงสะสม)

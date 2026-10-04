@@ -44,7 +44,7 @@
 |---|---|---|---|
 | หน้า Login (เมื่อตั้ง `UI_PASSWORD`) | `static/enhanced.js » 0. AUTH` | `/api/auth/login` · `/api/auth/check` | แนบ token ทุก `/api/*` ผ่าน fetch override |
 | fetch override กลาง (auth · stop · history · typing) | `static/enhanced.js » Single unified fetch override` · `static/chat_intercept.js » applyChatBodyMutations` | ทุก `/api/*` | แก้ body `/api/chat` ได้ — เช็คก่อนแก้ flag ใน React |
-| @vault ในช่องพิมพ์ | `static/enhanced.js » 5. @vault SEARCH` | — | ฟัง keydown ของ textarea |
+| @vault ในช่องพิมพ์ | `static/enhanced.js » 5. @vault SEARCH` | `/api/vault/search` | ฟัง `input` บน `document` (ทุก INPUT/TEXTAREA รวมช่องพิมพ์ของ React) · คลิกผลลัพธ์ = คัดลอก + toast ของ overlay |
 | ปุ่มหยุด stream ⏹ | `static/enhanced.js » 7. STOP GENERATION` | — (abort fetch) | React ไม่มีปุ่มหยุด |
 | ปุ่มเลื่อนลงล่างสุด | `static/enhanced.js » 8. SCROLL TO BOTTOM BUTTON` | — | ปุ่มลอยบน `body` |
 | "กำลังคิด…" ก่อน chunk แรก | `static/enhanced.js » 12. TYPING INDICATOR` | — | ลอยบน `body` |
@@ -52,8 +52,8 @@
 | badge ชื่อโมเดลใต้ฟอง AI | `static/enhanced.js » 15. MODEL INDICATOR` · `static/enhanced.js » function _injectModelBadge` | header `X-Model-Used` ของ `/api/chat` | ⚠️ ฉีดเข้าฟองของ React |
 | ป้าย "🦙 Llama" → ชื่อโมเดล | `static/enhanced.js » 16. แทน` | `/api/config` | แก้ text node ของ React · ตอนนี้ไม่มีผล (`app.tsx` ไม่มีคำว่า Llama แล้ว) |
 | เลื่อนช่องพิมพ์พ้นคีย์บอร์ด iOS | `static/enhanced.js » 21. MOBILE KEYBOARD SCROLL` | — | `visualViewport` |
-| FAB 🔎 Vault (ซ่อนไว้) | `static/enhanced.js » id="fab-vault"` | — | 🏠/🔍 ถูก `.remove()` เมื่อมีธง |
-| **Toast (overlay)** `#enh-toast` | `static/enhanced.js » function showToast(msg, ms = 2500)` | — | caller ส่วนใหญ่ (Export/Pin/upload/§22) อยู่ใน section ที่ gate แล้ว ⇒ ที่ยังขึ้นจริงคือ §5 @vault ("📋 คัดลอกแล้ว — วางใน chat ได้เลย") · เห็นข้อความอื่นของ overlay = bundle เก่าค้าง cache |
+| FAB 🌿 Vault (ซ่อนจนกว่า `/api/config` ตอบ `has_vault` · prod = true ⇒ แสดง) | `static/enhanced.js » id="fab-vault"` | `/api/config` | 🏠/🔍 ถูก `.remove()` เมื่อมีธง |
+| **Toast (overlay)** `#enh-toast` | `static/enhanced.js » function showToast(msg, ms = 2500)` | — | caller ทุกตัวยกเว้น §5 อยู่ใน section ที่ gate แล้ว (§3 Export · §4 Pin · §11 Paste · §18 File Manager · §19/§20 แก้/ลบข้อความ · §22) ⇒ ที่ยังขึ้นจริงคือ §5 @vault จุดเดียว ("📋 คัดลอกแล้ว — วางใน chat ได้เลย") · เห็นข้อความอื่นของ overlay = bundle เก่าค้าง cache |
 
 ## 3. จุดเสี่ยงที่รู้แล้ว (งานเปิดใน CLAUDE.md ▶️)
 1. **§15 badge โมเดล** — ไม่ gate · `appendChild` เข้า div ฟองที่ React จัดการลูกเอง (JSX) · เพิ่มอย่างเดียว ไม่ลบ
@@ -61,8 +61,10 @@
    ยังไม่เคยถูกตรวจใน e2e (mock ไม่ส่ง header `X-Model-Used`)
    · ✅ §6 Copy บนกล่องโค้ด ปิดแล้ว 10-05 (ย้ายเข้า React + gate) — ที่เคยจดว่า "ฉีดเข้า `<pre>` ที่ React เป็นเจ้าของ" ไม่ตรง:
    `<pre>` มาจากสตริงของ `renderMarkdown` ผ่าน `dangerouslySetInnerHTML` React ไม่ได้จัดการลูกชั้นนั้น · ปัญหาจริงคือปุ่ม `opacity:0` รอ hover
-2. **Toast สองระบบ** — React (`{/* Toast */}` ที่ `bottom-6` กลาง) กับ overlay (`#enh-toast`) · แยกด้วยข้อความ:
+2. **Toast สองระบบ** — React (`{/* Toast */}` ที่ `bottom-6` กลาง · 14px · z-50) กับ overlay (`#enh-toast` ที่ `bottom:64px` กลาง · 12px · z 9999) · แยกด้วยข้อความ:
    grep ข้อความบนจอใน `app.tsx` ก่อน (`showToast('…')`) ไม่เจอค่อย grep `enhanced.js` แล้วเช็คว่า section นั้น gate หรือไม่
+   · ✅ **ปิดแล้ว 10-05 โดยไม่แก้โค้ด** (devlog [ต่อ 109]): ไม่มี action ใดที่ได้ toast ทั้งสองระบบ · overlay เหลือ caller จุดเดียวที่ §5 @vault ·
+   React ยังไม่มีช่องให้ overlay เรียก toast ของมัน (expose แค่ธง `__hwReactChatBox`) · จะหมดไปเองเมื่อย้าย Vault Search เข้า React (งานเปิดใน CLAUDE.md ▶️)
 
 ## 4. ตายแล้ว (gate ด้วย `__hwReactChatBox` · อย่าแก้ที่นี่ แก้ที่ React)
 §1.5 DREAM STATS · §2 GLOBAL SEARCH · §3 EXPORT · §4 PIN · §6 COPY CODE BUTTON (`static/enhanced.js » function _wireCopyButtons`) · §9 TOKEN USAGE BAR · §10 PROMPT HISTORY · §11 PASTE ·
