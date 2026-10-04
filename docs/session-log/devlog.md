@@ -1,5 +1,28 @@
 ---
 
+## [2026-10-05 ปิดเซสชันรอบ 2] สรุป — เครื่องมือตรวจ frontend (pre-commit · e2e WebKit · skill verify-ui) + ลด CLAUDE.md 50 → 41 KB
+
+ไม่มีงานแตะ prod/โค้ดแอปเลยทั้งเซสชัน — งานเครื่องมือ/เอกสารล้วน · CI เขียวทุก commit
+
+| งาน | ผล | commit |
+|---|---|---|
+| pre-commit hook ใน `~/appscript.ui` | `.githooks/pre-commit` → `npm run precommit` (= `typecheck` + `test:unit`) · `core.hooksPath=.githooks` (ค่าในเครื่อง — clone ใหม่ต้องตั้งเอง) · พิสูจน์: เทสพังชั่วคราว → ถูกบล็อก · type error ชั่วคราว → ถูกบล็อก · ⛔ `--no-verify` (กฎใน a.ui `CLAUDE.md`) | a.ui `4c74e5a` |
+| แก้ข้อความตกรุ่น "appscript.ui ไม่มี remote" | จริง: `origin`=NAS + `github`=GitHub · แก้ทั้ง `CLAUDE.md` นี้และ `~/CLAUDE.md` (ตัวหลังไม่อยู่ใน git) | `322d40d` |
+| ลด `CLAUDE.md` 49,973 → 40,774 ไบต์ | กติกา 10-02/10-04/05 → `docs/reference/rules-1002-1005.md` (ทั้งดุ้น · ข้อห้ามกันความเสียหายคงเป็นบรรทัดสั้น) · ✅ ปิดแล้ว → entry [ต่อ 106] ข้างล่าง · 🧪 → `docs/session-log/pending-manual-tests.md` · ตัวชี้ทุกอันรูป "ก่อนทำงาน X → อ่าน Y" · กฎการจดข้อ 6: ⛔ หัวข้อลงวันที่ · ตรวจด้วยสคริปต์: 46 บรรทัดที่ออกอยู่ในปลายทางครบ | `ef7141a` |
+| e2e smoke Playwright (WebKit · iPhone 15) | `npm run test:e2e` ~6–10 วิ (ไม่อยู่ใน pre-commit) · 3 เทส: ① ไม่จอขาว/console 0 error/ไม่มี `/api/*` ที่ไม่มี mock ② ส่งแชท (เช็คทั้ง body ที่ส่งและข้อความที่ขึ้น) ③ overlay ไม่ชน React (ส่ง 2 รอบ · ไม่มี `.enh-*` ใน `#root`) · mock ทั้งหมดใน `e2e/mocks.ts` · vitest exclude `e2e/**` | a.ui `d298fc6` |
+| กฎ overlay ↔ e2e | หมวด frontend: แก้ `static/*.js` ต้อง e2e 3/3 · ⛔ ธง `__hwReactChatBox` ห้ามหาย | `9466b9e` |
+| skill `verify-ui` | `~/appscript.ui/.claude/skills/verify-ui/SKILL.md` · ตารางไฟล์ → ระดับ เร็ว/กลาง/มือ (A เสียง · B อ่าน · C layout Safari พร้อมเกณฑ์ผ่านจากป้ายจริงใน `app.tsx`) · ไฟล์นอกตาราง = กลาง + เสนอเพิ่มแถว · ทดลอง: `index.css` → เร็ว+กลาง+มือ C · คอมเมนต์ `utils/tokencount.ts` → เร็ว | a.ui `4d7bab0` · `9f6e179` |
+
+**🔑 ที่เจอระหว่างทาง (ไม่เคยจดมาก่อน):**
+- **vite dev ไม่โหลด overlay เลย** — `/static/*.js` ไม่มีใน a.ui → vite ตอบ `index.html` (200 `text/html`) ⇒ รัน `npm run dev` แล้วเห็นแอปทำงานได้
+  ไม่ได้แปลว่า overlay ไม่ชน · e2e แก้ด้วย `page.route` เสิร์ฟไฟล์จริงจาก `OVERLAY_DIR` (default `~/Desktop/ui/static` อ่านอย่างเดียว · ไม่แตะ vite config)
+- **ปิดธง `__hwReactChatBox`** → overlay ฉีดปุ่มซ้ำ และครั้งหนึ่ง**ซ่อนช่องพิมพ์ของ React** (e2e จับได้)
+- ตอนเปิดหน้าแอปยิง `/api/*` 15 เส้น (config/models/warmup/sessions/history/pinned/status/digest/vault/dream×2/memory/skills) — endpoint ใหม่ต้องเติม mock ไม่งั้นเทส ① แดง
+- `rules-1002-1005.md` ถูกอ้างข้ามรีโป (skill `verify-ui`) — เทสงบเช็คลิงก์แค่ใน `CLAUDE.md` ⇒ แยก/ย้ายไฟล์ต้อง grep แก้ตาม (คำสั่งอยู่หัวไฟล์นั้น)
+- WebKit ของ `@playwright/test` 1.63 = revision 2359 (โหลดใหม่ 78 MB) · ตัว global `@playwright/cli` ใช้ 2317 คนละตัว
+
+**ค้าง/ถัดไป:** ไม่มีงานค้างจากเซสชันนี้ · งานเปิดเดิมดู ▶️ ใน `CLAUDE.md`
+
 ## [2026-10-05 ต่อ 106] ยก "✅ ปิดแล้ว" ออกจาก CLAUDE.md ▶️ (ทั้งดุ้นไม่แก้เนื้อ · ลด CLAUDE.md ให้ ≤ 42 KB)
 
 ### ✅ ปิดแล้ว (รายละเอียด: devlog [2026-10-05 ปิดเซสชัน] · [2026-10-04 ปิดเซสชันรอบ 7] · [2026-10-04 ปิดเซสชันรอบ 5] · [2026-10-04 ปิดเซสชันรอบ 4] · [2026-10-04 ต่อ 87] · [2026-10-04 ปิดเซสชันรอบ 3] · [2026-10-04 ปิดเซสชัน] · [2026-10-02 ปิดเซสชัน] · ก่อนหน้านั้นดู devlog)
