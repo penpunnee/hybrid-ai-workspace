@@ -8,6 +8,7 @@ import logging
 from .correction import build_correction_record, llm_extractor
 from .schema import MemoryEntry
 from .store import save_entry, update_confidence
+from reasoning.learn_gate import has_national_id
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,10 @@ def process_teaching(assistant: str, user_text: str, ai_response: str = "",
         logger.info("[Teach] ตรวจเจอการแก้ไข → ลด confidence ของคำตอบที่ผิด")
         if len(user_text) > 10:
             record = build_correction_record(user_text, prev_answer, extractor=llm_extractor)
+            if record and has_national_id(record):
+                # สรุปจากคำตอบเดิมซึ่งอาจมีเลขบัตร — ไม่ใช่สิ่งที่ผู้ใช้สั่งจำ (ต่างจาก "จำไว้ว่า" ด้านบน · ต่อ 83)
+                logger.info("[Teach] ข้ามบันทึกการแก้ไข — มีรูปแบบเลขบัตรประชาชน")
+                record = None
             if record:
                 entry = MemoryEntry(
                     content=record,

@@ -115,3 +115,31 @@ def test_national_id_not_remembered(q, a):
 ])
 def test_other_numbers_still_remembered(q, a):
     assert should_remember(q, a) == (True, "ok")
+
+
+# ── จ. ทางเขียนอื่นนอก episodic: บทเรียน (LLM สรุป) + บันทึกการแก้ไข (teach) ─────────────
+def test_lesson_with_national_id_dropped():
+    from reasoning.learn_gate import clean_lesson
+    assert clean_lesson("บ้านเลขที่ของนาง ก (3540400629704) ถูก Excel แปลงเป็นวันที่ ต้องจัดรูปแบบเป็นข้อความ") is None
+    assert clean_lesson("Excel แปลงบ้านเลขที่เป็นวันที่ ต้องตั้งคอลัมน์เป็นข้อความก่อนวางข้อมูล") is not None
+
+
+def test_correction_record_with_national_id_not_saved(monkeypatch):
+    import memory.teach as t
+    saved = []
+    monkeypatch.setattr(t, "update_confidence", lambda *a, **k: True)
+    monkeypatch.setattr(t, "save_entry", lambda e, collection_name=None: saved.append(e.content) or True)
+    monkeypatch.setattr(t, "build_correction_record",
+                        lambda u, p, extractor=None: "เลขบัตรที่ถูกของนาง ก คือ 3540400629704")
+    t.process_teaching("kwan", "ไม่ใช่ เลขบัตรผิดแล้ว แก้ใหม่", ai_response="รับทราบ", prev_answer="นาง ก 3540400629705")
+    assert saved == []
+
+
+def test_user_explicit_remember_not_blocked(monkeypatch):
+    """"จำไว้ว่า" = ผู้ใช้สั่งเอง (ตั้งใจไม่กัน · ต่อ 83)"""
+    import memory.teach as t
+    saved = []
+    monkeypatch.setattr(t, "save_entry", lambda e, collection_name=None: saved.append(e.content) or True)
+    monkeypatch.setattr(t, "detect_teaching", lambda text: ("เลขผู้เสียภาษีบริษัทคือ 0105500000000", "fact"))
+    t.process_teaching("kwan", "จำไว้ว่า เลขผู้เสียภาษีบริษัทคือ 0105500000000")
+    assert saved == ["เลขผู้เสียภาษีบริษัทคือ 0105500000000"]
