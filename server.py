@@ -218,9 +218,11 @@ fetch('/api/shared/'+encodeURIComponent(token)).then(r=>r.json()).then(d=>{
 
 # ตัวนับการเปิดสายต่อ session — **ต้องอยู่ระดับโมดูล** ไม่ใช่ในตัว handler
 # เพราะจุดประสงค์ทั้งหมดคือให้มันรอดข้าม WS handler คนละตัว (นั่นแหละคือสิ่งที่จะวัด)
-from utils.voice import VoiceOpenTracker
+from utils.voice import VoiceLineRegistry, VoiceOpenTracker
 
 _VOICE_OPENS = VoiceOpenTracker()
+# ห้องเดียว = สาย Live เดียว (ดู utils/voice.py:VoiceLineRegistry · สายซ้อน 10-01 13:36)
+_VOICE_LINES = VoiceLineRegistry()
 
 
 # ── Voice WebSocket (ยังอยู่ใน server.py เพราะต้องการ lifespan context) ──────
@@ -312,6 +314,8 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
     # ⚠️ สร้าง **นอก**ลูป reconnect โดยตั้งใจ — ถ้าอยู่ในลูป นาฬิกาจะรีเซ็ตทุกนาทีที่ 10
     # ซึ่งพอดีกับจุดที่เราสงสัยว่าเสียงเบาลง = มองไม่เห็นสิ่งที่ตั้งใจจะดู
     meter = AudioLevelMeter()
+    if _VOICE_LINES.claim(session_id, stop):
+        logger.warning(f"[Voice WS] ห้อง {session_id} มีสายเก่ายังค้าง (client หลุดเงียบ?) — สั่งปิดสายเก่า")
     try:
         while not stop.is_set():
             regen = asyncio.Event()
@@ -599,6 +603,7 @@ async def voice_websocket(websocket: WebSocket, assistant_slug: str, session_id:
         except Exception:
             pass
     finally:
+        _VOICE_LINES.release(session_id, stop)
         # สรุปเป็นงานสุดท้ายในคิวของ writer = ออกหลังบันทึกครบ · ไม่รอ (ปิดสายไม่ค้างรอ DB · งานค้างไม่ถูกยกเลิก)
         _writer.close(then=lambda: logger.info(f"[Voice WS] งาน sync (บันทึกใน worker): {_loop_timer.summary()}"))
 

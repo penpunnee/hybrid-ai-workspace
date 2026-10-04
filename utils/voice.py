@@ -456,6 +456,36 @@ class VoiceOpenTracker:
         return nth, since
 
 
+class VoiceLineRegistry:
+    """ห้องแชทเดียว = สาย Live ที่ทำงานได้สายเดียว · สายใหม่มา → ตั้งธง `stop` ของสายเก่า
+
+    prod 10-01 13:36: iOS ซ่อนหน้าเว็บ → socket client ตายเงียบ (ไม่มี close frame) · client
+    ต่อสายใหม่แล้ว แต่ handler เก่ายังถือ Live session ไว้จนหมดเวลา ping ของ uvicorn (38 วิ)
+    = 2 สายบน key เดียว · `recv_loop` เช็คธง `stop` ทุก ≤1 วิ ⇒ สายเก่าปิดเองภายในวินาที
+
+    dict ไม่โต: ทุก handler `release()` ใน finally (และลบเฉพาะเมื่อยังเป็นตัวที่ลงทะเบียนอยู่)
+    """
+
+    def __init__(self):
+        self._lines: dict[str, "asyncio.Event"] = {}
+
+    def __len__(self) -> int:
+        return len(self._lines)
+
+    def claim(self, session_id: str, stop) -> bool:
+        """ลงทะเบียนสายนี้ · คืน True เมื่อมีสายเก่าที่ยังไม่จบถูกสั่งปิด"""
+        old = self._lines.get(session_id)
+        self._lines[session_id] = stop
+        if old is not None and old is not stop and not old.is_set():
+            old.set()
+            return True
+        return False
+
+    def release(self, session_id: str, stop) -> None:
+        if self._lines.get(session_id) is stop:
+            del self._lines[session_id]
+
+
 #: ห่างจากครั้งก่อนไม่เกินเท่านี้ถึงจะนับว่า "น่าจะต่อใหม่กลางสาย"
 #
 # 🔴 ทำไมต้องมีเกณฑ์ ไม่ใช่ติดธงทุกครั้งที่ nth>=2: `session_id` ที่ client ส่งมาคือ
