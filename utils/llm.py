@@ -499,7 +499,7 @@ def _stream_lmstudio(messages: list[dict], model: str = "",
         stream = _create_stream_with_usage(
             lmstudio_client.chat.completions.create,
             {"model": model, "messages": msgs, "stream": True, "temperature": temperature},
-            want_usage=usage_sink is not None,
+            want_usage=True,  # ขอเสมอ — log ต้องได้ token จริงแม้คนเรียกไม่ต้องการ (auto-learn เคยขึ้น in=?)
         )
         if cancel is not None:
             cancel.register(stream)

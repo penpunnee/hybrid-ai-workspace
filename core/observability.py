@@ -17,6 +17,7 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
+import threading
 import time
 import uuid
 from contextlib import contextmanager
@@ -43,6 +44,17 @@ def start_request(prefix: str = "req") -> str:
 
 def current_request_id() -> str:
     return _request_id_var.get()
+
+
+def spawn_bg(target, *args) -> threading.Thread:
+    """สตาร์ทเธรด daemon ที่สืบ contextvars (request id) ของผู้สปอน
+
+    `threading.Thread` ดิบเริ่มด้วย context ว่าง ⇒ log ของงานเบื้องหลังขึ้น `rid=-`
+    แล้วไล่ไม่ได้ว่ามาจากแชทไหน (prod 10-04: LM Studio stream ปริศนา = เธรด auto-learn)"""
+    ctx = contextvars.copy_context()
+    t = threading.Thread(target=ctx.run, args=(target, *args), daemon=True)
+    t.start()
+    return t
 
 
 def get_timings() -> dict:

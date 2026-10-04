@@ -10,7 +10,6 @@ verified 0.95 แล้วฉีดทุก prompt (รันจริง) · a
 · ไม่แตะ pattern ไทย/`แก้ไข` — prompt จริง 600 ข้อ = 0 hit ไม่มีหลักฐานให้จูน
 """
 
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -87,7 +86,7 @@ def _post_with_teach_result(monkeypatch, result: bool):
             pass
 
     _Thread.instances = []
-    monkeypatch.setattr(chatmod, "threading", SimpleNamespace(Thread=_Thread))
+    monkeypatch.setattr(chatmod, "spawn_bg", lambda target, *a: _Thread(target=target))
     with patch("routers.chat.stream_response") as ms, \
          patch("routers.chat.save_message", return_value=1), \
          patch("routers.chat.save_reply", return_value=2), \

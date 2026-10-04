@@ -39,7 +39,7 @@ class _RecordingThread:
 
 def _post(monkeypatch, headers=None):
     _RecordingThread.instances = []
-    monkeypatch.setattr(chatmod, "threading", SimpleNamespace(Thread=_RecordingThread))
+    monkeypatch.setattr(chatmod, "spawn_bg", lambda target, *a: _RecordingThread(target=target))
     with patch("routers.chat.stream_response") as mock_stream, \
          patch("routers.chat.save_message", return_value=1), \
          patch("routers.chat.save_reply", return_value=2), \
@@ -77,7 +77,6 @@ def test_without_header_calls_remember_teach_and_lesson_thread(monkeypatch):
 
 def test_is_test_request_helper_reads_header_case_insensitive():
     from routers.chat import _is_test_request
-    from types import SimpleNamespace
     req_true = SimpleNamespace(headers={"x-test-request": "true"})
     req_false = SimpleNamespace(headers={})
     assert _is_test_request(req_true) is True

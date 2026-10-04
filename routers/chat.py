@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import threading
 import anyio
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
@@ -25,7 +24,7 @@ from utils.obsidian_sync import search_vault
 from utils.home_tools import detect_home_tools, build_tool_context
 from reasoning.learn_gate import should_auto_learn, clean_lesson, should_remember, detect_preferences
 from utils.tokens import count_tokens_approx
-from core.observability import log_timing, current_request_id, get_timings
+from core.observability import log_timing, current_request_id, get_timings, spawn_bg
 from utils.http_limits import json_body_capped, MAX_BODY_BYTES
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -722,7 +721,7 @@ async def chat(request: Request):
                                 injected=[p.name for p in _picked], message_id=_mid,
                                 assistant=assistant, session_id=session_id,
                                 is_test_request=is_test_request)
-            threading.Thread(target=_shadow, daemon=True).start()
+            spawn_bg(_shadow)
 
         # ── Reflection: ตรวจคำตอบหลัง stream เสร็จ → ส่ง revision เป็น SSE event ─
         if reflect and full_response:
@@ -776,7 +775,7 @@ async def chat(request: Request):
                     logger.debug(f"[Chat/teach] failed: {e}")
 
             if not taught:
-                threading.Thread(target=_teach, daemon=True).start()
+                spawn_bg(_teach)
 
         # preference detection แยกจากเธรด lesson — เดิมฝังอยู่ข้างในทำให้ทำงานเฉพาะ
         # ตอนคำตอบยาว >100 ตัวอักษร + ผ่าน gate ของ lesson → preferences ว่าง 0 รายการ
@@ -818,7 +817,7 @@ async def chat(request: Request):
                         logger.info(f"[Chat/auto-learn] ทิ้งบทเรียนที่ไม่ผ่านการกรอง: {raw_lesson[:60]!r}")
                 except Exception as e:
                     logger.debug(f"Auto-learn failed: {e}")
-            threading.Thread(target=_learn, daemon=True).start()
+            spawn_bg(_learn)
 
         # ใส่ timing + request_id ใน done event เพื่อ debug / metrics
         done_payload = {
