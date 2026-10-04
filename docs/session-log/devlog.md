@@ -2,7 +2,9 @@
 
 ## [2026-10-05 ต่อ 108] ปุ่ม Copy บนกล่องโค้ด: ย้ายจาก overlay §6 เข้า React + gate §6
 
-commit: a.ui `0ae2630` + ui (commit เดียวกับ entry นี้) · deploy = `static/` อย่างเดียว ไม่ restart · 🧪 รอปอยลองบน iPhone (`pending-manual-tests.md`)
+commit: a.ui `0ae2630` + ui (commit เดียวกับ entry นี้) · deploy = `static/` อย่างเดียว ไม่ restart (NAS `900410b` · prod เสิร์ฟ `index-DOqh8pOw.js` + `enhanced.js?v=20261005-803bcea7` · CI เขียว)
+
+✅ **ทดสอบมือบน iPhone ผ่าน 4/4 (ปอย · 10-05):** เห็นปุ่ม `Copy` ทันทีโดยไม่ต้องแตะค้าง + ปุ่มเดียวต่อกล่อง · แตะแล้วขึ้น toast `📋 Copy แล้ว` · วางในโน้ตได้โค้ดครบทุกบรรทัด · เลื่อนโค้ดบรรทัดยาวแล้วปุ่มอยู่กับที่ ไม่ทับโค้ด ⇒ **งานเปิด §6 ปิด** (ถอดจาก `pending-manual-tests.md` แล้ว)
 
 **สืบก่อนแก้ (subagent `ui-investigator` + เปิดโค้ดยืนยันเอง) — ข้อที่จดไว้ใน ▶️/`ui-map.md` ไม่ตรง:**
 - เดิมจดว่า §6 "`appendChild` เข้า `<pre>` ที่ React เป็นเจ้าของ = รูปแบบเดียวกับที่เคยจอขาว" · จริง: `<pre>` มาจากสตริงของ
