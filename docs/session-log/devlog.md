@@ -1,5 +1,17 @@
 ---
 
+## [2026-10-04 ต่อ 76] ทำไมแชทออกแบบ UI วิ่ง agent — โหมด Code ค้างใน localStorage · ไม่คืนค่า Code + ป้ายสถานะจริง (appscript.ui `ea0d5a6` · static `ec53d7b`) ✅ prod + CI
+
+**ต้นทาง `tool_agent`** (`~/appscript.ui/utils/chatflags.ts:19`): โหมด **Code** หรือ skill **Web Search** — ปุ่ม 🤖 ส่ง `agent_mode` (คนละ flag ไม่เข้า tools)
+· ทั้งสองค้างใน localStorage (`hw_cb_mode` · `hw_cb_skills`) ข้ามรีเฟรช/ข้ามวัน แยกต่อเครื่อง
+· **ภาพจอ user (iPhone 10-04 09:25):** โหมด **Code** · Skills ว่าง · ป้าย "Agent" ⇒ ไม่ใช่บั๊ก แต่ค้างโดยไม่ได้ตั้งใจใช้ tools
+· ป้ายเดิม (`app.tsx` แถวสถานะ) ดูแค่ mode ⇒ Ask + Web Search ขึ้น "Auto" ทั้งที่วิ่ง agent
+**แก้ (user: "ตามที่แนะนำ"):** `initialCbMode()` Code → Ask ตอนเปิดหน้า (Plan ยังจำ · Skills ไม่แตะ) · `cbStatusLabel()` ตัดสินจาก `buildChatFlags`
+- vitest +7 (662 ทั้งหมด) · mutation 2/2 · tsc ✅ · bundle `index-IiBV47Xo.js` · verify: `ai.pawinhome.com` เสิร์ฟ bundle ใหม่ · CI ✅
+- 🧪 รอ user: รีเฟรช → dropdown ต้องขึ้น Ask · เปิด Web Search ใน Ask → ป้ายต้องขึ้น "Agent"
+- infra: `nas-cf` หมดอายุ (Access) → push/deploy ผ่าน LAN `ssh nas` ได้ · คำสั่ง push `nas-cf:` ค้างรอ browser login (ต้อง kill)
+- จุดแดงสถานะ local ในภาพ = PC .235 ดับจริง (10-04 02:3x UTC: LM Studio/Ollama ตอบ 000 จาก NAS) ⇒ embed + qwen ตกไป fallback
+
 ## [2026-10-02 ต่อ 75] เส้น agent LM Studio ก็ล้น → LM Studio ตัดเองเงียบๆ · ใช้ตัวตัดเดียวกัน + หักงบ tools (`f352718`) ✅ prod + CI
 
 **log หลังต่อ 74 (09:31 UTC):** แชทวิ่ง `[Agent/LM Studio] step 1/4` (request ส่ง `tool_agent:true` — ปุ่ม agent เปิด) ⇒ ไม่ผ่าน `_stream_lmstudio`
