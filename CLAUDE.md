@@ -110,7 +110,7 @@ ssh nas 'sudo -n /usr/local/bin/docker exec ai-backend-1 \
 เพราะ `scripts/` เป็นโค้ดดิร์เดียวที่ไม่ได้ mount (เป็นสำเนาค้างจากตอน build ที่ไม่มีไฟล์นี้)
 
 ### Frontend
-`static/` คือ vite build output จาก **React source ที่ `~/appscript.ui`** (git repo local แยก ไม่มี remote):
+`static/` คือ vite build output จาก **React source `~/appscript.ui`** (remote `origin`=NAS + `github` · pre-commit hook):
 ```bash
 cd ~/appscript.ui
 npm run build                 # tsc + vite → dist/
