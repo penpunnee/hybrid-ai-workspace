@@ -126,11 +126,12 @@ from utils.llm import _capture_openai_usage, _create_stream_with_usage, _lmstudi
 
 def _note_usage(sink: dict | None, input_tokens, output_tokens) -> None:
     """บันทึก usage ของคำขอหนึ่งครั้งลง sink ของทั้งเทิร์น — agent ยิงหลายคำขอ:
-    ขาเข้า = ของคำขอล่าสุด (ประวัติ + ผล tool สะสม = ใกล้ context เต็มที่สุด) · ขาออก = รวมทุกคำขอ ·
+    ขาเข้า = คำขอที่**ใหญ่สุด** (ใกล้ context เต็มที่สุด · ไม่ใช่ล่าสุด — รอบ "ขอสรุปใหม่" ไม่ส่ง tools schema
+    จึงเล็กกว่า step ก่อนหน้า: prod 10-04 รายงาน 1,133 ทั้งที่ step ที่มี tools ใหญ่กว่า) · ขาออก = รวมทุกคำขอ ·
     รับเฉพาะ int (int(MagicMock()) == 1 · ค่าแปลกต้องไม่กลายเป็นตัวเลขบนจอ)"""
     if sink is None or type(input_tokens) is not int:
         return
-    sink["input_tokens"] = input_tokens
+    sink["input_tokens"] = max(sink.get("input_tokens", 0), input_tokens)
     sink["output_tokens"] = sink.get("output_tokens", 0) + (output_tokens if type(output_tokens) is int else 0)
 
 

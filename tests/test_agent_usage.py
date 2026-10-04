@@ -4,7 +4,7 @@
 `run_agent` ไม่มีช่องรับ · adapter ไม่ขอ `include_usage` ⇒ แถบโชว์ "ไม่รายงาน" ในเทิร์น agent
 ซึ่งเสี่ยงล้น context ที่สุด (tools schema ~2.5k token + ผล tool สะสมทุก step · ต่อ 75)
 
-agent ยิงหลายคำขอต่อเทิร์น: ขาเข้า = ของคำขอ **ล่าสุด** (ประวัติ + ผล tool สะสม = ใกล้เต็มที่สุด) ·
+agent ยิงหลายคำขอต่อเทิร์น: ขาเข้า = คำขอที่ **ใหญ่สุด** (ใกล้เต็มที่สุด · รอบสรุปไม่ส่ง tools จึงเล็กกว่า) ·
 ขาออก = **รวม** ทุกคำขอ (เวลาที่ใช้จริงมาจากทุกรอบ)
 """
 import contextlib
@@ -34,7 +34,7 @@ class _UsageClient(FakeClient):
         return r
 
 
-def test_lmstudio_agent_reports_last_input_summed_output_and_ctx(monkeypatch):
+def test_lmstudio_agent_reports_input_summed_output_and_ctx(monkeypatch):
     fake = _UsageClient([
         _resp(_msg(tool_calls=[_tool_call("c1", "calculator", '{"expression": "2+2"}')])),
         _resp(_msg(content="ได้ 4")),
@@ -154,3 +154,18 @@ def test_chat_agent_done_usage_null_when_silent(monkeypatch):
     assert done.get("provider") == "agent"
     assert done.get("usage") is None
     json.dumps(done)
+
+
+def test_lmstudio_agent_reports_largest_request_not_last(monkeypatch):
+    """prod 10-04 03:29: รอบ "ขอสรุปใหม่" ไม่ส่ง tools schema → ขาเข้าเล็กกว่า step ที่มี tools ·
+    รายงานค่าล่าสุด = 1,133 (ดูปลอดภัย) ทั้งที่ step ก่อนหน้าใหญ่กว่ามาก ⇒ ต้องรายงานคำขอที่ใหญ่สุด"""
+    fake = _UsageClient([
+        _resp(_msg(tool_calls=[_tool_call("c1", "calculator", '{"expression":"1+1"}')])),
+        [_stream_chunk("สรุป")],
+    ], tails=[(4200, 50), (1133, 70)])
+    _patch_lmstudio(monkeypatch, fake)
+    monkeypatch.setattr(orch, "execute_tool", lambda name, args: "1+1 = 2")
+    monkeypatch.setattr(orch, "_lmstudio_loaded_ctx", lambda m: None)
+    sink: dict = {}
+    list(orch.run_agent([{"role": "system", "content": "base"}], provider="lmstudio", max_steps=1, usage_sink=sink))
+    assert sink == {"input_tokens": 4200, "output_tokens": 120}
