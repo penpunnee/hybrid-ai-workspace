@@ -1,6 +1,7 @@
 # แผนที่ UI — ส่วนบนจอ → ใครเป็นเจ้าของ
 
 จุดเริ่มของ subagent `ui-investigator` (`.claude/agents/ui-investigator.md`) · สร้าง 2026-10-05
+· แหล่งกฎของ subagent `ui-reviewer` (`.claude/agents/ui-reviewer.md` · ตรวจ diff ก่อน commit) ด้วย — สถานะ gate/จุดชนในไฟล์นี้ผิด = ผู้ตรวจตัดสินผิดตาม
 
 **อ่านก่อนใช้**
 - **React** = `~/appscript.ui` (แก้ → `npm run build` + `bash scripts/sync_static.sh`) · ทั้งแอปอยู่ในคอมโพเนนต์เดียว

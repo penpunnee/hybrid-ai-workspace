@@ -291,6 +291,7 @@ seek ต้อง**อ่านค่าก่อนเขียน** (user อ�
 - ก่อนแก้ UI ที่ไม่แน่ใจว่าอยู่ไหน (React หรือ overlay) → ใช้ subagent `ui-investigator` (แผนที่ [`docs/ui-map.md`](docs/ui-map.md) · ตัวจริง `.claude/agents/` symlink จาก `~/.claude/agents/` เรียกได้ทุกรีโป ·
   เครื่องใหม่/ลิงก์หาย: `mkdir -p ~/.claude/agents && ln -sfn ~/Desktop/ui/.claude/agents/ui-investigator.md ~/.claude/agents/ui-investigator.md`) ·
   ตัวยึดในแผนที่ตรึงด้วย `tests/test_ui_map_anchors.py` (static/) + `~/appscript.ui/utils/uimap.test.ts` (React) — rename แล้วต้องแก้แผนที่ตาม
+- ก่อน commit diff ฝั่ง UI ระดับกลางขึ้นไป หรือที่แตะ `*.test.ts`/`e2e/` → ให้ subagent `ui-reviewer` ตรวจ (เงื่อนไข/วิธี = skill verify-ui ขั้น 4.5 ใน `~/appscript.ui` · ตัวจริง+symlink แบบเดียวกับ `ui-investigator` · ⛔ เรียกชื่อไม่ได้ ห้ามใช้ agent อื่นแทน)
 - overlay ที่ React ทำเองแล้วต้อง gate `if (window.__hwReactChatBox) return;` (ตอนนี้: tee/`_parseChatSSE` · Ctrl+E · ↑/↓ · paste · §6 · §19/§20 · §22) —
   เพิ่ม feature ใน React แล้วไล่ overlay ที่ทำซ้ำด้วย · เทส `tests/overlay_gating.test.js`
 - ก่อน commit การแก้ `static/*.js` (overlay) → รัน `npm run test:e2e` ใน `~/appscript.ui` ต้องเขียวทั้งหมด → ทำตาม skill verify-ui ใน ~/appscript.ui ·
