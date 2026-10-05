@@ -1,6 +1,9 @@
 ---
 
-## [2026-10-05 ต่อ 115] ปุ่ม 🗑️ ล้างแชทแสดงบนมือถือ + ปิดระหว่างคำตอบกำลังพิมพ์ — deploy แล้ว รอปอยลองบน iPhone
+## [2026-10-05 ต่อ 115] ปุ่ม 🗑️ ล้างแชทแสดงบนมือถือ + ปิดระหว่างคำตอบกำลังพิมพ์ — deploy แล้ว · ✅ ปอยลองบน iPhone ผ่านหมด
+
+> ✅ **ทดสอบด้วยมือผ่านแล้ว (10-05):** ปอยแจ้ง "checklist iPhone ผ่านหมดแล้ว (ข้อ 1–9)" — checklist ที่ส่งไปมี 6 ข้อ (แถบหัว/สถานะ 1 บรรทัด · layout 2 ข้อ · จางระหว่างพิมพ์ · ยกเลิก · ตกลง)
+> · log prod หลัง deploy 10:52 มี `DELETE /api/sessions/` 2 ครั้ง (ไม่ใช่ของ probe) และมีการโหลด `index-VqASFGCH.js` · ถอดออกจาก `pending-manual-tests.md` แล้ว
 
 ปอยเลือก **ทาง A** (จาก [ต่อ 114]) + ให้ปิดปุ่มระหว่าง `streaming` ทั้งมือถือและจอใหญ่
 
@@ -10,7 +13,7 @@
   - ⑥ เห็นปุ่มบนจอ iPhone · ข้อความสถานะ 1 บรรทัด (`Range.getClientRects`) · ยกเลิกในกล่องยืนยัน = ไม่ยิง DELETE แชทยังอยู่ · ยืนยัน = `DELETE /api/sessions/{ai}/s_e2e` + ฟองหาย
   - ⑦ ถือ `/api/chat` ไว้ด้วย `page.route` + `route.fallback()` (ยืนยันว่า stream อยู่จริงด้วยช่องพิมพ์ disabled) → ปุ่ม disabled → ปล่อย → กดได้
 - **mutation 3/3 ตาย:** ถอด `disabled={streaming}` (⑦ แดง) · แสดง 📊 💾 บนมือถือด้วย (⑥ แดงที่สถานะห่อบรรทัด) · `clearChat` ไม่ถามยืนยัน (⑥ แดง)
-- **verify-ui:** เร็ว = tsc + vitest 722/722 · กลาง = e2e 7/7 · มือ หัวข้อ C = **รอปอย** (diff เปลี่ยน class layout)
+- **verify-ui:** เร็ว = tsc + vitest 722/722 · กลาง = e2e 7/7 · มือ หัวข้อ C = ✅ ปอยลองแล้วผ่าน (diff เปลี่ยน class layout)
 - **`ui-reviewer` (ขั้น 4.5):** ต้องแก้ 0 · ควรพิจารณา 0 · จดไว้ 4 · ตัดทิ้ง 6
 - **ชุดเต็ม backend:** pytest 2790 passed 17 skipped · `node --test` 38/38 · ruff ผ่าน
 - **commit:** a.ui `8176caa` · ui `bdb4011` (bundle `index-VqASFGCH.js` · CSS เดิม `index-C1gCJIq7.css` — class ที่ใช้มีอยู่แล้วทั้งหมด)
