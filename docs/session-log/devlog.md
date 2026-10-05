@@ -1,5 +1,33 @@
 ---
 
+## [2026-10-05 ต่อ 115] ปุ่ม 🗑️ ล้างแชทแสดงบนมือถือ + ปิดระหว่างคำตอบกำลังพิมพ์ — deploy แล้ว รอปอยลองบน iPhone
+
+ปอยเลือก **ทาง A** (จาก [ต่อ 114]) + ให้ปิดปุ่มระหว่าง `streaming` ทั้งมือถือและจอใหญ่
+
+- **แก้** (a.ui `app.tsx » title="ล้างแชท"`): `hidden md:flex` → `flex` · เพิ่ม `disabled={streaming}` + `disabled:opacity-35 disabled:cursor-not-allowed` (class เดียวกับปุ่ม 🧩) ·
+  📊 💾 🔗 🧩 ยังซ่อนตามเดิม
+- **เทสแดงก่อนแก้** (`e2e/smoke.spec.ts`): ⑥ แดงที่ `toBeVisible` (ปุ่มซ่อน) · ⑦ แดงที่ `toBeDisabled` (ยังกดได้ระหว่าง stream) → หลังแก้เขียว
+  - ⑥ เห็นปุ่มบนจอ iPhone · ข้อความสถานะ 1 บรรทัด (`Range.getClientRects`) · ยกเลิกในกล่องยืนยัน = ไม่ยิง DELETE แชทยังอยู่ · ยืนยัน = `DELETE /api/sessions/{ai}/s_e2e` + ฟองหาย
+  - ⑦ ถือ `/api/chat` ไว้ด้วย `page.route` + `route.fallback()` (ยืนยันว่า stream อยู่จริงด้วยช่องพิมพ์ disabled) → ปุ่ม disabled → ปล่อย → กดได้
+- **mutation 3/3 ตาย:** ถอด `disabled={streaming}` (⑦ แดง) · แสดง 📊 💾 บนมือถือด้วย (⑥ แดงที่สถานะห่อบรรทัด) · `clearChat` ไม่ถามยืนยัน (⑥ แดง)
+- **verify-ui:** เร็ว = tsc + vitest 722/722 · กลาง = e2e 7/7 · มือ หัวข้อ C = **รอปอย** (diff เปลี่ยน class layout)
+- **`ui-reviewer` (ขั้น 4.5):** ต้องแก้ 0 · ควรพิจารณา 0 · จดไว้ 4 · ตัดทิ้ง 6
+- **ชุดเต็ม backend:** pytest 2790 passed 17 skipped · `node --test` 38/38 · ruff ผ่าน
+- **commit:** a.ui `8176caa` · ui `bdb4011` (bundle `index-VqASFGCH.js` · CSS เดิม `index-C1gCJIq7.css` — class ที่ใช้มีอยู่แล้วทั้งหมด)
+- **deploy** (ผ่าน `nas-cf` · `static/` ไม่ต้อง restart): NAS `034619a` → `bdb4011` · ก่อน reset เช็คแล้วไม่มีไฟล์ tracked แก้ค้าง · `server.py` ไม่เปลี่ยน inode host = container (287523)
+  - ยืนยัน: `https://ai.pawinhome.com/` ชี้ `index-VqASFGCH.js` · sha256 ของไฟล์ที่ prod เสิร์ฟ = ไฟล์ในรีโป · ในไฟล์มี class ใหม่ของปุ่ม `title:"ล้างแชท"`
+  - ⚠️ **ยังไม่ได้ยืนยันบนเครื่องปอย** (ไม่ได้เปิดเบราว์เซอร์ลองบน prod · ยังไม่ได้ดู `GET /` ใน log หลัง 10:52)
+
+**ข้อที่ผู้ตรวจจดไว้ (ไม่ได้แก้):**
+1. race ทิศกลับที่มีมาก่อน: กดยืนยันล้าง → ระหว่างรอ `DELETE` ช่องพิมพ์ยังเปิด → ส่งข้อความใหม่ทัน → `DELETE` ตอบ → `setMessages([])` ลบฟองที่กำลัง stream ·
+   โอกาสต่ำ (`DELETE` เร็ว) · จะปิดต้องมีธง busy ระหว่างลบ — ยังไม่ได้เสนอปอย
+2. ปุ่มแถบหัวบนมือถือถูก CSS ของ overlay ย่อเหลือ ~24px (`static/enhanced.js » iOS mobile viewport fit` ช่วง CSS มือถือ) — e2e ใช้ overlay จริงจึงวัดรวมแล้ว
+   แต่ฟอนต์ของ Safari จริงอาจต่างจาก WebKit ใน e2e ⇒ ให้ปอยดูว่าสถานะยัง 1 บรรทัด
+
+**งานเปิดใหม่:** เมนู ⋯ รวมปุ่มที่ซ่อนบนมือถือ (ทาง C · 📊 💾 🔗 🧩) — รอปอยว่าขาดจริงไหม
+
+---
+
 ## [2026-10-05 ต่อ 114] ปุ่ม 🗑️ ล้างแชทหายบนมือถือ — สืบแล้ว รอปอยเลือกทาง (ยังไม่แก้โค้ด)
 
 ปอยยืนยัน: **ไม่ได้ตั้งใจซ่อน** (เพิ่งรู้) · สืบด้วย `ui-investigator` + git log + วัดจริงด้วย Playwright (WebKit · iPhone 15 · 393px)
