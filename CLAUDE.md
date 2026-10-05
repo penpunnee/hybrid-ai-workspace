@@ -193,7 +193,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า → อ่าน devlog **[10-06 ต่อ 130]** ก่อน (⛔ เฉลยการพิสูจน์ `ui-reviewer` [126] ห้ามย้ายมาไว้ในไฟล์นี้)
-✅ เมนู ⋯ บนแถบหัวมือถือ deploy แล้ว (a.ui `d908dc1` · ui `8e21493`) · 🧪 รอปอยลอง iPhone 5 ข้อ (Share/Export ใช้บนมือถือครั้งแรก) → `pending-manual-tests.md` — พัง = งานถัดไป ไม่แก้ปน ·
+✅ เมนู ⋯ บนแถบหัวมือถือ deploy แล้ว (a.ui `d908dc1` · ui `8e21493`) · 🧪 iPhone 5 ข้อ ✅ ผ่านครบ (รวม Share/Export) · ⏳ CI ของ `83356a5`/`d908dc1` ค้างเพราะ incident GitHub Actions — rerun เมื่อปิด ·
 🔑 ตั้งใจยอมรับ: hover `scale(1.15)` ของ overlay ทำ ⋯ ล้ำ 🗑️ 1–2px (ทิศที่ล้ำ = เปิดเมนู ไม่ใช่ล้างแชท · ㊴ คุม) · งานถัดไปที่เปิดไว้: ทางหยุด stream ระหว่าง Debate · ปุ่มแถบหัวแตะได้ 24×24 (`open-work.md`) ·
 ✅ รอบ 8: พิสูจน์โหมดตรวจแผน [126] · ย้ายของออกจากไฟล์นี้ [127] · ของปลอม e2e ตรง prod [128] (ระดับกลาง = `npm run test:e2e:mid` · เต็มชุดก่อน deploy) ·
 🧪 ชุดล้างแชท + ของลอย [119–123] ✅ ผ่านครบ 10-06 (ตา + log/DB · `pending-manual-tests.md`)
