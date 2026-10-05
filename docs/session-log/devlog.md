@@ -1,5 +1,31 @@
 ---
 
+## [2026-10-05 ต่อ 112] ปิดเซสชันรอบ 5 — สรุปผลการดำเนินงาน
+
+**สถานะตอนปิด:** working tree สะอาดทั้งสองรีโป · CI เขียวทั้งคู่ (ui `694bf81` · a.ui `caf54f1` บน `main`) · prod เสิร์ฟ bundle `index-MFwC_ESP.js` (NAS อยู่ที่ `034619a` — commit หลังจากนั้นเป็นเอกสารล้วน ไม่ได้ pull) ·
+**ไม่มีงานค้างจากเซสชันนี้**
+
+| ก้อน | ผล | entry | commit |
+|---|---|---|---|
+| toast สองระบบ | สืบด้วย `ui-investigator` → เสนอ 4 ทาง → ปอยเลือก D: **ปิดโดยไม่แก้โค้ด** (ไม่ซ้อนจาก action เดียว · overlay เหลือ caller จุดเดียวที่ §5 Vault) · `ui-map.md` ครบรายชื่อ gate | [ต่อ 109] | ui `4ccac88` |
+| timer ของ toast ฝั่ง React | toast ที่มาทีหลังไม่ถูก timer ตัวก่อนลบ (`utils/toast.ts » createToaster`) · เทสแดงก่อนแก้ · mutation 4 ตัวตายครบ · e2e ⑤ ใช้ `page.clock` · **deploy แล้ว** (ยืนยันจาก sha ของ bundle ที่ prod เสิร์ฟ · ไม่ได้เปิดเบราว์เซอร์ลอง · ปอยเคาะไม่ต้องส่ง checklist iPhone) | [ต่อ 110] | a.ui `76a9520` · ui `034619a` `24aac86` |
+| CI ของ a.ui | job `unit` (= `npm run precommit`) ทุก push · Node จาก `.nvmrc` 25.8.1 · checkout backend (public ไม่ใช้ token) · เทสข้ามเงียบ 4 จุด → แดงเมื่อไม่เจอ backend · พิสูจน์ว่า CI แดงได้ 2 แบบ | [ต่อ 111] | a.ui `9695e55` `caf54f1` · ui `f53ff02` `694bf81` |
+
+**งานเปิดที่เกิดจากเซสชันนี้ (อยู่ใน `CLAUDE.md` ▶️ แล้ว):**
+- 📋 ย้าย Vault Search (overlay §5) เข้า React — toast ของ overlay จะหมดไปเอง
+- 📋 ย้าย a.ui ไป Node 24 LTS (25.8.1 หมดซัพพอร์ต 2026-06-01 · ต้อง build bundle ใหม่ + ตรวจซ้ำ)
+- ⏳ job e2e บน CI ของ a.ui — รอปอยเช็คโควตานาที Actions (Settings → Billing · `phrae-data-map` ใช้ ~2,900 นาที/เดือน ไม่รู้ว่าทำไมเกิน 2,000 ได้)
+
+**ข้อสังเกตที่ไม่ได้แก้:**
+- `#enh-toast` ของ overlay มีบั๊ก timer แบบเดียวกัน (ปอยสั่งไม่แตะ · caller เหลือจุดเดียว)
+- `ubuntu-latest` จะย้ายไป Ubuntu 26 ตั้งแต่ 2026-10-19 (annotation ใน job `lint-and-js` ของ ui · a.ui ก็ใช้ `ubuntu-latest`)
+- a.ui `CLAUDE.md` ยังมีบรรทัด "มี dependency ที่ไม่ประกาศใน `package.json`" — `MEMORY.md` จดว่าตกรุ่นตั้งแต่ 09-24 · `npm ci` บน CI ผ่าน (lock ตรง `package.json`) · ยังไม่ได้ลบบรรทัดนั้น
+- ประวัติ Actions ของ a.ui มีรอบแดง 2 รอบจาก branch พิสูจน์ `ci-proof-red` (ลบ branch แล้ว) — ดู CI ให้ใช้ `--branch main`
+
+**ที่ผมพลาดเองในเซสชันนี้:** assertion ใน wiring test ของ toast เขียนผิดรอบแรก (แก้ก่อน commit) · แผน CI บอกว่าเทสข้ามเงียบมี 3 จุด ของจริงมี 4
+
+---
+
 ## [2026-10-05 ต่อ 111] CI บน GitHub ให้ `~/appscript.ui` (job `unit`) + เทสที่อ่านไฟล์ backend เลิกข้ามเงียบ
 
 commit: a.ui `9695e55` (push GitHub + NAS) · ui = commit เดียวกับ entry นี้ (เอกสารอย่างเดียว ไม่ deploy) ·
