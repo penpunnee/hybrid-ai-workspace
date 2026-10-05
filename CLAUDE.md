@@ -291,6 +291,7 @@ seek ต้อง**อ่านค่าก่อนเขียน** (user อ�
 - probe ใน Chrome: ห้ามอ่าน `innerText` ของ node ใหญ่วนซ้ำ · ลูปรอ < 45 วิ · ข้อความทดสอบต้องเก็บกวาด (session + memory)
 
 **deploy / infra**
+- commit ทีละครั้ง เช็คผลของ hook ทุกครั้ง ล้ม = หยุดทันที ⛔ ห้ามต่อ commit ถัดไปด้วย `;` หรือ loop ที่ไม่เช็ค exit code (รวมการต่อท่อเข้า `tail` ที่กลืน exit code)
 - นอก LAN ใช้ `nas-cf` · ค้างทั้งที่ tunnel healthy = Access หมดอายุ → `cloudflared access login https://ssh.pawinhomelab.com`
   · แยก "NAS ดับ" จาก "อยู่นอกวง" ด้วย `curl https://ai.pawinhome.com/api/config` ก่อนสรุป
   · `nas-cf` timeout ครั้งเดียวยังไม่ใช่หลักฐานว่า Access หมดอายุ — ลองซ้ำ (`ConnectTimeout` ≥ 20) ก่อน ·
