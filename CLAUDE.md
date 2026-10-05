@@ -310,6 +310,8 @@ seek ต้อง**อ่านค่าก่อนเขียน** (user อ�
 **deploy / infra**
 - นอก LAN ใช้ `nas-cf` · ค้างทั้งที่ tunnel healthy = Access หมดอายุ → `cloudflared access login https://ssh.pawinhomelab.com`
   · แยก "NAS ดับ" จาก "อยู่นอกวง" ด้วย `curl https://ai.pawinhome.com/api/config` ก่อนสรุป
+  · `nas-cf` timeout ครั้งเดียวยังไม่ใช่หลักฐานว่า Access หมดอายุ — ลองซ้ำ (`ConnectTimeout` ≥ 20) ก่อน ·
+  a.ui push ไป `origin` (NAS) จากนอกวง: `git -c url."nas-cf:".insteadOf="nas:" push origin main` (ไม่แก้ค่า remote · อัปเดต `origin/main` ให้ด้วย)
 - rebuild: `compose build hybrid-ai` แล้ว `compose up -d hybrid-ai` แยกคำสั่ง · ห้าม `--no-cache` ถ้าไม่จำเป็น ·
   คอนเทนเนอร์ไม่มี `/app/.env` (env มาจาก `env_file:`) · `image prune` รายงานต่ำกว่าจริง ดู `system df`
 - verify บน prod ต้องรอ handler ที่มาช้ายิงจบก่อนเก็บกวาด

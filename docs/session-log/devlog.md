@@ -35,7 +35,7 @@
 - ข้อสังเกต 1 (`expectAlive`) → จดเป็นงานเปิดใน `CLAUDE.md` 📋 · ข้อสังเกต 2 (มือถือไม่มีปุ่มล้างแชท) → **ยังไม่ได้คำตอบ** ว่าตั้งใจหรือไม่ (อยู่ใน ▶️ ⏳)
 - เพิ่ม `/Users/pawin/CLAUDE.md » Layer 3 — Iron Laws` เข้ารายการแหล่งกฎของ `ui-reviewer` (มีผลเซสชันหน้า — agent โหลดตอนเปิดเซสชัน · ยังไม่ได้รันพิสูจน์ซ้ำหลังแก้)
 - งานเปิดใหม่: `CLAUDE.md` backend 45 KB ควรย้ายของออกอีกรอบ
-- ✅ a.ui push ไป NAS แล้ว (`06ec9b8`) ผ่าน `nas-cf`: `git -c url."nas-cf:".insteadOf="nas:" push origin main` (อัปเดต `origin/main` ให้ด้วย) ·
+- ✅ a.ui push ไป NAS แล้ว (`06ec9b8`) ผ่าน `nas-cf` — คำสั่งอยู่ที่ `CLAUDE.md` 🔑 กติกาที่ยังมีผล » deploy / infra ·
   ที่รายงานว่า `nas-cf` timeout ก่อนหน้า = ตั้ง `ConnectTimeout=15` แล้วลองครั้งเดียว — ลองใหม่ด้วย 20 วิ ต่อได้ปกติ (Access ไม่ได้หมดอายุ)
 
 ---
