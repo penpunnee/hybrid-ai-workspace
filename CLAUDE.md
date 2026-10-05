@@ -192,11 +192,11 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → /scrutinize (งาน state/`await`: + `ui-reviewer` ตรวจแผน) → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy → verify prod (ยืนยันว่าเส้นที่แก้ถูกวิ่งจริง)
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
-### 🥇 งานแรกเซสชันหน้า → อ่าน devlog **[10-06 ต่อ 130]** ก่อน (⛔ เฉลยการพิสูจน์ `ui-reviewer` [126] ห้ามย้ายมาไว้ในไฟล์นี้)
-✅ เมนู ⋯ บนแถบหัวมือถือ deploy แล้ว (a.ui `d908dc1` · ui `8e21493`) · 🧪 iPhone 5 ข้อ ✅ ผ่านครบ (รวม Share/Export) · ⏳ CI ของ `83356a5`/`d908dc1` ค้างเพราะ incident GitHub Actions — rerun เมื่อปิด ·
-🔑 ตั้งใจยอมรับ: hover `scale(1.15)` ของ overlay ทำ ⋯ ล้ำ 🗑️ 1–2px (ทิศที่ล้ำ = เปิดเมนู ไม่ใช่ล้างแชท · ㊴ คุม) · งานถัดไปที่เปิดไว้: ทางหยุด stream ระหว่าง Debate · ปุ่มแถบหัวแตะได้ 24×24 (`open-work.md`) ·
-✅ รอบ 8: พิสูจน์โหมดตรวจแผน [126] · ย้ายของออกจากไฟล์นี้ [127] · ของปลอม e2e ตรง prod [128] (ระดับกลาง = `npm run test:e2e:mid` · เต็มชุดก่อน deploy) ·
-🧪 ชุดล้างแชท + ของลอย [119–123] ✅ ผ่านครบ 10-06 (ตา + log/DB · `pending-manual-tests.md`)
+### 🥇 งานแรกเซสชันหน้า → ① **rerun CI 3 commit ที่ค้างจาก GitHub Actions ล่ม** (`open-work.md` » 📋 บรรทัดแรก · ก่อนงานอื่น) → ② เลือกงานถัดไปจาก `open-work.md` (ถามปอย)
+อ่าน devlog **[10-06 ต่อ 130]** ก่อน (⛔ เฉลยการพิสูจน์ `ui-reviewer` [126] ห้ามย้ายมาไว้ในไฟล์นี้) ·
+✅ รอบ 9 (10-06): ชุดล้างแชทผ่านครบ · เมนู ⋯ บนแถบหัวมือถือ deploy แล้ว (a.ui `d908dc1` · ui `8e21493` · bundle `index-DIXoycSo.js`) + iPhone 5 ข้อผ่าน (รวม Share/Export) ·
+🔑 ตั้งใจยอมรับ: hover `scale(1.15)` ของ overlay ทำ ⋯ ล้ำ 🗑️ 1–2px (ทิศที่ล้ำ = เปิดเมนู ไม่ใช่ล้างแชท · ㊴ คุม) · ⋯ ขยายพื้นที่แตะด้วย `::before` ⛔ ห้าม `::after` ·
+งานที่เปิดไว้จากรอบนี้: ทางหยุด stream ระหว่าง Debate · ปุ่มแถบหัวแตะได้ 24×24 (`open-work.md`)
 ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
 ### ✅ ปิดแล้ว → ก่อนเช็คว่าเรื่องไหนปิดแล้ว/ดูประวัติ → อ่าน [`docs/session-log/devlog.md`](docs/session-log/devlog.md)

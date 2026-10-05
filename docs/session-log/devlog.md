@@ -40,7 +40,9 @@ overlay ฉีด `content:none` · เกณฑ์ `>=`→`>` · ตัดเ�
 **🧪 iPhone 5 ข้อ ✅ ผ่านครบ** (ปอยลอง ~03:45 · log prod ตรง: share → เปิด `/shared/<token>` ได้ · export · stats · health) — Share/Export ใช้บนมือถือได้ ข้อกังวลของผู้ตรวจ (clipboard หลัง await · revoke ทันที) ไม่เกิดบน iPhone ของปอย · ข้อความ toast อนุมานจาก clipboard (ปอยไม่ได้กรอก)
 **งานเปิดจากรอบนี้ (`open-work.md`):** ปุ่ม 🌙 🤖 📌 🗑️ แตะได้แค่ 24×24 (แนวตั้งขยาย 44 ได้ · แนวนอนเพดาน 26) · ทางหยุด stream ระหว่าง Debate (แยกงานถัดไป)
 
-📊 เริ่ม ~02:10 → deploy 03:10 · verify-ui: เร็ว (tsc+vitest) หลายรอบ + hook 1 · กลาง: เต็มชุด 2 (62/62 ทั้งคู่) · มือ: รอปอย 5 ข้อ · ui-reviewer: แผน 1 · diff 1 (ต้องแก้ 0 ทั้งคู่) · ui-investigator: 1 รอบ ชี้ถูก
+**CI: ยังไม่ได้รัน** — GitHub Actions ล่ม (degraded 03:37 → `major_outage` 03:52) job `pytest`/`unit` ไม่ได้เครื่อง (0 ขั้น) ยกเลิกที่ 15 นาที · ปอยสั่งไม่ต้องรอ → rerun ตอนเริ่มเซสชันหน้า (`open-work.md` » 📋) · `lint-and-js` ผ่าน
+
+📊 เริ่ม ~02:10 → deploy 03:10 → ปิดเซสชัน ~04:00 · verify-ui: เร็ว (tsc+vitest) หลายรอบ + hook 1 · กลาง: เต็มชุด 2 (62/62 ทั้งคู่) · มือ: รอปอย 5 ข้อ · ui-reviewer: แผน 1 · diff 1 (ต้องแก้ 0 ทั้งคู่) · ui-investigator: 1 รอบ ชี้ถูก
 
 ---
 
