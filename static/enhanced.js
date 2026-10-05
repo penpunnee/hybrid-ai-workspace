@@ -221,9 +221,11 @@
     .enh-close:hover { color: #e2e8f0; }
     .enh-hint { font-size: 11px; color: #808999; }
 
-    /* Floating toolbar */
+    /* Floating toolbar
+       z ต้องอยู่เหนือ <main> ของ React (z-10) และแถบ Context (12) แต่ใต้ฉากหลังแถบข้างมือถือ (20)
+       และหน้าต่างของ React ทุกตัว (60–85) — เดิม 9000 ลอยทับหน้าต่างและดักการแตะฉากหลัง */
     #enh-toolbar {
-      position: fixed; bottom: 16px; right: 16px; z-index: 9000;
+      position: fixed; bottom: 16px; right: 16px; z-index: 16;
       display: flex; gap: 6px;
     }
     .enh-fab {
@@ -947,7 +949,7 @@
   // ─────────────────────────────────────────────────────────────────────────────
   const scrollBtnCSS = `
     #enh-scroll-btn {
-      position:fixed; bottom:70px; right:16px; z-index:8999;
+      position:fixed; bottom:70px; right:16px; z-index:15; /* ใต้ #enh-toolbar (16) · เหตุผลของช่วงเลขดูที่ #enh-toolbar */
       background:rgba(15,23,42,0.9); border:1px solid rgba(170,160,251,0.35);
       border-radius:50%; width:36px; height:36px; cursor:pointer;
       color:#94a3b8; font-size:16px; display:none;

@@ -66,6 +66,10 @@
    grep ข้อความบนจอใน `app.tsx` ก่อน (`showToast('…')`) ไม่เจอค่อย grep `enhanced.js` แล้วเช็คว่า section นั้น gate หรือไม่
    · ✅ **ปิดแล้ว 10-05 โดยไม่แก้โค้ด** (devlog [ต่อ 109]): ไม่มี action ใดที่ได้ toast ทั้งสองระบบ · overlay เหลือ caller จุดเดียวที่ §5 @vault ·
    React ยังไม่มีช่องให้ overlay เรียก toast ของมัน (expose แค่ธง `__hwReactChatBox`) · จะหมดไปเองเมื่อย้าย Vault Search เข้า React (งานเปิดใน CLAUDE.md ▶️)
+3. **ชั้น z ของของลอย** (แก้ 10-05 · devlog [ต่อ 122] · e2e ㉚–㉞ ตัดสินด้วย `elementFromPoint`) — ของลอยใหม่ต้องเลือกเลขจากลำดับนี้:
+   `<main>` 10 < แถบ Context 12 < ปุ่ม ↓ 15 < toolbar 🌿/⏹ 16 < ฉากหลังแถบข้างมือถือ 20 < แถบข้าง 30 < toast ของ React 50 < หน้าต่างของ React 60–85 < Vault overlay 9100 < toast ของ overlay 9999
+   · `<main>` เป็น stacking context ของตัวเอง ⇒ แถบหัว (100) และ dropdown ของ ChatBox (55/56) ที่อยู่ข้างใน **เทียบเลขกับของข้างนอกไม่ได้** (ทั้งก้อนนับเป็น 10)
+   · ยังค้าง: `#enh-typing` ("กำลังคิด…" · 8997 · `pointer-events:none`) ยังลอยเหนือหน้าต่าง · ⏹ Stop อยู่ใต้หน้าต่างเมื่อมีหน้าต่างเปิด (รวม Debate เต็มจอ)
 
 ## 4. ตายแล้ว (gate ด้วย `__hwReactChatBox` · อย่าแก้ที่นี่ แก้ที่ React)
 §1.5 DREAM STATS · §2 GLOBAL SEARCH · §3 EXPORT · §4 PIN · §6 COPY CODE BUTTON (`static/enhanced.js » function _wireCopyButtons`) · §9 TOKEN USAGE BAR · §10 PROMPT HISTORY · §11 PASTE ·
