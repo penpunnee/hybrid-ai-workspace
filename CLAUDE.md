@@ -4,10 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 🗺️ อะไรอยู่ที่ไหน (จัดโครงใหม่ 2026-08-17)
 
-**กติกา: ของโปรเจกต์อยู่ในโปรเจกต์** — เดิมบันทึกกระจาย 5 ที่ และวัดแล้วพบว่า
-**ทั้งสามแหล่งจดคนละชุด ไม่ใช่สำเนากัน**: บรรทัดยาว >40 อักษรที่เหมือนกันเป๊ะ
-`CLAUDE.md` ∩ `DEVLOG` = **0** · memory ∩ `DEVLOG` = **0** · memory ∩ `CLAUDE.md` = **2**
-⇒ เซสชันที่โหลดมาทางเดียวได้ประวัติไม่ครบโดยไม่มีสัญญาณอะไรบอก · ยกเข้ารีโปหมดแล้ว
+**กติกา: ของโปรเจกต์อยู่ในโปรเจกต์** — เดิมบันทึกกระจาย 5 ที่ จดคนละชุดไม่ใช่สำเนากัน (ผลวัด → `docs/session-log/README.md`) · ยกเข้ารีโปหมดแล้ว
 
 | ต้องการอะไร | เปิดที่ไหน |
 |---|---|
@@ -177,7 +174,7 @@ overlay แบบ vanilla (ไม่ต้อง build, ทำงานคู่
 - ⚠️ **DELETE `/api/skills/{id}`**: lebt `delete_file` query param (default false). ส่ง `?delete_file=true` ถ้าต้องลบ .md ด้วย — กัน data loss
 
 
-## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-05 รอบ 8 [ต่อ 126] · **ที่เดียว**)
+## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-06 รอบ 8 [ต่อ 127] · **ที่เดียว**)
 
 > บล็อก ▶️ ทั้งหมดจนถึง 09-28 (ก้อน 1–11 · config ก้อน 1–4 · reader/voice 08-17→09-22 · ไมค์ 08-24/26)
 > ถูกยก**ทั้งดุ้นไม่แก้**ไปไว้ที่ devlog **[2026-09-28 ต่อ 24]** — ที่นี่เหลือแค่งานเปิด + กติกาที่ยังมีผล
@@ -197,13 +194,8 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 
 ### 🥇 งานแรกเซสชันหน้า → **เมนู ⋯** (อ่าน devlog **[10-05 ต่อ 126]** » "งานถัดไป" ก่อน · ⛔ เฉลยการพิสูจน์ `ui-reviewer` ห้ามย้ายมาไว้ในไฟล์นี้)
 ① ✅ พิสูจน์โหมดตรวจแผน [126] (📊 งาน state ถัดไป: จด token+เวลาต่อรอบของ `ui-reviewer` เทียบ [126]) ② **เมนู ⋯ บนแถบหัวมือถือ** (🔗 💾 📊 🧩 · แผน [ต่อ 121] งานถัดไป 2 · ปอยตอบ ok ต่อแผน · ใช้กฎตรวจแผน + e2e ใช้ `PROD_NAME` · ย้าย 🏠 เข้าเมนู = ยืนยันกับปอยก่อน · รวมทางหยุด stream ใน Debate) ·
-③ ⏳ ของปลอม e2e ให้ตรง prod ([ต่อ 124] ข้อ 2) — ⛔ รอปอยอนุมัติ ยังไม่เริ่ม · ✅ รอบ 7: ของลอย overlay + แถบ Context [122–123] (ของลอยใหม่ → `docs/ui-map.md` ข้อ 3) · กฎตรวจแผน/checklist มือ/บรรทัด 📊 [124] ·
-🧪 รอปอยลอง iPhone 3 ข้อ (ล้างแชทแล้วส่ง · หมุด 2 ข้อ · ของลอย [122–123] ✅) → `pending-manual-tests.md` · สรุปรอบ 6: ui-reviewer [113] · ล้างแชทบนมือถือ [114–120] ·
-ตัวเลือกอื่น: 📋 ย้าย Vault Search เข้า React · ย้าย a.ui ไป Node 24 LTS · ⏳ job e2e บน CI (รอปอยเช็คโควตา)
-1. 🧪 (ต่อ 104) user ถามขวัญแนวเดิมในโหมดเสียง → ตอบ "ที่ใกล้สุดคือ…" แทนถามกลับไหม · ✅ ความจำขยะ ASR (ต่อ 105) · ⏳ ค้นในตัวหนังสือ (`reader.db`) แทนเว็บ · ✅ e2e smoke WebKit (a.ui `npm run test:e2e`)
-2. 🧪 log ที่ควรดูรอบหน้า: ~~`[LMStudio] อุ่นเครื่อง`~~ ✅ (ต่อ 102) · `[Chat] timings` ใหม่ (ช้าตรงไหน · 10-05 ยังมีแค่ probe) · `[Voice WS] ห้อง … มีสายเก่ายังค้าง` (เกิดจริงไหม · 10-05 มีแค่ probe) · `[Reader] … ตระกูล 6` (ตอนนำเข้าเล่มใหม่)
-3. 🧪 (ต่อ 100) qwen แปลชื่อเฉพาะผิด (Gemini ถูก) — ถาม user ว่าใช้ Gemini เองไหม (⛔ ห้าม redirect)
-4. ⏸ (ต่อ 101) ~1.8 วิทุกแชท = `bump_access_count` เขียน Chroma (fsync HDD) · user: ไม่ช้า → พัก · cold ~1.3 วิ ในโปรเซสแอป warmup กันแล้ว (ต่อ 102)
+③ ⏳ ของปลอม e2e ให้ตรง prod ([ต่อ 124] ข้อ 2) — ⛔ รอปอยอนุมัติ ยังไม่เริ่ม ·
+🧪 รอปอยลอง iPhone 3 ข้อ (ล้างแชทแล้วส่ง · หมุด 2 ข้อ · ของลอย [122–123] ✅) → `pending-manual-tests.md`
 ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
 ### ✅ ปิดแล้ว → ก่อนเช็คว่าเรื่องไหนปิดแล้ว/ดูประวัติ → อ่าน [`docs/session-log/devlog.md`](docs/session-log/devlog.md)
@@ -220,32 +212,13 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 ย่อ: `chat_history.db` เป็น WAL ห้าม cp ไฟล์เดี่ยว · `save_reply(…, user_msg_id)` · แตะ server.py = `--force-recreate` + inode + sha เสียง ·
 Live ตัดสาย 1008 ~151 วิ → `parkIfUnused` · iOS `ended` = `stopVoice()` เท่านั้น · ⛔ Google CSE · Dream ไม่เก็บความรู้จากเน็ต
 
-### 📋 งานเปิดอื่น
-- **frontend (จาก `docs/ui-map.md` 10-05 · ยังไม่แก้):** ย้าย Vault Search (overlay §5 + ปุ่ม 🌿 + ตัวดัก `@vault`) เข้า React แล้ว gate §5 — toast ของ overlay (`#enh-toast`) จะหมดไปเอง ·
-  ✅ toast สองระบบ ปิดแล้วโดยไม่แก้โค้ด (ต่อ 109 · ไม่ซ้อนจาก action เดียว · overlay เหลือจุดเดียวที่ Vault) ·
-  ข้อสังเกต: §15 badge โมเดลยัง `appendChild` เข้า div ฟองของ React (เพิ่มอย่างเดียว ไม่ลบ ⇒ ไม่ใช่เงื่อนไขจอขาวครั้งก่อน · e2e ยังไม่ครอบ) · ✅ §6 Copy กล่องโค้ด ปิดแล้ว (ต่อ 108)
+### 📋 งานเปิดอื่น · ⚪ งานเล็กค้าง · 🧪 log ที่ควรดู → ก่อนเลือกงานถัดไป / ก่อนเสนองานใหม่ → อ่าน [`docs/session-log/open-work.md`](docs/session-log/open-work.md)
 - **เส้น session (ต่อ 119–120):** ⛔ ปอยสั่งปิดตระกูล race ล้างแชทแล้ว — เคสเปิดในตาราง devlog [ต่อ 119] + ปัญหาที่รู้แล้วใน [ต่อ 126] คงไว้ ไม่ต้องทำ/ไม่ต้องเสนอ เว้นแต่ปอยสั่ง
-- **e2e (ต่อ 113):** `expectAlive` ตรวจจอขาวด้วย `#root.childElementCount > 0` — overlay ที่ append เข้า `#root` ตรงๆ จะทำให้ผ่านเสมอ (ตอนนี้ไม่มี) → ให้นับเฉพาะลูกที่ React render
-- **เอกสาร:** ไฟล์นี้ 47 KB (งบ 50 · เทสคุม) — ย้ายของออกลง `docs/` อีกรอบก่อนชนเพดาน ⛔ ห้ามขยับเพดาน
-- **a.ui build/CI (ต่อ 111):** ย้ายไป Node 24 LTS — ตอนนี้ตรึง 25.8.1 ใน `~/appscript.ui/.nvmrc` (รุ่นที่ build จริง · หมดซัพพอร์ต 2026-06-01) · เปลี่ยนแล้วต้อง build bundle ใหม่ + ตรวจซ้ำ
-- **backend:** ✅ reader `marks.set` verify รอบอ่านจริงแล้ว (ต่อ 50) · ข้อสังเกตเล็ก: `books.text` 90.9 ms บน loop ครั้งเดียวตอนเปิดเล่ม (ยังไม่คุ้มแก้)
-- **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 (รอ memory จากโหมดเสียงสะสม)
 
-### ⏳ รอ user เคาะ
-**ใหม่ 10-05 (ต่อ 120):** เมนู ⋯ รวมปุ่มที่ซ่อนบนมือถือ (ทาง C · 📊 💾 🔗 🧩) — ปอยให้ทำเป็นงานถัดไป · เสนอแผนแล้ว รอเคาะก่อนเริ่ม ·
-**ใหม่ 10-05 (ต่อ 111):** ใส่ job e2e ใน CI ของ a.ui ไหม — รอปอยเช็คโควตานาที Actions (Settings → Billing · `phrae-data-map` ใช้ ~2,900 นาที/เดือน) ·
-**ใหม่ 10-02 (ต่อ 61):** ขาเข้าหนังสือ (`_ingest`) ไม่ซ่อมตระกูล 6 และไม่เตือน — เตือนใน log/UI หรือใส่ pythainlp (62 MB) ·
-(ข) response cache ข้าม session · คิวเล็กจาก 09-24 (**เช็คสถานะจริงก่อน**): ต่อ `scripts/reconcile_keys.py` เข้ารอบกลางคืน ·
-ย้ายเสียงไป `gemini-3.8-live` (3.1 = legacy ยังไม่มีวันปิด · ติดล็อกเสียง 🔒 ต้องวัดเสียงใหม่ทั้งชุด) ·
-ทาง 1 earpiece: เล่นเสียงผ่าน `MediaStreamAudioDestinationNode` → `<audio>` (WebKit แนะนำ · อาจแก้เสียงเบาด้วย · ทำเป็นสวิตช์ปิดไว้ แล้ว A/B)
+### ⏳ รอ user เคาะ → **เปิดอ่านทุกครั้งที่เริ่มเซสชัน** → [`docs/session-log/open-work.md`](docs/session-log/open-work.md) » ⏳
 
 ### 🧪 รอ user ทดสอบด้วยมือ → ก่อนเลือกงาน / เมื่อปอยรายงานผลทดสอบ / ก่อนแตะฟีเจอร์ในรายการ → อ่าน [`docs/session-log/pending-manual-tests.md`](docs/session-log/pending-manual-tests.md)
 (เสียง Live/1011 · โหมดอ่าน · สถิติ token/ไทม์ไลน์ · dropdown/ป้าย Agent · File Manager · ChatBox pills)
-
-### ⚪ งานเล็กค้าง
-`GEMINI_LIVE_MODEL` จะยกขึ้น `.env` ไหม · AnythingLLM ตกรุ่น (หรือปิดทิ้ง 3.34 GB) · โมเดล local ไม่มีใครใช้ ~14 GB ·
-`pythainlp` ไม่มีในอิมเมจ (ตั้งใจ · รันมือ: `uv run --with pythainlp==5.3.8 --with pytest python -m pytest tests/test_thaiscatter.py --noconftest` 18/18 · ต่อ 61) · `enhanced.js` map สีตามตระกูลเฉด ·
-citations ราคาเกมอาจเป็นแหล่งรอง (Steam age-check) ·
 
 ### ⛔ พักไว้ (user เคาะแล้ว อย่าเสนอซ้ำ)
 `ANTHROPIC_API_KEY`/`MOONSHOT_API_KEY` · Image Gen (free tier limit=0) · fine-tune (รอ 👍 ~200-500) ·
@@ -260,6 +233,7 @@ seek ต้อง**อ่านค่าก่อนเขียน** (user อ�
 
 ### 🔑 กติกาที่ยังมีผล (กลั่นจากก้อนที่ปิดแล้ว — ที่มาอยู่ใน devlog)
 **backend**
+- provider ทุกปุ่มไปตัวเดียวกันเสมอ ⛔ ห้าม redirect (คำตอบไม่ดี = ถาม user · ไม่สลับ provider เอง)
 - LM Studio agent step เป็น **stream** แล้ว (ก้อน 12) — ประกอบ tool call เอง ห้าม `ChatCompletionStreamState` (โยนตอน finish=length) ·
   fake ในเทสต้องส่งเป็นชิ้น (`tests/test_agents.py:_as_stream`) · เทสตัดสาย router ต้องตัดตอนเธรด*ค้างรอ LLM อยู่จริง* (`_SSEServerSeen`)
 - qwen3.5 ผ่าน LM Studio: `content` ว่างแต่ `reasoning_content` มี = ไม่ปิด `<think>` (LM Studio #1602) · **ปิด thinking ผ่าน API ไม่ได้** (#1990 · วัด 3/6) ·

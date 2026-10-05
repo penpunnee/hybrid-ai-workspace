@@ -8,11 +8,13 @@
 | [devlog.md](devlog.md) | `DEVLOG.md` เดิมที่ราก (ย้าย 2026-08-17) | บันทึกราย SECTION มิ.ย.-ส.ค. · audit/ROADMAP session · ตัวอ่านซ้อน 08-15/16 |
 | [from-memory-status.md](from-memory-status.md) | memory `hybrid_ai_status.md` (321 KB) | ประวัติ พ.ค.-ส.ค. อีกชุดหนึ่ง: backlog ข้อ 1-22, voice, web search, fine-tune, deploy |
 | [pending-manual-tests.md](pending-manual-tests.md) | `CLAUDE.md` ▶️ 🧪 (ย้าย 2026-10-05) | งานที่รอ user ทดสอบด้วยมือ — ผ่าน/ตกแล้วลบออก |
+| [open-work.md](open-work.md) | `CLAUDE.md` ▶️ 📋 ⏳ ⚪ (ย้าย 2026-10-06) | งานเปิด · ข้อที่รอ user เคาะ (**อ่านทุกครั้งที่เริ่มเซสชัน**) · งานเล็กค้าง — ปิดแล้วลบออก |
 
 ## ทำไมมีสองไฟล์
 วัดเมื่อ 2026-08-17: บรรทัดยาว >40 อักษรที่เหมือนกันเป๊ะระหว่างสามแหล่ง —
 `CLAUDE.md` ∩ `DEVLOG` = **0** · memory ∩ `DEVLOG` = **0** · memory ∩ `CLAUDE.md` = **2**
 ⇒ ทั้งสามจดคนละชุด ไม่ใช่สำเนากัน จึงยกมาครบทั้งคู่ ไม่ตัดทิ้งและไม่ merge
+(เดิมบันทึกกระจาย 5 ที่ ⇒ เซสชันที่โหลดมาทางเดียวได้ประวัติไม่ครบโดยไม่มีสัญญาณอะไรบอก — ย้ายประโยคนี้จาก `CLAUDE.md` 2026-10-06)
 (ของ `from-memory-status.md` ลำดับสลับ พ.ค.↔ส.ค. ตามต้นฉบับ — ใช้ grep หา)
 
 ## กติกา
