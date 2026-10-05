@@ -196,7 +196,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 
 ### 🥇 งานแรกเซสชันหน้า — เลือกจากงานเปิด (ถาม user)
 **ไม่มีงานโค้ดค้าง** (10-05 รอบ 5 = toast สองระบบปิดโดยไม่แก้โค้ด [ต่อ 109] · แก้ timer ของ toast React [ต่อ 110 · deploy แล้ว] · CI ของ a.ui job `unit` [ต่อ 111] · สรุปปิดเซสชันที่ devlog [ต่อ 112] · รอบ 6 = subagent `ui-reviewer` พิสูจน์แล้ว + verify-ui ขั้น 4.5 [ต่อ 113]) ·
-⚠️ a.ui `origin` (NAS) ตามหลัง `github` 1 commit (นอกวง LAN) → กลับเข้าวงแล้ว `git push origin main` · ⏳ ข้อสังเกต 2 ข้อใน [ต่อ 113] (`expectAlive` · มือถือไม่มีปุ่มล้างแชท) รอปอยเคาะ · ตัวเลือก: 📋 ย้าย Vault Search เข้า React · ย้าย a.ui ไป Node 24 LTS · ⏳ job e2e บน CI (รอปอยเช็คโควตา) · เลือกจาก ⏳ ข้างล่าง/🧪 (docs) หรือถาม user
+⚠️ a.ui `origin` (NAS) ตามหลัง `github` 1 commit (นอกวง LAN) → กลับเข้าวงแล้ว `git push origin main` · ⏳ มือถือไม่มีปุ่มล้างแชท (`hidden md:flex`) ตั้งใจไหม — รอปอยตอบ [ต่อ 113] · ตัวเลือก: 📋 ย้าย Vault Search เข้า React · ย้าย a.ui ไป Node 24 LTS · ⏳ job e2e บน CI (รอปอยเช็คโควตา) · เลือกจาก ⏳ ข้างล่าง/🧪 (docs) หรือถาม user
 1. 🧪 (ต่อ 104) user ถามขวัญแนวเดิมในโหมดเสียง → ตอบ "ที่ใกล้สุดคือ…" แทนถามกลับไหม · ✅ ความจำขยะ ASR (ต่อ 105) · ⏳ ค้นในตัวหนังสือ (`reader.db`) แทนเว็บ · ✅ e2e smoke WebKit (a.ui `npm run test:e2e`)
 2. 🧪 log ที่ควรดูรอบหน้า: ~~`[LMStudio] อุ่นเครื่อง`~~ ✅ (ต่อ 102) · `[Chat] timings` ใหม่ (ช้าตรงไหน · 10-05 ยังมีแค่ probe) · `[Voice WS] ห้อง … มีสายเก่ายังค้าง` (เกิดจริงไหม · 10-05 มีแค่ probe) · `[Reader] … ตระกูล 6` (ตอนนำเข้าเล่มใหม่)
 3. 🧪 (ต่อ 100) qwen แปลชื่อเฉพาะผิด (Gemini ถูก) — ถาม user ว่าใช้ Gemini เองไหม (⛔ ห้าม redirect)
@@ -221,6 +221,8 @@ Live ตัดสาย 1008 ~151 วิ → `parkIfUnused` · iOS `ended` = `st
 - **frontend (จาก `docs/ui-map.md` 10-05 · ยังไม่แก้):** ย้าย Vault Search (overlay §5 + ปุ่ม 🌿 + ตัวดัก `@vault`) เข้า React แล้ว gate §5 — toast ของ overlay (`#enh-toast`) จะหมดไปเอง ·
   ✅ toast สองระบบ ปิดแล้วโดยไม่แก้โค้ด (ต่อ 109 · ไม่ซ้อนจาก action เดียว · overlay เหลือจุดเดียวที่ Vault) ·
   ข้อสังเกต: §15 badge โมเดลยัง `appendChild` เข้า div ฟองของ React (เพิ่มอย่างเดียว ไม่ลบ ⇒ ไม่ใช่เงื่อนไขจอขาวครั้งก่อน · e2e ยังไม่ครอบ) · ✅ §6 Copy กล่องโค้ด ปิดแล้ว (ต่อ 108)
+- **e2e (ต่อ 113):** `expectAlive` ตรวจจอขาวด้วย `#root.childElementCount > 0` — overlay ที่ append เข้า `#root` ตรงๆ จะทำให้ผ่านเสมอ (ตอนนี้ไม่มี) → ให้นับเฉพาะลูกที่ React render
+- **เอกสาร:** ไฟล์นี้ 45 KB (งบ 50 · เทสคุม) — ย้ายของออกลง `docs/` อีกรอบก่อนชนเพดาน ⛔ ห้ามขยับเพดาน
 - **a.ui build/CI (ต่อ 111):** ย้ายไป Node 24 LTS — ตอนนี้ตรึง 25.8.1 ใน `~/appscript.ui/.nvmrc` (รุ่นที่ build จริง · หมดซัพพอร์ต 2026-06-01) · เปลี่ยนแล้วต้อง build bundle ใหม่ + ตรวจซ้ำ
 - **backend:** ✅ reader `marks.set` verify รอบอ่านจริงแล้ว (ต่อ 50) · ข้อสังเกตเล็ก: `books.text` 90.9 ms บน loop ครั้งเดียวตอนเปิดเล่ม (ยังไม่คุ้มแก้)
 - **จดแยก:** Dream REM วัดด้วย `auto` ตอนมี memory ≥ 5 (รอ memory จากโหมดเสียงสะสม)

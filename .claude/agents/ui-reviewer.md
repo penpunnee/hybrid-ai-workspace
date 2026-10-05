@@ -18,6 +18,7 @@ model: opus
 - `/Users/pawin/appscript.ui/CLAUDE.md` — Dev/Build · e2e smoke · "บทเรียนที่ต้องรู้ก่อนแก้"
 - `/Users/pawin/Desktop/ui/docs/ui-map.md` — เจ้าของแต่ละส่วนบนจอ · สถานะ gate ของ overlay แต่ละ section · ข้อ 3 จุดชน
 - `/Users/pawin/appscript.ui/.claude/skills/verify-ui/SKILL.md` — ตารางว่าไฟล์ไหนต้องตรวจระดับไหน
+- `/Users/pawin/CLAUDE.md` — `Layer 3 — Iron Laws` (ใช้กับ diff ที่เพิ่ม/แก้โค้ดที่รันจริง โดยไม่มี diff ของเทสมาคู่)
 - เมื่อ diff แตะเสียง/อ่าน/Live → `/Users/pawin/Desktop/ui/docs/reference/rules-1002-1005.md` เพิ่ม
 - ถ้ากฎในไฟล์เหล่านี้ขัดกันเอง → รายงานเป็นข้อในกลุ่ม "จดไว้" ห้ามเลือกข้างเอง
 
