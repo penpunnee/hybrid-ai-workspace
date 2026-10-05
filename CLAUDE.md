@@ -22,7 +22,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | ส่วนบนจอนี้ใครเป็นเจ้าของ (React/overlay/API) | [`docs/ui-map.md`](docs/ui-map.md) · subagent `ui-investigator` |
 
 ### 🔴 กฎการจดตั้งแต่ 2026-08-17
-1. **จบเซสชัน → เขียน `docs/session-log/devlog.md`** แล้วอัปเดตหัวข้อ ▶️ ในไฟล์นี้
+1. **จบเซสชัน → เขียน `docs/session-log/devlog.md`** แล้วอัปเดตหัวข้อ ▶️ ในไฟล์นี้ ·
+   **ท้ายทุกงานใน devlog ใส่บรรทัด `📊`** (เวลา · รอบ verify-ui/reviewer · investigator ชี้ถูกไหม) — แบบอยู่ที่ `docs/session-log/README.md`
 2. **memory `hybrid_ai_status` / `hybrid_ai_infra` / `project_khim_reader` เป็นตัวชี้แล้ว
    ห้ามจดเนื้อหาลงไป** — git ตรวจย้อนได้ด้วย `git log -S` · memory ตรวจย้อนไม่ได้
 3. `MEMORY.md` เก็บได้แค่ "เปิดไฟล์ไหนก่อน + ข้อห้ามที่ยังมีผล"
@@ -191,7 +192,7 @@ LOG_FILE=/tmp/test.log /tmp/uivenv/bin/python -m pytest -q   # LOG_FILE= สำ�
 uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noEmit)
 ```
 **ขั้นตอนต่อก้อน:** ค้น 2 ชั้น (เป็นบั๊กจริงไหม · วิธีแก้ที่ถูกจากเอกสาร/ซอร์ส lib ที่ติดตั้ง — **รวม log/วัด prod**) → รายงานแผน
-→ /scrutinize → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy → verify prod (ยืนยันว่าเส้นที่แก้ถูกวิ่งจริง)
+→ /scrutinize (งาน state/`await`: + `ui-reviewer` ตรวจแผน) → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy → verify prod (ยืนยันว่าเส้นที่แก้ถูกวิ่งจริง)
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า — เมนู ⋯ (แผนเต็มที่ devlog **[10-05 ต่อ 121]** งานถัดไป 2 · ยังไม่เริ่ม)
@@ -299,6 +300,10 @@ seek ต้อง**อ่านค่าก่อนเขียน** (user อ�
   เครื่องใหม่/ลิงก์หาย: `mkdir -p ~/.claude/agents && ln -sfn ~/Desktop/ui/.claude/agents/ui-investigator.md ~/.claude/agents/ui-investigator.md`) ·
   ตัวยึดในแผนที่ตรึงด้วย `tests/test_ui_map_anchors.py` (static/) + `~/appscript.ui/utils/uimap.test.ts` (React) — rename แล้วต้องแก้แผนที่ตาม
 - ก่อน commit diff ฝั่ง UI ระดับกลางขึ้นไป หรือที่แตะ `*.test.ts`/`e2e/` → ให้ subagent `ui-reviewer` ตรวจ (เงื่อนไข/วิธี = skill verify-ui ขั้น 4.5 ใน `~/appscript.ui` · ตัวจริง+symlink แบบเดียวกับ `ui-investigator` · ⛔ เรียกชื่อไม่ได้ ห้ามใช้ agent อื่นแทน)
+- **งานที่แตะ state · โค้ดหลัง `await` · หรือมีสิ่งที่แทรกกันได้:** เขียน**ตารางลำดับเหตุการณ์** (อะไรแทรกอะไรได้ → ต้องได้ผลอะไร) แล้วส่ง `ui-reviewer` **ตรวจแผน 1 รอบก่อนเขียนโค้ด** ·
+  เจอข้อบกพร่อง**ตระกูลเดียวกัน 2 รอบติด** → ⛔ หยุดแก้ทีละเคส เสนอจัดโครงใหม่ให้ปอยเลือก
+- **checklist มือ:** 1 ชุดต่อครอบครัวงาน · ไม่เกิน 5 ข้อ · เฉพาะข้อที่เครื่องตรวจแทนไม่ได้ (เช็คจาก log/DB/e2e ได้ = เช็คเอง) ·
+  ⛔ ห้ามรายงานว่า "ผ่าน" จนมีหลักฐาน (log · DB · คำยืนยันจากปอย) — ยังไม่มี = "รอปอย"
 - overlay ที่ React ทำเองแล้วต้อง gate `if (window.__hwReactChatBox) return;` (ตอนนี้: tee/`_parseChatSSE` · Ctrl+E · ↑/↓ · paste · §6 · §19/§20 · §22) —
   เพิ่ม feature ใน React แล้วไล่ overlay ที่ทำซ้ำด้วย · เทส `tests/overlay_gating.test.js`
 - ก่อน commit การแก้ `static/*.js` (overlay) → รัน `npm run test:e2e` ใน `~/appscript.ui` ต้องเขียวทั้งหมด → ทำตาม skill verify-ui ใน ~/appscript.ui ·
