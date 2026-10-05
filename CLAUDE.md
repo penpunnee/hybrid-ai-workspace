@@ -196,7 +196,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 
 ### 🥇 งานแรกเซสชันหน้า — เลือกจากงานเปิด (ถาม user)
 **ไม่มีงานโค้ดค้าง** (10-05 รอบ 5 = toast สองระบบปิดโดยไม่แก้โค้ด [ต่อ 109] · แก้ timer ของ toast React [ต่อ 110 · deploy แล้ว] · CI ของ a.ui job `unit` [ต่อ 111] · สรุปปิดเซสชันที่ devlog [ต่อ 112] · รอบ 6 = subagent `ui-reviewer` พิสูจน์แล้ว + verify-ui ขั้น 4.5 [ต่อ 113]) ·
-⚠️ a.ui `origin` (NAS) ตามหลัง `github` 1 commit (นอกวง LAN) → กลับเข้าวงแล้ว `git push origin main` · ⏳ มือถือไม่มีปุ่มล้างแชท (`hidden md:flex`) ตั้งใจไหม — รอปอยตอบ [ต่อ 113] · ตัวเลือก: 📋 ย้าย Vault Search เข้า React · ย้าย a.ui ไป Node 24 LTS · ⏳ job e2e บน CI (รอปอยเช็คโควตา) · เลือกจาก ⏳ ข้างล่าง/🧪 (docs) หรือถาม user
+⏳ มือถือไม่มีปุ่มล้างแชท (`hidden md:flex`) ตั้งใจไหม — รอปอยตอบ [ต่อ 113] · ตัวเลือก: 📋 ย้าย Vault Search เข้า React · ย้าย a.ui ไป Node 24 LTS · ⏳ job e2e บน CI (รอปอยเช็คโควตา) · เลือกจาก ⏳ ข้างล่าง/🧪 (docs) หรือถาม user
 1. 🧪 (ต่อ 104) user ถามขวัญแนวเดิมในโหมดเสียง → ตอบ "ที่ใกล้สุดคือ…" แทนถามกลับไหม · ✅ ความจำขยะ ASR (ต่อ 105) · ⏳ ค้นในตัวหนังสือ (`reader.db`) แทนเว็บ · ✅ e2e smoke WebKit (a.ui `npm run test:e2e`)
 2. 🧪 log ที่ควรดูรอบหน้า: ~~`[LMStudio] อุ่นเครื่อง`~~ ✅ (ต่อ 102) · `[Chat] timings` ใหม่ (ช้าตรงไหน · 10-05 ยังมีแค่ probe) · `[Voice WS] ห้อง … มีสายเก่ายังค้าง` (เกิดจริงไหม · 10-05 มีแค่ probe) · `[Reader] … ตระกูล 6` (ตอนนำเข้าเล่มใหม่)
 3. 🧪 (ต่อ 100) qwen แปลชื่อเฉพาะผิด (Gemini ถูก) — ถาม user ว่าใช้ Gemini เองไหม (⛔ ห้าม redirect)
