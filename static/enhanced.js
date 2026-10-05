@@ -223,9 +223,10 @@
 
     /* Floating toolbar
        z ต้องอยู่เหนือ <main> ของ React (z-10) และแถบ Context (12) แต่ใต้ฉากหลังแถบข้างมือถือ (20)
-       และหน้าต่างของ React ทุกตัว (60–85) — เดิม 9000 ลอยทับหน้าต่างและดักการแตะฉากหลัง */
+       และหน้าต่างของ React ทุกตัว (60–85) — เดิม 9000 ลอยทับหน้าต่างและดักการแตะฉากหลัง
+       bottom: ตัวแปรมาจาก _placeFloaters (§12.5) เมื่อกรอบช่องพิมพ์สูงจนถึงปุ่ม — ไม่มีตัวแปร = ค่าเดิม */
     #enh-toolbar {
-      position: fixed; bottom: 16px; right: 16px; z-index: 16;
+      position: fixed; bottom: max(16px, var(--enh-toolbar-bottom, 0px)); right: 16px; z-index: 16;
       display: flex; gap: 6px;
     }
     .enh-fab {
@@ -354,7 +355,7 @@
         transform: none !important;
         left: auto !important;
         right: 6px !important;
-        bottom: 110px !important;
+        bottom: max(110px, var(--enh-toolbar-bottom, 0px)) !important;
         flex-direction: column !important;
         gap: 4px !important;
       }
@@ -374,7 +375,7 @@
       #hw-home-panel { width: calc(100vw - 24px); right: 12px; left: 12px; bottom: 144px; }
 
       /* Scroll-to-bottom button — เหนือปุ่มอื่น */
-      #enh-scroll-btn { bottom: 148px !important; right: 6px !important; }
+      #enh-scroll-btn { bottom: max(148px, var(--enh-scroll-bottom, 0px)) !important; right: 6px !important; }
 
       /* ── Pin button (enh-js) — ซ่อนไว้ ใช้ React pin button แทน ── */
       .enh-pin-btn {
@@ -410,7 +411,7 @@
       #enh-token-text { min-width: 0; font-size: 10px; }
 
       /* Typing indicator */
-      #enh-typing { bottom: 28px; }
+      #enh-typing { bottom: max(28px, var(--enh-typing-bottom, 0px)); }
     }
   `;
   document.head.appendChild(css);
@@ -949,7 +950,7 @@
   // ─────────────────────────────────────────────────────────────────────────────
   const scrollBtnCSS = `
     #enh-scroll-btn {
-      position:fixed; bottom:70px; right:16px; z-index:15; /* ใต้ #enh-toolbar (16) · เหตุผลของช่วงเลขดูที่ #enh-toolbar */
+      position:fixed; bottom:max(70px, var(--enh-scroll-bottom, 0px)); right:16px; z-index:15; /* ใต้ #enh-toolbar (16) · เหตุผลของช่วงเลข/ตัวแปรดูที่ #enh-toolbar */
       background:rgba(15,23,42,0.9); border:1px solid rgba(170,160,251,0.35);
       border-radius:50%; width:36px; height:36px; cursor:pointer;
       color:#94a3b8; font-size:16px; display:none;
@@ -1143,10 +1144,10 @@
   // ─────────────────────────────────────────────────────────────────────────────
   const typingCSS = `
     #enh-typing {
-      position:fixed; bottom:52px; left:50%; transform:translateX(-50%);
+      position:fixed; bottom:max(52px, var(--enh-typing-bottom, 0px)); left:50%; transform:translateX(-50%);
       background:rgba(15,23,42,0.9); border:1px solid rgba(170,160,251,0.3);
       border-radius:20px; padding:6px 16px; font-size:12px; color:#94a3b8;
-      z-index:8997; display:none; align-items:center; gap:8px;
+      z-index:14; display:none; align-items:center; gap:8px; /* ใต้ปุ่มลอย (15/16) และหน้าต่างของ React — ดูที่ #enh-toolbar */
       backdrop-filter:blur(8px); pointer-events:none;
     }
     #enh-typing.show { display:flex; }
@@ -1174,6 +1175,52 @@
 
   // ผูก ref typing element (unified fetch override จะใช้ผ่าน _typingElRef)
   _typingElRef = typingEl;
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 12.5 FLOATERS ABOVE COMPOSER — ปุ่ม ↓ · toolbar · "กำลังคิด…" เกาะเหนือกรอบช่องพิมพ์ของ React
+  // ─────────────────────────────────────────────────────────────────────────────
+  // bottom ตายตัวใน CSS ตั้งไว้ตอนกรอบช่องพิมพ์เตี้ย — กรอบสูงตาม pill ที่ห่อบรรทัด/แถบสถานะ/ข้อความหลายบรรทัด
+  // แล้วของลอยไปทับมัน (🌿 ทับป้าย "● Auto" บน iPhone) ⇒ อ่านตำแหน่ง #hw-chatbox (อ่านอย่างเดียว ไม่แตะ DOM ของ React)
+  // แล้วส่งระยะผ่าน CSS variable · CSS ใช้ max(ค่าเดิม, ตัวแปร) ⇒ หากรอบไม่เจอ (bundle เก่า) = ได้ค่าเดิม
+  const _FLOAT_VARS = ["--enh-toolbar-bottom", "--enh-scroll-bottom", "--enh-typing-bottom"];
+  let _chatBox = null;
+  const _floatRO = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => _placeFloaters()) : null;
+
+  function _placeFloaters() {
+    const rootStyle = document.documentElement.style;
+    const el = document.getElementById("hw-chatbox");
+    if (el !== _chatBox) {               // React mount/remount → เฝ้าตัวใหม่
+      _chatBox = el;
+      if (_floatRO) { _floatRO.disconnect(); _floatRO.observe(toolbar); if (el) _floatRO.observe(el); }
+    }
+    const box = el && el.getBoundingClientRect();
+    if (!box || !box.height) { _FLOAT_VARS.forEach((v) => rootStyle.removeProperty(v)); return; }
+
+    // position:fixed กับ getBoundingClientRect อ้าง layout viewport เดียวกัน → ใช้ clientHeight (ไม่ใช่ innerHeight)
+    const vh = document.documentElement.clientHeight;
+    const above = Math.round(vh - box.top + 8);
+    const overBoxX = (left, right) => left < box.right && right > box.left;
+
+    rootStyle.setProperty("--enh-typing-bottom", above + "px");   // อยู่กลางจอ = ตรงกับกรอบเสมอ
+
+    // toolbar / ↓ ยึดขอบขวา แกน x จึงไม่ขึ้นกับตัวแปร — ยกขึ้นเฉพาะเมื่อกรอบกว้างมาถึงใต้ปุ่ม (จอกว้างปุ่มอยู่มุมขวาล่างตามเดิม)
+    const tb = toolbar.getBoundingClientRect();
+    rootStyle.setProperty("--enh-toolbar-bottom", (tb.width && overBoxX(tb.left, tb.right) ? above : 0) + "px");
+    // ↓ ต้องพ้นทั้งกรอบและ toolbar (⏹ โผล่แล้ว toolbar สูงขึ้น) · ↓ อาจซ่อนอยู่ (ไม่มี rect) → คิดแกน x จาก right ของ CSS · กว้าง 36px
+    const sbRight = document.documentElement.clientWidth - parseFloat(getComputedStyle(scrollBtn).right);
+    const clearBox = overBoxX(sbRight - 36, sbRight) ? above : 0;
+    const clearToolbar = tb.height ? Math.round(vh - toolbar.getBoundingClientRect().top + 6) : 0;
+    rootStyle.setProperty("--enh-scroll-bottom", Math.max(clearBox, clearToolbar) + "px");
+  }
+
+  window.addEventListener("resize", _placeFloaters);
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", _placeFloaters);
+  // React mount ทีหลัง overlay และอาจ mount กรอบใหม่ทั้งต้น (AppErrorBoundary) — ResizeObserver เฝ้าได้แค่ตัวที่รู้จัก
+  // จึงเฝ้า #root ไว้ตลอด: กรอบเป็นคนละตัวกับที่ถืออยู่เมื่อไหร่ค่อยวางใหม่
+  new MutationObserver(() => {
+    if (document.getElementById("hw-chatbox") !== _chatBox) _placeFloaters();
+  }).observe(document.getElementById("root"), { childList: true, subtree: true });
+  _placeFloaters();
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 13. CHAT INPUT + BUTTON IMPROVEMENTS

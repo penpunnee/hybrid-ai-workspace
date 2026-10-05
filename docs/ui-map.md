@@ -48,6 +48,7 @@
 | @vault ในช่องพิมพ์ | `static/enhanced.js » 5. @vault SEARCH` | `/api/vault/search` | ฟัง `input` บน `document` (ทุก INPUT/TEXTAREA รวมช่องพิมพ์ของ React) · คลิกผลลัพธ์ = คัดลอก + toast ของ overlay |
 | ปุ่มหยุด stream ⏹ | `static/enhanced.js » 7. STOP GENERATION` | — (abort fetch) | React ไม่มีปุ่มหยุด |
 | ปุ่มเลื่อนลงล่างสุด | `static/enhanced.js » 8. SCROLL TO BOTTOM BUTTON` | — | ปุ่มลอยบน `body` |
+| ของลอยเกาะเหนือกรอบช่องพิมพ์ (↓ · toolbar 🌿/⏹ · "กำลังคิด…") | `static/enhanced.js » function _placeFloaters` · อ่านตำแหน่งของ `a.ui/app.tsx » id="hw-chatbox"` | — | อ่านอย่างเดียว ไม่แตะ DOM ของ React → ส่งระยะผ่าน CSS variable `--enh-*-bottom` · rename id = ของลอยกลับไปใช้ระยะตายตัว (ทับกรอบ) |
 | "กำลังคิด…" ก่อน chunk แรก | `static/enhanced.js » 12. TYPING INDICATOR` | — | ลอยบน `body` |
 | ปรับแต่งช่องพิมพ์/ปุ่ม (CSS) | `static/enhanced.js » 13. CHAT INPUT + BUTTON IMPROVEMENTS` | — | CSS ทับคลาสของ React |
 | badge ชื่อโมเดลใต้ฟอง AI | `static/enhanced.js » 15. MODEL INDICATOR` · `static/enhanced.js » function _injectModelBadge` | header `X-Model-Used` ของ `/api/chat` | ⚠️ ฉีดเข้าฟองของ React |
@@ -67,9 +68,11 @@
    · ✅ **ปิดแล้ว 10-05 โดยไม่แก้โค้ด** (devlog [ต่อ 109]): ไม่มี action ใดที่ได้ toast ทั้งสองระบบ · overlay เหลือ caller จุดเดียวที่ §5 @vault ·
    React ยังไม่มีช่องให้ overlay เรียก toast ของมัน (expose แค่ธง `__hwReactChatBox`) · จะหมดไปเองเมื่อย้าย Vault Search เข้า React (งานเปิดใน CLAUDE.md ▶️)
 3. **ชั้น z ของของลอย** (แก้ 10-05 · devlog [ต่อ 122] · e2e ㉚–㉞ ตัดสินด้วย `elementFromPoint`) — ของลอยใหม่ต้องเลือกเลขจากลำดับนี้:
-   `<main>` 10 < แถบ Context 12 < ปุ่ม ↓ 15 < toolbar 🌿/⏹ 16 < ฉากหลังแถบข้างมือถือ 20 < แถบข้าง 30 < toast ของ React 50 < หน้าต่างของ React 60–85 < Vault overlay 9100 < toast ของ overlay 9999
+   `<main>` 10 < แถบ Context 12 < "กำลังคิด…" 14 < ปุ่ม ↓ 15 < toolbar 🌿/⏹ 16 < ฉากหลังแถบข้างมือถือ 20 < แถบข้าง 30 < toast ของ React 50 < หน้าต่างของ React 60–85 < Vault overlay 9100 < toast ของ overlay 9999
    · `<main>` เป็น stacking context ของตัวเอง ⇒ แถบหัว (100) และ dropdown ของ ChatBox (55/56) ที่อยู่ข้างใน **เทียบเลขกับของข้างนอกไม่ได้** (ทั้งก้อนนับเป็น 10)
-   · ยังค้าง: `#enh-typing` ("กำลังคิด…" · 8997 · `pointer-events:none`) ยังลอยเหนือหน้าต่าง · ⏹ Stop อยู่ใต้หน้าต่างเมื่อมีหน้าต่างเปิด (รวม Debate เต็มจอ)
+   · ⏹ Stop อยู่ใต้หน้าต่างเมื่อมีหน้าต่างเปิด (รวม Debate เต็มจอ — ระหว่าง Debate ยังไม่มีทางหยุด stream · ทำพร้อมเมนู ⋯)
+   · **ตำแหน่งแนวตั้ง** (devlog [ต่อ 123] · e2e ㉟ ㊱): "กำลังคิด…" เกาะเหนือขอบบนของ `#hw-chatbox` ทุกความกว้าง · ↓ และ toolbar เกาะเมื่อกรอบกว้างมาถึงใต้มัน (จอ ≤ ~1024 · จอกว้างกว่านั้นอยู่มุมขวาล่างตามเดิม) — ⛔ ห้ามใส่ `bottom` ตายตัวให้ของลอยใหม่
+   · e2e ของของลอยใช้ชื่อผู้ช่วย/โมเดลยาวเท่า prod (`PROD_NAME`) — ชื่อสั้นทำให้กรอบช่องพิมพ์เตี้ยกว่าจริงและมองไม่เห็นการทับ
 
 ## 4. ตายแล้ว (gate ด้วย `__hwReactChatBox` · อย่าแก้ที่นี่ แก้ที่ React)
 §1.5 DREAM STATS · §2 GLOBAL SEARCH · §3 EXPORT · §4 PIN · §6 COPY CODE BUTTON (`static/enhanced.js » function _wireCopyButtons`) · §9 TOKEN USAGE BAR · §10 PROMPT HISTORY · §11 PASTE ·
