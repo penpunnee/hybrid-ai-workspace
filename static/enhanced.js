@@ -1251,6 +1251,11 @@
       transform: scale(1.15);
       filter: brightness(1.3);
     }
+    /* จอสัมผัส: ปุ่มแถบหัวไม่ขยาย — iOS ค้าง :hover หลังแตะ แล้ว scale ขยาย ::before (พื้นที่แตะ) ให้ล้ำเข้าปุ่มข้างเคียง (รวม 🗑️)
+       เดสก์ท็อปยังขยายเหมือนเดิม · เทส ㊺ (มือถือ) + ㊻ (จอ 1280 เมาส์) ใน ~/appscript.ui/e2e */
+    @media (hover: none) {
+      header button.w-7.h-7.rounded-full:hover { transform: none; }
+    }
 
     /* Tooltip บน icon buttons */
     button.w-7.h-7.rounded-full[title]:hover::after {
