@@ -1,5 +1,42 @@
 ---
 
+## [2026-10-06 ต่อ 137] สืบ+แผน: overlay จำสถานะ pill ตั้งแต่โหลดหน้า (ปอยเคาะแล้ว · ยังไม่เขียนเทส) · ปิดเซสชันรอบ 10
+
+**สืบ (ui-investigator 100.5k · 1.6 นาที · ชี้ถูก · + วัด e2e จริง WebKit 440 overlay จริง):**
+- overlay `static/enhanced.js:2859-2868` อ่าน `hw_cb_skills`/`hw_cb_mode` จาก localStorage **ครั้งเดียวตอนโหลด** → `__hwChatBoxSkills`/`__hwChatBoxMode` (อยู่**ก่อน** gate `__hwReactChatBox` :2902 ⇒ ยังรัน · ตัวอัปเดตค่าอยู่หลัง gate = ตาย)
+- fetch override §1 (`enhanced.js:43-70`) → `applyChatBodyMutations` ทุก POST /api/chat + /api/regenerate (ยกเว้น `debate:true`) — **เติมธงอย่างเดียว ไม่เคยถอด**: Web Search → `tool_agent` · Obsidian → `obsidian_inject` · Plan → `plan_mode` · `_agentMode`/`_claudeMode` = false ถาวร
+- React ส่งธงเองครบผ่าน `utils/chatflags.ts » buildChatFlags` (handleSend · submitEdit) · regenerate ส่งแค่ `agent_mode` (server อ่านแค่นั้น)
+- **บั๊ก 1 (วัดจริง):** โหลดตอน Web Search + Plan เปิด → ปิดใน React (localStorage = `[]`/`ask` แล้ว) → แชทปกติส่ง **`tool_agent:true` + `plan_mode:true`** ⇒ วิ่ง agent + tools (~2.5k token) + ตอบแบบวางแผน · กรณีปิดตอนโหลด→เปิดทีหลังไม่ผิด
+- **บั๊ก 2 (เจอระหว่างสืบ · วัดจริง):** pill Obsidian ถูกถอดจาก React ตั้งแต่ 06-15 แต่ React โหลด `hw_cb_skills` ทั้งก้อนไม่กรอง ⇒ `'obsidian'` ค้าง = **React เอง**ส่ง `obsidian_inject:true` ทุกข้อความ ไม่มีปุ่มปิด (🌙 แถบหัว OR เพิ่มอย่างเดียว)
+- log prod 10-04→06 ไม่มีหลักฐานชัดว่าแชทของปอยโดนอยู่ตอนนี้
+
+**🔑 ปอยเคาะ (10-06):** **1 = A** overlay ไม่เติมธงเลยเมื่อมี React ChatBox (`window.__hwReactChatBox` · เช็คทุกคำขอ) — React เป็นแหล่งธงแหล่งเดียว · คง `applyChatBodyMutations` ไว้ให้ bundle เก่า · ข้ามเฉพาะบล็อกเติมธง (:57-70) ไม่แตะประวัติ prompt/draft (:46-54) · AbortController/typing (:81-100) ·
+**2 = i** React กรอง `hw_cb_skills` ตอนโหลดเหลือเฉพาะ id ที่มีจริง · obsidian เหลือทางเดียวคือ 🌙 ·
+**3 = ก** (บั๊กตระกูลเดียวกันรอบที่ 2 — รอบแรก 10-04 Code ค้างข้ามวัน [ต่อ 76]) รวมกติกา "สถานะ ChatBox ตอนโหลด" ไว้ที่เดียวใน `chatflags.ts` · จำข้ามการโหลดเฉพาะตัวที่ไม่ทำให้วิ่ง agent (Plan · Reflect) · **Code และ Web Search ไม่จำ** ·
+**checklist มือเพิ่มข้อ: เปิด Web Search → รีเฟรช → ต้องปิด**
+
+**แผนที่ผ่านตรวจ (ui-reviewer ตรวจแผน 1 รอบ · 105.1k token · 2.6 นาที · ต้องแก้ 1 · ควรพิจารณา 3 · จดไว้ 4 · ตัดทิ้ง 7 — รับทั้งหมด):**
+1. `static/enhanced.js` fetch override: บล็อกเติมธงทำงานเฉพาะเมื่อ `!window.__hwReactChatBox` (เช็คตอนส่งแต่ละคำขอ ไม่ใช่ตอนโหลด) · bump `enhanced.js?v=` · push ui ก่อน a.ui
+2. `utils/chatflags.ts`: ย้ายรายการ id ของ pill มาไว้ที่นี่ (app.tsx `CB_SKILLS` ใช้ร่วม — ห้ามมีรายการซ้ำสองที่) · `initialCbSkills(raw)` กรอง id ที่ไม่รู้จัก + ไม่จำ `search` · JSON เสีย/ไม่ใช่ array = `[]` · คู่กับ `initialCbMode` เดิม
+3. React `app.tsx`: `cbSkills` เริ่มจาก `initialCbSkills` (useEffect เขียน localStorage ที่สะอาดกลับเอง)
+4. **e2e (51) ต้องปรับ (ต้องแก้ของผู้ตรวจ):** ทาง i ทำให้ React เขียน `hw_cb_skills` ใหม่ใน useEffect → precondition `__hwChatBoxSkills().obsidian === true` ขึ้นกับจังหวะว่าใครเขียนก่อน + ภายใต้ทาง A overlay ไม่เรียก mutation แล้ว ⇒ ให้ตรวจจาก body อย่างเดียว + เขียนเหตุผลในคอมเมนต์ (เทสหลวมลงโดยตั้งใจ · ตัวกัน debate ใน `chat_intercept.js` มี node test คุมแล้ว) · หลังแก้รัน `--repeat-each` ดูว่าไม่แกว่ง
+5. `tests/overlay_gating.test.js`: static test ว่าบล็อกเติมธงมี `!window.__hwReactChatBox` คุม และเช็คต่อคำขอ (CI ของ ui ไม่รัน e2e)
+6. เอกสาร: ui-map แถว 31 (snapshot อยู่ก่อน gate ยังรัน) + 47 · `CLAUDE.md » 🔑 frontend` รายการ overlay ที่ gate แล้ว + "เติมธงใน body"
+
+**ตารางลำดับเหตุการณ์ (ผ่านตรวจ):** ① pill เปิดตอนโหลด→ปิดใน React→ส่ง ⇒ ไม่มีธง · ② ปิดตอนโหลด→เปิด→ส่ง ⇒ มีธง (React ส่งเอง) · ③ สลับ pill ระหว่างกำลังตอบ ⇒ รอบนั้นไม่เปลี่ยน (body สร้างตอนกดส่ง) ·
+④ regenerate ⇒ React ส่งแค่ `agent_mode` overlay ไม่เติม · ⑤ submitEdit ⇒ ธงตามสถานะตอนกดบันทึก · ⑥ Debate ไม่เปลี่ยน · ⑦ bundle เก่า + overlay ใหม่ ⇒ fallback §22 เติมธงแบบเดิม · ⑧ bundle ใหม่ + overlay เก่าในแคช ⇒ บั๊กจนรีเฟรช ·
+⑨ `obsidian` ค้าง ⇒ กรองทิ้ง localStorage ถูกเขียนใหม่ · ⑩ localStorage เสีย ⇒ `[]` · ⑪ ลำดับโหลด overlay vs React ไม่มีผลกับการเติมธง · ⑫ 2 แท็บตาม state ของตัวเอง · ⑬ (ทาง ก) Web Search เปิด → รีเฟรช ⇒ ปิด · Plan/Reflect ยังจำ
+
+**เทสที่ต้องเขียน (แดงก่อนแก้):** e2e: ①(วัดแล้วแดงตอนนี้) · ② กลุ่มควบคุม · obsidian ค้าง → `obsidian_inject:false` + 🌙 → true + localStorage ไม่มี obsidian · Web Search เปิด → รีเฟรช → ปิด + body ไม่มี `tool_agent` · Plan เปิด → รีเฟรช → ยังเปิด ·
+vitest `initialCbSkills` (กรอง id แปลก · ไม่ใช่ array · JSON เสีย · `reflect` รอด · `search` ไม่จำ) · node static gate · mutation: overlay กลับไปเติมธง · ไม่กรอง skills · จำ search กลับมา · กรองทิ้ง reflect
+**จดไว้:** `chatflags.test.ts:28` (`buildChatFlags('ask',['obsidian'])` → true) หลังทาง i ไม่มีเส้นวิ่งถึง — คงไว้ได้ ถ้าลบต้องแก้เทส + เหตุผล
+
+**ปิดเซสชันรอบ 10:** working tree สะอาดทั้งสองรีโป · push ครบ (ui `origin` · a.ui `origin`+`github`) · ไม่มีไฟล์ชั่วคราวค้าง · CI เขียว · prod = NAS ui `0fe3e51` (bundle `index-CEWp--mZ.js`)
+
+📊 17:15 → แผนเคาะ ~17:35 · ui-investigator 100.5k · 1.6 นาที · ui-reviewer: แผน 1 (105.1k · 2.6 นาที · ต่ำกว่าเพดาน) · diff 0 · มือ: ยังไม่มี (ยังไม่แก้)
+
+---
+
 ## [2026-10-06 ต่อ 136] Debate เป็นแบบชั่วคราว (ธง `debate: true`) · overlay ไม่แตะฟ้อง Debate · ลบของเดิม 11 แถว
 
 **ปอยเคาะ:** (A) ชั่วคราว · โครง (ข) ทางแยกเดียว · ไม่นับ access_count · Agent/Claude คุมด้วย node test (FAB ถอดแล้ว 06-15) · รวมแก้บั๊ก `applyChatBodyMutations` แปลงฟ้อง Debate · อนุมัติลบ 11 แถว (หลัง deploy · สำรองก่อน · transaction เช็คจำนวน)
