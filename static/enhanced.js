@@ -34,6 +34,9 @@
   let _pendingAgentTimeline = null;  // { events: [], sessionToken: string }
 
   window.fetch = function (url, opts) {
+    // ผู้เรียกส่ง signal มาเอง (เช่น Debate ของ React) = เป็นเจ้าของทางหยุดเอง ⇒ ไม่ทับ signal · ไม่โชว์ ⏹/typing ·
+    // abort แล้วโยน AbortError ต่อตามจริง (ไม่แปลงเป็น 200 เปล่า) — ตัดสินจาก "มี signal" ไม่ใช่ URL/ชื่อ · e2e ㊼–㊾
+    const _callerSignal = !!opts?.signal;
     if (typeof url === "string") {
       // 1. Track assistant + session + prompt history + agent/claude injection
       //    N2: ครอบ /api/regenerate ด้วย → กด regenerate ก็ใช้ Claude/Agent ตามโหมด
@@ -75,7 +78,7 @@
       }
 
       // 3. AbortController + typing indicator for streaming calls
-      if (opts?.method === "POST" && (url === "/api/chat" || url.includes("/api/regenerate"))) {
+      if (opts?.method === "POST" && (url === "/api/chat" || url.includes("/api/regenerate")) && !_callerSignal) {
         _abortCtrl = new AbortController();
         opts = { ...opts, signal: _abortCtrl.signal };
 
@@ -99,6 +102,7 @@
 
     return _origFetch(url, opts)
       .catch((err) => {
+        if (_callerSignal) throw err;
         if (_stopBtnEl) _stopBtnEl.style.display = "none";
         if (_typingElRef) _typingElRef.classList.remove("show");
         if (err.name === "AbortError") {
