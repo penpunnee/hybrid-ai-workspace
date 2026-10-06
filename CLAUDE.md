@@ -174,7 +174,7 @@ overlay แบบ vanilla (ไม่ต้อง build, ทำงานคู่
 - ⚠️ **DELETE `/api/skills/{id}`**: lebt `delete_file` query param (default false). ส่ง `?delete_file=true` ถ้าต้องลบ .md ด้วย — กัน data loss
 
 
-## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-06 รอบ 10 [ต่อ 134] · **ที่เดียว**)
+## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-06 รอบ 10 [ต่อ 136] · **ที่เดียว**)
 
 > บล็อก ▶️ ทั้งหมดจนถึง 09-28 (ก้อน 1–11 · config ก้อน 1–4 · reader/voice 08-17→09-22 · ไมค์ 08-24/26)
 > ถูกยก**ทั้งดุ้นไม่แก้**ไปไว้ที่ devlog **[2026-09-28 ต่อ 24]** — ที่นี่เหลือแค่งานเปิด + กติกาที่ยังมีผล
@@ -192,12 +192,12 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → /scrutinize (งาน state/`await`: + `ui-reviewer` ตรวจแผน) → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy → verify prod (ยืนยันว่าเส้นที่แก้ถูกวิ่งจริง)
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
-### 🥇 งานแรกเซสชันหน้า → ① `gh run list` สองรีโป (ตอนจบรอบ 10 เขียวครบ) → ② เลือกงานถัดไปจาก `open-work.md` (ถามปอย) · commit คู่ที่ bump `?v=` → **push ui ก่อน a.ui**
-อ่าน devlog **[10-06 ต่อ 134]** ก่อน (⛔ เฉลยการพิสูจน์ `ui-reviewer` [126] ห้ามย้ายมาไว้ในไฟล์นี้) ·
+### 🥇 งานแรกเซสชันหน้า → ① `gh run list` สองรีโป (ตอนจบรอบ 10 เขียวครบ) → ② ผลมือ Debate ชั่วคราว 3 ข้อ (`pending-manual-tests.md` บนสุด) → ③ เลือกงานถัดไปจาก `open-work.md` (ถามปอย) · commit คู่ที่ bump `?v=` → **push ui ก่อน a.ui**
+อ่าน devlog **[10-06 ต่อ 136]** ก่อน (⛔ เฉลยการพิสูจน์ `ui-reviewer` [126] ห้ามย้ายมาไว้ในไฟล์นี้) ·
 ✅ รอบ 10 (10-06): CI ที่ค้างจาก Actions ล่ม rerun เขียวครบ · พื้นที่แตะ 🌙 🤖 📌 🗑️ 26×44 deploy แล้ว + iPhone 4 ข้อผ่าน (bundle `index-BIjCvrjS.js` · `enhanced.js?v=20261006-10662033`) ·
 🔑 **ห้ามปุ่มข้างเคียงล้ำเข้าพื้นที่แตะของ 🗑️ ทั้งตอนปกติและ hover** (ปอยเคาะ 10-06 · แทนข้อยอมรับ ⋯ ล้ำ 1–2px เดิม) ⇒ overlay §13 ปิด `scale(1.15)` ของปุ่มแถบหัวใน `@media (hover: none)` · e2e ㊴ ㊺ ㊻ ·
 พื้นที่แตะปุ่มแถบหัวขยายด้วย `::before` ⛔ ห้าม `::after` · e2e ที่วัดหลัง hover ต้องรอ transition จบ (`settleAnim`) ·
-✅ ทางหยุด stream ระหว่าง Debate deploy แล้ว ([ต่อ 132] · ✕/Escape = หยุด+ปิด · ฟ้องที่ส่ง `signal` เอง overlay ไม่แตะ · ข้อจำกัด DB ที่ยอมรับอยู่ใน ui-map) · งานเปิดใหม่: แชท `debate_*` ในแถบข้าง (`open-work.md`) ·
+✅ ทางหยุด stream ระหว่าง Debate deploy แล้ว ([ต่อ 132] · ✕/Escape = หยุด+ปิด · ฟ้องที่ส่ง `signal` เอง overlay ไม่แตะ · ข้อจำกัด DB ที่ยอมรับอยู่ใน ui-map) · ✅ Debate ชั่วคราว ([ต่อ 136] · ธง `debate: true` ไม่บันทึก/ไม่เรียนรู้ · overlay ไม่แตะฟ้อง Debate · ลบ `debate_*` 11 แถว · สำรอง `data/db_backups/manual_chat_history_pre-debate-cleanup_20261006_091005.db`) ·
 ✅ PC ปิดแล้วแชทไม่ช้า 15–18 วิ ([ต่อ 134] · ตัวพัก Ollama ใช้ร่วมกับ EF ของ chromadb · ปิดทางเฉพาะ ConnectError/ConnectTimeout · documents ไม่ถอยไป MiniLM)
 ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 

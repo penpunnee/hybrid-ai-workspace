@@ -1,5 +1,37 @@
 ---
 
+## [2026-10-06 ต่อ 136] Debate เป็นแบบชั่วคราว (ธง `debate: true`) · overlay ไม่แตะฟ้อง Debate · ลบของเดิม 11 แถว
+
+**ปอยเคาะ:** (A) ชั่วคราว · โครง (ข) ทางแยกเดียว · ไม่นับ access_count · Agent/Claude คุมด้วย node test (FAB ถอดแล้ว 06-15) · รวมแก้บั๊ก `applyChatBodyMutations` แปลงฟ้อง Debate · อนุมัติลบ 11 แถว (หลัง deploy · สำรองก่อน · transaction เช็คจำนวน)
+
+| ส่วน | สิ่งที่ทำ |
+|---|---|
+| `routers/chat.py` | `debate = data.get("debate") is True` → `session_id=""` (prod มี session `default` จริง 23 ข้อความ) · ปิด tool_agent/agent/plan/reflect/active learning/cache/วาดรูป · ด่าน teach ก่อนตอบ · `history=[]` · ไม่ save user · `_save_crash` คืน 0 · **ทางแยกเดียวหลัง empty-guard: ส่ง done (timings/usage · `message_id: null`) แล้ว return** |
+| `memory/` | `recall(track_access=)` → `search_entries(track_access=)` — Debate ไม่ bump access_count (retention ของ Dream) |
+| `static/chat_intercept.js` | `b.debate === true` ⇒ ไม่ mutate (เดิม pill Web Search/Obsidian/Plan จาก localStorage + โหมด Agent/Claude แปลงทั้ง 3 ฟ้อง) · `?v=20261006-0928f2c6` |
+| React | body `{assistant, prompt, provider, model, debate: true}` ไม่ส่ง session_id |
+| เทส | `tests/test_chat_debate_ephemeral.py` 31 (10 เส้น parametrize: Debate = 0 · **แชทปกติ ≥ 1 = กลุ่มควบคุม** · DB จริงนับแถว · วาดรูป · agent · cache · ตัดสาย · ธง string · track_access) · node 11 (5 กรณี + คุมคู่) · e2e (51) ตั้ง localStorage ก่อนโหลด + ยืนยันว่า overlay เห็น pill จริง |
+แดงก่อนแก้: pytest 19 (คุม 12 เขียว) · node 5 · e2e 5 · หลังแก้ pytest **2837** · ruff · node 49 · vitest 733 · e2e **71/71** · mutation **15/15 แดง** (รวม overlay ไม่ข้าม Debate → node + (51) · React ส่ง session_id → (51))
+
+**deploy:** push ui ก่อน a.ui · NAS `git reset` + `docker restart` **คำสั่งเดียว** (ผู้ตรวจ: bundle ใหม่ + server เก่า = บันทึกลง `default`) · grep ในคอนเทนเนอร์ 3/3 · inode `server.py` ตรง (287523) · bundle `index-CEWp--mZ.js` ·
+**วัด prod:** ยิง `debate:true` 1 ครั้ง → จำนวน (ทั้งหมด · `default` · `skill_shadow`) = (1128, 23, 14) ก่อน = หลัง · log `[Chat] debate (ชั่วคราว) — ไม่บันทึก/ไม่เรียนรู้` · done `message_id: None`
+
+**ลบของเดิม (ปอยอนุมัติ):** ระบุด้วย `session_id LIKE 'debate\_%' ESCAPE '\'` + ยืนยัน id = {2940–2943, 2948–2952} ·
+สำรอง: `Connection.backup()` (SQLite online backup API ตัวเดียวกับ `.backup` — คอนเทนเนอร์**ไม่มี `sqlite3` CLI**) → **`/app/data/db_backups/manual_chat_history_pre-debate-cleanup_20261006_091005.db`** (host: `/var/services/homes/pawin/ui/data/db_backups/…` · 2.39 MB · integrity ok · ชื่อไม่ตรง glob `db_backup_*.tar.gz` ของ retention = ไม่ถูกลบอัตโนมัติ) ·
+transaction `BEGIN IMMEDIATE` → ตรวจ id/จำนวนตรง → ลบ messages 9 + skill_shadow 2 = **11 · COMMIT** ·
+หลังลบ: ส่วนที่ไม่ใช่ Debate 70 session · 1119 ข้อความ · shadow 12 = ก่อนลบ · `/api/sessions` 30 รายการ `debate_` 0 · แชทเดิม 28 อยู่ครบ (+`test-quick`/`test-normal` ลำดับ 31–32 เลื่อนขึ้นมา) · ChromaDB ไม่มีอะไรต้องลบ (เขียนไม่สำเร็จตอน Ollama ล่ม)
+
+**จดไว้ (ผู้ตรวจ):** Debate ยังยิง Wake-on-LAN ได้ ×3 ถ้า prompt เข้าคีย์เวิร์ด (`home_tools.build_tool_context` · พฤติกรรมเดิม · ชั่วคราวครอบแค่การบันทึก) · bundle เก่าในแคชยังส่ง `debate_<sid>` ไม่มีธงจนรีเฟรช ·
+งานเปิดใหม่ 2 ข้อใน `open-work.md` (Debate ไม่อ่าน `error` · overlay จำ pill ตอนโหลด)
+
+**ui-reviewer:** แผน **146.0k · 4.0 นาที** (ต้องแก้ 2 · ควรพิจารณา 4 — รับทั้งหมด) · diff **145.2k · 2.9 นาที** (ต้องแก้ 0 · ควรพิจารณา 1 = ลำดับ deploy → ทำ) · ต่ำกว่าเพดานทุกรอบ
+
+**🧪 มือ:** 3 ข้อ → `pending-manual-tests.md` · รอปอย
+
+📊 15:30 → deploy 16:08 → ลบ 16:10 · pytest เต็ม 1 · e2e เต็ม 1 · mutation 1 รอบ (15) · ui-reviewer: แผน 1 · diff 1 · ui-investigator: ไม่ได้เรียก
+
+---
+
 ## [2026-10-06 ต่อ 135] connect timeout ไปเครื่อง embed 3.0 → 1.5 วิ · สืบ `debate_*` ในแถบข้าง (รอปอยเคาะ)
 
 **connect timeout:** ค่าเดิม 3.0 (default ในโค้ด · prod ไม่ได้ตั้ง env) → **1.5** (`EMBED_CONNECT_TIMEOUT` · read 30 เท่าเดิม) · `.env.example` regen + `env-vars.md` ·
