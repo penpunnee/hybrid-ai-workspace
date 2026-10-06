@@ -21,6 +21,10 @@
     let mutated = false;
     let needTimeline = false;
 
+    // ฟ้อง Debate (React ส่ง `debate: true` · boolean จริง) = เทียบโมเดลตามคอลัมน์ ⇒ ห้ามแตะ body
+    // (เดิม pill Web Search/Obsidian/Plan หรือโหมด Agent/Claude แปลงทั้ง 3 ฟ้องเป็น agent/claude · 10-06)
+    if (b && b.debate === true) return { mutated, needTimeline };
+
     if (s.claudeMode) {
       b.provider = "claude";
       // React ChatBox ส่ง tool_agent มาเองได้ (Code mode/webSearch) — ต้องถอดออก

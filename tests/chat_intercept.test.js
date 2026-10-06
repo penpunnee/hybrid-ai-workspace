@@ -132,3 +132,34 @@ test("plan ไม่แตะ agent state ทั้งสองทาง", () =>
   assert.strictEqual(reconcileMode("plan", true), null);
   assert.strictEqual(reconcileMode("plan", false), null);
 });
+
+// ── ฟ้อง Debate (`debate: true`) — overlay ห้ามแตะ body (10-06 · ปอยสั่งรวมแก้ในงาน Debate ชั่วคราว) ──
+// เดิม: pill Web Search/Obsidian/Plan (localStorage) หรือโหมด Agent/Claude ⇒ ฟ้อง Debate ทั้ง 3 กลายเป็น tool_agent/provider=claude
+// ⇒ ไม่ได้เทียบโมเดลที่เลือกจริง · แยกทีละกรณี + คู่กลุ่มควบคุม (ไม่มีธง = แก้ body แบบเดิม)
+const DEBATE_CASES = {
+  "Web Search": { webSearch: true },
+  "โหมด Agent": { agentMode: true },
+  "โหมด Claude": { claudeMode: true },
+  "Plan": { mode: "plan" },
+  "Obsidian": { obsidian: true },
+};
+for (const [name, on] of Object.entries(DEBATE_CASES)) {
+  test(`Debate + ${name} → body เดิมทุกฟิลด์ ไม่ mutate`, () => {
+    const b = { assistant: "ขวัญ", prompt: "x", provider: "gemini", model: "gemini-3.5-flash", debate: true };
+    const before = JSON.stringify(b);
+    const r = applyChatBodyMutations(b, { ...OFF, ...on });
+    assert.strictEqual(JSON.stringify(b), before, "ไม่มี tool_agent/obsidian_inject/plan_mode · provider/model เดิม");
+    assert.strictEqual(r.mutated, false);
+    assert.strictEqual(r.needTimeline, false);
+  });
+  test(`กลุ่มควบคุม: ไม่มีธง Debate + ${name} → ยังแก้ body แบบเดิม`, () => {
+    const b = { prompt: "x", provider: "gemini" };
+    assert.strictEqual(applyChatBodyMutations(b, { ...OFF, ...on }).mutated, true);
+  });
+}
+
+test('Debate ธงเป็น string "true" → ไม่นับ (ยังแก้ body แบบเดิม)', () => {
+  const b = { prompt: "x", debate: "true" };
+  assert.strictEqual(applyChatBodyMutations(b, { ...OFF, webSearch: true }).mutated, true);
+  assert.strictEqual(b.tool_agent, true);
+});

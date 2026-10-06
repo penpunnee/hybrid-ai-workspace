@@ -106,8 +106,9 @@ def _key_only_from_primary(col, ids: list, min_confidence: float, verified_only:
 
 def search_entries(assistant: str, query: str, n_results: int = 5,
                    min_confidence: float = 0.0,
-                   verified_only: bool = False) -> list[dict]:
-    """ค้นหา memory พร้อม filter ตาม confidence และ verified"""
+                   verified_only: bool = False, track_access: bool = True) -> list[dict]:
+    """ค้นหา memory พร้อม filter ตาม confidence และ verified
+    `track_access=False` = ไม่นับ access_count/last_accessed (Debate ชั่วคราว 10-06 — ห้ามป้อน retention ของ Dream)"""
     client = _get_chroma_client()
     if client is None:
         return []
@@ -173,7 +174,7 @@ def search_entries(assistant: str, query: str, n_results: int = 5,
 
     # Step 0: บันทึกการใช้งาน — bump access_count + refresh last_accessed
     # ของ memory ที่ถูก surface จริง (top-k) → ให้ retention policy มีข้อมูล recency/frequency
-    bumped_ids = [r["id"] for r in results if r.get("id")]
+    bumped_ids = [r["id"] for r in results if r.get("id")] if track_access else []
     if bumped_ids:
         try:
             bump_access_count(assistant, bumped_ids)

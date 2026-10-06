@@ -25,7 +25,7 @@ def remember(assistant: str, prompt: str, response: str) -> None:
 
 
 def recall(assistant: str, query: str, session_id: str = "",
-           n_results: int = 5, min_confidence: float = 0.4) -> str:
+           n_results: int = 5, min_confidence: float = 0.4, track_access: bool = True) -> str:
     """
     ดึง memory ที่เกี่ยวข้องจากทุก tier:
     1. Working memory (session ปัจจุบัน)
@@ -42,7 +42,7 @@ def recall(assistant: str, query: str, session_id: str = "",
 
     # Tier 2 — Episodic Memory (per-assistant)
     episodic = search_entries(assistant, query, n_results=n_results,
-                              min_confidence=min_confidence)
+                              min_confidence=min_confidence, track_access=track_access)
     if episodic:
         lines = ["[ความทรงจำระยะสั้น]"]
         for e in episodic:

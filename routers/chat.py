@@ -226,16 +226,25 @@ async def chat(request: Request):
     reflect     = bool(data.get("reflect", False))
     plan_mode   = bool(data.get("plan_mode", False))
     active_learning = data.get("active_learning", True)  # default ON
+    # Debate = ชั่วคราว (ปอยเคาะ 10-06 · tests/test_chat_debate_ephemeral.py) — ตัดสินจากธง boolean จริง ไม่ใช่ชื่อ session
+    # 3 ฟ้องขนานต่อรอบ ⇒ เดิมบันทึกคำถาม ×3 · session `debate_*` ขึ้นแถบข้าง · teach/remember/learn ×3
+    # ⇒ ไม่บันทึก/ไม่อ่านประวัติ/ไม่เรียนรู้ · ปิดเส้นที่บันทึกเอง (agent · cache · วาดรูป · active learning clarify)
+    debate = data.get("debate") is True
+    if debate:
+        session_id = ""        # prod มี session 'default' จริง · "" ข้าม working memory + retrieval cache เอง
+        tool_agent = agent_mode = plan_mode = reflect = False
+        active_learning = False
+        image_b64 = ""
 
     config = ASSISTANTS.get(assistant, list(ASSISTANTS.values())[0])
     base_prompt = chat_system_prompt(config)
     # plan_mode bypass cache — คำตอบ plan-style คนละความหมายกับคำตอบปกติของ prompt เดียวกัน
-    use_response_cache = bool(data.get("response_cache", True)) and not (tool_agent or agent_mode or image_b64 or plan_mode)
+    use_response_cache = bool(data.get("response_cache", True)) and not (tool_agent or agent_mode or image_b64 or plan_mode or debate)
 
     # ── Image generation short-circuit (วาดรูป/สร้างภาพ → Gemini Image) ─────
     # อยู่ก่อน teach/cache — คำสั่งวาดรูปไม่ใช่ knowledge ห้ามเข้า cache/memory
     from utils.image_gen import detect_image_request, generate_image
-    if prompt and detect_image_request(prompt) and not (tool_agent or agent_mode):
+    if prompt and not debate and detect_image_request(prompt) and not (tool_agent or agent_mode):
         img_uid = await run_in_threadpool(save_message, assistant, "user", prompt, "image_gen", session_id)
         result = await run_in_threadpool(generate_image, prompt,
                                          image_b64=image_b64, image_mime=image_mime)
@@ -262,7 +271,7 @@ async def chat(request: Request):
     # ต้องข้าม ไม่งั้น save ซ้ำเป็น 2 doc (audit 2026-09-24 ข้อ 10) · รอบหลังยังจำเป็นสำหรับ
     # เส้น correction ที่ต้องมี prev_answer
     taught = False
-    if not is_test_request:
+    if not is_test_request and not debate:
         taught = bool(await run_in_threadpool(teach, assistant, prompt))
 
     # ── Semantic response cache (short-circuit ถ้า Q ใกล้ของที่ thumbs-up) ─
@@ -318,7 +327,7 @@ async def chat(request: Request):
             skills_md  = format_skill_files(skills_picked)
 
             # New: tiered memory recall (working + episodic + long-term)
-            memory_ctx = recall(assistant, prompt, session_id=session_id)
+            memory_ctx = recall(assistant, prompt, session_id=session_id, track_access=not debate)
 
         yield f"data: {json.dumps({'phase': 'retrieval'}, ensure_ascii=False)}\n\n"
         vault_ctx = ""
@@ -388,7 +397,7 @@ async def chat(request: Request):
             full_context = full_context[:2000]
         system_prompt = inject_context_to_system(base_prompt, full_context)
 
-        history = load_history(assistant, session_id)
+        history = [] if debate else load_history(assistant, session_id)
 
         yield f"data: {json.dumps({'phase': 'thinking'}, ensure_ascii=False)}\n\n"
 
@@ -437,11 +446,12 @@ async def chat(request: Request):
             system_prompt += "\n\n[โหมดวางแผน] ผู้ใช้เปิดโหมด Plan: ช่วยวางแผนเป็นขั้นตอนสั้นๆ ก่อน แล้วค่อยลงรายละเอียด"
             logger.info("[Chat] plan_mode on — inject plan instruction (system prompt)")
 
-        st["user_msg_id"] = save_message(assistant, "user", prompt, provider, session_id)
-        st["user_saved"] = True
-        # FE ตั้ง dbId ให้ฟอง user ทันที (backlog dbId 09-29) — ส่งก่อนคำตอบ เพราะกด Stop = ไม่มี done
-        # แต่แถวนี้อยู่ใน DB แล้ว (แก้ข้อความทีหลังต้อง truncate ได้ ไม่งั้นคู่เก่า+ใหม่ซ้อน)
-        yield f"data: {json.dumps({'user_message_id': st['user_msg_id']})}\n\n"
+        if not debate:          # Debate: ไม่บันทึกคำถาม ⇒ user_saved=False ⇒ _on_cut จบเงียบเอง
+            st["user_msg_id"] = save_message(assistant, "user", prompt, provider, session_id)
+            st["user_saved"] = True
+            # FE ตั้ง dbId ให้ฟอง user ทันที (backlog dbId 09-29) — ส่งก่อนคำตอบ เพราะกด Stop = ไม่มี done
+            # แต่แถวนี้อยู่ใน DB แล้ว (แก้ข้อความทีหลังต้อง truncate ได้ ไม่งั้นคู่เก่า+ใหม่ซ้อน)
+            yield f"data: {json.dumps({'user_message_id': st['user_msg_id']})}\n\n"
 
         # ตั้งค่าตั้งต้นให้ `_save_crash` อ่านได้ตั้งแต่ตอนนี้ — สาขา agent/routing ข้างล่าง
         # มี yield หลัง save user แล้ว ⇒ client ตัดสายตรงนั้นก็ต้องบันทึกคู่ได้
@@ -455,6 +465,8 @@ async def chat(request: Request):
             # ไม่มีคำตอบคู่ใน history) และคำตอบบางส่วนที่ user เห็น stream มาแล้วบนจอ
             # จะหายไปทันทีที่ reload — ไม่เข้า remember()/teach()/push_working เพราะ
             # เป็นคำตอบที่ไม่สมบูรณ์ ไม่ควรถูกเรียนรู้เป็นตัวอย่าง
+            if debate:          # Debate ไม่บันทึกอะไรเลย (คำถามก็ไม่ได้บันทึก)
+                return 0
             text = (full_response + "\n\n" if full_response.strip() else "") + f"⚠️ การตอบหยุดกลางคัน: {err_text}"
             try:
                 # save_reply: แถว user ถูกลบ (แก้ข้อความ) ไปแล้ว = ไม่ต่อฟองกำพร้า (คืน 0)
@@ -713,6 +725,15 @@ async def chat(request: Request):
             logger.warning(f"[Chat] empty response from provider={provider_used} — inject notice")
             yield f"data: {json.dumps({'chunk': notice}, ensure_ascii=False)}\n\n"
             full_response = notice
+
+        # ── Debate: ทางแยกเดียว — ส่ง done เต็มแล้วจบ ไม่ถึง save_reply/shadow/reflect/push_working/remember/teach/
+        # preference/auto-learn/meta ข้างล่าง (ปอยเคาะโครง (ข) 10-06 · ไม่ใช่ด่านทีละจุด)
+        if debate:
+            timings = get_timings()
+            logger.info("[Chat] debate (ชั่วคราว) — ไม่บันทึก/ไม่เรียนรู้ · timings "
+                        + " ".join(f"{k}={v:.0f}ms" for k, v in timings.items()))
+            yield f"data: {json.dumps({'done': True, 'model': model_used, 'provider': provider_used, 'message_id': None, 'request_id': current_request_id(), 'timings': timings, 'usage': usage_sink or None}, ensure_ascii=False)}\n\n"
+            return
 
         # save_reply = บันทึกเฉพาะเมื่อแถว user ยังอยู่ (อะตอม) — ผู้ใช้แก้ข้อความระหว่างรอ LLM (2 แท็บ · bundle เก่า ·
         # Stop ตรงจังหวะตอบครบ) ⇒ ไม่บันทึก ไม่เรียนรู้ แค่ปิด stream (ตรวจทาน 09-29 [ต่อ 31])
