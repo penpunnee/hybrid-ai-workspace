@@ -281,7 +281,7 @@ seek ต้อง**อ่านค่าก่อนเขียน** (user อ�
   เจอข้อบกพร่อง**ตระกูลเดียวกัน 2 รอบติด** → ⛔ หยุดแก้ทีละเคส เสนอจัดโครงใหม่ให้ปอยเลือก
 - **checklist มือ:** 1 ชุดต่อครอบครัวงาน · ไม่เกิน 5 ข้อ · เฉพาะข้อที่เครื่องตรวจแทนไม่ได้ (เช็คจาก log/DB/e2e ได้ = เช็คเอง) ·
   ⛔ ห้ามรายงานว่า "ผ่าน" จนมีหลักฐาน (log · DB · คำยืนยันจากปอย) — ยังไม่มี = "รอปอย"
-- overlay ที่ React ทำเองแล้วต้อง gate `if (window.__hwReactChatBox) return;` (ตอนนี้: tee/`_parseChatSSE` · Ctrl+E · ↑/↓ · paste · §6 · §19/§20 · §22) —
+- overlay ที่ React ทำเองแล้วต้อง gate `if (window.__hwReactChatBox) return;` (ตอนนี้: tee/`_parseChatSSE` · Ctrl+E · ↑/↓ · paste · §6 · §19/§20 · §22 · เติมธงใน body ของ fetch override [เช็คต่อคำขอ]) —
   เพิ่ม feature ใน React แล้วไล่ overlay ที่ทำซ้ำด้วย · เทส `tests/overlay_gating.test.js`
 - ก่อน commit การแก้ `static/*.js` (overlay) → รัน `npm run test:e2e` ใน `~/appscript.ui` ต้องเขียวทั้งหมด → ทำตาม skill verify-ui ใน ~/appscript.ui ·
   ⛔ ธง `__hwReactChatBox` (`app.tsx`) ห้ามหาย — หายแล้ว overlay ฉีดปุ่มซ้ำ + ซ่อนช่องพิมพ์ (พิสูจน์ใน e2e 10-05)

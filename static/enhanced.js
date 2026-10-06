@@ -54,8 +54,11 @@
           }
           // กติกา mutate body ทั้งหมดอยู่ใน static/chat_intercept.js (pure + node test)
           // — Claude ชนะ Agent/webSearch, Plan = flag เท่านั้นห้ามแตะ prompt
+          // มี React ChatBox ⇒ ข้ามทั้งบล็อก (10-06 · devlog ต่อ 137): React ส่งธงเองครบ (utils/chatflags.ts) ·
+          // ค่า pill ที่นี่เป็น snapshot ตอนโหลด + เติมอย่างเดียวไม่เคยถอด ⇒ ปิด pill ใน React แล้วยังวิ่ง agent/วางแผน
+          // เช็คต่อคำขอ (overlay อาจโหลดก่อน React ตั้งธง) · เหลือไว้เป็น fallback ของ bundle เก่า · เทส overlay_gating.test.js
           const _ci = window.hwChatIntercept;
-          if (_ci) {
+          if (_ci && !window.__hwReactChatBox) {
             const _cbSkillState = window.__hwChatBoxSkills ? window.__hwChatBoxSkills() : null;
             const _cbResult = _ci.applyChatBodyMutations(b, {
               claudeMode: _claudeMode,

@@ -141,3 +141,38 @@ test("§6 ยังฉีดปุ่ม Copy ให้ bundle เก่าท�
   assert.match(sec, /pre\.appendChild\(btn\)/);
   assert.match(sec, /new MutationObserver\(_wireCopyButtons\)/);
 });
+
+// ── 2026-10-06 (devlog ต่อ 137 · ปอยเคาะ 1A) — fetch override §1 เติมธงจาก snapshot ตอนโหลด ──────────────
+// overlay อ่าน hw_cb_skills/hw_cb_mode ครั้งเดียวตอนโหลด (§22 snapshot อยู่ก่อน gate) แล้วเติม tool_agent/plan_mode/
+// obsidian_inject ทุก POST /api/chat — **เติมอย่างเดียวไม่เคยถอด** ⇒ ปิด pill ใน React แล้วยังวิ่ง agent (วัดจริงใน e2e)
+// React ส่งธงเองครบ (utils/chatflags.ts) ⇒ บล็อกเติมธงต้องถูกข้ามเมื่อมี React ChatBox · เช็คตอนส่งแต่ละคำขอ
+// (ไม่ใช่ตอนโหลด — overlay อาจโหลดก่อน React ตั้งธง) · ส่วนอื่นของ §1 (ประวัติ prompt/ล้าง draft) ยังทำงาน
+test("§1 fetch override: บล็อกเติมธงใน body ถูกข้ามเมื่อ __hwReactChatBox (เช็คต่อคำขอ)", () => {
+  const sec = slice("window.fetch = function", "// 2. Auth token injection");
+  const gate = sec.search(/!\s*window\.__hwReactChatBox/);
+  const call = sec.indexOf("applyChatBodyMutations(");
+  const hist = sec.indexOf("_promptHistory = [");
+  assert.ok(call > -1, "หาการเรียก applyChatBodyMutations ใน fetch override ไม่เจอ");
+  assert.ok(hist > -1, "หาบล็อกประวัติ prompt ไม่เจอ");
+  assert.ok(gate > -1, "บล็อกเติมธงไม่มี `!window.__hwReactChatBox` คุม — overlay จะเติมธงทับ React");
+  assert.ok(gate < call, "ตัวเช็ค __hwReactChatBox ต้องมาก่อน applyChatBodyMutations");
+  assert.ok(hist < gate, "ประวัติ prompt/ล้าง draft ต้องยังทำงานเมื่อมี React (gate ต้องอยู่หลังบล็อกนั้น)");
+  // gate ต้องอยู่ในเงื่อนไขของ `if` ที่ "ครอบ" การเรียกจริง — กันย้าย gate ไปคุมอย่างอื่น / `if (!…) {}` เปล่า
+  // (CI ของ ui ไม่รัน e2e ⇒ ด่านนี้คือด่านเดียวบน CI)
+  const ifAt = sec.lastIndexOf("if (", call);
+  const open = sec.indexOf("{", ifAt);
+  assert.match(sec.slice(ifAt, open), /!\s*window\.__hwReactChatBox/, "`if` ที่ใกล้การเรียกที่สุดต้องมี gate ในเงื่อนไข");
+  let depth = 0, close = -1;
+  for (let k = open; k < sec.length; k++) {
+    if (sec[k] === "{") depth++;
+    else if (sec[k] === "}" && --depth === 0) { close = k; break; }
+  }
+  assert.ok(open < call && call < close, "applyChatBodyMutations ต้องอยู่ในบล็อกของ if ที่มี gate");
+});
+
+// กลุ่มควบคุม — bundle เก่า (ไม่มีธง) ยังได้ fallback เติมธงแบบเดิม (ตาราง ⑦)
+test("§1 fetch override: ยังเรียก applyChatBodyMutations ให้ bundle เก่า", () => {
+  const sec = slice("window.fetch = function", "// 2. Auth token injection");
+  assert.match(sec, /_ci\.applyChatBodyMutations\(b,/);
+  assert.ok(sec.length > 500, "slice ของ fetch override สั้นผิดปกติ");
+});
