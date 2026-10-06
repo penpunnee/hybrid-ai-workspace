@@ -1,5 +1,42 @@
 ---
 
+## [2026-10-06 ต่อ 131] รอบ 10: rerun CI ที่ค้าง · พื้นที่แตะปุ่มแถบหัวมือถือ 🌙 🤖 📌 🗑️ 26×44 (deploy แล้ว)
+
+**CI ค้างจากรอบ 9:** githubstatus = Actions operational → `gh run rerun --failed` 3 ตัว → เขียวครบ (รายละเอียดใน [ต่อ 130] » CI) · ถอดบรรทัด 🔴 ออกจาก `open-work.md`
+
+**ปอยเคาะ:** แผน A–E · 🌙 ขยายซ้ายแค่ 1px · ปิด scale เฉพาะแถบหัว · **กติกาใหม่: ปุ่มข้างเคียงห้ามล้ำเข้าพื้นที่แตะของ 🗑️ ทั้งตอนปกติและตอน hover** (แทนข้อ "ยอมรับ ⋯ ล้ำ 1–2px" ของ [ต่อ 130]) ·
+เพิ่มเทสจอ 1280 hover ยัง `scale(1.15)` + ต้องแดงเมื่อ mutant ลบ media query
+
+**วัดก่อนลงมือ (สแกนเจ้าของทุกพิกเซลรอบแถบหัว · WebKit 440/393 · overlay จริง):** 🌙 🤖 📌 🗑️ แตะได้ 24×24 จริง · **เจอ 3 จุดที่ล้ำ 🗑️ อยู่แล้ว**:
+① badge 📌 (มีหมุด) ได้มุมบนซ้ายของ 🗑️ 4 พิกเซล แม้ไม่ hover — มุมโค้ง `rounded-full` ของ 🗑️ ไม่รับการแตะ badge จึงได้ไป · ② hover 📌 + badge กิน 13 พิกเซล · ③ hover ⋯ กิน 1 คอลัมน์ ·
+emulation iPhone ของ Playwright รายงาน `(hover: none)` = true แต่ `.hover()` ยังทำให้ `:hover` ติด ⇒ e2e คุมทั้งสองฝั่งได้
+
+| ส่วน | สิ่งที่ทำ |
+|---|---|
+| `app.tsx` | 🌙 🤖 📌 🗑️ `before:` −11 บน/ล่าง · **−2px ซ้าย/ขวา** (แผนเขียน −1px ผิด — pseudo วัดจากขอบในของเส้นขอบ 1px ⇒ −2px = เลยขอบนอก 1px = ครึ่งช่อง 2px) → 26×44 · badge 📌 `pointer-events-none` |
+| `enhanced.js` §13 | `@media (hover: none) { header button.w-7.h-7.rounded-full:hover { transform: none } }` — specificity (0,4,2) ชนะกฎ scale เดิม (0,4,1) · เดสก์ท็อปยังขยาย |
+| e2e | ㊺ (@layout) 26×44 · หน้าตา 24×24 · ::before ไม่ถูกทับ · ไม่มีพิกเซลในพื้นที่แตะ 🗑️ เป็นของปุ่มอื่น (ปกติ + badge + hover ทุกปุ่ม) · ㊻ จอ 1280 `isMobile:false hasTouch:false` + assert `(hover: hover)` · ㊴ hover เข้มขึ้น |
+commit: a.ui `1c104f1` · ui `a6abd7a` (bundle `index-BIjCvrjS.js` · `enhanced.js?v=20261006-10662033`) · prod: NAS `a6abd7a` ผ่าน `nas-cf` (นอกวง) · curl ยืนยัน bundle/`?v=`/กฎ `@media`/CSS `before:-left-[2px]` บน `ai.pawinhome.com`
+
+**เทส:** แดงก่อนแก้ทุกเงื่อนไขทั้งสองจอ · หลังแก้ e2e **65/65** (2.1 นาที) · vitest 733 · tsc · node 38 · ui-map anchors + งบ CLAUDE.md 4 ·
+mutation **แดง 5 ตัว + พิสูจน์ 3 ตัวที่รอด**: M1 ลบ media query → ㊻ แดง · M2 ถอด `transform:none` → ㊴ ㊺ · M5 ⋯ ซ้าย −3px → ㊴ ㊺ · M7 🗑️ top สั้น → ㊺ · M6b 🌙 ถอด `before:` ทั้งชุด → ㊺ ·
+รอด: M6 ถอดแค่ `before:content-['']` = **equivalent** (Tailwind 3 ใส่ `content: var(--tw-content)` ให้ทุก `before:` เอง) · M3 ถอด `pointer-events-none` · M4 📌 −4px = **equivalent ตามลำดับ DOM** (🗑️ อยู่หลัง 📌 จึงวาดทับ · ::before สี่เหลี่ยมคลุมมุมโค้ง) —
+พิสูจน์: M3b/M4b (+📌 `z-10`) แดง · กลุ่มควบคุม M3c (`z-10` อย่างเดียว) รอด ⇒ `pointer-events-none` คงไว้เป็นชั้นกันซ้อน
+
+**ที่ผิดพลาด/เจอระหว่างทาง:**
+- ㊴ เดิม (และรุ่นแรกของการแก้) **วัดทันทีหลัง hover ระหว่าง transition 0.2s** → เขียวหลอกทั้งที่ ⋯ ขยายแล้วล้ำ → `settleAnim` รอ `getAnimations()` จบก่อนวัด (ข้อสรุป "ล้ำ 1–2px" ของ [ต่อ 130] จึงวัดได้จากสแกนช้า ไม่ใช่จากเทส)
+- poll transform เป็น hard assertion ทำ ㊺ หยุดที่ hover แรก → เปลี่ยนเป็น soft + timeout 2 วิ ให้เห็นทุกสถานะในรอบเดียว
+- ชื่อ `settle` ชนกับ helper เดิมในไฟล์ → `settleAnim`
+
+**ui-reviewer:** ตรวจ diff 1 รอบ (78.9k token · 1.5 นาที) · ต้องแก้ 0 · ควรพิจารณา 0 · จดไว้ 4 (open-work/CLAUDE.md ▶️ ยังไม่อัปเดต → ทำใน commit นี้ · `?v=` = md5 ตรวจแล้ว · ขอบ badge แตะแล้วโดน 🗑️ = ตั้งใจ ใส่ใน checklist) · ตัดทิ้ง 6 ·
+ไม่ได้ตรวจแผน (งานไม่แตะ state/`await`) · **ui-investigator:** ไม่ได้เรียก (รู้ตำแหน่งจาก ui-map + [ต่อ 130])
+
+**🧪 มือ:** 4 ข้อ (iOS ค้าง hover · ตัวขยายบนเครื่องจริง · 📌→🗑️ · หน้าตาเท่าเดิม) → `pending-manual-tests.md` · **รอปอย**
+
+📊 เริ่ม 09:16 (rerun CI) → deploy ~09:50 · verify-ui: เร็ว 2 (+hook 1) · กลาง: เต็มชุด 1 (65/65) + เทสเฉพาะ ~6 รอบ + mutation 2 รอบ (11 ตัว) · มือ: รอปอย 4 ข้อ · ui-reviewer: แผน ข้าม (ไม่แตะ state) · diff 1 (ต้องแก้ 0) · ui-investigator: ไม่ได้เรียก
+
+---
+
 ## [2026-10-06 ต่อ 130] เมนู ⋯ บนแถบหัวมือถือ (deploy แล้ว) + ชุดล้างแชทผ่านครบ
 
 **ผลทดสอบมือชุดล้างแชท (3 ข้อสุดท้าย):** ปอยลองบน iPhone ~02:00 → ตาเห็นผ่านทุกข้อ + log/DB prod ตรง (รายละเอียดใน `pending-manual-tests.md` · ui `ac87c16`) ·
@@ -40,7 +77,9 @@ overlay ฉีด `content:none` · เกณฑ์ `>=`→`>` · ตัดเ�
 **🧪 iPhone 5 ข้อ ✅ ผ่านครบ** (ปอยลอง ~03:45 · log prod ตรง: share → เปิด `/shared/<token>` ได้ · export · stats · health) — Share/Export ใช้บนมือถือได้ ข้อกังวลของผู้ตรวจ (clipboard หลัง await · revoke ทันที) ไม่เกิดบน iPhone ของปอย · ข้อความ toast อนุมานจาก clipboard (ปอยไม่ได้กรอก)
 **งานเปิดจากรอบนี้ (`open-work.md`):** ปุ่ม 🌙 🤖 📌 🗑️ แตะได้แค่ 24×24 (แนวตั้งขยาย 44 ได้ · แนวนอนเพดาน 26) · ทางหยุด stream ระหว่าง Debate (แยกงานถัดไป)
 
-**CI: ยังไม่ได้รัน** — GitHub Actions ล่ม (degraded 03:37 → `major_outage` 03:52) job `pytest`/`unit` ไม่ได้เครื่อง (0 ขั้น) ยกเลิกที่ 15 นาที · ปอยสั่งไม่ต้องรอ → rerun ตอนเริ่มเซสชันหน้า (`open-work.md` » 📋) · `lint-and-js` ผ่าน
+**CI: ยังไม่ได้รัน** — GitHub Actions ล่ม (degraded 03:37 → `major_outage` 03:52) job `pytest`/`unit` ไม่ได้เครื่อง (0 ขั้น) ยกเลิกที่ 15 นาที · ปอยสั่งไม่ต้องรอ → rerun ตอนเริ่มเซสชันหน้า (`open-work.md` » 📋) · `lint-and-js` ผ่าน ·
+**✅ rerun แล้วเขียวครบ (10-06 รอบ 10 · githubstatus: Actions operational):** ui `83356a5` (run 37368112197) · ui `02478b7` (run 37372086846) · a.ui `d908dc1` (run 37367978493) — `--failed` ทั้งสามตัว ·
+ui `9dad228` (ปิดเซสชันรอบ 9) เขียวเองตั้งแต่รอบแรก · สาเหตุที่ล้ม = Actions ล่มอย่างเดียว ไม่ใช่โค้ด
 
 📊 เริ่ม ~02:10 → deploy 03:10 → ปิดเซสชัน ~04:00 · verify-ui: เร็ว (tsc+vitest) หลายรอบ + hook 1 · กลาง: เต็มชุด 2 (62/62 ทั้งคู่) · มือ: รอปอย 5 ข้อ · ui-reviewer: แผน 1 · diff 1 (ต้องแก้ 0 ทั้งคู่) · ui-investigator: 1 รอบ ชี้ถูก
 
