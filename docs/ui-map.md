@@ -33,7 +33,7 @@
 | ChatBox: เมนู `/` · ตัวนับ token · draft | `a.ui/app.tsx » {/* Slash quick-prompts menu` · `a.ui/app.tsx » {/* Token/char counter pill` · `a.ui/utils/draft.ts » export` | — | SLASH/TOKEN/DRAFT ของ overlay (gate แล้ว) |
 | แถบ Context (ตัวเลขใต้ช่องพิมพ์) | `a.ui/app.tsx » {/* แถบ Context` · `a.ui/utils/contextbar.ts » export` | `done.usage` ใน SSE | §9 (gate แล้ว) |
 | **Toast (React)** — ข้อความลอยกลางล่าง | `a.ui/app.tsx » {/* Toast */}` · `a.ui/app.tsx » const [toast, setToast]` | — | ⚠️ overlay มี toast ของตัวเองแยก (ดูข้อ 3) |
-| Modal: Dream report · Stats · Global Search · Pinned · Daily Digest · Debate · Dream alert | `a.ui/app.tsx » {/* Dream Report Modal */}` · `a.ui/app.tsx » {/* Global Search modal` · `a.ui/app.tsx » {/* Pinned Messages Panel */}` · `a.ui/app.tsx » {/* Daily Digest Modal */}` · `a.ui/app.tsx » {/* Multi-AI Debate Overlay */}` | `/api/dream/history` · `/api/search` · `/api/digest` · `/api/chat` (debate) | §2 Ctrl+Shift+F (gate แล้ว) |
+| Modal: Dream report · Stats · Global Search · Pinned · Daily Digest · Debate · Dream alert | `a.ui/app.tsx » {/* Dream Report Modal */}` · `a.ui/app.tsx » {/* Global Search modal` · `a.ui/app.tsx » {/* Pinned Messages Panel */}` · `a.ui/app.tsx » {/* Daily Digest Modal */}` · `a.ui/app.tsx » {/* Multi-AI Debate Overlay */}` | `/api/dream/history` · `/api/search` · `/api/digest` · `/api/chat` (debate: **3 ฟ้องขนาน** ใต้ session `debate_<sid>` · ระหว่าง Debate `streaming=false` ⇒ 🗑️/ส่ง ไม่ disabled · หน้าต่าง z85 บังด้วยตา แต่ **textarea ยังโฟกัส คีย์บอร์ดส่งรอบใหม่ได้** = รอบใหม่ abort รอบเดิม (e2e ㊿)) | §2 Ctrl+Shift+F (gate แล้ว) · ฟ้อง Debate ส่ง `signal` เอง ⇒ fetch override ไม่ยุ่ง (ไม่ทับ signal · ไม่โชว์ ⏹ · ไม่กลืน `AbortError`) |
 | Home Panel (NAS/Docker/PC/WoL) | `a.ui/app.tsx » {/* Home Panel` · `a.ui/utils/homepanel.ts » export` | `/api/health` · `/api/tools/home/*` | §14 (gate แล้ว) |
 | โหมดเสียง (หน้าจอ Voice) 🔒 | `a.ui/app.tsx » {/* ===== Voice Mode Overlay ===== */}` · `a.ui/app.tsx » const startVoice =` · `a.ui/utils/voicelive.ts » /ws/voice/` | WS `/ws/voice/{slug}` | — · 🔒 ห้ามแตะค่าเสียง (CLAUDE.md) |
 | 📖 ขวัญอ่านหนังสือ 🔒 | `a.ui/app.tsx » const loadBooks =` · `a.ui/utils/bookreader.ts » /ws/reader` | `/api/reader/books` · WS `/ws/reader` | — · 🔒 |
@@ -46,7 +46,8 @@
 | หน้า Login (เมื่อตั้ง `UI_PASSWORD`) | `static/enhanced.js » 0. AUTH` | `/api/auth/login` · `/api/auth/check` | แนบ token ทุก `/api/*` ผ่าน fetch override |
 | fetch override กลาง (auth · stop · history · typing) | `static/enhanced.js » Single unified fetch override` · `static/chat_intercept.js » applyChatBodyMutations` | ทุก `/api/*` | แก้ body `/api/chat` ได้ — เช็คก่อนแก้ flag ใน React |
 | @vault ในช่องพิมพ์ | `static/enhanced.js » 5. @vault SEARCH` | `/api/vault/search` | ฟัง `input` บน `document` (ทุก INPUT/TEXTAREA รวมช่องพิมพ์ของ React) · คลิกผลลัพธ์ = คัดลอก + toast ของ overlay |
-| ปุ่มหยุด stream ⏹ | `static/enhanced.js » 7. STOP GENERATION` | — (abort fetch) | React ไม่มีปุ่มหยุด |
+| ปุ่มหยุด stream ⏹ (แชทปกติ) | `static/enhanced.js » 7. STOP GENERATION` | — (abort fetch) | React ไม่มีปุ่มหยุดของแชทปกติ · ฟ้องที่ผู้เรียกส่ง `signal` มาเอง overlay ไม่แตะ |
+| ปุ่ม ⏹ หยุด ของ Debate (React · 10-06) | `a.ui/app.tsx » const stopDebate` · `a.ui/app.tsx » const closeDebate` | — (`AbortController` ต่อผู้ร่วม · id รอบใน `debateRunRef`) | ✕ / Escape = หยุดทั้งหมด + ปิด (ปอยเคาะ) · ⏹ แตะได้สูง 44 (`::before`) · คอลัมน์ที่จบ/error แล้วไม่ถูกทับ · **ข้อจำกัดที่ยอมรับ:** ผู้ร่วม A จบแล้ว → B/C ที่ถูกหยุดทีหลัง *ไม่ถูกบันทึกลง DB* (`has_reply_after` ใน session `debate_<sid>` เดียวกัน · จอเห็นครบ) · กดหยุดตอน server ส่ง `done` แล้วแต่ยังไม่อ่าน = จอ "หยุดแล้ว" แต่ DB เก็บคำตอบเต็ม · e2e ㊼–㊾ |
 | ปุ่มเลื่อนลงล่างสุด | `static/enhanced.js » 8. SCROLL TO BOTTOM BUTTON` | — | ปุ่มลอยบน `body` |
 | ของลอยเกาะเหนือกรอบช่องพิมพ์ (↓ · toolbar 🌿/⏹ · "กำลังคิด…") | `static/enhanced.js » function _placeFloaters` · อ่านตำแหน่งของ `a.ui/app.tsx » id="hw-chatbox"` | — | อ่านอย่างเดียว ไม่แตะ DOM ของ React → ส่งระยะผ่าน CSS variable `--enh-*-bottom` · rename id = ของลอยกลับไปใช้ระยะตายตัว (ทับกรอบ) |
 | "กำลังคิด…" ก่อน chunk แรก | `static/enhanced.js » 12. TYPING INDICATOR` | — | ลอยบน `body` |
@@ -70,7 +71,7 @@
 3. **ชั้น z ของของลอย** (แก้ 10-05 · devlog [ต่อ 122] · e2e ㉚–㉞ ตัดสินด้วย `elementFromPoint`) — ของลอยใหม่ต้องเลือกเลขจากลำดับนี้:
    `<main>` 10 < แถบ Context 12 < "กำลังคิด…" 14 < ปุ่ม ↓ 15 < toolbar 🌿/⏹ 16 < ฉากหลังแถบข้างมือถือ 20 < แถบข้าง 30 < เมนู ⋯ มือถือ 40/41 (portal ไป body) < toast ของ React 50 < หน้าต่างของ React 60–85 < Vault overlay 9100 < toast ของ overlay 9999
    · `<main>` เป็น stacking context ของตัวเอง ⇒ แถบหัว (100) และ dropdown ของ ChatBox (55/56) ที่อยู่ข้างใน **เทียบเลขกับของข้างนอกไม่ได้** (ทั้งก้อนนับเป็น 10)
-   · ⏹ Stop อยู่ใต้หน้าต่างเมื่อมีหน้าต่างเปิด (รวม Debate เต็มจอ — ระหว่าง Debate ยังไม่มีทางหยุด stream · ปอยแยกเป็นงานถัดไป 10-06)
+   · ⏹ Stop อยู่ใต้หน้าต่างเมื่อมีหน้าต่างเปิด (รวม Debate เต็มจอ — Debate มี ⏹ หยุด ในแถบหัวหน้าต่างของตัวเองแล้ว 10-06)
    · **ตำแหน่งแนวตั้ง** (devlog [ต่อ 123] · e2e ㉟ ㊱): "กำลังคิด…" เกาะเหนือขอบบนของ `#hw-chatbox` ทุกความกว้าง · ↓ และ toolbar เกาะเมื่อกรอบกว้างมาถึงใต้มัน (จอ ≤ ~1024 · จอกว้างกว่านั้นอยู่มุมขวาล่างตามเดิม) — ⛔ ห้ามใส่ `bottom` ตายตัวให้ของลอยใหม่
    · e2e ของของลอยใช้ชื่อผู้ช่วย/โมเดลยาวเท่า prod (ค่าเริ่มต้นของ `e2e/mocks.ts` ใน `~/appscript.ui` ตั้งแต่ 10-06) — ชื่อสั้นทำให้กรอบช่องพิมพ์เตี้ยกว่าจริงและมองไม่เห็นการทับ
 
