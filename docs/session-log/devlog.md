@@ -1,5 +1,41 @@
 ---
 
+## [2026-10-06 ต่อ 134] PC ปิดแล้วแชทช้า 15–18 วิ → ตัวพัก Ollama ใช้ร่วมกับ EF ของ chromadb · documents ไม่ถอยไป MiniLM · ปุ่มหยุด Debate ใช้ไอคอน CSS
+
+**ปอยเคาะ:** A1 ตัวพักร่วม + B1 ถอดทางถอย `query_texts` + C1 log อย่างเดียว · ปุ่ม "⏹ หยุด" ใช้ไอคอน CSS ตัวเดียวกับป้าย (รวม checklist ข้อเดียว)
+
+**ต้นเหตุ (log prod 06:32 UTC):** PC `.235` ปิด (Ollama :11434 + LM Studio :1234 ปิดทั้งคู่) → ช่วงเตรียมบริบทมี 5–6 ขั้นผ่าน `OllamaEmbeddingFunction` ของ chromadb
+(get_lessons → search_entries → user_facts → long_term_memory → skills_search) ล้มทีละ ~3 วิ ⇒ 15–18 วิก่อนถึง LLM · ตัวพัก 60 วิ (`utils/embed._down_until`) ครอบแค่ embed ของตัวเอง ·
+768/384 = อาการ: `utils/documents.retrieve_chunks` ถอยไป `query_texts` → collection `documents` ไม่ส่ง EF ⇒ chromadb ฝังด้วย MiniLM 384 ≠ 768 ไม่มีวันสำเร็จ
+
+| ส่วน | สิ่งที่ทำ |
+|---|---|
+| `utils/embed.py` | `provider_down_for` / `mark_provider_down` / `clear_provider_down` · ปิดทางเฉพาะสาเหตุ `ConnectError`/`ConnectTimeout` (`_is_connect_failure` · read timeout / keep-alive ถูกตัด = เครื่องยังอยู่ ห้ามปิด) |
+| `utils/memory.py` | `_guarded_ollama_ef(base)` subclass override แค่ `__call__` (`name()`/`get_config()` เดิม → ไม่ชน EF ที่ collection บันทึกไว้ · `embed_query` เรียกผ่าน `__call__`) |
+| `utils/obsidian_sync.py` | preflight TCP ผ่าน → `clear_provider_down("Ollama")` (ไม่งั้นช่วง PC เพิ่งบูต catch-up ไฟล์เดียว = error ไม่ halted → เลิกลองเงียบ) |
+| `utils/documents.py` | embed ล้ม/ว่าง → คืน `[]` + log "ค้นเอกสารไม่ได้ — embed ล้ม" · เทสเดิม 2 ตัวที่ตรึงทางถอยเปลี่ยนตามพฤติกรรมใหม่ |
+| a.ui | ปุ่มหยุดบนแถบหัว Debate ใช้ `<span data-icon="stop">` เหมือนป้าย · ㊼ ตรวจข้อความ/ไอคอนทึบ/ขนาด |
+
+**เทส:** `tests/test_embed_breaker_shared.py` 14 ตัว (ล้มครั้งแรกแล้วข้ามทันที · สองทิศ · ครบ 60 วิลองใหม่เอง · ConnectTimeout · error อื่นห้ามปิด · คลาส chromadb จริงผ่าน `embed_query` ที่พอร์ตปิด 127.0.0.1:1 ·
+timeout/สาเหตุ 5 แบบ · vault catch-up) · pytest ทั้งชุด **2804 passed** · ruff · e2e 70/70 · vitest 733 ·
+mutation backend **14/15 แดง** (รอด B8 = ด่านซ้อน `if not query_vec` คืนว่างเหมือนกัน) · ปุ่ม 3/3 แดง ·
+⚠️ รอบแรกตัวปลอมของเทสนับผิดคลาส (`type(self).calls` ไปนับที่ subclass ตัวห่อ) → พิสูจน์ใหม่ด้วย mutant "ไม่ห่อ EF" ว่าแดงจริง
+
+**deploy:** ui `utils/` เท่านั้น (ไม่แตะ `server.py`) → `docker restart` · healthy · grep โค้ดใหม่ในคอนเทนเนอร์ 2/2 · inode `server.py` host = container (287523) · StartedAt 07:47:03 UTC ·
+a.ui `e4953c0` · bundle `index-BVMD6iSr.js` · push ui ก่อน a.ui
+**วัดบน prod (PC ยังปิด · probe `TestClient` + `X-Test-Request` + ลบ session):** รอบ 1 chunk แรก **9.6 วิ** (embed ของเราเอง Ollama ~3 + LM Studio ~4 วิ ครั้งเดียว แล้ว EF ทุกขั้น "ข้าม" · `context_assembly=724ms`) ·
+รอบ 2 **2.3 วิ** (`context_assembly=43ms`) · เดิม 15–18 วิทุกแชท ⇒ ตอนนี้เสีย ~7 วิครั้งเดียวต่อ 60 วิ
+
+**C1 (เช็คแถบสถานะเดิม · ไม่แก้):** มีจุดสถานะข้างช่องพิมพ์ เป็น**จุดแดง**เมื่อ local ล่ม (`/api/status` `local_ok`) · แต่คำอธิบายอยู่ใน `title` (มือถือไม่มี hover) + ชื่อโมเดล `hidden sm:inline` ⇒ บน iPhone เห็นแค่จุดแดง ·
+แถบ cloud พูดถึง local เฉพาะตอน Gemini ล่มด้วย · **ไม่มีส่วนไหนบอกว่าความจำ/สกิลใช้ไม่ได้**
+
+**ผู้ตรวจ:** ui-reviewer (ปุ่ม) 67.1k · 0.6 นาที (ต้องแก้ 0 · ควรพิจารณา 1 = ตรวจขนาดไอคอน → ทำ + mutant แดง) ·
+ตรวจ backend (general-purpose) รอบ 1 **154.0k · 3.7 นาที** (ต้องแก้ 1 = vault catch-up เลิกลองเงียบ · ควรพิจารณา 2 = read timeout ปิดทาง + เทสคลาสจริง · รับทั้งหมด) · รอบ 2 **165.5k (สะสม) · 0.7 นาที** (ต้องแก้ 0 · ควรพิจารณา 1 = ปิดทางเฉพาะสาเหตุเชื่อมต่อ → ทำ)
+
+📊 14:00 → deploy 14:47 · pytest เต็ม 3 · e2e เต็ม 1 + เฉพาะ ~4 · mutation 4 รอบ (21 ตัว) · มือ: รอปอย 1 ข้อ (ไอคอนหยุด) · ui-reviewer: diff 1 · ui-investigator: ไม่ได้เรียก
+
+---
+
 ## [2026-10-06 ต่อ 133] ผลมือ Debate 3 ข้อผ่าน · ป้าย "หยุดแล้ว" ไม่ใช้ ⏹ แล้ว (iOS เป็น emoji ช่องติ๊ก)
 
 **ผลมือ [ต่อ 132]:** ✅ ครบ 3 ข้อ (ภาพ iPhone 13:35 + คำยืนยันข้อ 2 3) · หลักฐาน log อยู่ใน `pending-manual-tests.md` (ถอดแล้ว) ·
