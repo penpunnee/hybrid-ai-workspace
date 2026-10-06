@@ -27,6 +27,7 @@ mutation **แดง 5 ตัว + พิสูจน์ 3 ตัวที่ร
 - ㊴ เดิม (และรุ่นแรกของการแก้) **วัดทันทีหลัง hover ระหว่าง transition 0.2s** → เขียวหลอกทั้งที่ ⋯ ขยายแล้วล้ำ → `settleAnim` รอ `getAnimations()` จบก่อนวัด (ข้อสรุป "ล้ำ 1–2px" ของ [ต่อ 130] จึงวัดได้จากสแกนช้า ไม่ใช่จากเทส)
 - poll transform เป็น hard assertion ทำ ㊺ หยุดที่ hover แรก → เปลี่ยนเป็น soft + timeout 2 วิ ให้เห็นทุกสถานะในรอบเดียว
 - ชื่อ `settle` ชนกับ helper เดิมในไฟล์ → `settleAnim`
+- **CI a.ui แดงรอบแรก** (`overlayversion.test.ts`: `?v=` ไม่ตรง md5) — push a.ui ก่อน ui ⇒ CI ดึง `enhanced.js` เก่าจาก ui `main` · workflow เขียนไว้แล้วว่า commit คู่ `?v=` ต้อง push ui ก่อน · rerun → เขียว (CI ทั้งสองรีโปเขียวครบ)
 
 **ui-reviewer:** ตรวจ diff 1 รอบ (78.9k token · 1.5 นาที) · ต้องแก้ 0 · ควรพิจารณา 0 · จดไว้ 4 (open-work/CLAUDE.md ▶️ ยังไม่อัปเดต → ทำใน commit นี้ · `?v=` = md5 ตรวจแล้ว · ขอบ badge แตะแล้วโดน 🗑️ = ตั้งใจ ใส่ใน checklist) · ตัดทิ้ง 6 ·
 ไม่ได้ตรวจแผน (งานไม่แตะ state/`await`) · **ui-investigator:** ไม่ได้เรียก (รู้ตำแหน่งจาก ui-map + [ต่อ 130])
