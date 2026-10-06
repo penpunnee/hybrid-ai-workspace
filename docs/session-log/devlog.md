@@ -32,9 +32,9 @@ mutation **แดง 5 ตัว + พิสูจน์ 3 ตัวที่ร
 **ui-reviewer:** ตรวจ diff 1 รอบ (78.9k token · 1.5 นาที) · ต้องแก้ 0 · ควรพิจารณา 0 · จดไว้ 4 (open-work/CLAUDE.md ▶️ ยังไม่อัปเดต → ทำใน commit นี้ · `?v=` = md5 ตรวจแล้ว · ขอบ badge แตะแล้วโดน 🗑️ = ตั้งใจ ใส่ใน checklist) · ตัดทิ้ง 6 ·
 ไม่ได้ตรวจแผน (งานไม่แตะ state/`await`) · **ui-investigator:** ไม่ได้เรียก (รู้ตำแหน่งจาก ui-map + [ต่อ 130])
 
-**🧪 มือ:** 4 ข้อ (iOS ค้าง hover · ตัวขยายบนเครื่องจริง · 📌→🗑️ · หน้าตาเท่าเดิม) → `pending-manual-tests.md` · **รอปอย**
+**🧪 มือ: ✅ ผ่านครบ 4 ข้อ** (iOS ค้าง hover · ตัวขยายบนเครื่องจริง · 📌→🗑️ · หน้าตาเท่าเดิม) — ปอยลอง ~10:05 · log prod: bundle/overlay ใหม่โหลดแล้ว · `GET /api/pinned` 03:05/03:06 UTC · ไม่มี `DELETE /api/sessions`
 
-📊 เริ่ม 09:16 (rerun CI) → deploy ~09:50 · verify-ui: เร็ว 2 (+hook 1) · กลาง: เต็มชุด 1 (65/65) + เทสเฉพาะ ~6 รอบ + mutation 2 รอบ (11 ตัว) · มือ: รอปอย 4 ข้อ · ui-reviewer: แผน ข้าม (ไม่แตะ state) · diff 1 (ต้องแก้ 0) · ui-investigator: ไม่ได้เรียก
+📊 เริ่ม 09:16 (rerun CI) → deploy ~09:50 · verify-ui: เร็ว 2 (+hook 1) · กลาง: เต็มชุด 1 (65/65) + เทสเฉพาะ ~6 รอบ + mutation 2 รอบ (11 ตัว) · มือ: ผ่าน 4 ข้อ · ui-reviewer: แผน ข้าม (ไม่แตะ state) · diff 1 (ต้องแก้ 0) · ui-investigator: ไม่ได้เรียก
 
 ---
 
