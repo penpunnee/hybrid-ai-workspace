@@ -1,5 +1,25 @@
 ---
 
+## [2026-10-06 ต่อ 135] connect timeout ไปเครื่อง embed 3.0 → 1.5 วิ · สืบ `debate_*` ในแถบข้าง (รอปอยเคาะ)
+
+**connect timeout:** ค่าเดิม 3.0 (default ในโค้ด · prod ไม่ได้ตั้ง env) → **1.5** (`EMBED_CONNECT_TIMEOUT` · read 30 เท่าเดิม) · `.env.example` regen + `env-vars.md` ·
+เทส: default ที่ลงทะเบียน ≤ 2 + client ทั้งสองใช้ค่านี้ + read = 30 · วัดจริงผ่าน client ของ embed ไป `10.255.255.1` (SYN หายเงียบ) ต้อง < 2.5 วิ — แดงก่อนแก้ (3.0 · วัดได้ 3.02 วิ) ·
+pytest 2806 · ruff · deploy `docker restart` (แตะแค่ `utils/`) · คอนเทนเนอร์ connect 1.5 / read 30 · inode `server.py` ตรง (287523) · commit ui `c2416bc`
+**วัด prod ซ้ำ (PC ยังปิด · probe เดิม):** แชทแรกของช่วงพัก **9.6 → 5.5 วิ** · แชทถัดไป **2.3 → 1.4 วิ** · log: Ollama ล้ม 08:19:05 → LM Studio :06 · ที่เหลือคือ Gemini ตอบจริง ~1.5 วิ
+**C2** จดเป็นงานเปิดใน `open-work.md` แล้ว
+
+**สืบ `debate_*` (DB prod อ่านอย่างเดียว · `docker exec -i` + sqlite `mode=ro`):**
+- มี 2 session: `debate_s_20261006_063124_cc4c9e` (06:34 · user ×3 + assistant 1 = ส่วนที่ได้ก่อนหยุด) · `debate_debate_s_…` (08:05 · user ×3 + assistant 2)
+- **ทั้งคู่อยู่ใน 30 รายการล่าสุดที่ `get_sessions` คืน = ขึ้นในแถบข้างจริง** · React ไม่กรอง (`loadSessions` ใช้ผลตรงๆ)
+- **ซ้อน `debate_debate_`:** แตะ session Debate จากแถบข้าง แล้วส่ง Debate ต่อ → `debate_${sessionId}` ซ้อน prefix
+- **user message ซ้ำ 3 ชุดต่อรอบ** ยืนยัน · แต่ละฟ้องวิ่ง `/api/chat` เต็ม (ไม่ใช่ test request) ⇒ `teach()` ก่อนตอบ · `remember()` episodic · preference · auto-learn **×3 ต่อรอบ** ·
+  ประวัติของ session Debate (คำถามซ้ำ + คำตอบของโมเดลอื่น) ถูกส่งเป็น context ให้รอบถัดไป
+- รอบ ✕ 06:41 ไม่มีแถวใน DB (ตัดก่อนบันทึก)
+
+📊 ~15:10 → deploy 15:19 · pytest เต็ม 1 · มือ: ไม่ต้อง (backend · วัด prod แทน)
+
+---
+
 ## [2026-10-06 ต่อ 134] PC ปิดแล้วแชทช้า 15–18 วิ → ตัวพัก Ollama ใช้ร่วมกับ EF ของ chromadb · documents ไม่ถอยไป MiniLM · ปุ่มหยุด Debate ใช้ไอคอน CSS
 
 **ปอยเคาะ:** A1 ตัวพักร่วม + B1 ถอดทางถอย `query_texts` + C1 log อย่างเดียว · ปุ่ม "⏹ หยุด" ใช้ไอคอน CSS ตัวเดียวกับป้าย (รวม checklist ข้อเดียว)
