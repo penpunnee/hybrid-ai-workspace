@@ -26,9 +26,9 @@ transaction `BEGIN IMMEDIATE` → ตรวจ id/จำนวนตรง → �
 
 **ui-reviewer:** แผน **146.0k · 4.0 นาที** (ต้องแก้ 2 · ควรพิจารณา 4 — รับทั้งหมด) · diff **145.2k · 2.9 นาที** (ต้องแก้ 0 · ควรพิจารณา 1 = ลำดับ deploy → ทำ) · ต่ำกว่าเพดานทุกรอบ
 
-**🧪 มือ:** 3 ข้อ → `pending-manual-tests.md` · รอปอย
+**🧪 มือ: ✅ ผ่านครบ 3 ข้อ** (ปอย ~17:05 · log: bundle ใหม่ · Debate 2 รอบเส้นชั่วคราว 3 โมเดล `agent_mode: False` · DB ไม่เพิ่ม · รายละเอียดใน `pending-manual-tests.md` ที่ถอดแล้ว)
 
-📊 15:30 → deploy 16:08 → ลบ 16:10 · pytest เต็ม 1 · e2e เต็ม 1 · mutation 1 รอบ (15) · ui-reviewer: แผน 1 · diff 1 · ui-investigator: ไม่ได้เรียก
+📊 15:30 → deploy 16:08 → ลบ 16:10 · pytest เต็ม 1 · e2e เต็ม 1 · mutation 1 รอบ (15) · ui-reviewer: แผน 1 · diff 1 · มือ: ผ่าน 3 ข้อ · ui-investigator: ไม่ได้เรียก
 
 ---
 

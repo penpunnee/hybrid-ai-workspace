@@ -192,7 +192,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → /scrutinize (งาน state/`await`: + `ui-reviewer` ตรวจแผน) → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy → verify prod (ยืนยันว่าเส้นที่แก้ถูกวิ่งจริง)
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
-### 🥇 งานแรกเซสชันหน้า → ① `gh run list` สองรีโป (ตอนจบรอบ 10 เขียวครบ) → ② ผลมือ Debate ชั่วคราว 3 ข้อ (`pending-manual-tests.md` บนสุด) → ③ เลือกงานถัดไปจาก `open-work.md` (ถามปอย) · commit คู่ที่ bump `?v=` → **push ui ก่อน a.ui**
+### 🥇 งานแรกเซสชันหน้า → ① `gh run list` สองรีโป (ตอนจบรอบ 10 เขียวครบ) → ② เลือกงานถัดไปจาก `open-work.md` (ถามปอย) · commit คู่ที่ bump `?v=` → **push ui ก่อน a.ui**
 อ่าน devlog **[10-06 ต่อ 136]** ก่อน (⛔ เฉลยการพิสูจน์ `ui-reviewer` [126] ห้ามย้ายมาไว้ในไฟล์นี้) ·
 ✅ รอบ 10 (10-06): CI ที่ค้างจาก Actions ล่ม rerun เขียวครบ · พื้นที่แตะ 🌙 🤖 📌 🗑️ 26×44 deploy แล้ว + iPhone 4 ข้อผ่าน (bundle `index-BIjCvrjS.js` · `enhanced.js?v=20261006-10662033`) ·
 🔑 **ห้ามปุ่มข้างเคียงล้ำเข้าพื้นที่แตะของ 🗑️ ทั้งตอนปกติและ hover** (ปอยเคาะ 10-06 · แทนข้อยอมรับ ⋯ ล้ำ 1–2px เดิม) ⇒ overlay §13 ปิด `scale(1.15)` ของปุ่มแถบหัวใน `@media (hover: none)` · e2e ㊴ ㊺ ㊻ ·
