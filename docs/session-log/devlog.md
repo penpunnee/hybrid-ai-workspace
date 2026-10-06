@@ -17,6 +17,7 @@ overlay ทับ `opts.signal` ด้วย `_abortCtrl` ตัวเดีย�
 | overlay `enhanced.js` | ผู้เรียกส่ง `signal` มาเอง ⇒ ไม่สร้าง `_abortCtrl` · ไม่ทับ signal · ไม่โชว์ ⏹/typing · `.catch` โยน `AbortError` ต่อ (ไม่แปลง 200 เปล่า) — ตัดสินด้วย*คุณสมบัติ* ไม่ใช่ URL · แชทปกติ (ไม่ส่ง signal) เหมือนเดิม |
 | e2e ㊼–㊿ | ปลอม `fetch` ในหน้าเฉพาะฟ้อง `debate_*` (`addInitScript` ก่อน overlay → overlay จับเป็น `_origFetch`) คุม respond/send/end ต่อฟ้อง + จด `aborted` จาก signal + MutationObserver จดว่า ⏹ ของ overlay เคยโผล่ไหม (`route.fulfill` ส่งครึ่งแล้วค้างไม่ได้) |
 | เอกสาร | ui-map แถว Modal/⏹/Debate + ข้อ 3 · คอมเมนต์ `utils/sse.ts` `utils/streamsettle.ts` · open-work: Debate ในแถบข้าง |
+commit: a.ui `8da7638` · ui `static` + `ea62d92` (bundle `index-CmrJFA8Y.js` · `enhanced.js?v=20261006-1b22f92f`) · push ui ก่อน a.ui → CI เขียวรอบแรกทั้งคู่ · deploy ~12:00 หลังปอย `cloudflared access login` (Access หมดอายุระหว่างงาน) · curl prod ยืนยัน bundle/`?v=`/`_callerSignal`/"หยุดแล้ว"
 
 **🔑 ข้อจำกัดที่ยอมรับ (ปอยเคาะ 10-06 · จดใน ui-map แล้ว):**
 - ผู้ร่วม A ตอบจบและบันทึกแล้ว → B/C ที่ถูกหยุดทีหลัง **ไม่ถูกบันทึกลง DB** — `_on_cut` เช็ค `has_reply_after(assistant, debate_<sid>, user_msg_id)` ซึ่งเจอคำตอบของ A (id มากกว่า) · ตัวกันนั้นมีไว้กันฟองซ้ำของ regenerate · **จอเห็นครบ** (หน้าต่างอ่านจาก state)
