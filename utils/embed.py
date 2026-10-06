@@ -68,7 +68,8 @@ _CACHE_ENABLED = env_bool("EMBED_CACHE_ENABLED", True, group=_G, doc="false = �
 # timeout 30 วิ × (1 + retry 2 ของ openai) = 90 วิ ต่อ provider × 2 provider
 # ⇒ ไม่ retry เอง (fallback ไปอีก provider ทำหน้าที่นั้นแล้ว) + connect สั้น (LAN ต่อติดในหลัก ms)
 #   read ยังยาวเท่าเดิม — โหลดโมเดลครั้งแรกช้าได้
-_EMBED_CONNECT_TIMEOUT = env_float("EMBED_CONNECT_TIMEOUT", 3.0, group=_G, doc=(
+# 1.5 วิ (10-06 · เดิม 3.0): PC ปิด → แชทแรกของแต่ละช่วงพักเสีย Ollama + LM Studio คนละรอบ connect · LAN ต่อติดในหลัก ms
+_EMBED_CONNECT_TIMEOUT = env_float("EMBED_CONNECT_TIMEOUT", 1.5, group=_G, doc=(
     "วินาทีรอต่อ TCP กับเครื่อง embed (Ollama/LM Studio) — เครื่องดับรู้ภายในเวลานี้\n"
     "แยกจาก LMSTUDIO_EMBED_TIMEOUT ซึ่งเป็นเวลารอคำตอบ"))
 _EMBED_DOWN_COOLDOWN = env_int("EMBED_DOWN_COOLDOWN", 60, group=_G, doc=(

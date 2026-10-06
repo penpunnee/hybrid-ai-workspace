@@ -259,3 +259,25 @@ def test_vault_catchup_preflight_ผ่าน_ล้างตัวพัก_ไ
     res = ov.catchup_sync_if_pending()
     assert res and res.get("synced") == 1, f"preflight ผ่าน = ต่อได้แล้ว ต้อง sync ได้ ({res})"
     assert _Col.upserts == 1
+
+
+# ── connect timeout ไปเครื่อง embed (PC .235) ≤ 2 วิ (ปอยเคาะ 10-06 · เดิม 3.0) ──────────────────────
+# วัด prod 10-06 (PC ปิด): แชทแรกของแต่ละช่วงพักเสีย ~7 วิ = Ollama connect ~3 + LM Studio ~4 · LAN ต่อติดในหลัก ms
+# ⇒ connect สั้นลงได้ · read ต้องยาวเท่าเดิม (โหลดโมเดลครั้งแรกช้าได้)
+
+def test_connect_timeout_default_ไม่เกิน_2_วิ_read_เท่าเดิม():
+    from core.env_registry import REGISTRY
+    assert REGISTRY["EMBED_CONNECT_TIMEOUT"].default <= 2.0, "ค่า default ที่ลงทะเบียน (prod ไม่ได้ตั้ง env ทับ)"
+    for c in (embed._client, embed._ollama_client):
+        assert c.timeout.connect <= 2.0
+        assert c.timeout.read == embed._EMBED_TIMEOUT == 30, "read ห้ามสั้นลง"
+
+
+def test_ต่อเครื่องที่_SYN_หายเงียบ_รู้ภายใน_2_วิ():
+    """10.255.255.1 = ไม่มีใครตอบ (จำลอง PC ที่เพิ่งปิด ARP ค้าง) · ยิงผ่าน client จริงของ utils/embed"""
+    import time
+    c = embed._ollama_client.with_options(base_url="http://10.255.255.1:11434/v1")
+    t = time.monotonic()
+    with pytest.raises(APIConnectionError):
+        c.embeddings.create(model="m", input=["ก"])
+    assert time.monotonic() - t < 2.5, "connect timeout ต้องสั้น (เดิม 3 วิ)"

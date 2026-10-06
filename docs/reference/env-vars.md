@@ -40,7 +40,7 @@ SHOW_THINKING=false
 # Embeddings — **env ตัวเดียวคุมทั้ง Ollama (ตัวหลัก) และ LM Studio (fallback)**
 EMBEDDING_MODEL=paraphrase-multilingual   # ⛔ ห้ามใช้ `nomic-embed-text` เป็นตัวหลัก — พิสูจน์บน prod 2026-08-02 ว่าแมปประโยคไทยทุกประโยคเป็น vector เดียวกันหมด (cosine 1.0000) · ปล่อยว่างใน `utils/memory.py` = ปิด embedding_function ของ ChromaDB
 EMBED_FALLBACK_LMSTUDIO=true              # false = Ollama ล่มแล้วโยน error ไปเลย ไม่ลอง LM Studio
-EMBED_CONNECT_TIMEOUT=3                   # วินาทีรอต่อ TCP กับเครื่อง embed — เครื่องดับรู้ภายในเวลานี้ (client ไม่ retry เอง · 2026-10-01)
+EMBED_CONNECT_TIMEOUT=1.5                 # วินาทีรอต่อ TCP กับเครื่อง embed — เครื่องดับรู้ภายในเวลานี้ (client ไม่ retry เอง · 2026-10-01 · 3→1.5 เมื่อ 10-06)
 EMBED_DOWN_COOLDOWN=60                    # วินาทีข้าม provider embed หลังต่อไม่ติด · 0 = ไม่ข้าม
 
 # Home Assistant
