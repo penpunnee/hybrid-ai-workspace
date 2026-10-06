@@ -156,21 +156,24 @@ def test_retrieve_uses_query_embeddings_when_embed_succeeds(fake_col):
     assert fake_col.last_query_kwargs["query_texts"] is None
 
 
-def test_retrieve_falls_back_to_query_texts_when_embed_raises(fake_col, monkeypatch):
-    """embed_texts โยน exception (เช่น LM Studio ล่ม) → fallback ไป query_texts
-    เหมือนเดิม ดีกว่า query ไม่ได้เลย"""
+# embed ล้ม (Ollama + LM Studio ล่ม · PC ปิด 10-06) → ห้ามถอยไป query_texts: ChromaDB จะฝังด้วย MiniLM 384 มิติ
+# ซึ่งไม่ตรงกับ collection 768 มิติ = ไม่มีวันสำเร็จ แล้วได้ log "dimension of 768, got 384" ชวนเข้าใจผิด
+# (การเขียนไม่ถอยไป auto-embed ตั้งแต่ 08-01 ⇒ collection บน prod ไม่มีทางเป็น 384) · ปอยเคาะ B1
+def test_retrieve_embed_raises_คืนว่าง_ไม่query_และ_log_บอกเหตุ(fake_col, monkeypatch, caplog):
     monkeypatch.setattr(embed, "embed_texts", lambda texts: (_ for _ in ()).throw(Exception("LM Studio down")))
-    docs.retrieve_chunks("คำถาม", top_k=3)
-    assert fake_col.last_query_kwargs["query_texts"] == ["คำถาม"]
-    assert fake_col.last_query_kwargs["query_embeddings"] is None
+    fake_col.last_query_kwargs = None
+    with caplog.at_level("WARNING", logger="utils.documents"):
+        assert docs.retrieve_chunks("คำถาม", top_k=3) == []
+    assert fake_col.last_query_kwargs is None, "ห้ามเรียก col.query (query_texts = MiniLM 384 มิติไม่ตรง)"
+    assert any("embed" in r.getMessage().lower() for r in caplog.records), "ต้องบอกเหตุว่าค้นไม่ได้เพราะ embed ล่ม"
 
 
-def test_retrieve_falls_back_to_query_texts_when_embed_returns_empty(fake_col, monkeypatch):
-    """embed_texts คืน [] ตามสัญญา (ไม่ throw) เมื่อ embed ไม่สำเร็จ — ต้อง fallback เหมือนกัน"""
+def test_retrieve_embed_returns_empty_คืนว่าง_ไม่_query(fake_col, monkeypatch):
+    """embed_texts คืน [] ตามสัญญา (ไม่ throw) เมื่อ embed ไม่สำเร็จ — ต้องได้ผลเดียวกัน"""
     monkeypatch.setattr(embed, "embed_texts", lambda texts: [])
-    docs.retrieve_chunks("คำถาม", top_k=3)
-    assert fake_col.last_query_kwargs["query_texts"] == ["คำถาม"]
-    assert fake_col.last_query_kwargs["query_embeddings"] is None
+    fake_col.last_query_kwargs = None
+    assert docs.retrieve_chunks("คำถาม", top_k=3) == []
+    assert fake_col.last_query_kwargs is None
 
 
 # ── list_documents ────────────────────────────────────────────────────────────

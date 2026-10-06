@@ -155,22 +155,24 @@ def retrieve_chunks(
     # auto-embed query_texts ด้วย default embedder (MiniLM 384-dim) ซึ่งมิติไม่ตรง
     # กับ vector ที่ persist ไว้ (768-dim) → query พังทุกครั้งแบบเงียบๆ (เจอจริง
     # 2026-07-13 ทดสอบ upload PDF scan — ดู tests/test_documents_retrieve.py)
+    # embed ล้ม = ค้นไม่ได้ ⇒ คืนว่างพร้อมบอกเหตุ · ⛔ ห้ามถอยไป query_texts: ChromaDB จะฝังด้วย MiniLM 384 มิติ
+    # ซึ่งไม่ตรงกับ collection 768 มิติ = ไม่มีวันสำเร็จ (การเขียนไม่ถอยไป auto-embed ตั้งแต่ 08-01 · ปอยเคาะ B1 10-06)
     query_vec: list = []
     try:
         from utils.embed import embed_texts
         query_vec = embed_texts([query])
     except Exception as e:
-        logger.debug(f"[Documents] query embed failed, fallback to query_texts: {e}")
+        logger.warning(f"[Documents] ค้นเอกสารไม่ได้ — embed ล้ม: {e}")
+        return []
+    if not query_vec:
+        logger.warning("[Documents] ค้นเอกสารไม่ได้ — embed ล้ม (Ollama/LM Studio ไม่พร้อม)")
+        return []
 
     where = {"source": source_filter} if source_filter else None
     try:
         # query มากกว่า top_k เพื่อ rerank
         n = 20 if exclude_tabular else min(top_k * 2, 20)
-        kwargs = {"n_results": n}
-        if query_vec:
-            kwargs["query_embeddings"] = query_vec
-        else:
-            kwargs["query_texts"] = [query]
+        kwargs = {"n_results": n, "query_embeddings": query_vec}
         if where:
             kwargs["where"] = where
         res = col.query(**kwargs)

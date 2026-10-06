@@ -236,6 +236,11 @@ def _sync_vault_unlocked(vault_path: str = "") -> dict:
                     logger.error(f"Vault sync: {halted} — ไม่ upsert รอบนี้")
                     errors += 1
                     continue
+                if ep:
+                    # ต่อได้แล้วจริง ⇒ ล้างตัวพักร่วม "Ollama" (utils/embed) ที่แชทอาจตั้งไว้ไม่เกิน 60 วิก่อน —
+                    # ไม่งั้น EF โยน ConnectionError ทันที → ไฟล์เดียว = error ไม่ halted → catch-up เลิกลองเงียบ (10-06)
+                    from utils.embed import clear_provider_down
+                    clear_provider_down("Ollama")
 
             combined = f"# {info['title']}\n\n{info['body']}"
             col.upsert(

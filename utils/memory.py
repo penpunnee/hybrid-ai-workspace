@@ -107,6 +107,31 @@ def _ollama_native_url() -> str:
     return base[:-len("/v1")] if base.endswith("/v1") else base
 
 
+def _guarded_ollama_ef(base):
+    """ห่อ OllamaEmbeddingFunction ด้วยตัวพักร่วมของ utils/embed.py (provider "Ollama")
+
+    log prod 10-06 (PC .235 ปิด): ก่อนเรียก LLM มี 5–6 ขั้นผ่าน EF นี้ (get_lessons · search_entries ·
+    user_facts · long_term_memory · skills_search) ล้มทีละ ~3 วิ = แชทช้า 15–18 วิ · ตัวพักเดิมครอบแค่ utils/embed
+    ⇒ ระหว่างพักโยน ConnectionError ทันที (ไม่แตะเครือข่าย) · ต่อไม่ติด → พัก · ครบเวลาแล้วลองใหม่เอง ·
+    error อื่น (เครื่องยังอยู่ เช่นโมเดลไม่มี) ห้ามปิดทาง · override แค่ __call__ — name()/get_config() เดิม
+    (collection เก็บชื่อ EF ไว้ · embed_query ของ chromadb เรียกผ่าน __call__) · เทส tests/test_embed_breaker_shared.py"""
+    import httpx
+
+    class _GuardedOllamaEF(base):
+        def __call__(self, input):
+            from utils.embed import mark_provider_down, provider_down_for
+            left = provider_down_for("Ollama")
+            if left > 0:
+                raise ConnectionError(f"Ollama ต่อไม่ติดเมื่อไม่นานนี้ — ข้าม (เหลือ {left:.0f} วิ)")
+            try:
+                return super().__call__(input)
+            except (ConnectionError, httpx.ConnectError, httpx.ConnectTimeout):
+                mark_provider_down("Ollama")
+                raise
+
+    return _GuardedOllamaEF
+
+
 def _get_embedding_function():
     """คืน OllamaEmbeddingFunction (multilingual, รองรับไทยจริง) singleton —
     คืน None ถ้าปิดด้วย EMBEDDING_MODEL="" หรือสร้างไม่สำเร็จ (เช่นไม่มีแพ็กเกจ
@@ -120,7 +145,7 @@ def _get_embedding_function():
             try:
                 from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
                 url = _ollama_native_url()
-                _embedding_function = OllamaEmbeddingFunction(url=url, model_name=EMBEDDING_MODEL)
+                _embedding_function = _guarded_ollama_ef(OllamaEmbeddingFunction)(url=url, model_name=EMBEDDING_MODEL)
                 logger.info(f"Embedding function ready: Ollama '{EMBEDDING_MODEL}' @ {url}")
             except Exception as e:
                 logger.warning(

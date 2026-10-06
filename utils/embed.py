@@ -26,7 +26,7 @@ from types import SimpleNamespace
 from typing import Sequence
 
 import httpx
-from openai import APIConnectionError, OpenAI
+from openai import APIConnectionError, APITimeoutError, OpenAI
 
 from core.config import EMBED_CACHE_DB as _DEFAULT_CACHE_DB
 # ⬇️ อ่านจาก core/config.py ที่เดียว — เดิมไฟล์นี้มี default ของตัวเองที่ไม่ตรงกับที่อื่น
@@ -125,20 +125,51 @@ def _now() -> float:
     return time.monotonic()
 
 
-def _embed_via(provider: str, client: OpenAI, inputs: list[str]):
+def provider_down_for(provider: str) -> float:
+    """วินาทีที่เหลือของการพัก provider นี้ (0 = ลองได้) — ใช้ร่วมกับ OllamaEmbeddingFunction ของ chromadb
+    (utils/memory.py) ⇒ ทางไหนเห็นล่มก่อนก็พักทั้งสองทาง (10-06: PC ปิด แชทช้า 15–18 วิ)"""
     with _down_lock:
         until = _down_until.get(provider, 0.0)
-    if _now() < until:
+    return max(0.0, until - _now())
+
+
+def clear_provider_down(provider: str) -> None:
+    """ล้างการพัก — ใช้เมื่อมีหลักฐานว่าต่อได้แล้ว (เช่น preflight TCP ของ vault sync ผ่าน) ไม่ต้องรอครบเวลา"""
+    with _down_lock:
+        _down_until.pop(provider, None)
+
+
+def _is_connect_failure(e: APIConnectionError) -> bool:
+    """ต่อไม่ติดจริง (เครื่อง/พอร์ตไม่อยู่) — ตัดสินจากสาเหตุที่ openai แนบมา (`raise ... from err`):
+    ConnectError/ConnectTimeout = ปิดทาง · ReadTimeout (โหลดโมเดลช้า) / RemoteProtocolError · ReadError
+    (keep-alive เก่าถูกตัด) = เครื่องยังอยู่ ห้ามปิดทาง EF/ความจำ 60 วิ (ฝั่ง EF ก็ไม่นับ — ให้ตรงกัน) ·
+    ไม่มีสาเหตุแนบ = นับว่าต่อไม่ติด (พฤติกรรมเดิม)"""
+    cause = e.__cause__
+    if cause is None:
+        return not isinstance(e, APITimeoutError)
+    return isinstance(cause, (httpx.ConnectError, httpx.ConnectTimeout))
+
+
+def mark_provider_down(provider: str) -> None:
+    """บันทึกว่า provider ต่อไม่ติด (ระดับเชื่อมต่อเท่านั้น) — ครบ `_EMBED_DOWN_COOLDOWN` แล้วลองใหม่เอง"""
+    if _EMBED_DOWN_COOLDOWN <= 0:
+        return
+    with _down_lock:
+        _down_until[provider] = _now() + _EMBED_DOWN_COOLDOWN
+    logger.warning(f"[Embed] {provider} ต่อไม่ติด → ข้าม {_EMBED_DOWN_COOLDOWN} วิ")
+
+
+def _embed_via(provider: str, client: OpenAI, inputs: list[str]):
+    left = provider_down_for(provider)
+    if left > 0:
         raise APIConnectionError(
-            message=f"{provider} ต่อไม่ติดเมื่อไม่นานนี้ — ข้าม (เหลือ {until - _now():.0f} วิ)",
+            message=f"{provider} ต่อไม่ติดเมื่อไม่นานนี้ — ข้าม (เหลือ {left:.0f} วิ)",
             request=httpx.Request("POST", str(client.base_url)))
     try:
         return client.embeddings.create(model=_EMBED_MODEL, input=inputs)
-    except APIConnectionError:
-        if _EMBED_DOWN_COOLDOWN > 0:
-            with _down_lock:
-                _down_until[provider] = _now() + _EMBED_DOWN_COOLDOWN
-            logger.warning(f"[Embed] {provider} ต่อไม่ติด → ข้าม {_EMBED_DOWN_COOLDOWN} วิ")
+    except APIConnectionError as e:
+        if _is_connect_failure(e):
+            mark_provider_down(provider)
         raise
 
 
