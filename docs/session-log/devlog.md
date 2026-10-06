@@ -1,5 +1,29 @@
 ---
 
+## [2026-10-06 ต่อ 138] overlay จำสถานะ pill — แก้ตามแผน [ต่อ 137] deploy แล้ว (ui `2781925` · a.ui `dc6fa24`)
+
+**เทสแดงก่อนแก้ (แดงตรงบั๊กทุกตัว):** vitest `initialCbSkills` 5 ตัว (ยังไม่มีฟังก์ชัน) · node `overlay_gating` 1 ตัว ("บล็อกเติมธงไม่มี gate") ·
+e2e (52) ปิด Plan แล้ว body ยัง `plan_mode:true` · (54) `obsidian` ค้าง → `obsidian_inject:true` + localStorage ไม่ถูกกรอง · (55) รีเฟรชแล้ว Web Search ยังเปิด ·
+กลุ่มควบคุม (51)(53)(56) เขียวตั้งแต่ก่อนแก้
+
+**แก้:** `static/enhanced.js` fetch override `if (_ci && !window.__hwReactChatBox)` (เช็คต่อคำขอ · ประวัติ prompt/draft ยังทำงาน) ·
+a.ui `utils/chatflags.ts` `CB_SKILL_IDS`/`CbSkillId` + `initialCbSkills()` (จำแค่ reflect · กรอง id แปลก/ซ้ำ/ไม่ใช่ string · JSON เสีย = `[]`) ·
+`app.tsx` `CB_SKILLS` สร้างจาก `CB_SKILL_IDS` + `Record<CbSkillId,…>` (ไม่มีรายการซ้ำ) · e2e (51) ตรวจจาก body อย่างเดียว + แก้ชื่อ/คอมเมนต์ ·
+ui-map แถว 31/47 · CLAUDE.md รายการ overlay ที่ gate แล้ว · bump `enhanced.js?v=20261006-832e6c84` · bundle `index-xgwILWpi.js`
+
+**ตรวจ:** vitest 738/738 · node 51/51 · e2e เต็ม 76/76 (ทั้งก่อน/หลัง sync static) · (51)–(56) `--repeat-each 3` 18/18 · pytest 2837 passed · ruff ผ่าน ·
+mutation 4/4 KILLED (overlay เติมธงกลับ · ไม่กรอง skills · จำ search · กรองทิ้ง reflect) baseline/restore เขียว ·
+ui-reviewer diff: ต้องแก้ 0 · ควรพิจารณา 1 (node test เช็คแค่ลำดับข้อความ ไม่ใช่ว่า gate อยู่ใน `if` ที่ครอบการเรียก — CI ของ ui ไม่รัน e2e) → **รับ:** ตรวจว่าการเรียกอยู่ในบล็อกของ `if` ที่ใกล้ที่สุดซึ่งมี gate · mutant ที่ผู้ตรวจยก 2 ตัว (`if (!…) {}` เปล่า · gate คุมแค่ timeline) KILLED ·
+จดไว้ 4 → รับ: แก้ชื่อ (51) · checklist มือ "Web Search → รีเฟรช → ปิด" ซ้ำกับ e2e (55) ⇒ ตัด เหลือข้อที่ต้อง login (ข้างล่าง)
+
+**prod:** NAS ui `2781925` · ทางสาธารณะเสิร์ฟ `index-xgwILWpi.js` + `enhanced.js?v=20261006-832e6c84` md5 ตรง ·
+probe WebKit 440 บน prod (ดัก `/api/chat` ในหน้า ไม่ถึง backend): `__hwReactChatBox` = true · seed `["search","obsidian","reflect"]` + plan → bundle ใหม่เขียนกลับเป็น `["reflect"]` · ป้ายโหมด = Plan (จำ) ·
+⚠️ ส่งแชทจริงบน prod **ไม่ได้ตรวจ** — ติดหน้า login (`UI_PASSWORD` · ไม่ใส่รหัสเอง) ⇒ body หลังปิด pill ยืนยันด้วย e2e ที่เสิร์ฟ overlay ไฟล์เดียวกัน (md5 ตรง) · ข้อที่ต้อง login อยู่ใน pending-manual-tests · CI สองรีโปเขียว
+
+📊 ~19:10 → 19:55 · investigator 0 (ใช้ผลสืบ [137]) · ui-reviewer: แผน 1 ([137]) + diff 1 (107.4k · 2.3 นาที · ควรพิจารณา 1 รับ) · มือ: รอปอย 2 ข้อ
+
+---
+
 ## [2026-10-06 ต่อ 137] สืบ+แผน: overlay จำสถานะ pill ตั้งแต่โหลดหน้า (ปอยเคาะแล้ว · ยังไม่เขียนเทส) · ปิดเซสชันรอบ 10
 
 **สืบ (ui-investigator 100.5k · 1.6 นาที · ชี้ถูก · + วัด e2e จริง WebKit 440 overlay จริง):**
