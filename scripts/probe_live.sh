@@ -5,7 +5,8 @@
 
 set -u
 NAS_API=${NAS_API:-https://ai.pawinhome.com}
-LAN_CHROMA=${LAN_CHROMA:-192.168.51.49:8000}
+# 2026-10-07: ChromaDB bind 127.0.0.1:8000 บน NAS แล้ว — เข้าจาก LAN ไม่ได้ ⇒ ยิง heartbeat บน NAS ผ่าน ssh
+NAS_SSH=${NAS_SSH:-nas}
 LAN_LMSTUDIO=${LAN_LMSTUDIO:-192.168.51.235:1234}
 # 2026-09-24: header x-auth-token รับเฉพาะ session token — login ด้วยรหัสก่อนแล้วใช้ token ที่ได้
 AUTH_TOKEN=""
@@ -40,7 +41,10 @@ probe() {
 
 hdr "1. Reachability"
 probe "Cloudflare tunnel"  "$NAS_API/api/status"
-probe "ChromaDB heartbeat" "http://$LAN_CHROMA/api/v2/heartbeat"
+code=$(ssh -o BatchMode=yes -o ConnectTimeout=8 "$NAS_SSH" \
+  "curl -sS --max-time 6 -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v2/heartbeat" 2>/dev/null || echo "ERR")
+if [[ "$code" == "200" ]]; then green "✓ ChromaDB heartbeat (ssh $NAS_SSH → 127.0.0.1:8000 · $code)"
+else red "✗ ChromaDB heartbeat ($code) — ssh $NAS_SSH แล้ว curl 127.0.0.1:8000 (นอกวงใช้ NAS_SSH=nas-cf)"; fi
 probe "LMStudio models"    "http://$LAN_LMSTUDIO/v1/models"
 
 hdr "2. Memory system"

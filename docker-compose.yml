@@ -74,8 +74,11 @@ services:
     container_name: chromadb
     # always (เดิม unless-stopped) — chromadb เคยดับเงียบ 8 วัน ไม่กลับมาเอง; always = auto-restart แม้ exit 0/หลัง reboot
     restart: always
+    # bind 127.0.0.1 เท่านั้น (2026-10-07) — Chroma ไม่มี auth + CVE ฝั่งเซิร์ฟเวอร์ยังไม่มี fix
+    # backend ต่อด้วยชื่อ service `chromadb` (NAS .env CHROMA_HOST=chromadb) · บน NAS ยัง curl localhost:8000 ได้
+    # ⛔ ห้ามกลับเป็น "8000:8000" — tests/test_chroma_port_bind.py
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       # chroma :latest persist ที่ /data (เดิม mount /chroma/chroma → image รุ่นใหม่ไม่ใช้ → data ไม่ persist หายตอน recreate)
       - chroma_data:/data

@@ -4,8 +4,11 @@
 ของใหม่เขียนกุญแจเองอัตโนมัติแล้ว (`memory/store.py`, `utils/memory.py`) — สคริปต์นี้
 ไล่เก็บของเก่า **ไม่แตะ collection หลักเลย** ทำซ้ำได้ปลอดภัย (upsert ด้วย id เดิม)
 
-    python scripts/backfill_keys.py            # dry-run
-    python scripts/backfill_keys.py --apply
+⚠️ ต้องรัน **ในคอนเทนเนอร์ backend บน NAS** — ChromaDB bind 127.0.0.1:8000 แล้ว (2026-10-07)
+เข้าจาก LAN/Mac ไม่ได้ · ในคอนเทนเนอร์ต่อด้วยชื่อ service `chromadb`:
+
+    ssh nas 'sudo -n /usr/local/bin/docker exec ai-backend-1 sh -c "cd /app && python scripts/backfill_keys.py"'            # dry-run
+    ssh nas 'sudo -n /usr/local/bin/docker exec ai-backend-1 sh -c "cd /app && python scripts/backfill_keys.py --apply"'
 """
 from __future__ import annotations
 
@@ -28,7 +31,7 @@ def main() -> int:
 
     from memory.dualvec import key_text, keys_collection, sync_key
 
-    client = chromadb.HttpClient(host=os.getenv("CHROMA_HOST", "192.168.51.49"),
+    client = chromadb.HttpClient(host=os.getenv("CHROMA_HOST", "chromadb"),
                                  port=int(os.getenv("CHROMA_PORT", "8000")))
 
     for name in args.collections:
