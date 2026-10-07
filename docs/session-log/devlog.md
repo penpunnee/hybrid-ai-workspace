@@ -1,5 +1,17 @@
 ---
 
+## [2026-10-07 ต่อ 144] ปิดพอร์ต Chroma 8000 ขั้น 1 (backend → service name) · pin h2 · tunnel Mac ติด sshd
+
+**h2 (`fix(deps): pin h2==4.4.1`):** pin กลับตามที่ปอยเคาะ = ตัวที่อิมเมจ prod ลงอยู่ ⇒ ไม่ rebuild
+**ขั้น 1 ✅ (18:33):** NAS `.env` `CHROMA_HOST=192.168.51.49` → `chromadb` (สำรอง `.env.bak-20261007-chromahost` · compose ไม่มี CHROMA ใน `environment:`) · `--force-recreate` ·
+ทดสอบก่อนเปลี่ยน: DNS `chromadb`=172.23.0.2 · heartbeat · 11 collections · หลังเปลี่ยน: healthy · inode `server.py` ตรง · log `GET http://chromadb:8000/...` 200 + Synced 22 skills · netstat host :8000 = เหลือ TIME_WAIT แล้วว่าง (สุ่ม 3 ครั้ง)
+**ขั้น 2 (bind `127.0.0.1:8000`) ⏳ ยังไม่ทำ** — รอคำตอบ HA/n8n · start.ps1 + tunnel Mac ต้องใช้ได้ก่อน
+**tunnel Mac:** ลง autossh 1.4g · LaunchAgent `com.pawin.chroma-tunnel` (Mac `127.0.0.1:18000` → NAS `127.0.0.1:8000` · 18000 เพราะ 8000 ชน server.py dev) →
+**ใช้ไม่ได้:** NAS `sshd_config:85` `AllowTcpForwarding no` (เปิดแค่ root/admin) → `channel open failed: administratively prohibited` · บูตออกแล้ว + เปลี่ยนชื่อเป็น `.plist.disabled` (ไม่โหลดตอน login) · NAS ไม่มี nc/socat มี python3 · ⏳ รอปอยเลือกทาง
+· Mac `.env` ยังเป็น `192.168.51.49:8000` (ยังไม่แก้จนกว่า tunnel ใช้ได้) · `mcp_server.py` ยังไม่ได้ลงทะเบียนที่ไหน · Dream heartbeat: ยังไม่เจอไฟล์ `~/.dream_heartbeat_url` (ค้น Mac + NAS แล้ว)
+
+---
+
 ## [2026-10-07 ต่อ 143] pip-audit 9 → 3 (bump กลุ่มปลอดภัย · accepted risk) · สืบผู้ใช้พอร์ต ChromaDB 8000
 
 **deps (`1172aae`):** urllib3 2.8.0 (ตัวหลัก — `utils/urlguard.py` stream หน้าเว็บภายนอก) · aiohttp 3.14.3 · multidict 6.9.1 · anyio 4.14.2 · pyasn1 0.6.4 · ลบ h2 ออกจาก lock ·
