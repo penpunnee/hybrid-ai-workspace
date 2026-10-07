@@ -54,3 +54,25 @@ def test_crontrigger_without_explicit_timezone_falls_back_to_os_local(monkeypatc
         assert str(explicit.timezone) == "Asia/Bangkok"
     finally:
         time.tzset()  # คืน TZ ระบบเดิมหลัง monkeypatch ลบ env var
+
+
+def test_งานรายคืนทนการยิงช้าได้_1_ชั่วโมง():
+    """A1 (ปอยเคาะ 10-07): ค่าปริยาย `misfire_grace_time` ของ APScheduler = 1 วิ ⇒ ถ้า thread ของ
+    scheduler ช้ากว่ากำหนดเกิน 1 วิ (NAS พัก · CPU เต็ม) รอบนั้น**ถูกข้ามเงียบ** — Dream ใช้ <10 วิ
+    และ backup 03:30 อยู่ห่างไป 1.5 ชม. ⇒ ยอมให้ช้าได้ 1 ชม.
+
+    ⚠️ ไม่ครอบเคสคอนเทนเนอร์ดับตอนถึงเวลา (job store อยู่ในหน่วยความจำ · บูตใหม่คำนวณรอบถัดไป
+    จากเวลาปัจจุบัน) — นั่นคืองานเปิด A2 ใน docs/session-log/open-work.md"""
+    scheduler_mod.start_scheduler()
+    try:
+        for job_id in ("dream_nightly", "db_backup_nightly"):
+            job = scheduler_mod.scheduler.get_job(job_id)
+            assert job is not None, f"ไม่เจอ job {job_id}"
+            assert job.misfire_grace_time is not None and job.misfire_grace_time >= 3600, (
+                f"{job_id}.misfire_grace_time = {job.misfire_grace_time} — ช้าเกินค่านี้แล้วรอบถูกข้ามเงียบ"
+            )
+            assert job.coalesce is True, f"{job_id} ต้อง coalesce (ช้าหลายรอบ = ยิงรอบเดียว)"
+    finally:
+        scheduler_mod.scheduler.remove_all_jobs()
+        if scheduler_mod.scheduler.running:
+            scheduler_mod.scheduler.shutdown(wait=False)

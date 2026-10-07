@@ -66,6 +66,11 @@ def _scheduled_vault_catchup():
         logger.error(f"[Scheduler] vault catch-up error: {e}")
 
 
+# ยอมให้งานรายคืนยิงช้าได้ 1 ชม. (ค่าปริยาย APScheduler = 1 วิ → ช้านิดเดียวรอบถูกข้ามเงียบ)
+# ⚠️ ไม่ครอบเคสคอนเทนเนอร์ดับตอนถึงเวลา (job store อยู่ในหน่วยความจำ) — งานเปิด A2
+_NIGHTLY_GRACE_SEC = 3600
+
+
 def start_scheduler():
     # ⚠️ CronTrigger ต้องส่ง timezone ตรงๆ — BackgroundScheduler(timezone=...) ไม่ inject
     # เข้า CronTrigger ที่สร้างแยกไว้ก่อน add_job() เอง มันเลย fallback เป็น OS-local
@@ -76,6 +81,7 @@ def start_scheduler():
         CronTrigger(hour=2, minute=0, timezone="Asia/Bangkok"),
         id="dream_nightly",
         replace_existing=True,
+        misfire_grace_time=_NIGHTLY_GRACE_SEC,
     )
     # 03:30 — ChromaDB สำรองแยกโดย DSM task `chroma-backup` 00:00 (คนละตัว · ปอยยืนยัน 10-07); ตั้งใน DSM ไม่ได้เพราะ
     # sudo จาก SSH จำกัดแค่ docker เลยฝัง job ในแอปแทน
@@ -84,6 +90,7 @@ def start_scheduler():
         CronTrigger(hour=3, minute=30, timezone="Asia/Bangkok"),
         id="db_backup_nightly",
         replace_existing=True,
+        misfire_grace_time=_NIGHTLY_GRACE_SEC,
     )
     # vault sync อัตโนมัติเมื่อ PC (embedder) กลับมา — ทำงานจริงเฉพาะตอน sync ล่าสุดค้าง
     # (ดู utils/obsidian_sync.catchup_sync_if_pending) · ช่วงห่างไม่ขึ้นกับ timezone
