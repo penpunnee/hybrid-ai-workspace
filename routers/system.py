@@ -12,6 +12,7 @@ from core.scheduler import scheduler
 from assistants.config import ASSISTANTS
 import utils.llm as _llm
 from utils.llm import OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health, check_lmstudio_health, _last_failover, stream_response, warm_lmstudio
+from utils.embed import warm_ollama_embed
 from utils.memory import is_memory_available, get_memory_stats
 from utils.skills import get_skill_count
 from utils.dream import get_latest_report
@@ -123,8 +124,10 @@ def list_models():
 
 @router.post("/warmup")
 async def warmup():
-    """แอปเปิด/กลับมาที่หน้าจอ → อุ่นโมเดลแชท local ถ้าถูกปล่อยไปแล้ว (คืนทันที โหลดเบื้องหลัง)"""
-    return {"status": await run_in_threadpool(warm_lmstudio)}
+    """แอปเปิด/กลับมาที่หน้าจอ → อุ่นโมเดลแชท local + โมเดล embed ของ Ollama ถ้าถูกปล่อยไปแล้ว
+    (คืนทันที โหลดเบื้องหลัง) · embed: PC ตื่นแล้วแชทแรกเคยรอโหลด 27 วิ (prod 10-07)"""
+    status = await run_in_threadpool(warm_lmstudio)
+    return {"status": status, "embed": await run_in_threadpool(warm_ollama_embed)}
 
 
 @router.get("/status")

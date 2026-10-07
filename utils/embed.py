@@ -174,6 +174,69 @@ def _embed_via(provider: str, client: OpenAI, inputs: list[str]):
         raise
 
 
+# ── อุ่นโมเดล embed ตอนเปิดแอป (10-07 · คู่กับ utils/llm.warm_lmstudio) ────────────────────────────
+# prod 10-07: PC .235 เพิ่งตื่น → แชทแรก (cache hit) รอ embed 27 วิ ทั้งที่เปิดแอปมา 7 นาทีแล้ว ·
+# `keep_alive` 24h ไม่รอดตอน PC ดับ/หลับ · อุ่นเบื้องหลังจึงใช้ read ยาว 90 วิให้โหลดจนเสร็จจริง
+# (connect สั้นเท่าเดิม — PC ดับต้องรู้เร็ว) · read timeout ไม่เปิดตัวพัก (`_is_connect_failure`)
+_WARM_TIMEOUT = httpx.Timeout(90.0, connect=_EMBED_CONNECT_TIMEOUT)
+_EMBED_WARM_MIN_GAP = 60.0
+_embed_warm_lock = threading.Lock()
+_embed_warm_state = {"at": -1e9, "running": False}
+
+
+def _ollama_embed_loaded() -> bool:
+    """Ollama โหลดโมเดล embed ไว้ใน VRAM อยู่ไหม (`/api/ps`) · ถามไม่ได้ = ถือว่ายังไม่โหลด"""
+    root = str(_ollama_client.base_url).rstrip("/")
+    root = root[:-len("/v1")] if root.endswith("/v1") else root
+    try:
+        r = httpx.get(f"{root}/api/ps", timeout=httpx.Timeout(2.0, connect=_EMBED_CONNECT_TIMEOUT))
+        if r.status_code != 200:
+            return False
+        want = _strip_latest(_EMBED_MODEL)
+        return any(_strip_latest(m.get("name") or m.get("model") or "") == want
+                   for m in r.json().get("models") or [])
+    except Exception as e:
+        logger.debug(f"[Embed] ถาม /api/ps ไม่ได้: {e}")
+        return False
+
+
+def warm_ollama_embed(spawn=None) -> str:
+    """'loaded' · 'warming' (ยิงเบื้องหลัง) · 'skipped' (เพิ่งอุ่น/กำลังอุ่น) · 'down' (Ollama ถูกพักอยู่)
+    ยิงตรงไป Ollama ไม่ผ่าน embed cache (cache hit = ไม่ถึง Ollama = ไม่ได้อุ่น)"""
+    if provider_down_for("Ollama") > 0:
+        return "down"
+    with _embed_warm_lock:
+        if _embed_warm_state["running"] or _now() - _embed_warm_state["at"] < _EMBED_WARM_MIN_GAP:
+            return "skipped"
+        _embed_warm_state["running"] = True
+        _embed_warm_state["at"] = _now()
+    try:
+        loaded = _ollama_embed_loaded()
+    except Exception:
+        loaded = False
+    if loaded:
+        _embed_warm_state["running"] = False
+        return "loaded"
+
+    def _load():
+        t0 = time.monotonic()
+        try:
+            client = _ollama_client.with_options(timeout=_WARM_TIMEOUT)
+            resp = _embed_via("Ollama", client, ["อุ่นเครื่อง"])
+            _verify_model(resp, _EMBED_MODEL, "Ollama")
+            logger.info(f"[Embed] อุ่นเครื่อง {_EMBED_MODEL} (Ollama) เสร็จ {time.monotonic() - t0:.1f} วิ")
+        except Exception as e:
+            logger.info(f"[Embed] อุ่นเครื่อง {_EMBED_MODEL} (Ollama) ไม่สำเร็จ "
+                        f"{time.monotonic() - t0:.1f} วิ ({type(e).__name__}: {e})")
+        finally:
+            _embed_warm_state["running"] = False
+
+    if spawn is None:
+        from core.observability import spawn_bg as spawn
+    spawn(_load)
+    return "warming"
+
+
 class EmbedModelMismatch(RuntimeError):
     """เซิร์ฟเวอร์ตอบด้วยโมเดลคนละตัวกับที่ขอ — vector คนละ space ห้ามใช้"""
 

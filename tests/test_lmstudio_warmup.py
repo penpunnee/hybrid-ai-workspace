@@ -86,5 +86,6 @@ def test_endpoint(monkeypatch):
     import server
     import routers.system as sysmod
     monkeypatch.setattr(sysmod, "warm_lmstudio", lambda *a, **k: "warming")
+    monkeypatch.setattr(sysmod, "warm_ollama_embed", lambda *a, **k: "loaded")   # 10-07 อุ่น embed คู่กัน
     r = TestClient(server.app).post("/api/warmup")
-    assert r.status_code == 200 and r.json() == {"status": "warming"}
+    assert r.status_code == 200 and r.json()["status"] == "warming"
