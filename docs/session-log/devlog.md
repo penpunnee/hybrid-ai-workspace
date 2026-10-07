@@ -1,5 +1,25 @@
 ---
 
+## [2026-10-07 ต่อ 146] skills 2 ไฟล์ชี้ทางใหม่ของ Chroma · HA log สะอาด · 🔴 เจอ `skills_db.json` เขียนไม่ได้ (EBUSY)
+
+**skills (`ba7e0fb`):** `troubleshooting.md` (curl localhost:8000 บน NAS · `docker exec ai-backend-1` ต่อ `chromadb` · ระบุว่า LAN/Mac เข้าไม่ได้ refused ≠ ล่ม) · `project-architecture.md` (ผัง + หมายเหตุ) ·
+`test_skills_freshness` เพิ่ม BANNED `192.168.51.49:8000` (แดงกับเนื้อหาเดิม · เขียวหลังแก้ · ลบคอมเมนต์ "ห้ามแบน" ที่ไม่จริงแล้ว) · ชุดเต็ม 2884 passed ·
+deploy: `data/skills` เดิม = git (cmp) → cp → ในคอนเทนเนอร์ `grep` = 0 · resync dry-run: 22 → 22 · summary ล้าสมัย 0 (ถูกต้อง: summary = 300 ตัวแรก ส่วนที่แก้อยู่ลึกกว่า · เนื้อหาเต็มอ่านจาก `/app/skills/*.md` ตรง) ·
+`skills_db.json` 22 · `skills_collection` 22
+**grep รอบสุดท้าย `192.168.51.49:8000`:** โค้ด/skills/`data/`/ในคอนเทนเนอร์ = 0 · เหลือเฉพาะ CLAUDE.md ▶️ (แก้แล้วในรอบนี้) · architecture.md:181 (หมายเหตุประวัติ "ก่อนหน้านั้น" ตั้งใจ) · session-log (ประวัติ ไม่แก้)
+· ค้างเล็ก (ไม่มี :8000 จึงไม่ติด grep): `mcp_server.py:14` docstring แนะ `CHROMA_HOST=192.168.51.49` · `utils/memory.py` `_detect_chroma_host` มี candidate `.49` (prod ตั้ง env จึงไม่ถูกใช้)
+**HA log (GET อย่างเดียว):** `/api/error_log` = 404 ใน HA 2026.9 → ใช้ `/api/hassio/core/logs` + `/host/logs` (`?lines=5000`) · ครอบ 10-02 → 10-07 · คำค้น `192.168.51.49:8000|chroma|:8000` = **0** ·
+core log บรรทัดสุดท้าย 19:41 (หลัง 20:37 ไม่มี log ใหม่ = ไม่มี error) ⇒ **ปิดเรื่อง HA**
+
+🔴 **เจอระหว่างทาง: `clean_skills_db.py --resync --apply` ล้ม** `[Errno 16] Device or resource busy: '/app/.skills_db.*.tmp' -> '/app/skills_db.json'` ·
+ต้นเหตุ: compose mount `data/skills_db.json` เป็น**ไฟล์เดี่ยว** (`docker-compose.yml:30`) · `os.replace` rename ทับ bind-mount ไม่ได้ · `_save_skills_db()` ของแอป (`utils/skills.py:270`) ใช้ทางเดียวกัน ⇒ ตามโครงสร้าง **save_skill/skill discovery บน prod ควรล้มทุกครั้ง** ·
+หลักฐานฝั่ง log: ไม่มี EBUSY จากแอปจริง (บรรทัดที่ match เป็น fixture เทสที่เคยรันในคอนเทนเนอร์ 08-17/21) · ไฟล์บน host แก้ล่าสุด 08-03 · รอบนี้ไม่มีอะไรต้องเขียนจึงไม่เสียหาย (ไฟล์เดิมไม่ถูกแตะ) ·
+ค้างในคอนเทนเนอร์: `/app/skills_db.json.bak-20261007-134701` (writable layer · หายเมื่อ recreate) · ⚠️ คำสั่งใน CLAUDE.md "แก้ skills แล้ว resync --apply" จึงใช้ไม่ได้จนกว่าจะแก้ · ยังไม่แก้ → ▶️ รอปอยเคาะ
+
+📊 10-07 20:40 → 20:55 · subagent 0 · mutation: red/green ด้วย stash เนื้อหาเดิม
+
+---
+
 ## [2026-10-07 ต่อ 145] ChromaDB bind 127.0.0.1:8000 (ขั้น 2) · ถอด tunnel · HA/n8n ไม่ใช้ Chroma · start.ps1 เลิกใช้
 
 **ปอยเคาะ:** ไม่เอา tunnel ทั้ง (ก) เปิด forward และ (ข) relay → ลบ `com.pawin.chroma-tunnel.plist.disabled` + log + `brew uninstall autossh` · ไม่ลงทะเบียน MCP
