@@ -153,7 +153,7 @@ HTTP `http_limits` `reqparse` · แพ็กเกจอื่น: `core/` `mem
 | `reader.db` | `utils/reader.py` | `books` `reading_progress` | ✅ | `utils/reader.py » class BookStore` |
 | `embed_cache.db` | `utils/embed.py` | cache embedding (sha256+model) | ✅ | `utils/embed.py » def _cache_init` |
 | `response_cache.db` | `utils/response_cache.py` | คำตอบ 👍 + vector | ✅ | `utils/response_cache.py » RESPONSE_CACHE_DB` |
-| `skills_db.json` (+ `.lock`) | `utils/skills.py` (`_db_lock`) | รายการ skill | ❌ (git มีแต่ตัว dev · ตัว prod อยู่ `data/`) | `utils/skills.py » def save_skill` |
+| `skills_db.json` (+ `.lock`) | `utils/skills.py` (`_db_lock`) | รายการ skill | ❌ (ตัว prod = `data/skills_db.json` → `/app/data/` ผ่าน mount โฟลเดอร์ · ไม่อยู่ใน git) | `utils/skills.py » def save_skill` |
 | `identity.json` | `utils/rag.py` | ตัวตนพื้นฐานทุกผู้ช่วย | ❌ (อยู่ใน git) | `utils/rag.py » IDENTITY_PATH` |
 | `dream_reports/` | `utils/dream.py` | รายงาน JSON + `.md` ลง vault | ❌ | `utils/dream.py » DREAM_REPORTS_DIR` |
 | ChromaDB (volume `chroma_data`) | ดูข้อ 6.1 | vector ทุกชนิด | ❌ ในแอป · ✅ DSM task `chroma-backup` ทุกวัน **00:00** เก็บ 7 ไฟล์ล่าสุด (ปอยเปิดดูใน DSM 10-07: รอบล่าสุด 2026-10-07 00:00:01–00:00:30 สถานะ 0) · เวลาในคอมเมนต์/เอกสารตรึงด้วย `tests/test_backup_time_docs.py` | ปอยยืนยันจาก DSM (ไม่อยู่ในรีโป) · `core/scheduler.py » DSM task` · `scripts/db_backup.sh » chroma-backup` |

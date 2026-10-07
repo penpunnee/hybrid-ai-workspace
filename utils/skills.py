@@ -263,6 +263,11 @@ def _save_skills_db(db: dict):
         os.makedirs(d, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=d, prefix=".skills_db.", suffix=".tmp")
         try:
+            # mkstemp สร้างเป็น 0600 เสมอ → os.replace แล้วไฟล์จริงกลายเป็น 0600 ของ root (คอนเทนเนอร์)
+            # user `pawin` บน host อ่านไม่ได้ ⇒ ตั้ง 0644 ตายตัว (เหมือน embed_cache.db ที่คอนเทนเนอร์สร้างใน data/)
+            # ⛔ ห้าม "ลอกสิทธิ์ไฟล์เดิม" — ไฟล์ที่มี Synology ACL คอนเทนเนอร์เห็นเป็น 0111 (host เห็น 777)
+            #    ลอกมา = ได้ 0111 อ่านไม่ได้ทั้งคู่ (วัดจริง 2026-10-07 · tests/test_skills_db_write_mode.py)
+            os.fchmod(fd, 0o644)
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(db, f, ensure_ascii=False, indent=2)
                 f.flush()

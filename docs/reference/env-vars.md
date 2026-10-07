@@ -66,7 +66,7 @@ PC_MAC=
 DB_PATH=/app/data/chat_history.db  # (ย้ายจาก mount ไฟล์เดี่ยว 09-29 · WAL ต้องการโฟลเดอร์) ⛔ docker-compose `environment:` ทับ `env_file:` — ตั้งใน .env **ไม่มีผลในคอนเทนเนอร์** (มีผลเฉพาะรัน local ตรงๆ)
 OBSIDIAN_VAULT_PATH=/vault  # ⛔ docker-compose `environment:` ทับ `env_file:` — ตั้งใน .env **ไม่มีผลในคอนเทนเนอร์** (มีผลเฉพาะรัน local ตรงๆ)
 CHROMA_HOST=
-NAS_DATA_PATH=./data
+NAS_DATA_PATH=./data  # ใน .env = path ฝั่ง host ของ volume (compose ใช้แทน `${NAS_DATA_PATH:-./data}`) · ⛔ ในคอนเทนเนอร์ docker-compose `environment:` pin เป็น /app/data (10-07)
 
 # Phase B-E feature toggles
 SKILLS_SEARCH_MIN_SCORE=0.38          # พื้นคะแนนของ search_skills() (ปิด =off) — ดูหัวข้อท้ายไฟล์

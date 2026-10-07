@@ -97,24 +97,24 @@ LOG_FILE   = env_str("LOG_FILE", "server.log", group=_G,
 # ── Paths ────────────────────────────────────────────────────────────────────
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILLS_DIR = os.path.join(PROJECT_ROOT, "skills")
-# ⚠️ path เดียวแต่คนละไฟล์ระหว่าง prod กับ dev — เคยทำให้เข้าใจผิดมาแล้ว:
-#   prod (container): /app/skills_db.json = bind mount จาก ${NAS_DATA_PATH}/skills_db.json
-#                     (ดู docker-compose.yml) = ไฟล์จริงที่มีข้อมูลใช้งาน
-#   dev  (บนเครื่อง): <repo>/skills_db.json — **ไม่ถูก track ใน git แล้ว** (2026-08-02)
-#                     เพราะสำเนาที่ track ไว้เดิมค้างตั้งแต่ มิ.ย. และเนื้อหาซ้ำกับ
-#                     skills/*.md ทุกหัวข้อ → แก้ไฟล์นั้นไม่มีผลกับ prod แต่ดูเหมือนมี
-# ไม่มีไฟล์ = `_load_skills_db()` คืน {} เฉยๆ ไม่ crash (skills/*.md ยังโหลดปกติ
-# ผ่าน load_skills_relevant) — ถ้าอยากเทส semantic search บน dev ให้ copy ตัวจริงมา
-SKILLS_DB_PATH = os.path.join(PROJECT_ROOT, "skills_db.json")
 
 _G = "Paths"
 OBSIDIAN_VAULT_PATH = env_str("OBSIDIAN_VAULT_PATH", "", group=_G,
                               doc="path ของ Obsidian vault ที่มองเห็นจากในคอนเทนเนอร์ (Synology: /vault)\n"
                                   "⛔ docker-compose `environment:` ทับค่านี้ — ตั้งใน .env ไม่มีผลบน prod")
 NAS_DATA_PATH       = env_str("NAS_DATA_PATH", os.path.join(PROJECT_ROOT, "data"), group=_G,
-                              doc="โฟลเดอร์ข้อมูลถาวรสำหรับ docker-compose volume mount\n"
-                                  "(cache DB · reader.db · skills_db.json) — ตั้งเพื่อไม่ให้ข้อมูล\n"
-                                  "หายเวลา restart container · Synology: /volume1/docker/hybrid-ai")
+                              doc="โฟลเดอร์ข้อมูลถาวร (cache DB · reader.db · skills_db.json) ที่มองเห็นจาก*ในคอนเทนเนอร์*\n"
+                                  "⛔ docker-compose `environment:` pin เป็น /app/data — ตั้งใน .env ไม่มีผลในคอนเทนเนอร์\n"
+                                  "(compose ใช้ชื่อนี้ใน .env เป็น path ฝั่ง host ของ volume `${NAS_DATA_PATH:-./data}` เท่านั้น)")
+
+# skills_db.json อยู่ใต้ NAS_DATA_PATH (2026-10-07 · devlog [ต่อ 146]–[148])
+#   prod: /app/data/skills_db.json — `./data` mount ทั้งโฟลเดอร์ (NAS_DATA_PATH pin ใน compose `environment:`)
+#         = ไฟล์เดิมบน host `data/skills_db.json` (inode เดียวกับที่เคย mount ไฟล์เดี่ยวที่ /app/skills_db.json)
+#   🔴 ห้ามกลับไป mount ไฟล์เดี่ยว — `_save_skills_db()` เขียน atomic ด้วย os.replace ซึ่ง rename ทับ
+#      mount point ไม่ได้ ⇒ EBUSY ทุกครั้ง (เทส: test_skills_db_dir_mount.py · test_skills_db_mount_docker.py)
+#   dev: <repo>/data/skills_db.json (data/ อยู่ใน .gitignore) · ไม่มีไฟล์ = `_load_skills_db()` คืน {}
+#        (skills/*.md ยังโหลดผ่าน load_skills_relevant) — อยากเทส semantic search บน dev ให้ copy ตัวจริงมา
+SKILLS_DB_PATH = os.path.join(NAS_DATA_PATH, "skills_db.json")
 
 # Cache databases (under NAS_DATA_PATH for persistence)
 RESPONSE_CACHE_DB = os.path.join(NAS_DATA_PATH, "response_cache.db")
@@ -128,7 +128,8 @@ EMBED_CACHE_DB = os.path.join(NAS_DATA_PATH, "embed_cache.db")
 #    เป็นความล้มเหลวแบบเดียวกับ default 2 ที่ของ utils/voice.py
 # ⚠️ ค่าที่ resolve ได้ต้องเท่าของเดิม (`os.path.join("data", "reader.db")` แบบ relative)
 #    ไม่งั้น reader จะมองไม่เห็น DB เดิม: prod มี WORKDIR=/app, PROJECT_ROOT=/app และ
-#    env NAS_DATA_PATH **ไม่ได้ตั้งในคอนเทนเนอร์** (docker-compose.yml บรรทัด 35)
+#    env NAS_DATA_PATH ในคอนเทนเนอร์ = /app/data (เดิมไม่ได้ตั้ง = default ค่าเดียวกัน ·
+#    ตั้งแต่ 2026-10-07 pin ใน compose `environment:` กันค่าจาก .env ไหลเข้า)
 #    ⇒ ทั้งสองสูตรได้ /app/data/reader.db ตัวเดียวกัน · ใช้ NAS_DATA_PATH เพราะย้ายตาม
 #    cache DB เป็นชุดเดียวกัน แทนที่จะผูกกับ cwd ซึ่งเปลี่ยนได้โดยไม่มีใครสังเกต
 # 🔴 แยกเป็น 2 ชื่อโดยตั้งใจ — "ห้าม default ซ้ำ" ไม่เท่ากับ "ห้ามอ่าน env ซ้ำ"

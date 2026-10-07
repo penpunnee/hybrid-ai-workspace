@@ -14,7 +14,7 @@
 
 ```yaml
 ${NAS_DATA_PATH}/chat_history.db   → /app/data/chat_history.db (ผ่าน mount โฟลเดอร์ ${NAS_DATA_PATH}:/app/data)
-${NAS_DATA_PATH}/skills_db.json    → /app/skills_db.json
+${NAS_DATA_PATH}/skills_db.json    → /app/data/skills_db.json (ผ่าน mount โฟลเดอร์ · ⛔ ห้าม mount ไฟล์เดี่ยว = EBUSY)
 ${NAS_DATA_PATH}/skills            → /app/skills        # ⚠️ ต้อง mount ไม่งั้น .md หายเมื่อ recreate
 ${NAS_DATA_PATH}/dream_reports     → /app/dream_reports
 ${OBSIDIAN_VAULT_NAS_PATH}         → /vault

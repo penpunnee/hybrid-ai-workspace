@@ -41,7 +41,7 @@ CHROMA_HOST=chromadb   # ชื่อ service ใน docker network · Chroma bi
 CHROMA_PORT=8000
 
 DB_PATH=/app/data/chat_history.db  # ⛔ docker-compose ทับ — ตั้งใน .env ไม่มีผลในคอนเทนเนอร์
-NAS_DATA_PATH=/volume1/docker/hybrid-ai
+NAS_DATA_PATH=/volume1/docker/hybrid-ai  # ใน .env = path ฝั่ง host ของ volume (compose ใช้แทน `${NAS_DATA_PATH:-./data}`) · ⛔ ในคอนเทนเนอร์ docker-compose `environment:` pin เป็น /app/data (10-07)
 
 OBSIDIAN_VAULT_PATH=/vault        # ⛔ docker-compose ทับ — ตั้งใน .env ไม่มีผลในคอนเทนเนอร์
 OBSIDIAN_VAULT_NAS_PATH=/volume1/obsidian

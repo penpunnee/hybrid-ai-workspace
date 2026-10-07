@@ -163,7 +163,7 @@ def main() -> int:
         return 1
 
     # ทางอ่าน/เขียนต้องเป็นตัวเดียวกับแอป — ชี้ path ของโมดูลไปที่ --db ที่ผู้ใช้เลือก
-    # (`SKILLS_DB_PATH` ไม่มี env override · `_db_lock_path()` อ่านค่านี้ตอนเรียก)
+    # (`SKILLS_DB_PATH` = `$NAS_DATA_PATH/skills_db.json` ไม่มี env ของตัวเอง · `_db_lock_path()` อ่านค่านี้ตอนเรียก)
     import utils.skills as skills
     skills.SKILLS_DB_PATH = args.db
 

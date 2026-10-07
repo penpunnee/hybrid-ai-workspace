@@ -27,7 +27,8 @@ services:
       - ./identity.json:/app/identity.json
       - ${OBSIDIAN_VAULT_NAS_PATH:-./data}:/vault
       - ${NAS_DATA_PATH:-./data}/dream_reports:/app/dream_reports
-      - ${NAS_DATA_PATH:-./data}/skills_db.json:/app/skills_db.json
+      # ⚠️ skills_db.json อยู่ใน mount โฟลเดอร์ /app/data ข้างล่าง (SKILLS_DB_PATH = $NAS_DATA_PATH/skills_db.json)
+      # ห้ามกลับไป mount ไฟล์เดี่ยว — os.replace ทับ mount point ไม่ได้ = EBUSY (2026-10-07 · tests/test_skills_db_dir_mount.py)
       # BUG FIX: mount skills/ folder ไม่งั้นไฟล์ .md หายทุกครั้งที่ recreate
       - ${NAS_DATA_PATH:-./data}/skills:/app/skills
       # mount logs dir → ดู server.log จาก host ได้ + persist หลัง restart
@@ -62,6 +63,9 @@ services:
       - chroma_model_cache:/root/.cache/chroma
     environment:
       - DB_PATH=/app/data/chat_history.db
+      # pin กันค่าจาก .env (env_file) ไหลเข้า — ชื่อเดียวกันใน .env คือ path ฝั่ง host ของ volume ข้างบน
+      # ค่านี้ = default เดิมในคอนเทนเนอร์ (PROJECT_ROOT/data) ⇒ path ของ cache DB/reader/exports ไม่เปลี่ยน
+      - NAS_DATA_PATH=/app/data
       - OBSIDIAN_VAULT_PATH=/vault
       - LOG_FILE=/app/logs/server.log
     env_file:

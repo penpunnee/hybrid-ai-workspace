@@ -106,9 +106,9 @@ docker compose logs hybrid-ai -f
 ssh nas 'sudo -n /usr/local/bin/docker exec ai-backend-1 \
   sh -c "cd /app && python scripts/clean_skills_db.py --resync --apply"'
 ```
-`SKILLS_DB_PATH` (**ค่าคงที่คำนวณใน `core/config.py` ไม่ใช่ env ที่ตั้งได้**) = `<repo>/skills_db.json` → **รันบน Mac หรือบน NAS host จะไปสร้าง/แก้ไฟล์คนละตัวกับ
-ที่ prod ใช้ แล้วรายงานว่าสำเร็จ** (ตัวจริงคือ `data/skills_db.json` ที่ mount เป็น `/app/skills_db.json`
-— บนเครื่อง dev ไม่มีไฟล์นี้เลย). ก่อน 2026-08-03 คำสั่งนี้ยัง**รันในคอนเทนเนอร์ไม่ได้**ด้วยซ้ำ
+`SKILLS_DB_PATH` = `$NAS_DATA_PATH/skills_db.json` (คำนวณใน `core/config.py` · prod = `/app/data/skills_db.json`
+ผ่าน mount **โฟลเดอร์** · `NAS_DATA_PATH` pin ใน compose `environment:`) → **รันบน Mac = ไฟล์ dev คนละตัว** แล้วรายงานว่าสำเร็จ ·
+รันในคอนเทนเนอร์เท่านั้น ⛔ ห้ามกลับไป mount ไฟล์เดี่ยว (`os.replace` = EBUSY · devlog [ต่อ 146]–[148]). ก่อน 2026-08-03 คำสั่งนี้ยัง**รันในคอนเทนเนอร์ไม่ได้**ด้วยซ้ำ
 เพราะ `scripts/` เป็นโค้ดดิร์เดียวที่ไม่ได้ mount (เป็นสำเนาค้างจากตอน build ที่ไม่มีไฟล์นี้)
 
 ### Frontend
