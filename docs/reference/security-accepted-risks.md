@@ -12,4 +12,8 @@
 
 ## ที่ bump ไปแล้ว (บันทึกไว้กันสับสน)
 - 2026-10-07 `1a95b72`: pypdf 6.19.0 · PyJWT 2.15.1
-- 2026-10-07: urllib3 2.8.0 (สำคัญสุด — `utils/urlguard.py` stream หน้าเว็บภายนอก) · aiohttp 3.14.3 · multidict 6.9.1 · anyio 4.14.2 · pyasn1 0.6.4 · **ลบ h2 ออกจาก lock** (ไม่มีแพ็กเกจไหนดึง · ไม่มีโค้ดใช้ http2)
+- 2026-10-07: urllib3 2.8.0 (สำคัญสุด — `utils/urlguard.py` stream หน้าเว็บภายนอก) · aiohttp 3.14.3 · multidict 6.9.1 · anyio 4.14.2 · pyasn1 0.6.4 · **ลบ h2 ออกจาก lock**
+  ⚠️ เหตุผลตอนลบ ("ไม่มีแพ็กเกจไหนดึง") **ผิด**: `ddgs` → `httpx[brotli,http2,socks]` → h2
+  (`uv pip show` ไม่แสดงการดึงผ่าน extra) ⇒ h2 ยังถูกติดตั้งแต่**ไม่ได้ pin** ตอนนี้ได้ 4.4.1 (ตัวที่แก้แล้ว · ตรวจในอิมเมจ prod 10-07)
+  · ⏳ รอปอยเคาะ: pin `h2==4.4.1` กลับเข้า lock ไหม
+  · เช็คว่าใครดึงแพ็กเกจไหนให้ไล่ `importlib.metadata` `requires` **รวม extra** ไม่ใช่ `Required-by`

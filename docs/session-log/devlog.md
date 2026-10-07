@@ -1,5 +1,23 @@
 ---
 
+## [2026-10-07 ต่อ 143] pip-audit 9 → 3 (bump กลุ่มปลอดภัย · accepted risk) · สืบผู้ใช้พอร์ต ChromaDB 8000
+
+**deps (`1172aae`):** urllib3 2.8.0 (ตัวหลัก — `utils/urlguard.py` stream หน้าเว็บภายนอก) · aiohttp 3.14.3 · multidict 6.9.1 · anyio 4.14.2 · pyasn1 0.6.4 · ลบ h2 ออกจาก lock ·
+เทส: venv ใหม่จาก lock · `uv pip check` ผ่าน · pytest 2882 passed · pip-audit ก่อน 9 แพ็กเกจ → หลัง 3 (ตรงกับที่ปอยเคาะ) · ดึง https จริงผ่าน `fetch_url_safe` ·
+deploy `compose build` + `compose up -d` · healthy · ในคอนเทนเนอร์เวอร์ชันครบ · inode `server.py` host=ctr · `/api/config` 200 · fetch + Chroma heartbeat จากในคอนเทนเนอร์ผ่าน · CI เขียว
+⚠️ **h2 สรุปผิด:** ตอนลบบอกว่า "ไม่มีใครดึง" แต่ `ddgs` → `httpx[http2]` → h2 (`Required-by` มองไม่เห็นการดึงผ่าน extra) ⇒ ในอิมเมจยังมี h2 แต่ไม่ได้ pin (ได้ 4.4.1 ตัวที่แก้แล้ว) · ⏳ ปอยเคาะว่าจะ pin กลับไหม
+
+**accepted risk:** cryptography (major · ไม่ใช้ pkcs7) · oauthlib (major · ไม่ได้รัน auth server) · chromadb (ยังไม่มี fix · ฝั่งเซิร์ฟเวอร์) → [`docs/reference/security-accepted-risks.md`](../reference/security-accepted-risks.md)
+
+**พอร์ต ChromaDB 8000 (อ่านอย่างเดียว · agent สุ่ม ~10 ครั้งใน 6 นาที):** client ที่ต่ออยู่มีตัวเดียวคือ `ai-backend-1` (ต่อผ่าน host IP `CHROMA_HOST=192.168.51.49` · hairpin ผ่าน docker-proxy) ·
+`chroma-backup` (DSM task 11 · อ่าน `/usr/syno/etc/synoschedule.d/root/11.task` ได้) = stop → tar volume → start **ไม่ใช้พอร์ต** · Chroma ไม่มี healthcheck ·
+ที่จะพังถ้าปิดพอร์ต: dev บน Mac (`.env` · `mcp_server.py` · `scripts/probe_live.sh` · `scripts/backfill_keys.py`) · `start.ps1` บน PC (ดูเป็น launcher เก่า) ·
+DSM firewall **ปิดอยู่** (`firewall_settings.json` `status:false`) · ยังไม่ได้ยืนยัน: HA/n8n · งานบน .235 ที่ยิงนานๆ ครั้ง · DSM firewall กรองพอร์ตที่ docker publish ได้จริงไหม · Dream heartbeat ยังรอไฟล์ URL
+
+📊 10-07 เย็น · agent สืบพอร์ต 1 · ui-reviewer 0 (deps ล้วน) · mutation — (bump ไม่มีโค้ด · ใช้ pip-audit ก่อน/หลังแทน)
+
+---
+
 ## [2026-10-07 ต่อ 142] ตรวจความปลอดภัย/การเฝ้าระวัง (อ่านอย่างเดียว) · deps pypdf+PyJWT · heartbeat Dream
 
 **ตรวจอ่านอย่างเดียว (ค่าลับรายงานแค่ host/hash):** `HEARTBEAT_URL` → `hc-ping.com` check "Khim AI db-backup" (`30 3 * * *` · grace 2 ชม. · up · hash URL prod = check `f3aa03ab`) ·
