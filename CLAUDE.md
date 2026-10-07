@@ -17,6 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | แผนระยะยาว / ดีไซน์ / คู่มือ | [`ROADMAP.md`](ROADMAP.md) · [`DESIGN.md`](DESIGN.md) · [`GUIDE.md`](GUIDE.md) |
 | React source ของ SPA | `~/appscript.ui/` (มี `CLAUDE.md` ของตัวเอง) — **แก้ UI ที่นั่น ไม่ใช่ overlay** |
 | ส่วนบนจอนี้ใครเป็นเจ้าของ (React/overlay/API) | [`docs/ui-map.md`](docs/ui-map.md) · subagent `ui-investigator` |
+| ผังทั้งระบบ (เครื่อง · คอนเทนเนอร์ · LLM · storage · งานตั้งเวลา) + **ถ้า X ล่มอะไรพัง** | [`docs/system-map.md`](docs/system-map.md) |
 
 ### 🔴 กฎการจดตั้งแต่ 2026-08-17
 1. **จบเซสชัน → เขียน `docs/session-log/devlog.md`** แล้วอัปเดตหัวข้อ ▶️ ในไฟล์นี้ ·
