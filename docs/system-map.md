@@ -6,9 +6,11 @@
 [`reference/infra-nas.md`](reference/infra-nas.md) (deploy/inode/SSH) · [`reference/env-vars.md`](reference/env-vars.md) · [`../CONTEXT.md`](../CONTEXT.md) (glossary)
 
 **อ่านก่อนใช้**
-- **หลักฐาน** = backtick ครอบ `` `ไฟล์ » ข้อความ` `` · path นับจากรากรีโปนี้ หรือขึ้นต้น `a.ui/` (= `~/appscript.ui/`) ·
+- **หลักฐาน** = backtick ครอบ "ไฟล์ » ข้อความ" เช่น `server.py » async def lifespan` · path นับจากรากรีโปนี้ หรือขึ้นต้น `a.ui/` (= `~/appscript.ui/`) ·
+  ⚠️ ห้ามใส่เครื่องหมาย » ใน backtick ที่ไม่ใช่ตัวยึด (เทสถือว่าเป็นตัวยึดเขียนผิดรูป) ·
   **grep ข้อความนั้นเจอในไฟล์จริง** (ไม่ใช้เลขบรรทัด · ตรวจทุกตัวแล้วตอนเขียนร่าง — เทสยึดเสนอไว้ในข้อ 9)
-- ป้าย **🟡 ยังไม่ยืนยัน** = เจอแค่ในเอกสาร/ค่าใน `.env` ที่ไม่อยู่ในรีโป/ไฟล์นอกรีโป — ไม่มีโค้ดหรือ config ในรีโปยืนยัน
+- ป้าย **🟡 ยังไม่ยืนยัน** = เจอแค่ในเอกสาร ไม่มีโค้ด/config/การตรวจจริงยืนยัน (ตอนนี้ไม่เหลือแล้ว · 10-07)
+- ป้าย **🔎 ตรวจบน prod 10-07** = อ่านจาก NAS จริงแบบอ่านอย่างเดียว (env ในคอนเทนเนอร์ · `docker inspect` · log · hook) — ค่าลับรายงานแค่ "ตั้งแล้ว/ไม่ได้ตั้ง" · เปลี่ยนได้โดยไม่มีเทสจับ
 - ป้าย **⚪ นอกรีโป** = ยืนยันได้จากไฟล์บนเครื่อง Mac (เช่น `~/.ssh/config`) แต่ไม่อยู่ในรีโป จึงตรึงด้วยเทสไม่ได้
 - ค่าจริงของ prod (`.env` บน NAS) **ไม่ได้อ่าน** — ค่าในตารางคือ default ในโค้ด เว้นแต่ระบุ
 
@@ -50,11 +52,11 @@ flowchart LR
     SEARCH["Brave → DDG<br/>Wikipedia · wttr.in"]
     HA["Home Assistant<br/>(ถ้าตั้ง HA_URL)"]
     HC["Healthchecks (HEARTBEAT_URL)"]
-    LINE["LINE Notify<br/>🟡 น่าจะตายแล้ว"]
+    LINE["LINE Notify<br/>❌ ปิดบริการ 31 มี.ค. 2025<br/>+ ไม่ได้ตั้ง token"]
     GH["GitHub<br/>repo + Actions CI"]
   end
 
-  iPhone -->|HTTPS + WS| Tunnel --> CFD -->|"🟡 ingress target"| APP
+  iPhone -->|HTTPS + WS| Tunnel --> CFD -->|"http://ai-backend-1:8000"| APP
   Mac -->|git push| NAS
   Mac -->|ssh nas-cf| Access --> NAS
   Mac -->|git push github| GH
@@ -85,10 +87,10 @@ flowchart LR
 | เครื่อง | บทบาทในระบบนี้ | หลักฐาน |
 |---|---|---|
 | **NAS** 192.168.51.49 | รันคอนเทนเนอร์ทั้งหมด · เก็บข้อมูลถาวร · DSM API ให้เครื่องมือ "บ้าน" | `docker-compose.yml » container_name: ai-backend-1` · `utils/home_tools.py » def _nas_api` · `scripts/deploy_nas.sh » git reset --hard origin/main` |
-| **PC** 192.168.51.235 | Ollama :11434 (embed หลัก + chat ตัวสุดท้าย) · LM Studio :1234 (chat local หลัก) · ปลุกด้วย WoL | `utils/home_tools.py » def wol_pc` · `scripts/deploy_nas.sh » 192.168.51.235:1234` · `deploy_ollama.sh » ollama create` · ค่า URL จริงของ prod 🟡 ยังไม่ยืนยัน (อยู่ใน `.env`) |
+| **PC** 192.168.51.235 | Ollama :11434 (embed หลัก + chat ตัวสุดท้าย) · LM Studio :1234 (chat local หลัก) · ปลุกด้วย WoL | `utils/home_tools.py » def wol_pc` · `scripts/deploy_nas.sh » 192.168.51.235:1234` · `deploy_ollama.sh » ollama create` · 🔎 prod: `OLLAMA_BASE_URL=http://192.168.51.235:11434/v1` · `LMSTUDIO_BASE_URL=http://192.168.51.235:1234/v1` |
 | **Mac** | dev · build React แล้ว sync เข้า `static/` · push · ssh เข้า NAS · ลงทะเบียน `mcp_server.py` กับ Claude Code (stdio) | `a.ui/scripts/sync_static.sh » enhanced.js` · `mcp_server.py » claude mcp add` · ssh alias `nas`/`nas-cf` ⚪ นอกรีโป (`~/.ssh/config`) |
 | **iPhone** | ไคลเอนต์หลัก (Safari ผ่าน `ai.pawinhome.com`) · ไม่มีอะไรรันบนเครื่อง | e2e ทดสอบบน WebKit iPhone: `a.ui/playwright.config.ts » iPhone` |
-| Router .1 / Pi .64 | ไม่ใช่ส่วนของแอป — router เป็นแค่เป้า `ping_network` · Pi-hole เป็น DNS ของวง LAN | `utils/home_tools.py » def ping_network` · DNS ที่คอนเทนเนอร์ app ใช้ 🟡 ยังไม่ยืนยัน (compose ไม่ได้ตั้ง `dns:` ให้ hybrid-ai) |
+| Router .1 / Pi .64 | ไม่ใช่ส่วนของแอป — router เป็นแค่เป้า `ping_network` · Pi-hole เป็น DNS ของวง LAN | `utils/home_tools.py » def ping_network` · 🔎 DNS: app ใช้ DNS ภายในของ Docker (`127.0.0.11` · network `ui_default` · ไม่ได้ตั้ง `dns:`) ซึ่งส่งต่อให้ NAS host → `/etc/resolv.conf` ของ NAS มี **nameserver เดียว = 192.168.51.64 (Pi-hole)** · `ai-cloudflared` ใช้ `dns: 1.1.1.1, 8.8.8.8` ของตัวเอง |
 
 ## 3. คอนเทนเนอร์ (`docker-compose.yml` · ทุกตัวอยู่ใน bridge network ปริยาย)
 
@@ -99,8 +101,8 @@ flowchart LR
 | `cloudflared` → `ai-cloudflared` | `cloudflare/cloudflared:latest` | `tunnel … run ai-workspace` · config อยู่บน NAS `~/.cloudflared/config.yml` (ไม่อยู่ในรีโป) | `docker-compose.yml » run ai-workspace` |
 | `backend-watchdog` → `ai-backend-watchdog` | `docker:cli` | ทุก 60 วิ ถ้า `ai-backend-1` ไม่รัน → `docker compose up -d hybrid-ai` | `docker-compose.yml » ai-backend-watchdog` |
 
-🟡 **ยังไม่ยืนยัน — ปลายทาง ingress ของ tunnel:** `infra-nas.md` เขียนว่า "routes ไป `localhost:8080`" แต่ `ai-cloudflared` อยู่ใน bridge network (ไม่ใช่ host) ⇒ `localhost` ในคอนเทนเนอร์นั้นไม่ใช่ NAS ·
-ค่าจริงน่าจะเป็น `hybrid-ai:8000` หรือ IP ของ NAS — ต้องเปิด `config.yml` บน NAS หรือหน้า Zero Trust ถึงจะรู้
+🔎 **ปลายทาง ingress ของ tunnel = `http://ai-backend-1:8000`** (ingressRule 0 · อ่านจาก `docker logs ai-cloudflared` 10-07: `originService=http://ai-backend-1:8000`) — ทุกคอนเทนเนอร์อยู่ network `ui_default` เดียวกัน ⇒ คุยกันด้วยชื่อคอนเทนเนอร์ ·
+⚠️ `infra-nas.md` เขียนว่า "routes ไป `localhost:8080`" = **ผิด** (จดในข้อ 11) · ตัว `config.yml` อ่านตรงไม่ได้ (`sudo -n` บน NAS อนุญาตแค่ docker)
 
 ## 4. Backend (FastAPI · `server.py`)
 
@@ -122,7 +124,7 @@ static: `/static` · `/assets` · `/gen` (รูปที่สร้าง) · 
 | agent | `/api` | รายชื่อ tool | — | `routers/agent.py » TOOL_REGISTRY` |
 | documents | `/api/documents` | upload/search/OCR/summarize | Chroma `documents` | `routers/documents.py » ocr_pdf` |
 | reader | `/api/reader` | หนังสือ · ที่คั่น 🔒 | reader.db | `routers/reader.py » BookmarkStore` |
-| feedback | `/api/feedback` | 👍👎 → response cache + confidence ในความจำ | chat_history.db `feedback` · response_cache.db | `utils/feedback.py » def _propagate_to_memory` |
+| feedback | `/api/feedback` | 👍👎 → response cache + confidence ในความจำ | chat_history.db `feedback` · response_cache.db | `routers/feedback.py » prefix="/api/feedback"` · `utils/feedback.py » def _propagate_to_memory` |
 | sandbox | `/api` | run python · fs ที่ whitelist · ไฟล์ export | ดิสก์ (whitelist) | `routers/sandbox.py » run_python` |
 | **WS** `/ws/voice/{slug}` 🔒 | — | Gemini Live · tool ค้นเว็บ/ความจำ · บันทึก turn | chat_history.db · Chroma `memory_*` | `server.py » async def voice_websocket` · `server.py » websocket_auth_ok` |
 | **WS** `/ws/reader` 🔒 | — | Gemini Live อ่านหนังสือ | reader.db | `server.py » async def reader_websocket` |
@@ -177,7 +179,7 @@ HTTP `http_limits` `reqparse` · แพ็กเกจอื่น: `core/` `mem
 
 | ผู้ให้บริการ | ใช้ทำอะไร | เรียกจาก | หลักฐาน |
 |---|---|---|---|
-| **LM Studio** (PC :1234) | chat local หลัก · reason · vision · OCR สำรอง · summarize · reflection · query rewrite · agent · embed สำรอง (โมเดลชื่อเดียวกันเท่านั้น) | `stream_response` → `_stream_lmstudio_or_ollama` · `_run_agent_lmstudio` | `utils/llm.py » def _stream_lmstudio_or_ollama` · `agents/orchestrator.py » def _run_agent_lmstudio` · `utils/llm.py » def _fit_lmstudio_context` · ⚠️ default ในโค้ด chat=`gemma-4-e4b` reason=`qwen3.5-9b` — prod ใช้ qwen เป็น chat 🟡 ยังไม่ยืนยัน (อยู่ใน `.env`) |
+| **LM Studio** (PC :1234) | chat local หลัก · reason · vision · OCR สำรอง · summarize · reflection · query rewrite · agent · embed สำรอง (โมเดลชื่อเดียวกันเท่านั้น) | `stream_response` → `_stream_lmstudio_or_ollama` · `_run_agent_lmstudio` | `utils/llm.py » def _stream_lmstudio_or_ollama` · `agents/orchestrator.py » def _run_agent_lmstudio` · `utils/llm.py » def _fit_lmstudio_context` · ⚠️ default ในโค้ด chat=`gemma-4-e4b` · 🔎 prod: `LMSTUDIO_CHAT_MODEL` = `LMSTUDIO_REASON_MODEL` = `LMSTUDIO_VISION_MODEL` = `qwen/qwen3.5-9b` (ตัวเดียวทำทุกงาน) |
 | **Ollama** (PC :11434) | **embedding หลัก** (`paraphrase-multilingual` · keep_alive 24h) · chat ตัวสุดท้ายเมื่อ LM Studio ต่อไม่ได้ · agent ollama · ตัวพัก (circuit breaker) 60 วิ เฉพาะ ConnectError/ConnectTimeout | `utils/embed.py` · `utils/memory.py` (EF ของ Chroma ใช้ตัวพักร่วม) | `utils/embed.py » def _create_embeddings` · `utils/embed.py » def mark_provider_down` · `utils/embed.py » def warm_ollama_embed` · `utils/memory.py » def _guarded_ollama_ef` |
 | **Gemini** (cloud) | chat (+ fallback model) · grounding search · agent (`tool_agent` ปริยาย) · **Live เสียง/อ่าน** 🔒 · TTS · image · OCR หลัก · summarize สำรอง · skill extract · Dream (เมื่อมี key) | `utils/llm.py` · `server.py` WS · `utils/tts.py` · `utils/image_gen.py` · `utils/ocr.py` | `utils/llm.py » def _stream_gemini` · `utils/llm.py » def gemini_web_search` · `agents/orchestrator.py » def _run_agent_gemini` · `utils/voice.py » def build_live_config` · `utils/tts.py » def generate_tts` · `utils/ocr.py » def _ocr_with_gemini` |
 | **Claude** (Anthropic) | มีโค้ดจริง แต่ใช้ได้เมื่อมี `ANTHROPIC_API_KEY` (⛔ พักไว้) · เลือกจาก model picker หรือ `CLAUDE_AUTO` (ปริยาย `off`) · FAB Claude ใน overlay ตายแล้ว (`_claudeMode = false`) | `stream_response` | `utils/llm.py » def _stream_claude` · `reasoning/router.py » CLAUDE_AUTO` · `static/enhanced.js » _claudeMode` |
@@ -206,9 +208,11 @@ agent → Gemini · ต้องใช้เน็ต (`needs_internet` · regex
 
 **Obsidian:** vault บน NAS mount เป็น `/vault` (`docker-compose.yml » OBSIDIAN_VAULT_NAS_PATH`) → `sync_vault` embed ลง `obsidian_notes` → ใช้ใน chat/agent/`@vault` overlay ·
 Dream เขียน `.md` กลับลง vault (`utils/dream.py » def _save_report`) ·
-🟡 ยังไม่ยืนยัน: path จริงบน NAS (เอกสารใน `skills/*.md` ขัดกันเอง 3 แบบ) และ vault จาก Mac (`~/Desktop/homepawin`) ไปถึง NAS ทางไหน — ในรีโปไม่มีโค้ด sync
+🔎 **ทางเข้า vault (ตรวจ 10-07):** Mac `~/Desktop/homepawin` `git push origin` (= `nas:/var/services/homes/pawin/git/homepawin.git` · นอกวงใช้ remote `origin-cf`) →
+hook `post-receive` ของ bare repo `git checkout -f main` ลง `/var/services/homes/pawin/vault/homepawin` → `curl POST http://127.0.0.1:8080/api/vault/sync` (ล้มก็ไม่ทำให้ push ล้ม) ·
+คอนเทนเนอร์ mount `/var/services/homes/pawin/vault/homepawin` → `/vault` · hook อยู่นอกรีโปนี้ ⇒ ตรึงด้วยเทสไม่ได้ · ⚠️ เอกสารใน `skills/*.md` เขียน path ไว้ 3 แบบ ผิดทั้งหมด (จดในข้อ 11)
 
-**Cloudflare:** Tunnel `ai-workspace` → `ai.pawinhome.com` (ปลายทาง 🟡 ข้อ 3) · Access `ssh.pawinhomelab.com` = ทาง ssh นอกวง (`nas-cf` ⚪ นอกรีโป) · แอปไม่มีโค้ดเรียก Cloudflare API
+**Cloudflare:** Tunnel `ai-workspace` → `ai.pawinhome.com` (ปลายทาง `ai-backend-1:8000` ข้อ 3) · Access `ssh.pawinhomelab.com` = ทาง ssh นอกวง (`nas-cf` ⚪ นอกรีโป) · แอปไม่มีโค้ดเรียก Cloudflare API
 
 **CI:**
 | workflow | trigger | ทำอะไร | หลักฐาน |
@@ -236,11 +240,12 @@ Dream เขียน `.md` กลับลง vault (`utils/dream.py » def _sa
 | **Cloudflare Tunnel** | ใช้จากนอกบ้าน (iPhone 4G) | ✅ ในวง LAN เข้า `http://192.168.51.49:8080` ตรงได้ | `docker-compose.yml » 8080:8000` |
 | **Cloudflare Access** | ssh `nas-cf` จากนอกวง | ✅ ในวงใช้ `ssh nas` · fallback DSM Task Scheduler | ⚪ นอกรีโป (`infra-nas.md`) |
 | **อินเทอร์เน็ตบ้าน** | Gemini ทั้งหมด · ค้นเว็บ · tunnel · Claude/Kimi | ✅ แชท local ผ่าน LAN | — |
+| **Pi-hole .64** (DNS) | 🔎 NAS มี nameserver เดียว = .64 ⇒ app resolve ชื่อภายนอกไม่ได้ → Gemini (รวมเสียง) · ค้นเว็บ · Healthchecks · HA ผ่านโดเมน · *อนุมานจาก resolv.conf ยังไม่ซ้อม* — `pihole-watchdog` สลับ DNSFilter ของ router ไป .65 แต่ NAS คุยกับ .64 ในวงเดียวกันโดยไม่ผ่าน router จึง**น่าจะไม่ได้รับผล failover** | ✅ tunnel ยังอยู่ (`cloudflared` ใช้ 1.1.1.1 เอง) · แชท local ผ่าน IP ยังได้ (Ollama/LM Studio/Chroma ตั้งเป็น IP) | `docker-compose.yml » dns:` |
 | **Brave** | — | ✅ ถอยไป DDG → DDG Instant Answer | `utils/websearch.py » def search_web` |
 | **Mac** | build React · deploy · ssh | ✅ prod วิ่งต่อปกติ | — |
 | **GitHub** | CI · NAS `git fetch` จาก github (ถ้า `origin` บน NAS ชี้ github) | ✅ prod วิ่งต่อ | `scripts/deploy_nas.sh » git fetch` |
-| **LINE Notify** | แจ้งเตือน Dream ล้ม (🟡 บริการน่าจะปิดไปแล้ว ⇒ ตอนนี้อาจไม่มีใครรู้เมื่อ Dream ล้ม) | log ใน server.log | `utils/notify.py » notify-api.line.me` |
-| **Healthchecks** | — (ฝั่งเราไม่เสียอะไร) | ถ้า backup ล้ม = ไม่ ping ⇒ Healthchecks เตือนเอง (ถ้าตั้ง `HEARTBEAT_URL` · 🟡 ค่าจริงไม่ได้ตรวจ) | `utils/heartbeat.py » def ping` |
+| **LINE Notify** (ตายแล้ว) | **แจ้งเตือน Dream ล้ม/ข้าม ไม่มีอยู่จริง** — บริการปิด 31 มี.ค. 2025 (ประกาศทางการ developers.line.biz/en/news/2025/04/01/line-notify/ · notify-bot.line.me) และ 🔎 prod ไม่ได้ตั้ง `LINE_NOTIFY_TOKEN` (โค้ดคืนทันทีเมื่อว่าง) ⇒ Dream ล้มเงียบ · งานเปิดใน `open-work.md` | log ใน server.log เท่านั้น | `utils/notify.py » if not LINE_NOTIFY_TOKEN` |
+| **Healthchecks** | — (ฝั่งเราไม่เสียอะไร) | ถ้า backup ล้ม = ไม่ ping ⇒ Healthchecks เตือนเอง · 🔎 prod ตั้ง `HEARTBEAT_URL` แล้ว (ช่องทางเตือนของ Healthchecks เองไม่ได้ตรวจ) | `utils/heartbeat.py » def ping` |
 | **`chat_history.db` เสีย** | ประวัติแชท · sessions · feedback · share | backup 03:30 ย้อนได้ 7 วัน (ยังไม่เคยซ้อมกู้) | `utils/db_backup.py » DB_BACKUP_RETAIN` |
 | **ดิสก์/volume ของ NAS เสีย** | ข้อมูลทั้งหมด **รวมไฟล์สำรอง** (sqlite 03:30 + Chroma 00:00 อยู่บน NAS เครื่องเดียวกัน · ไม่มีชุดนอกเครื่อง) · `skills_db.json` ไม่มีสำรองเลย | — | ปอยยืนยันจาก DSM 10-07 · `utils/db_backup.py » def _default_db_paths` |
 
@@ -248,29 +253,30 @@ Dream เขียน `.md` กลับลง vault (`utils/dream.py » def _sa
 
 ## 11. ข้อสังเกตที่เจอระหว่างทำผัง (ยังไม่แก้ · รอปอยเคาะว่าจะทำไหม)
 
-1. 🟡 ปลายทาง ingress ของ tunnel ใน `infra-nas.md` (`localhost:8080`) ขัดกับ network ของคอนเทนเนอร์ — ควรเปิด `config.yml` บน NAS ดูแล้วแก้เอกสาร
+1. `infra-nas.md` เขียนปลายทาง tunnel ว่า `localhost:8080` — ของจริง `http://ai-backend-1:8000` (log cloudflared 10-07) · `skills/*.md` เขียน path vault 3 แบบ ผิดทั้งหมด (จริง `/var/services/homes/pawin/vault/homepawin`)
 2. `start-ai.ps1` สั่ง restart ชื่อคอนเทนเนอร์เก่า `hybrid-ai`
-3. LINE Notify น่าจะปิดบริการแล้ว ⇒ Dream ล้มเงียบ (ช่องแจ้งเตือนเดียว)
+3. LINE Notify ปิดบริการแล้ว + prod ไม่ได้ตั้ง token ⇒ Dream ล้มเงียบ → จดงานเปิดแล้ว
 4. สำรองข้อมูล → จดเป็นงานเปิดแล้วใน `session-log/open-work.md` (ไฟล์สำรองอยู่บน NAS เครื่องเดียว · ยังไม่เคยลองกู้ · `skills_db.json` ไม่อยู่ในสำรองตัวไหน · เวลาในคอมเมนต์ไม่ตรงของจริง)
 5. `ui-map.md` ยังเขียนว่า "`src/app.tsx` = สำเนาเก่า" แต่ไฟล์นั้นไม่มีแล้ว (`src/` เหลือแค่ `src/test/setup.ts`) · CLAUDE.md ยังพูดถึง FAB Claude ที่ถูกตัดแล้ว
 6. default `EMBEDDING_MODEL` ว่างใน `utils/memory.py` = MiniLM แต่ใน `utils/embed.py` = multilingual (คอมเมนต์ในโค้ดรู้อยู่แล้ว · prod ตั้งค่าไว้จึงไม่เกิด)
 7. watchdog ดูแค่ "ไม่รัน" ไม่ดู healthcheck ⇒ app ค้างแต่โปรเซสยังอยู่ = ไม่มีใครรีสตาร์ต
 
-## 12. เทสยึดที่เสนอ (ยังไม่เขียน)
+## 12. เทสยึด
 
 แบบเดียวกับ `tests/test_ui_map_anchors.py` + `a.ui/utils/uimap.test.ts`:
 
-1. **`tests/test_system_map_anchors.py`** (pytest · CI ของ ui)
-   - regex `` `((?:a\.ui/)?[\w./-]+\.\w+) » ([^`]+)` `` ดึงตัวยึดจาก `docs/system-map.md`
+1. ✅ **`tests/test_system_map_anchors.py`** (pytest · CI ของ ui · เขียนแล้ว 10-07)
+   - regex (`_ANCHOR` ในไฟล์เทส · path เป็น ASCII ล้วน ไม่บังคับนามสกุล) ดึงตัวยึดจาก `docs/system-map.md`
    - ตัวยึดที่ไม่มี prefix → ไฟล์ต้องมีจริงใต้รากรีโป + มีข้อความนั้น · แดงพร้อมรายชื่อที่หาไม่เจอ
    - กลุ่มควบคุม: จำนวนตัวยึด ≥ 60 (regex พัง = เขียวฟรี)
-2. **ตัวยึด `a.ui/`** → เพิ่มใน `a.ui/utils/uimap.test.ts` ให้อ่านไฟล์นี้ด้วย (แต่ละรีโปเช็คฝั่งตัวเอง)
-3. **ผังกับโค้ดต้องครบกัน (ไม่ใช่แค่ตัวยึดยังอยู่):**
+   - backtick ทุกก้อนที่มีเครื่องหมาย » ต้องเป็นตัวยึดที่ regex อ่านได้ (เขียนผิดรูป = แดง ไม่ใช่หลุดเงียบ · ผู้ตรวจจับได้ 10-07 · เจอจริง 1 ตัว `Dockerfile` ไม่มีนามสกุล)
+2. ✅ **ตัวยึด `a.ui/`** → `a.ui/utils/uimap.test.ts` อ่านไฟล์นี้ด้วย (แต่ละรีโปเช็คฝั่งตัวเอง · เขียนแล้ว 10-07)
+3. ✅ **ผังกับโค้ดต้องครบกัน (ไม่ใช่แค่ตัวยึดยังอยู่ · เขียนแล้ว 10-07):**
    - router ทุกตัวใน `server.py` (`include_router`) ต้องมีแถวในตารางข้อ 4 — กันเพิ่ม router ใหม่แล้วผังไม่ตาม (อ่านด้วย `ast`)
    - `@app.websocket` ทุกเส้นต้องอยู่ในผัง
    - `add_job(… id=…)` ทุก id ใน `core/scheduler.py` ต้องอยู่ในตารางข้อ 8
    - service ทุกตัวใน `docker-compose.yml` ต้องอยู่ในตารางข้อ 3
    - ชื่อ collection ที่เป็นสตริงคงที่ (`obsidian_notes` · `user_facts` · `long_term_memory` · `lessons` · `preferences` · `skills_collection` · `documents`) ต้องอยู่ในข้อ 6.1
-4. **ป้าย 🟡 ต้องไม่หายเงียบ:** เทสนับว่าแถวที่มี 🟡 มีคำอธิบายว่าขาดอะไร (ไม่บังคับ — เสนอเป็นทางเลือก)
+4. (ไม่ได้ทำ) ป้าย 🟡/🔎 เป็นข้อมูลจากนอกรีโป — เทสตรวจไม่ได้ ตรวจซ้ำด้วยมือเมื่อแตะ infra
 
 แก้เมื่อแดง: แก้ผังให้ตรงโค้ด (อย่าลบแถวทิ้งเพื่อให้เขียว)
