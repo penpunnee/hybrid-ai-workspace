@@ -1,5 +1,26 @@
 ---
 
+## [2026-10-07 ต่อ 139] แชทแรกหลัง PC ตื่นรอ embed 27 วิ → `/api/warmup` อุ่นโมเดล embed ของ Ollama ด้วย (`4ce57a1`)
+
+**สืบ (log prod UTC):** `req_a5c402ab` 02:21:15→02:21:42 cache hit · ระหว่างทางมีแค่ `POST .235:11434/api/embed` 1 ครั้ง (httpx log ตอนได้คำตอบ) ⇒ 27 วิอยู่ที่ embed ·
+PC .235 ต่อไม่ติดตั้งแต่ 21:31 (10-06) · 02:14 กลับมา (อุ่น qwen 11.1 วิ = โหลดใหม่) · **warmup อุ่นแค่ qwen ไม่อุ่น embed** · แชทถัดไป 02:22:48 embed 10 ครั้งภายในวินาทีเดียว ·
+อาการเดียวกัน 21:22 (10-06): embed แรกหลังตื่นเกิน 30 วิ → fallback LM Studio 400 "No models loaded" · `keep_alive` 24h (`utils/embed.py`) ไม่รอด PC ดับ/หลับ ·
+⚠️ ยังไม่รู้แน่ว่าโหลด 0.5 GB ทำไมนาน 27 วิ (Ollama เพิ่งสตาร์ต/ดิสก์ตื่น?) — บรรทัด log ใหม่จะบอกเวลาจริงรอบหน้า
+
+**ปอยเคาะ (10-07):** แผน warm_ollama_embed + read timeout ~90 วิ (connect สั้นเท่าเดิม) + read timeout ตอนอุ่นห้ามเปิดตัวพัก Ollama · มีเทสคุมทั้งสองข้อ
+
+**แก้:** `utils/embed.py » warm_ollama_embed()` — `/api/ps` ก่อน (โหลดอยู่ = จบ) · ยิง `/api/embed` ตรง Ollama ผ่าน `_ollama_client.with_options(timeout=_WARM_TIMEOUT)` (คงคลาส native ⇒ ส่ง keep_alive) ไม่ผ่าน cache ·
+ข้ามเมื่อ Ollama ถูกพัก (`down`) · throttle 60 วิ · `spawn_bg` · log `[Embed] อุ่นเครื่อง … เสร็จ N วิ` / `ไม่สำเร็จ N วิ` · `routers/system.py` warmup คืน `{"status", "embed"}` (frontend ไม่อ่าน body)
+read timeout ไม่เปิดตัวพักเพราะ `_is_connect_failure` เดิมนับเฉพาะ ConnectError/ConnectTimeout — เทสตรึงไว้ทั้งแบบ fake และ**เซิร์ฟเวอร์ TCP เงียบจริง** (ได้ ReadTimeout จริง · `provider_down_for == 0`)
+
+**ตรวจ:** เทสใหม่ 13 แดงก่อนแก้ 11 (ไม่มีฟังก์ชัน) · กลุ่มควบคุม: timeout แชทยัง 30 วิ · ConnectError ยังพัก · mutation 9/9 KILLED (read 30 · connect ยาว · ไม่ with_options · read timeout พัก · ผ่าน cache · ไม่เช็คพัก · ไม่ throttle · ไม่ปลดธง · endpoint ไม่อุ่น) ·
+pytest 2850 passed · ruff · node · CI เขียว · deploy: `docker restart` (ไม่แตะ server.py) · probe ในคอนเทนเนอร์ 02:49: `{"status":"loaded","embed":"loaded"}` แล้ว `skipped/skipped` ·
+`/api/ps` จริง: `paraphrase-multilingual:latest` หมดอายุ 10-08 09:23 +07 (24h ✅) ⇒ ทาง `loaded` วิ่งจริง · ⏳ ทาง `warming` บน prod รอ PC ตื่นรอบหน้า → ดู log `[Embed] อุ่นเครื่อง`
+
+📊 ~09:30 → 09:55 (ไทย) · investigator/reviewer 0 (backend ล้วน) · มือ: ไม่มี (เช็คจาก log รอบหน้าเอง)
+
+---
+
 ## [2026-10-06 ต่อ 138] overlay จำสถานะ pill — แก้ตามแผน [ต่อ 137] deploy แล้ว (ui `2781925` · a.ui `dc6fa24`)
 
 **เทสแดงก่อนแก้ (แดงตรงบั๊กทุกตัว):** vitest `initialCbSkills` 5 ตัว (ยังไม่มีฟังก์ชัน) · node `overlay_gating` 1 ตัว ("บล็อกเติมธงไม่มี gate") ·
