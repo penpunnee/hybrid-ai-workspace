@@ -9,7 +9,7 @@
 #   ปลอดภัยกว่า cp ตอน WAL). ถ้าไม่มี sqlite3 CLI → fallback copy .db + -wal + -shm
 #   แล้ว tar+gzip เก็บ N วัน
 #
-# ตั้งเป็น DSM Task Scheduler รายวัน (แนะนำ 03:30 — ก่อน chroma_backup 04:00), user=root:
+# ตั้งเป็น DSM Task Scheduler รายวันได้ (เช่น 03:30 · DSM task `chroma-backup` ของ ChromaDB รันแยกที่ 00:00), user=root:
 #   bash /volume1/homes/pawin/ui/scripts/db_backup.sh
 #
 # ปรับได้ผ่าน env: UI_DIR / DB_BACKUP_DEST / DB_BACKUP_RETAIN

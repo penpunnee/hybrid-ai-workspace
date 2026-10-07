@@ -69,7 +69,7 @@ Ollama branch: context cap 2000 chars; trim history to <3000 tokens.
 **Backups (สถานะจริง ยืนยัน 2026-07-12):**
 - **DB backup = in-app job 03:30** (`core/scheduler.py` → `utils/db_backup.py`) — sqlite3 backup API (online, WAL-safe) ของ `chat_history.db` + cache dbs → tar.gz เก็บ 7 วันที่ `/app/db_backups` (mount → `ui/data/db_backups` บน NAS). เลือกฝังในแอปเพราะตั้ง DSM task จาก SSH ไม่ได้ (sudo จำกัดแค่ docker) — verified จริง: trigger ใน container ได้ archive 143KB
 - `scripts/db_backup.sh` — ทางเลือกรันมือฝั่ง host (dest `/volume1/homes/pawin/db_backups`). ⚠️ แก้แล้ว 2026-07-12: เดิมหยิบ `ui/chat_history.db` (ไฟล์ค้างเก่า 12KB) แทน `ui/data/chat_history.db` (DB จริงที่ compose mount) → backup เปล่า
-- **chroma backup = DSM task รายคืน 00:01** (ไม่ใช่ 04:00 ตามที่เคยเขียน) → `/volume1/homes/pawin/chroma_backups/` — ยืนยันมีไฟล์รายวันจริง
+- **chroma backup = DSM task `chroma-backup` รายคืน 00:00** เก็บ 7 ไฟล์ล่าสุด (ปอยเปิด DSM ดู 10-07: รอบ 00:00:01–00:00:30 สถานะ 0 · เอกสารเก่าเคยเขียน 04:00/00:01 · ตรึงด้วย `tests/test_backup_time_docs.py`) → `/volume1/homes/pawin/chroma_backups/`
 
 ### Key Files
 

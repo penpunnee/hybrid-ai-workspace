@@ -5,7 +5,7 @@
 
 **อ่านก่อนใช้**
 - **React** = `~/appscript.ui` (แก้ → `npm run build` + `bash scripts/sync_static.sh`) · ทั้งแอปอยู่ในคอมโพเนนต์เดียว
-  `InteractiveLiquidGlass` ใน `app.tsx` · logic ย่อยอยู่ `utils/*.ts` (มี vitest) · ⛔ `src/app.tsx` = สำเนาเก่า ไม่ได้ใช้
+  `InteractiveLiquidGlass` ใน `app.tsx` · logic ย่อยอยู่ `utils/*.ts` (มี vitest) · `src/` เหลือแค่ `src/test/setup.ts` (สำเนาเก่า `src/app.tsx` ถูกลบไปแล้ว · ตรวจ 10-07)
 - **overlay** = `static/enhanced.js` (vanilla · แก้แล้ว bump `?v=` ใน `~/appscript.ui/index.html`) + `chat_intercept.js` + `dream_stats.js`
 - `app.tsx` ตั้ง `window.__hwReactChatBox = true` ⇒ section ของ overlay ที่ **gate** ด้วยธงนี้ = ตาย (เหลือไว้เป็น fallback ของ bundle เก่า)
 - ตัวยึด = backtick ครอบ "path ไฟล์ » ข้อความ" · path ขึ้นต้น `a.ui/` (= `~/appscript.ui/`) หรือ `static/` —

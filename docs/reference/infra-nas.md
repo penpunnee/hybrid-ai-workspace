@@ -77,7 +77,7 @@ ssh pawin@192.168.51.49 "sudo -n /usr/local/bin/docker compose -f /var/services/
   - SSH เข้าเครื่อง (ในวง LAN): `ssh penpu@192.168.51.235` · PowerShell ส่งผ่าน `-EncodedCommand` (cmd quoting พัง) · `lms` = `%USERPROFILE%\.lmstudio\bin\lms.exe`
 - ⚠️ PC `.235` ต้องเปิดเครื่อง local LLM ถึงจะใช้ได้ — ถ้า PC ปิด → ollama+lmstudio ล่มหมด → ตกไป Gemini → quota หมดง่าย
 - **DSM Web**: `https://192.168.51.49:5001` (auto cert) หรือ `http://:5000`
-- **Cloudflare tunnel**: `https://ai.pawinhome.com` → routes ไป `localhost:8080` ใน NAS
+- **Cloudflare tunnel**: `https://ai.pawinhome.com` → `http://ai-backend-1:8000` (ชื่อคอนเทนเนอร์ใน network `ui_default` · ยืนยันจาก `docker logs ai-cloudflared` → `originService` 10-07 · เดิมเขียน `localhost:8080` ซึ่งผิด)
 
 ## Volume mount gotcha (สำคัญ!)
 `docker-compose.yml` ของ hybrid-ai mount:

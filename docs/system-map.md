@@ -90,7 +90,7 @@ flowchart LR
 | **PC** 192.168.51.235 | Ollama :11434 (embed หลัก + chat ตัวสุดท้าย) · LM Studio :1234 (chat local หลัก) · ปลุกด้วย WoL | `utils/home_tools.py » def wol_pc` · `scripts/deploy_nas.sh » 192.168.51.235:1234` · `deploy_ollama.sh » ollama create` · 🔎 prod: `OLLAMA_BASE_URL=http://192.168.51.235:11434/v1` · `LMSTUDIO_BASE_URL=http://192.168.51.235:1234/v1` |
 | **Mac** | dev · build React แล้ว sync เข้า `static/` · push · ssh เข้า NAS · ลงทะเบียน `mcp_server.py` กับ Claude Code (stdio) | `a.ui/scripts/sync_static.sh » enhanced.js` · `mcp_server.py » claude mcp add` · ssh alias `nas`/`nas-cf` ⚪ นอกรีโป (`~/.ssh/config`) |
 | **iPhone** | ไคลเอนต์หลัก (Safari ผ่าน `ai.pawinhome.com`) · ไม่มีอะไรรันบนเครื่อง | e2e ทดสอบบน WebKit iPhone: `a.ui/playwright.config.ts » iPhone` |
-| Router .1 / Pi .64 | ไม่ใช่ส่วนของแอป — router เป็นแค่เป้า `ping_network` · Pi-hole เป็น DNS ของวง LAN | `utils/home_tools.py » def ping_network` · 🔎 DNS: app ใช้ DNS ภายในของ Docker (`127.0.0.11` · network `ui_default` · ไม่ได้ตั้ง `dns:`) ซึ่งส่งต่อให้ NAS host → `/etc/resolv.conf` ของ NAS มี **nameserver เดียว = 192.168.51.64 (Pi-hole)** · `ai-cloudflared` ใช้ `dns: 1.1.1.1, 8.8.8.8` ของตัวเอง |
+| Router .1 / Pi .64 | ไม่ใช่ส่วนของแอป — router เป็นแค่เป้า `ping_network` · Pi-hole เป็น DNS ของวง LAN · ⏳ **รอปอยเพิ่ม DNS สำรองใน DSM** (10-07) | `utils/home_tools.py » def ping_network` · 🔎 DNS: app ใช้ DNS ภายในของ Docker (`127.0.0.11` · network `ui_default` · ไม่ได้ตั้ง `dns:`) ซึ่งส่งต่อให้ NAS host → `/etc/resolv.conf` ของ NAS มี **nameserver เดียว = 192.168.51.64 (Pi-hole)** · `ai-cloudflared` ใช้ `dns: 1.1.1.1, 8.8.8.8` ของตัวเอง |
 
 ## 3. คอนเทนเนอร์ (`docker-compose.yml` · ทุกตัวอยู่ใน bridge network ปริยาย)
 
@@ -156,7 +156,7 @@ HTTP `http_limits` `reqparse` · แพ็กเกจอื่น: `core/` `mem
 | `skills_db.json` (+ `.lock`) | `utils/skills.py` (`_db_lock`) | รายการ skill | ❌ (git มีแต่ตัว dev · ตัว prod อยู่ `data/`) | `utils/skills.py » def save_skill` |
 | `identity.json` | `utils/rag.py` | ตัวตนพื้นฐานทุกผู้ช่วย | ❌ (อยู่ใน git) | `utils/rag.py » IDENTITY_PATH` |
 | `dream_reports/` | `utils/dream.py` | รายงาน JSON + `.md` ลง vault | ❌ | `utils/dream.py » DREAM_REPORTS_DIR` |
-| ChromaDB (volume `chroma_data`) | ดูข้อ 6.1 | vector ทุกชนิด | ❌ ในแอป · ✅ DSM task `chroma-backup` ทุกวัน **00:00** เก็บ 7 ไฟล์ล่าสุด (ปอยเปิดดูใน DSM 10-07: รอบล่าสุด 2026-10-07 00:00:01–00:00:30 สถานะ 0) · ⚠️ คอมเมนต์ในโค้ดยังเขียน 00:01 / 04:00 | ปอยยืนยันจาก DSM (ไม่อยู่ในรีโป) · `core/scheduler.py » DSM task 00:01` · `scripts/db_backup.sh » chroma_backup 04:00` |
+| ChromaDB (volume `chroma_data`) | ดูข้อ 6.1 | vector ทุกชนิด | ❌ ในแอป · ✅ DSM task `chroma-backup` ทุกวัน **00:00** เก็บ 7 ไฟล์ล่าสุด (ปอยเปิดดูใน DSM 10-07: รอบล่าสุด 2026-10-07 00:00:01–00:00:30 สถานะ 0) · เวลาในคอมเมนต์/เอกสารตรึงด้วย `tests/test_backup_time_docs.py` | ปอยยืนยันจาก DSM (ไม่อยู่ในรีโป) · `core/scheduler.py » DSM task` · `scripts/db_backup.sh » chroma-backup` |
 | log | `core/observability.py` | `/app/logs/server.log` (หมุน 10 MB × 5) | ❌ | `core/observability.py » RotatingFileHandler` |
 | ในหน่วยความจำ | `core/state.py` · `memory/working.py` · `retrieval_cache` | share store · working memory | หายเมื่อ restart | `memory/working.py » working_memory` |
 
@@ -202,7 +202,8 @@ agent → Gemini · ต้องใช้เน็ต (`needs_internet` · regex
 | warmup | `POST /api/warmup` ตอนเปิดหน้า | อุ่น LM Studio + embed ของ Ollama | `utils/llm.py » def warm_lmstudio` · `a.ui/utils/warmup.ts » /api/warmup` |
 | `chroma-backup` (DSM) | 00:00 | DSM Task Scheduler (นอกแอป) สำรอง ChromaDB · เก็บ 7 ไฟล์ล่าสุด · ไฟล์อยู่บน NAS เครื่องเดียวกัน | ✅ ปอยยืนยันจาก DSM 10-07 (รอบ 2026-10-07 00:00:01–00:00:30 สถานะ 0) · ไม่มีในรีโป |
 
-⚠️ งานตั้งเวลาอยู่ใน**โปรเซสของ app** ⇒ คอนเทนเนอร์ดับตอน 02:00/03:30 = รอบนั้นหายไปเฉยๆ (APScheduler ไม่มี job store ถาวร · ไม่ได้ตั้ง `misfire_grace_time`)
+⚠️ งานตั้งเวลาอยู่ใน**โปรเซสของ app** ⇒ คอนเทนเนอร์ดับตอน 02:00/03:30 = รอบนั้นหายไปเฉยๆ — APScheduler 3.11 เก็บ job ในหน่วยความจำ และตอนบูต `add_job` คำนวณรอบถัดไป*จากเวลาปัจจุบัน* ⇒ **`misfire_grace_time` ช่วยไม่ได้ในเคสนี้** (ช่วยแค่ตอนแอปยังอยู่แต่ยิงช้า · ค่าปริยาย 1 วิ) · เคสคอนเทนเนอร์ดับต้องใช้ catch-up ตอนบูต (งานเปิด A2 ใน `open-work.md`) ·
+ประวัติจริง 7 คืน (09-30→10-06): Dream ยิงตรงเวลาครบ · provider `gemini` (ไม่พึ่ง PC) · สำเร็จ 6 · ข้าม 1 (ไม่มีความจำในช่วง) · ล้ม 0
 
 ## 9. Obsidian · Cloudflare · CI/deploy
 
@@ -222,7 +223,7 @@ hook `post-receive` ของ bare repo `git checkout -f main` ลง `/var/serv
 | a.ui `ci.yml` | ทุก push · มือ | checkout ui คู่ (เพื่อ `uimap.test.ts`) → `npm run precommit` (tsc + vitest) · **ไม่มี e2e** | `a.ui/.github/workflows/ci.yml » hybrid-ai-workspace` |
 
 **Deploy (มือทั้งหมด · CI ไม่ deploy):** Mac `git push origin` → NAS `git fetch && git reset --hard origin/main` → `docker restart ai-backend-1` (โค้ดในโฟลเดอร์) / `--force-recreate` (แตะ `server.py` · `.env`) / `compose build` (requirements/Dockerfile) ·
-สคริปต์ในรีโป: `scripts/deploy_nas.sh` · ⚠️ `start-ai.ps1` ยังสั่ง `docker restart hybrid-ai` (ชื่อเก่า · คอนเทนเนอร์จริงชื่อ `ai-backend-1`) (`start-ai.ps1 » docker restart hybrid-ai`)
+สคริปต์ในรีโป: `scripts/deploy_nas.sh` · `start-ai.ps1` (Windows → restart `ai-backend-1`: `start-ai.ps1 » docker restart ai-backend-1`) · ชื่อคอนเทนเนอร์/service ในสคริปต์ตรึงด้วย `tests/test_script_container_names.py`
 
 ---
 
@@ -240,7 +241,7 @@ hook `post-receive` ของ bare repo `git checkout -f main` ลง `/var/serv
 | **Cloudflare Tunnel** | ใช้จากนอกบ้าน (iPhone 4G) | ✅ ในวง LAN เข้า `http://192.168.51.49:8080` ตรงได้ | `docker-compose.yml » 8080:8000` |
 | **Cloudflare Access** | ssh `nas-cf` จากนอกวง | ✅ ในวงใช้ `ssh nas` · fallback DSM Task Scheduler | ⚪ นอกรีโป (`infra-nas.md`) |
 | **อินเทอร์เน็ตบ้าน** | Gemini ทั้งหมด · ค้นเว็บ · tunnel · Claude/Kimi | ✅ แชท local ผ่าน LAN | — |
-| **Pi-hole .64** (DNS) | 🔎 NAS มี nameserver เดียว = .64 ⇒ app resolve ชื่อภายนอกไม่ได้ → Gemini (รวมเสียง) · ค้นเว็บ · Healthchecks · HA ผ่านโดเมน · *อนุมานจาก resolv.conf ยังไม่ซ้อม* — `pihole-watchdog` สลับ DNSFilter ของ router ไป .65 แต่ NAS คุยกับ .64 ในวงเดียวกันโดยไม่ผ่าน router จึง**น่าจะไม่ได้รับผล failover** | ✅ tunnel ยังอยู่ (`cloudflared` ใช้ 1.1.1.1 เอง) · แชท local ผ่าน IP ยังได้ (Ollama/LM Studio/Chroma ตั้งเป็น IP) | `docker-compose.yml » dns:` |
+| **Pi-hole .64** (DNS) | ⏳ รอปอยเพิ่ม DNS สำรองใน DSM (10-07) · 🔎 ตอนตรวจ NAS มี nameserver เดียว = .64 ⇒ app resolve ชื่อภายนอกไม่ได้ → Gemini (รวมเสียง) · ค้นเว็บ · Healthchecks · HA ผ่านโดเมน · *อนุมานจาก resolv.conf ยังไม่ซ้อม* — `pihole-watchdog` สลับ DNSFilter ของ router ไป .65 แต่ NAS คุยกับ .64 ในวงเดียวกันโดยไม่ผ่าน router จึง**น่าจะไม่ได้รับผล failover** | ✅ tunnel ยังอยู่ (`cloudflared` ใช้ 1.1.1.1 เอง) · แชท local ผ่าน IP ยังได้ (Ollama/LM Studio/Chroma ตั้งเป็น IP) | `docker-compose.yml » dns:` |
 | **Brave** | — | ✅ ถอยไป DDG → DDG Instant Answer | `utils/websearch.py » def search_web` |
 | **Mac** | build React · deploy · ssh | ✅ prod วิ่งต่อปกติ | — |
 | **GitHub** | CI · NAS `git fetch` จาก github (ถ้า `origin` บน NAS ชี้ github) | ✅ prod วิ่งต่อ | `scripts/deploy_nas.sh » git fetch` |
@@ -251,15 +252,16 @@ hook `post-receive` ของ bare repo `git checkout -f main` ลง `/var/serv
 
 ---
 
-## 11. ข้อสังเกตที่เจอระหว่างทำผัง (ยังไม่แก้ · รอปอยเคาะว่าจะทำไหม)
+## 11. ข้อสังเกตที่เจอระหว่างทำผัง
 
-1. `infra-nas.md` เขียนปลายทาง tunnel ว่า `localhost:8080` — ของจริง `http://ai-backend-1:8000` (log cloudflared 10-07) · `skills/*.md` เขียน path vault 3 แบบ ผิดทั้งหมด (จริง `/var/services/homes/pawin/vault/homepawin`)
-2. `start-ai.ps1` สั่ง restart ชื่อคอนเทนเนอร์เก่า `hybrid-ai`
+1. ✅ `infra-nas.md` ปลายทาง tunnel แก้เป็น `http://ai-backend-1:8000` แล้ว (10-07) · ⏳ `skills/*.md` เขียน path vault 3 แบบ ผิดทั้งหมด (จริง `/var/services/homes/pawin/vault/homepawin`) → งานแยก (แก้แล้วต้อง resync ในคอนเทนเนอร์)
+2. ✅ `start-ai.ps1` แก้เป็น `ai-backend-1` + full path docker แล้ว (10-07 · เทส `test_script_container_names.py`)
 3. LINE Notify ปิดบริการแล้ว + prod ไม่ได้ตั้ง token ⇒ Dream ล้มเงียบ → จดงานเปิดแล้ว
-4. สำรองข้อมูล → จดเป็นงานเปิดแล้วใน `session-log/open-work.md` (ไฟล์สำรองอยู่บน NAS เครื่องเดียว · ยังไม่เคยลองกู้ · `skills_db.json` ไม่อยู่ในสำรองตัวไหน · เวลาในคอมเมนต์ไม่ตรงของจริง)
-5. `ui-map.md` ยังเขียนว่า "`src/app.tsx` = สำเนาเก่า" แต่ไฟล์นั้นไม่มีแล้ว (`src/` เหลือแค่ `src/test/setup.ts`) · CLAUDE.md ยังพูดถึง FAB Claude ที่ถูกตัดแล้ว
+4. สำรองข้อมูล → งานเปิดใน `session-log/open-work.md` (ไฟล์สำรองอยู่บน NAS เครื่องเดียว · ยังไม่เคยลองกู้ · `skills_db.json` ไม่อยู่ในสำรองตัวไหน) · ✅ เวลาในคอมเมนต์แก้เป็น 00:00 แล้ว (เทส `test_backup_time_docs.py`)
+5. ✅ `ui-map.md` (`src/app.tsx` ไม่มีแล้ว) · CLAUDE.md (FAB Claude ถูกตัดแล้ว) แก้แล้ว 10-07
 6. default `EMBEDDING_MODEL` ว่างใน `utils/memory.py` = MiniLM แต่ใน `utils/embed.py` = multilingual (คอมเมนต์ในโค้ดรู้อยู่แล้ว · prod ตั้งค่าไว้จึงไม่เกิด)
 7. watchdog ดูแค่ "ไม่รัน" ไม่ดู healthcheck ⇒ app ค้างแต่โปรเซสยังอยู่ = ไม่มีใครรีสตาร์ต
+8. Dream REM ได้ themes 0 ทั้ง 7 คืน (09-30→10-06 · Gemini ตอบ 200 ด้วย `{"themes":[]}` · insights แค่คืน 10-02) ⇒ `long_term_memory` ไม่โตเลย · และ `deep_sleep` ต้อง embed ผ่าน Ollama (PC) ตอนโปรโมต — เส้นนี้ไม่ได้วิ่งเลยในช่วงนี้ จึงยังไม่รู้ว่าถ้า PC ดับตอนตี 2 จะเป็นอย่างไร
 
 ## 12. เทสยึด
 

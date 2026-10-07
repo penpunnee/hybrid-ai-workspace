@@ -77,7 +77,7 @@ def start_scheduler():
         id="dream_nightly",
         replace_existing=True,
     )
-    # 03:30 — ก่อน chroma backup (DSM task 00:01 คนละตัว); ตั้งใน DSM ไม่ได้เพราะ
+    # 03:30 — ChromaDB สำรองแยกโดย DSM task `chroma-backup` 00:00 (คนละตัว · ปอยยืนยัน 10-07); ตั้งใน DSM ไม่ได้เพราะ
     # sudo จาก SSH จำกัดแค่ docker เลยฝัง job ในแอปแทน
     scheduler.add_job(
         _scheduled_db_backup,

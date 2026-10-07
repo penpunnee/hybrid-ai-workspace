@@ -36,9 +36,11 @@ if (Test-Path $lmsCLI) {
 }
 
 # ---------- 3. SSH เข้า NAS restart Docker ----------
-Write-Host "`n[3/3] Restart hybrid-ai บน NAS..." -ForegroundColor Yellow
-Write-Host "      (จะถามรหัสผ่าน NAS ค่ะ)" -ForegroundColor Gray
-ssh "${NAS_USER}@${NAS_HOST}" "sudo docker restart hybrid-ai && echo 'hybrid-ai restarted OK'"
+Write-Host "`n[3/3] Restart ai-backend-1 บน NAS..." -ForegroundColor Yellow
+# ชื่อคอนเทนเนอร์จริง = ai-backend-1 (hybrid-ai คือชื่อ service ใช้กับ docker compose เท่านั้น)
+# docker ผ่าน SSH ต้อง full path + sudo -n (non-interactive shell หา docker ใน PATH ไม่เจอ)
+# ⚠️ restart ไม่พอถ้าแก้ server.py/.env — ต้อง --force-recreate (docs/reference/infra-nas.md)
+ssh "${NAS_USER}@${NAS_HOST}" "sudo -n /usr/local/bin/docker restart ai-backend-1 && echo 'ai-backend-1 restarted OK'"
 
 Write-Host "`n========================================" -ForegroundColor Green
 Write-Host "  เสร็จแล้ว! เปิด https://ai.pawinhome.com" -ForegroundColor Green
