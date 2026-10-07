@@ -44,6 +44,7 @@
 - **เอกสาร:** `CLAUDE.md` 43.1 KB หลังย้ายรอบ 10-06 (งบ 50 · เทสคุม · เป้าว่าง ≥ 5 KB) — โตอีกให้ย้ายลง `docs/` ⛔ ห้ามขยับเพดาน
 
 ### ⚪ งานเล็กค้าง
+- **cache hit ช้า 27 วิ** (10-07 02:21:42 UTC `req_a5c402ab` · `POST /api/chat → 200 (27037ms)` แต่ `[ResponseCache] hit` sim=0.927 · บรรทัด embed ขึ้นเวลาเดียวกับ hit ⇒ ช่วงที่หายไปอยู่ก่อน embed เสร็จ) — ยังไม่สืบ · ต้องหาว่าค้างที่ไหน (embed Ollama .235 ตื่นช้า?)
 - vitest ล้มด้วย `Abort trap: 6` **ครั้งเดียว** (10-06 · pre-commit hook ของ a.ui ตอน commit · devlog [ต่อ 128] · รันซ้ำ 4 รอบไม่เกิด · ไม่รู้ต้นเหตุ) — **ถ้าเกิดซ้ำอีกให้รายงานปอยก่อนสืบ**
 `GEMINI_LIVE_MODEL` จะยกขึ้น `.env` ไหม · AnythingLLM ตกรุ่น (หรือปิดทิ้ง 3.34 GB) · โมเดล local ไม่มีใครใช้ ~14 GB ·
 `pythainlp` ไม่มีในอิมเมจ (ตั้งใจ · รันมือ: `uv run --with pythainlp==5.3.8 --with pytest python -m pytest tests/test_thaiscatter.py --noconftest` 18/18 · ต่อ 61) · `enhanced.js` map สีตามตระกูลเฉด ·

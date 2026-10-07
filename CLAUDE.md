@@ -192,7 +192,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → /scrutinize (งาน state/`await`: + `ui-reviewer` ตรวจแผน) → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy → verify prod (ยืนยันว่าเส้นที่แก้ถูกวิ่งจริง)
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
-### 🥇 งานแรกเซสชันหน้า → ① `gh run list` สองรีโป → ② ถ้าปอยลอง checklist [ต่อ 138] (สถานะ pill · 2 ข้อ) → เช็ค log prod ก่อนติ๊ก → ③ เลือกงานจาก open-work
+### 🥇 งานแรกเซสชันหน้า → ① `gh run list` สองรีโป → ② เลือกงานจาก open-work (checklist [ต่อ 138] ผ่านแล้ว 10-07)
 ✅ รอบ 11 (10-06): overlay ไม่เติมธงเมื่อมี React · `initialCbSkills` (Web Search/Code ไม่จำ · Plan/Reflect จำ · obsidian ค้างถูกกรอง) deploy แล้ว (ui `2781925` · a.ui `dc6fa24` · bundle `index-xgwILWpi.js` · `enhanced.js?v=20261006-832e6c84`) — devlog [ต่อ 138] ·
 อ่าน devlog **[10-06 ต่อ 138]** ก่อน (⛔ เฉลยการพิสูจน์ `ui-reviewer` [126] ห้ามย้ายมาไว้ในไฟล์นี้) ·
 ✅ รอบ 10 (10-06): CI ที่ค้างจาก Actions ล่ม rerun เขียวครบ · พื้นที่แตะ 🌙 🤖 📌 🗑️ 26×44 deploy แล้ว + iPhone 4 ข้อผ่าน (bundle `index-BIjCvrjS.js` · `enhanced.js?v=20261006-10662033`) ·
