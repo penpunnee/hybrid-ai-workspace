@@ -85,10 +85,13 @@ Internet → Cloudflare → NAS (192.168.51.49:8080)
                               ↓
                          Docker: ai-backend-1
                               ↓
-                    ChromaDB (192.168.51.49:8000)
+                    ChromaDB (chromadb:8000 ผ่าน docker network · บน NAS = localhost:8000)
                     LM Studio PC (192.168.51.235:1234) ← local หลัก
                     Ollama PC   (192.168.51.235:11434) ← fallback
 ```
+
+⚠️ ChromaDB bind `127.0.0.1:8000` บน NAS (2026-10-07) — **จาก LAN/Mac เข้าไม่ได้แล้ว**
+เช็คบน NAS: `curl http://localhost:8000/api/v2/heartbeat` · หรือ `sudo docker exec ai-backend-1 ...` (ต่อด้วยชื่อ `chromadb`)
 
 ## Auth System
 

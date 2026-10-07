@@ -26,8 +26,11 @@ from core.config import SKILLS_DIR
 
 # ── สิ่งที่เลิกใช้แล้ว → เหตุผล (ต้องมีหลักฐานวันที่เสมอ ไม่ใส่ของที่ยังไม่ยืนยัน) ──
 # ⚠️ ห้ามใส่ `llama3` — Ollama เป็น dormant fallback แต่โมเดลมันยังเป็น llama3 จริง
-# ⚠️ ห้ามใส่ `192.168.51.49:8000` — นั่นคือ ChromaDB ที่ถูกต้อง (แอปคือ :8080)
 BANNED = {
+    r"192\.168\.51\.49:8000": (
+        "ChromaDB bind 127.0.0.1:8000 บน NAS แล้ว เข้าจาก LAN ไม่ได้ — ใช้ localhost:8000 บน NAS"
+        " หรือ docker exec ai-backend-1 (ชื่อ chromadb) 2026-10-07"
+    ),
     r"deepseek[-/]deepseek-r1|deepseek-r1-0528": (
         "โมเดล local เปลี่ยนเป็น qwen/qwen3.5-9b แล้ว 2026-07-05"
     ),

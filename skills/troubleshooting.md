@@ -20,10 +20,16 @@ sudo docker logs ai-backend-1 --tail 30
 
 ## ChromaDB Error
 
+⚠️ ตั้งแต่ 2026-10-07 ChromaDB bind `127.0.0.1:8000` บน NAS เท่านั้น — **จาก LAN/Mac เข้าไม่ได้แล้ว**
+(curl ไป IP ของ NAS พอร์ต 8000 จะ connection refused เสมอ ไม่ได้แปลว่า Chroma ล่ม)
+
 ```bash
-# ตรวจ ChromaDB container
+# ตรวจ ChromaDB container (บน NAS)
 sudo docker ps | grep chroma
-curl http://192.168.51.49:8000/api/v2/heartbeat
+curl http://localhost:8000/api/v2/heartbeat        # รันบน NAS (ssh nas ก่อน)
+
+# หรือเช็คจากมุมของ backend (ต่อด้วยชื่อ service `chromadb` ผ่าน docker network)
+sudo docker exec ai-backend-1 python -c "import chromadb; print(chromadb.HttpClient(host='chromadb', port=8000).heartbeat())"
 
 # ถ้า ChromaDB ไม่มี → ระบบ fallback ใช้ SQLite อัตโนมัติ
 ```
