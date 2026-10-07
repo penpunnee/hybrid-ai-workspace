@@ -1,5 +1,21 @@
 ---
 
+## [2026-10-07 ต่อ 140] ปิดเซสชันรอบ 11 · งานถัดไป = ผังโครงสร้างทั้งระบบ `docs/system-map.md`
+
+**รอบนี้:** [ต่อ 138] overlay จำสถานะ pill แก้+deploy (ui `2781925` · a.ui `dc6fa24`) · checklist iPhone 2 ข้อผ่าน (ปอย + log prod 10-07) ·
+[ต่อ 139] `/api/warmup` อุ่น embed ของ Ollama (`4ce57a1`) · ⏳ รอ log `[Embed] อุ่นเครื่อง … N วิ` หลัง PC ตื่นครั้งแรก
+
+**งานถัดไป (ปอยสั่ง 10-07):** ทำ `docs/system-map.md` — ผังโครงสร้างทั้งระบบ (ยังไม่มีไฟล์ · ยังไม่ได้วางขอบเขต/รูปแบบ — เซสชันหน้าเสนอโครงให้ปอยเคาะก่อนเขียน) ·
+ของที่มีอยู่แล้วให้ชี้ไป ไม่ก๊อปซ้ำ: `docs/ui-map.md` (ใครเป็นเจ้าของส่วนบนจอ) · `docs/reference/architecture.md` (request flow · routing · memory) · `docs/reference/infra-nas.md` · `CONTEXT.md` (glossary)
+· ⚠️ ไฟล์ใหม่ใน `docs/` ไม่ถูกฉีด context ⇒ ไม่กินงบ 50 KB ของ CLAUDE.md (ใส่แค่บรรทัดชี้ในตาราง 🗺️)
+
+**ปิดเซสชัน:** working tree สะอาดทั้งสองรีโป · push ครบ (ui `origin` · a.ui `origin`+`github` = `dc6fa24`) · ลบไฟล์ชั่วคราวใน `/tmp` + probe ในคอนเทนเนอร์แล้ว ·
+NAS ui ตาม `origin/main` · `static/assets/@eaDir/` บน NAS = โฟลเดอร์ thumbnail ของ Synology (ไม่ใช่ของเรา ไม่แตะ) · CI เขียว
+
+📊 เซสชัน 10-06 19:10 → 10-07 ~10:05 · ui-reviewer diff 1 · มือ: ✅ 2 ข้อ (pill)
+
+---
+
 ## [2026-10-07 ต่อ 139] แชทแรกหลัง PC ตื่นรอ embed 27 วิ → `/api/warmup` อุ่นโมเดล embed ของ Ollama ด้วย (`4ce57a1`)
 
 **สืบ (log prod UTC):** `req_a5c402ab` 02:21:15→02:21:42 cache hit · ระหว่างทางมีแค่ `POST .235:11434/api/embed` 1 ครั้ง (httpx log ตอนได้คำตอบ) ⇒ 27 วิอยู่ที่ embed ·
