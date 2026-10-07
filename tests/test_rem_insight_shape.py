@@ -44,9 +44,21 @@ def test_มีทั้ง_summary_และ_text_ใช้_summary(monkeypatch
     assert r["insights"] == ["หลัก"]
 
 
-def test_object_แบบอื่น_กลายเป็น_JSON_string(monkeypatch):
+def test_object_key_อื่น_ดึงข้อความออกมา(monkeypatch):
+    """ปอยเคาะ 10-07: ทดลอง REM 600 ตัวอักษรได้ `{"user": "User's tech stack ..."}` 2/2 รอบ
+    — เดิมกลายเป็น JSON string ทั้งก้อน (`{"user": ...}` โผล่ในรายงาน) ⇒ ดึงข้อความจากทุก key"""
     r = _rem(monkeypatch, '{"themes":[],"insights":[{"user":"ปอย"}],"connections":[]}')
-    assert r["insights"] == ['{"user": "ปอย"}'], "ต้องเป็น JSON ภาษาไทยอ่านออก (ensure_ascii=False)"
+    assert r["insights"] == ["ปอย"]
+
+
+def test_object_หลาย_key_รวมข้อความทุกตัวตามลำดับ(monkeypatch):
+    r = _rem(monkeypatch, '{"themes":[],"insights":[{"category":"stack","fact":"ใช้ React","n":2}],"connections":[]}')
+    assert r["insights"] == ["stack — ใช้ React"], "ข้อความทุก key ตามลำดับ · ค่าที่ไม่ใช่ข้อความข้ามไป"
+
+
+def test_object_ไม่มีข้อความเลย_ยังเป็น_JSON_string(monkeypatch):
+    r = _rem(monkeypatch, '{"themes":[],"insights":[{"n":2,"ok":true}],"connections":[]}')
+    assert r["insights"] == ['{"n": 2, "ok": true}'], "ไม่มีข้อความให้ดึง → JSON (ต้องเป็น str เสมอ กันจอขาว)"
 
 
 def test_summary_ที่ไม่ใช่ข้อความ_กลายเป็น_JSON_string(monkeypatch):

@@ -213,6 +213,10 @@ def _insight_text(item) -> str:
         for key in ("summary", "text"):
             if isinstance(item.get(key), str):
                 return item[key]
+        # key อื่น (`{"user": "..."}` · ทดลอง 10-07 ได้ 2/2 รอบ) → รวมข้อความทุก key ตามลำดับ
+        texts = [v for v in item.values() if isinstance(v, str) and v.strip()]
+        if texts:
+            return " — ".join(texts)
     return json.dumps(item, ensure_ascii=False)
 
 
@@ -222,6 +226,24 @@ def _normalize_insights(value) -> list[str]:
     if not isinstance(value, list):
         value = [value]
     return [_insight_text(i) for i in value]
+
+
+# เหตุผลเมื่อ REM ได้ 0 ธีม (parse ผ่าน) — ต้องไม่หน้าตาเหมือนพัง (ปอยเคาะ 10-07)
+# ทดลอง 300 vs 600 ตัวอักษรกับความจำ 7 คืนจริง 24 รอบ = 0 ธีมทุกรอบ: เนื้อหาเป็นเกม/นิยาย/ค้นเว็บ/แชท
+# ซึ่งตัดตามกติกา 09-30 ทั้งหมด ⇒ long_term_memory ไม่โตเป็นผลที่คาดไว้
+_REM_EMPTY_REASON = (
+    "AI ไม่พบความรู้ถาวรที่ผ่านเกณฑ์ — ปกติ ไม่ใช่ error "
+    "(กติกา 09-30: ไม่เก็บความรู้ทั่วไปจากเน็ต · เนื้อหาเกม · แชททั่วไป)"
+)
+
+
+def _with_status(result: dict) -> dict:
+    """parse ผ่านแล้ว → ติดสถานะ ok / no_durable_knowledge"""
+    if result.get("themes"):
+        result["status"], result["reason"] = "ok", ""
+    else:
+        result["status"], result["reason"] = "no_durable_knowledge", _REM_EMPTY_REASON
+    return result
 
 
 def rem_sleep(memories: list[dict], provider: str = "auto") -> dict:
@@ -337,7 +359,7 @@ def rem_sleep(memories: list[dict], provider: str = "auto") -> dict:
         # ได้ 0 ธีมเป็นเรื่องปกติ (prompt สั่งไว้) แต่ถ้าไม่เก็บคำตอบดิบ จะแยก "AI ตอบว่าง"
         # ออกจาก "ตอบแปลกแต่ parse ผ่าน" ไม่ได้ — วัด 09-30 ต้องยิงซ้ำเองถึงรู้
         if not result.get("themes"):
-            logger.info(f"Dream/REM: 0 themes, raw={raw[:500]!r}")
+            logger.info(f"Dream/REM: 0 themes — {_REM_EMPTY_REASON} · raw={raw[:500]!r}")
 
     # ให้ router resolve "auto" → LMStudio/DeepSeek/Gemini/Ollama (single source of truth)
     if provider == "auto":
@@ -355,17 +377,24 @@ def rem_sleep(memories: list[dict], provider: str = "auto") -> dict:
 
     logger.info(f"Dream/REM: Analyzing {len(memories)} memories (provider={provider}, model={model_override or 'default'})")
 
+    # สถานะเมื่อล้ม: LLM โยนทั้งสองรอบ = llm_error (เช่น 429 quota) · ได้คำตอบแต่อ่านไม่ได้ = parse_failed
+    # (เดิมทั้งสองแบบออกมาเป็น `themes: []` + `raw` เหมือนกัน — เจอจริงตอนทดลอง 10-07)
+    errors: list[str] = []
+    got_text = False
+
     # Attempt 1 — full prompt
     try:
         response = "".join(stream_response(messages, provider=provider, model_override=model_override))
+        got_text = True
         result = _try_parse(response)
         if result:
             logger.info(f"Dream/REM: Found {len(result.get('themes', []))} themes")
             _log_if_empty(result, response)
-            return result
+            return _with_status(result)
         logger.warning(f"Dream/REM: attempt 1 failed to parse, raw={response[:200]}")
     except Exception as e:
         logger.error(f"Dream/REM attempt 1 error: {e}")
+        errors.append(f"{type(e).__name__}: {e}"[:200])
         response = ""
 
     # Attempt 2 — simplified prompt (fallback)
@@ -379,16 +408,23 @@ def rem_sleep(memories: list[dict], provider: str = "auto") -> dict:
             )},
         ]
         response2 = "".join(stream_response(simple_msgs, provider=provider, model_override=model_override))
+        got_text = True
         result = _try_parse(response2)
         if result:
             logger.info(f"Dream/REM: attempt 2 succeeded — {len(result.get('themes', []))} themes")
             _log_if_empty(result, response2)
-            return result
+            return _with_status(result)
         logger.warning(f"Dream/REM: attempt 2 also failed, raw={response2[:200]}")
     except Exception as e:
         logger.error(f"Dream/REM attempt 2 error: {e}")
+        errors.append(f"{type(e).__name__}: {e}"[:200])
 
-    return {"themes": [], "insights": [], "connections": [], "raw": response[:500]}
+    if got_text:
+        status, reason = "parse_failed", "AI ตอบแต่อ่านเป็น JSON ไม่ได้ (ดู raw)"
+    else:
+        status, reason = "llm_error", "เรียก AI ไม่สำเร็จ: " + " · ".join(errors)
+    return {"themes": [], "insights": [], "connections": [], "raw": response[:500],
+            "status": status, "reason": reason}
 
 
 # ---------- Phase 2.5: Memory Decay ----------
@@ -811,6 +847,7 @@ created: {datetime.now().isoformat()}
 
 ## Phase 2: REM Sleep
 **Themes Found:** {len(report.get('phase2_rem', {}).get('themes', []))}
+{("**สถานะ:** " + report['phase2_rem']['reason'] + chr(10)) if report.get('phase2_rem', {}).get('reason') else ''}
 
 ### Themes
 """

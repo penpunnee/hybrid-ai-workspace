@@ -167,7 +167,7 @@ HTTP `http_limits` `reqparse` · แพ็กเกจอื่น: `core/` `mem
 | `memory_<slug>` (episodic ต่อผู้ช่วย) | แชท `remember` · เสียง `remember_voice_turn` | recall · Dream light_sleep · cleanup | `memory/store.py » def save_entry` · `memory/dualvec.py » def is_episodic_collection` |
 | `<ชื่อ>__keys` (shadow keys) | `memory/dualvec.py` | key_hits | `memory/dualvec.py » _KEYS_SUFFIX` |
 | `user_facts` | `memory.teach` | `search_user_facts` | `memory/store.py » user_facts` |
-| `long_term_memory` | Dream `deep_sleep` | recall · summary | `utils/dream.py » long_term_memory` |
+| `long_term_memory` | Dream `deep_sleep` (**long_term_memory ไม่โต = ผลที่คาดไว้** ตามการตัดสินของปอย 09-30 · ทดลอง 10-07 0 ธีม 24/24 · รายละเอียดที่หัวข้อ Dream Cycle ใน `architecture.md`) | recall · summary | `utils/dream.py » long_term_memory` · `utils/dream.py » _REM_EMPTY_REASON` |
 | `lessons` · `preferences` | แชท `_learn` (เธรดเบื้องหลัง) | ฉีดเข้า context | `utils/memory.py » def save_lesson` · `utils/memory.py » def save_preference` |
 | `documents` | upload (vector จาก `utils/embed.py` ส่งเข้าเอง) | `retrieve_chunks` | `utils/documents.py » def retrieve_chunks` |
 | `obsidian_notes` | `sync_vault` | chat `obsidian_inject` · agent tool · `/api/vault/search` | `utils/obsidian_sync.py » COLLECTION_NAME = "obsidian_notes"` |

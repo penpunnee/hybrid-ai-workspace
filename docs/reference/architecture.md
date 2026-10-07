@@ -146,6 +146,10 @@ Response headers: `X-Request-Id`, `X-Provider-Used`, `X-Model-Used`
 - Phase 2.5 Decay: lower confidence of stale memories
 - Phase 3 Deep: promote themes (count ≥ `DREAM_PROMOTE_MIN_HITS`, default 2) → `skills_db.json` + `long_term_memory`
 - Report: `dream_reports/dream_YYYYMMDD_HHMMSS.json`
+- **long_term_memory ไม่โต = ผลที่คาดไว้** ตามการตัดสินของปอยเมื่อ 09-30 (ไม่เก็บความรู้ทั่วไปจากเน็ต · เนื้อหาเกม · personal fact ไป `user_facts` ผ่าน "จำไว้ว่า" เท่านั้น) —
+  ทดลอง 10-07 (อ่านอย่างเดียว · ความจำ 7 คืนจริง · 300 vs 600 ตัวอักษร · 24 รอบ) ได้ 0 ธีมทุกรอบ: เนื้อหาเป็นเกม/นิยาย/ค้นเว็บ/ขอโค้ดตัวอย่าง/ทักทาย ·
+  ส่งเต็มข้อความไม่ช่วย · ดูข้ามวันก็ไม่ช่วย (เนื้อหาชนิดเดียวกัน) ⇒ อย่าไล่แก้ prompt ให้ได้ธีม ·
+  report มี `phase2_rem.status`: `ok` · `no_durable_knowledge` (ปกติ + `reason`) · `parse_failed` · `llm_error` (เช่น 429) — สองตัวหลังคือของพังจริง
 
 ### Caches (Phase E)
 | Layer | Storage | TTL/Size | Threshold |
