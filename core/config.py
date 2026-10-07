@@ -104,7 +104,7 @@ OBSIDIAN_VAULT_PATH = env_str("OBSIDIAN_VAULT_PATH", "", group=_G,
                                   "⛔ docker-compose `environment:` ทับค่านี้ — ตั้งใน .env ไม่มีผลบน prod")
 NAS_DATA_PATH       = env_str("NAS_DATA_PATH", os.path.join(PROJECT_ROOT, "data"), group=_G,
                               doc="โฟลเดอร์ข้อมูลถาวร (cache DB · reader.db · skills_db.json) ที่มองเห็นจาก*ในคอนเทนเนอร์*\n"
-                                  "⛔ docker-compose `environment:` pin เป็น /app/data — ตั้งใน .env ไม่มีผลในคอนเทนเนอร์\n"
+                                  "⛔ docker-compose `environment:` pin ค่านี้ไว้แล้ว (= โฟลเดอร์ data ในคอนเทนเนอร์) — ตั้งใน .env ไม่มีผลในคอนเทนเนอร์\n"
                                   "(compose ใช้ชื่อนี้ใน .env เป็น path ฝั่ง host ของ volume `${NAS_DATA_PATH:-./data}` เท่านั้น)")
 
 # skills_db.json อยู่ใต้ NAS_DATA_PATH (2026-10-07 · devlog [ต่อ 146]–[148])
