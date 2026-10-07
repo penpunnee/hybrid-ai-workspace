@@ -1,5 +1,35 @@
 ---
 
+## [2026-10-07 ต่อ 141] ผังทั้งระบบ `docs/system-map.md` + เทสยึด · ปิด 🟡 ด้วยการตรวจ prod · A1/B/C · ทดลอง REM · สถานะ REM
+
+**ผังระบบ (`f2f2597` · `756e8bf`):** Explore 4 ตัวขนาน (infra · backend/DB/งานตั้งเวลา · LLM/Obsidian · React/overlay) → Mermaid + ตาราง + "ถ้า X ล่ม" ·
+ตัวยึด `ไฟล์ » ข้อความ` 127 ตัว · เทส `tests/test_system_map_anchors.py` (ตัวยึด + backtick ที่มี » ต้องอ่านได้ + ผังครบ: router/WS/add_job id/service/collection ดึงจากโค้ดด้วย ast/yaml) ·
+a.ui `utils/uimap.test.ts` ตรวจตัวยึด `a.ui/` (`ed21948`) · แดงก่อนแก้: router feedback ไม่มีตัวยึด · ui-reviewer ชี้ "ตัวยึดผิดรูปหลุดเงียบ" → เจอจริง `Dockerfile` (regex เดิมบังคับนามสกุล) · mutation 7/7 + 3/3
+
+**ปิด 🟡 (อ่านอย่างเดียว · ค่าลับรายงานแค่ ตั้ง/ไม่ตั้ง):** tunnel → `http://ai-backend-1:8000` (log cloudflared · `infra-nas.md` เขียน localhost:8080 ผิด · `config.yml` อ่านตรงไม่ได้ sudo จำกัด docker) ·
+LM Studio chat/reason/vision = `qwen/qwen3.5-9b` · `HEARTBEAT_URL` ตั้งแล้ว · `LINE_NOTIFY_TOKEN` ไม่ได้ตั้ง + LINE Notify ปิดบริการ 31 มี.ค. 2025 (ทางการ) ⇒ Dream ล้มเงียบ (งานเปิด) ·
+vault: Mac push → bare repo `git/homepawin.git` → `post-receive` checkout ลง `vault/homepawin` + `POST /api/vault/sync` · chroma-backup DSM 00:00 (ปอยดู DSM) ·
+⚠️ NAS มี nameserver เดียว = Pi-hole .64 (failover ของ router น่าจะไม่ถึง NAS) → ⏳ ปอยเพิ่ม DNS สำรองใน DSM เอง
+
+**A1 (`be57494`):** `misfire_grace_time=3600` ให้ `dream_nightly` + `db_backup_nightly` (ค่าปริยาย 1 วิ) · ⚠️ ไม่ครอบเคสคอนเทนเนอร์ดับ (memory job store · บูตคำนวณรอบถัดไปจากตอนนี้ — อ่านซอร์ส APScheduler 3.11.3) → A2 งานเปิด ความสำคัญต่ำ ·
+Dream 7 คืน 09-30→10-06: ตรงเวลาครบ · `gemini` (ไม่พึ่ง PC) · สำเร็จ 6 ข้าม 1 ล้ม 0 ⇒ สมมติฐาน "PC ดับตอนตี 2" ไม่ใช่ ·
+**B+C (`71f30ef`):** `start-ai.ps1` → `sudo -n /usr/local/bin/docker restart ai-backend-1` (เทส `test_script_container_names.py`) · เวลาสำรอง Chroma 00:00 ใน 3 ที่ (เทส `test_backup_time_docs.py`) · infra-nas/ui-map/CLAUDE.md FAB ·
+เทสผังแดงเองตอนแก้ B (ผังยังอ้างคำสั่งเก่า) = ทำงานตามที่ตั้งใจ
+
+**ทดลอง REM 300 vs 600 ตัวอักษร (อ่านอย่างเดียว · ในคอนเทนเนอร์ · Chroma `.get()` เท่านั้น):** 7 คืน × 2 แบบ × 2 รอบ = **0 ธีม 24/24** · insight แค่ 10-02 (React/Tailwind/OpenClaw) ·
+ความจำ 49 ข้อ = เกม ~18 · นิยาย ~10 · ค้นเว็บ ~3 · ขอโค้ดตัวอย่าง 8 · ออกแบบ UI 5 · ทักทาย ~5 ⇒ ตัดตามกติกา 09-30 ทั้งหมด = 0 ธีมถูกต้อง ·
+quota: 24 call สำเร็จ (in 40,538 / out 356 token) · ⚠️ รอบแรกยิงรวดโดน **429 RPM (free tier 15/นาที/โมเดล)** 16 ครั้ง ~30 วิ — log prod ช่วงนั้น /api/chat 0 · 429 0 ⇒ ไม่กระทบผู้ใช้ → กฎใหม่ CLAUDE.md 🔑 Gemini
+
+**สถานะ REM (`b358c57`):** `phase2_rem.status` = `ok` · `no_durable_knowledge` (+ reason อ้าง 09-30) · `parse_failed` · `llm_error` (เดิม 429 กับ "อ่านไม่ได้" หน้าตาเหมือนกัน) · log 0 ธีม + `.md` ใน vault บอกเหตุผล ·
+`_insight_text` dict key อื่น → รวมข้อความทุก key · จด "long_term_memory ไม่โต = คาดไว้" ใน architecture.md + system-map · แดงก่อนแก้ 9 · mutation 6/6 (รอบแรกรอด 2 = เทสอ่อน → เสริม) ·
+deploy `docker restart` (server.py inode ตรง 287523) · ตรวจฟังก์ชันใหม่ในคอนเทนเนอร์แล้ว · ⏳ รายงานจริงครั้งแรก 10-08 02:00
+
+**ปิดเซสชัน:** ui `b358c57`+devlog · a.ui `ed21948` (`origin`+`github`) · ลบ `/tmp/mutsm/` แล้ว · ไม่มีไฟล์ค้างใน prod
+
+📊 10-07 ~10:10 → ~12:40 · Explore 5 · ui-reviewer 1 (diff · 1 ควรพิจารณา แก้แล้ว) · investigator 0 · mutation 7/7 · 3/3 · 3/3 · 3/3 · 4/4 · 6/6 · มือ: ไม่มี (ปอยดู DSM 1 ครั้ง)
+
+---
+
 ## [2026-10-07 ต่อ 140] ปิดเซสชันรอบ 11 · งานถัดไป = ผังโครงสร้างทั้งระบบ `docs/system-map.md`
 
 **รอบนี้:** [ต่อ 138] overlay จำสถานะ pill แก้+deploy (ui `2781925` · a.ui `dc6fa24`) · checklist iPhone 2 ข้อผ่าน (ปอย + log prod 10-07) ·
