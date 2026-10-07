@@ -43,6 +43,10 @@ HEARTBEAT_ATTEMPTS = env_int("HEARTBEAT_ATTEMPTS", 3, group=_G, doc=(
     "ยิงซ้ำเฉพาะ \"พังชั่วคราว\" (ต่อไม่ติด / HTTP 5xx) — ไม่ยิงซ้ำเมื่อ body ผิดหรือ 4xx\n"
     "เพราะนั่นคือความผิดถาวร (uuid พิมพ์ผิด/check ถูกลบ) ยิงอีกกี่ครั้งก็ได้คำตอบเดิม"))
 HEARTBEAT_RETRY_WAIT = env_float("HEARTBEAT_RETRY_WAIT", 10.0, group=_G, doc="วินาทีระหว่างการยิงซ้ำ")
+# Dream 02:00 เป็น check แยก — ช่องแจ้งเดิม (LINE Notify) ปิดบริการแล้ว ⇒ ไม่มีตัวนี้ Dream ล้มเงียบ
+DREAM_HEARTBEAT_URL = env_str("DREAM_HEARTBEAT_URL", "", group=_G, doc=(
+    "check ของ Dream 02:00 (แยกจาก backup) · สำเร็จ/ข้ามเพราะไม่มีความจำ = ยิง · ล้ม = ยิง <URL>/fail\n"
+    "ตั้ง check แบบ cron `0 2 * * *` Asia/Bangkok + grace ~3 ชม. · ว่าง = ปิดเงียบ (ไม่ถอยไปใช้ HEARTBEAT_URL)"))
 
 # body ที่ถือว่าปลายทางรับรู้จริง — healthchecks.io ตอบ "OK" ตัวเดียวเป๊ะ
 # (อย่าเปลี่ยนเป็น startswith เด็ดขาด — ดู docstring หัวไฟล์)
@@ -130,3 +134,15 @@ def ping(url: str | None = None, timeout: float | None = None,
     logger.error("[heartbeat] ยิงไม่สำเร็จหลังลอง %d ครั้ง (%s): %s",
                  tries, _redact(target), last)
     return False
+
+
+def ping_check(url: str, *, fail: bool = False) -> bool:
+    """ยิง check ที่ระบุ**เท่านั้น** — ว่าง = ไม่ยิง (ต่างจาก `ping()` ที่ถอยไปใช้ HEARTBEAT_URL)
+
+    ใช้กับ check ที่ไม่ใช่ backup (เช่น Dream) — ถ้าเรียก `ping(url="")` ตอนยังไม่ได้ตั้ง
+    จะไปยืนยันแทน check ของ backup ผิดตัว · `fail=True` → `<URL>/fail` ให้ปลายทางเตือนทันที
+    """
+    base = (url or "").strip().rstrip("/")
+    if not base:
+        return False
+    return ping(url=f"{base}/fail" if fail else base)
