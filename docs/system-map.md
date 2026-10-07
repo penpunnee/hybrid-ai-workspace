@@ -97,7 +97,7 @@ flowchart LR
 | service → container | image / พอร์ต | จุดสำคัญ | หลักฐาน |
 |---|---|---|---|
 | `hybrid-ai` → `ai-backend-1` | `build: .` (python:3.11-slim + poppler · ลงจาก `requirements.lock`) · `8080:8000` | `mem_limit: 2g` · healthcheck `/api/config` · โค้ด mount เป็นโฟลเดอร์ (เห็นของใหม่ทันที) ยกเว้น **`server.py` mount ไฟล์เดี่ยว** ⇒ ต้อง `--force-recreate` · `environment:` ทับ `env_file:` (`DB_PATH` · `OBSIDIAN_VAULT_PATH=/vault` · `LOG_FILE`) · `mcp_server.py` ไม่ได้ mount (ติดมากับอิมเมจ) | `docker-compose.yml » ./server.py:/app/server.py` · `docker-compose.yml » OBSIDIAN_VAULT_PATH=/vault` · `Dockerfile » requirements.lock` |
-| `chromadb` → `chromadb` | `chromadb/chroma@sha256:…` (ตรึง digest) · `8000:8000` | volume `chroma_data` · ไม่มีใน backup ของแอป | `docker-compose.yml » chromadb/chroma@sha256` |
+| `chromadb` → `chromadb` | `chromadb/chroma@sha256:…` (ตรึง digest) · `127.0.0.1:8000:8000` (LAN เข้าไม่ได้ · backend ใช้ชื่อ `chromadb` · 10-07) | volume `chroma_data` · ไม่มีใน backup ของแอป | `docker-compose.yml » chromadb/chroma@sha256` |
 | `cloudflared` → `ai-cloudflared` | `cloudflare/cloudflared:latest` | `tunnel … run ai-workspace` · config อยู่บน NAS `~/.cloudflared/config.yml` (ไม่อยู่ในรีโป) | `docker-compose.yml » run ai-workspace` |
 | `backend-watchdog` → `ai-backend-watchdog` | `docker:cli` | ทุก 60 วิ ถ้า `ai-backend-1` ไม่รัน → `docker compose up -d hybrid-ai` | `docker-compose.yml » ai-backend-watchdog` |
 

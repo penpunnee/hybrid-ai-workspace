@@ -66,7 +66,8 @@ ssh pawin@192.168.51.49 "sudo -n /usr/local/bin/docker compose -f /var/services/
 
 ## Ports & Hosts
 - **FastAPI app**: `192.168.51.49:8080` (mapped จาก container `:8000`) — NOT 8000!
-- **ChromaDB**: `192.168.51.49:8000` — ใช้ `/api/v2/heartbeat` (v1 → 410 Gone)
+- **ChromaDB**: bind **`127.0.0.1:8000` บน NAS เท่านั้น** (2026-10-07 · เข้าจาก LAN/Mac ไม่ได้) — backend ต่อด้วย `CHROMA_HOST=chromadb` (NAS `.env`) ·
+  เช็คบน NAS: `ssh nas curl -s localhost:8000/api/v2/heartbeat` (v1 → 410 Gone) · งานที่แตะ Chroma (`scripts/backfill_keys.py` ฯลฯ) รันใน `docker exec ai-backend-1`
 - **Ollama**: `192.168.51.235:11434` (PC) — model `llama3`. ⚠️ port 11434 ไม่ใช่ 1234
 - **LMStudio**: `192.168.51.235:1234` (PC เดียวกับ Ollama) — เปิด LMStudio app + Start Server. มี gemma-4-e4b, llama-3.2-11b-vision ฯลฯ
   - **context เริ่มต้น = 16384** (2026-10-04 · devlog ต่อ 77) — `C:\Users\penpu\.lmstudio\settings.json` → `defaultContextLength`

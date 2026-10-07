@@ -1,5 +1,22 @@
 ---
 
+## [2026-10-07 ต่อ 145] ChromaDB bind 127.0.0.1:8000 (ขั้น 2) · ถอด tunnel · HA/n8n ไม่ใช้ Chroma · start.ps1 เลิกใช้
+
+**ปอยเคาะ:** ไม่เอา tunnel ทั้ง (ก) เปิด forward และ (ข) relay → ลบ `com.pawin.chroma-tunnel.plist.disabled` + log + `brew uninstall autossh` · ไม่ลงทะเบียน MCP
+**ตรวจผู้ใช้ (อ่านอย่างเดียว):** n8n **ไม่มีในระบบ** (ไม่มีใน docker NAS/Pi · ไม่มีใครเปิด 5678 · คำนี้มีแค่ในบันทึกของเราเอง) ·
+HA 2026.9.4 ผ่าน API (ยืม `HA_TOKEN` ของ jarvis ในคอนเทนเนอร์ · GET ล้วน · ไม่พิมพ์ token): ไม่มี rest/rest_command/command_line/scrape · states/services/config_entries ไม่อ้าง `8000`/`chroma` · automation+script 10/10 ไม่อ้าง · add-on อ่านไม่ได้ (401) ·
+`start.ps1` แก้ล่าสุด 04-23 ไม่มีใครเรียก → หัวไฟล์บอกเลิกใช้ (ยังไม่ลบ)
+**ขั้น 2 (`fc16d51` · 20:37):** เทส `tests/test_chroma_port_bind.py` แดงก่อนแก้ · mutant 3/3 · ชุดเต็ม 2884 passed · compose `127.0.0.1:8000:8000` → `up -d --no-deps chromadb` ·
+verify: Mac → `.49:8000` ต่อไม่ได้ (curl 7 · nc closed) · NAS `curl localhost:8000` 200 · NAS → `192.168.51.49:8000` refused · `docker port` = `127.0.0.1:8000` · backend healthy ·
+จำนวนเอกสาร 11 collection ก่อน=หลัง · `/api/memory/stats` available 377 · log ไม่มี error Chroma · `backfill_keys.py` dry-run ในคอนเทนเนอร์ผ่าน · inode `server.py` ไม่เปลี่ยน
+**สคริปต์/เอกสาร:** `probe_live.sh` ยิง heartbeat บน NAS ผ่าน ssh (`NAS_SSH`) · `backfill_keys.py` default `chromadb` + วิธี docker exec · Mac `.env` มี comment ว่า Chroma เข้าจาก LAN ไม่ได้ (ไม่ commit) ·
+infra-nas · architecture · system-map · CLAUDE.md · security-accepted-risks (chromadb = ลดความเสี่ยงแล้ว)
+⏳ skills `troubleshooting.md:26` + `project-architecture.md:88` ยังอ้าง `192.168.51.49:8000` (ขวัญอาจแนะนำคำสั่งที่ใช้ไม่ได้) — แก้ต้อง cp `data/skills` + resync ในคอนเทนเนอร์ · ยังไม่ได้ทำ
+
+📊 10-07 18:45 → 20:45 · subagent 0 · ui-reviewer 0 (infra ล้วน) · mutation 3/3
+
+---
+
 ## [2026-10-07 ต่อ 144] ปิดพอร์ต Chroma 8000 ขั้น 1 (backend → service name) · pin h2 · tunnel Mac ติด sshd
 
 **h2 (`fix(deps): pin h2==4.4.1`):** pin กลับตามที่ปอยเคาะ = ตัวที่อิมเมจ prod ลงอยู่ ⇒ ไม่ rebuild
