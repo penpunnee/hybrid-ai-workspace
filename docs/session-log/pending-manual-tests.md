@@ -3,9 +3,10 @@
 > อ่านเมื่อ: เลือกงานถัดไป · ปอยรายงานผลทดสอบ · ก่อนแตะฟีเจอร์ที่อยู่ในรายการ (ทดสอบผ่าน/ตกแล้ว → ลบหรือย้ายลง devlog)
 
 ### 🧪 รอ user ทดสอบด้วยมือ
-**ใหม่ 10-06 ([ต่อ 138] สถานะ pill ตอนโหลด · ต้อง login บน iPhone — ที่เหลือ e2e คุมแล้ว):**
-  1) เปิด Plan → แตะเปลี่ยนเป็น Ask → ส่ง 1 ข้อความ ⇒ คำตอบไม่ใช่แบบวางแผน (ผมเช็ค log: ต้อง**ไม่มี** `[Chat] plan_mode on` ตามเวลาที่ส่ง) ·
-  2) เปิด Web Search → รีเฟรช → ส่ง ⇒ ไม่มีชิป Web Search · ป้ายขวา = Auto/Plan ไม่ใช่ Agent (log: ไม่วิ่งเส้น agent)
+**[ต่อ 138] สถานะ pill ตอนโหลด — ฝั่ง server ✅ จาก log (10-07 UTC) · เหลือปอยยืนยันด้วยตา:** โหลด/รีเฟรช 02:14 · 02:19 · 02:20 (login) · 02:22 ·
+  แชท 02:21:42 = `[Chat] response cache hit` ⇒ body ไม่มี `tool_agent`/`plan_mode` (`routers/chat.py:242` ใช้ cache เฉพาะเมื่อไม่มีสองธงนี้) ·
+  แชท 02:22:48 (หลังรีเฟรช 02:22:22) = LM Studio stream ปกติ `finish=stop` · ไม่มี `[Chat] plan_mode on` · ไม่เข้าเส้น agent ·
+  ⏳ ที่ log ไม่เห็น: ชิป Web Search หายหลังรีเฟรช · ป้ายขวาไม่ใช่ Agent · ⚠️ cache hit ใช้ 27 วิ (embed ช้า? แยกเรื่อง ยังไม่สืบ)
 **✅ Debate ชั่วคราว ([ต่อ 136]) ผ่านครบ 3 ข้อ ถอดออก 10-06** — ปอยลองบน iPhone ~17:05 · log prod (UTC): โหลด `index-CEWp--mZ.js` + `chat_intercept.js` ใหม่ ·
   Debate 2 รอบ 10:05 / 10:08 ทุกฟ้อง `[Chat] debate (ชั่วคราว)` · 3 โมเดลตามคอลัมน์ (3.1-flash-lite · 3.5-flash · 3-flash-preview) `agent_mode: False` (ข้อ 2 เปิด Web Search ก็ไม่เป็น agent) ·
   DB หลังลอง: messages 1119 · `default` 23 · `debate_` 0 = ไม่บันทึกเพิ่ม · ฟ้อง gemini-3.5-flash-lite 10:06:27 = `GET /api/digest` ตอนรีเฟรช (ไม่ใช่ Debate)
