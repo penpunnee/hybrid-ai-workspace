@@ -1,5 +1,34 @@
 ---
 
+## [2026-10-07 ต่อ 148] skills_db.json → mount โฟลเดอร์ (โค้ด+เทส · CI เขียว · ⏳ prod พรุ่งนี้) · pin NAS_DATA_PATH · ไฟล์ใหม่ 0644
+
+**ปอยเคาะ:** ทาง (ก) + pin `NAS_DATA_PATH` ใน compose `environment:` (ไม่เอาแค่เทส `.env.example`) · คืนนี้ห้ามแตะ prod · prod พรุ่งนี้ 09:00–22:00 หลังดู Dream report
+**วัด prod ก่อนแก้ (อ่านอย่างเดียว):** env `NAS_DATA_PATH` ไม่ได้ตั้ง → `/app/data` · path ทั้งชุดอยู่ใต้ `/app/data` (chat_history · response/embed cache · reader · exports · gen_images) ยกเว้น `SKILLS_DB_PATH=/app/skills_db.json` ·
+สิทธิ์: host `skills_db.json`/`reader.db`/dream report = 777 (ACL `+`) แต่**ในคอนเทนเนอร์เห็น 111** · `embed_cache.db` (คอนเทนเนอร์สร้าง) = 644 ทั้งสองฝั่ง
+**แก้ (`215fee8` + `fix(config)` doc):** `SKILLS_DB_PATH = $NAS_DATA_PATH/skills_db.json` · compose ถอด mount ไฟล์เดี่ยว + `NAS_DATA_PATH=/app/data` · `_save_skills_db()` `fchmod 0644` ตายตัว ·
+คอมเมนต์ config/compose/.gitignore/clean_skills_db · เอกสาร CLAUDE.md (ส่วน resync) · system-map · env-vars · skills `docker-deployment-nas`/`env-variables-reference` (summary ไม่เปลี่ยน) · `.env.example` · Mac: ย้าย `<repo>/skills_db.json` → `data/` (ไม่อยู่ใน git)
+**เทส (แดงก่อนแก้ทั้งหมด):** `test_skills_db_dir_mount.py` (ไม่มี mount ไฟล์เดี่ยว · pin + เป็นปลายทาง mount โฟลเดอร์ต้นทาง data เดิม · **path ทุกตัวภายใต้ env ของ compose = ค่าที่วัดจาก prod** · registry แยกชั่วคราวหลัง `load_all()`) ·
+`test_skills_db_mount_docker.py` (bind mount จริงผ่าน Docker Desktop + `hybrid-ai:ci` + `_save_skills_db()` ตัวจริง · กลุ่มควบคุม mount ไฟล์เดี่ยว = `Errno 16` · env compose + mount โฟลเดอร์ = host เห็นของใหม่ · ข้ามเมื่อไม่มี docker ⇒ CI ข้าม) ·
+`test_skills_db_write_mode.py` (0644 ไม่ว่าเดิมเป็น 600/111/777/640) · mutation **7/7** (mount เดี่ยวกลับ · ถอด pin · pin ผิด · path กลับ PROJECT_ROOT · ถอด fchmod · ลอกสิทธิ์เดิม · 0600) · ชุดเต็ม 2897
+**/scrutinize เจอ 1 ข้อหนัก (แก้แล้ว):** แผนเดิม "คงสิทธิ์ไฟล์เดิม" ผิดบน Synology — คอนเทนเนอร์เห็นไฟล์ ACL เป็น 0111 ⇒ ลอกมา = อ่านไม่ได้ → เปลี่ยนเป็น 0644 ตายตัว ·
+จดไว้: Docker บน Mac ไม่ใช่ btrfs+ACL ของ Synology ⇒ เรื่องสิทธิ์ต้องยืนยันด้วย `stat` บน host prod พรุ่งนี้ · `clean_skills_db.py --apply` ทำ `.bak-*` ด้วย `shutil.copy2` → ตอนนี้ไปเกิดใน `data/` (ถาวร · สะสม · สิทธิ์ลอกจากต้นทาง) — ไม่บล็อก
+**CI แดง 1 รอบ (`215fee8`):** doc ของ `NAS_DATA_PATH` มี `/app/data` → `test_ไม่มี_path_เฉพาะเครื่องหลุดเข้าไฟล์` (กติกาใน CLAUDE.md ที่พลาดเอง) → แก้ข้อความ · ตรวจซ้ำด้วยการรันเทสในอิมเมจ `hybrid-ai:ci` บน Mac → CI เขียว ·
+⚠️ ระหว่างไล่ ผมใช้ `git checkout HEAD -- .` คืน tree แล้วทับการแก้ที่ยังไม่ commit ของตัวเอง (doc fix) — ทำใหม่แล้ว ไม่มีอย่างอื่นเสีย (stash เดิม 2 อันยังอยู่) · บทเรียน: ทดสอบ commit เก่าใช้ `git worktree` ไม่ใช่ checkout ทับ tree ·
+หมายเหตุ: `test_obsidian_sync_prune::test_a_file_that_failed_to_embed_is_never_pruned` แดงเมื่อรันชุดเต็มในอิมเมจ CI **บน Mac** (แดงที่ `ed49796` ก่อนงานนี้ด้วย · CI จริงเขียว) — flaky/สภาพแวดล้อม ไม่ได้ไล่ต่อ
+
+**ขั้น prod พรุ่งนี้ (ช่วง 09:00–22:00 · หลังดู Dream report 02:00 จบ):**
+1. `gh run list` เขียว · `ssh nas true` · NAS อยู่ `ed49796`
+2. backup บน host: `cp -p data/skills_db.json data/db_backups/skills_db.json.pre-dirmount-$(date +%Y%m%d-%H%M)` · `sha256sum` ทั้งคู่ · นับแถวในคอนเทนเนอร์ = 22 · `stat` เดิม
+3. reset NAS → `sudo -n /usr/local/bin/docker compose up -d --force-recreate hybrid-ai` · รอ healthy · inode `server.py` host=ctr
+4. เช็ค: `SKILLS_DB_PATH`/`NAS_DATA_PATH` ในคอนเทนเนอร์ = `/app/data/...` · `ls /app/skills_db.json` ไม่มี · `mount | grep skills_db` ว่าง · log `Synced 22 skills` · `skills_collection` 22 · sha = backup · path อื่นเท่าเดิม (รัน probe แบบ [ต่อ 148])
+5. **ตัวพิสูจน์:** `clean_skills_db.py --resync` (dry-run) → `--resync --apply` ต้อง **exit 0 ไม่มี EBUSY** → JSON เท่ากับ backup · 22 · host `stat` = 644 root (pawin อ่านได้: `ssh nas cat … | head -c 50`) · ไม่มี `.skills_db.*.tmp` · `.lock` อยู่ `data/`
+6. `docker restart ai-backend-1` อีกรอบ → ยัง 22 + ไม่มี error skills ใน log
+7. **rollback:** `git revert` 2 commit → push/reset → `--force-recreate` · ถ้าเนื้อหาเพี้ยน cp backup กลับ (host) ก่อน recreate
+
+📊 10-07 21:15 → 22:10 · subagent 0 · /scrutinize 1 (เจอ 1 หนัก) · mutation 7/7 · CI แดง 1 รอบ (กติกาที่จดไว้แล้ว)
+
+---
+
 ## [2026-10-07 ต่อ 147] ของค้างเล็ก Chroma (memory.py · mcp_server · skills 2 ไฟล์) · แผน skills_db.json → mount โฟลเดอร์ (ยังไม่แตะ prod)
 
 **ของค้างเล็ก (`ed49796`):** `utils/memory.py` `_detect_chroma_host` ถอด `192.168.51.49` (เทสแดงก่อนแก้ · ดัก `socket.create_connection` ไม่มีต่อจริง) · `mcp_server.py` docstring ·

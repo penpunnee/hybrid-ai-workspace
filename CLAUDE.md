@@ -176,7 +176,7 @@ overlay แบบ vanilla (ไม่ต้อง build, ทำงานคู่
 - ⚠️ **DELETE `/api/skills/{id}`**: lebt `delete_file` query param (default false). ส่ง `?delete_file=true` ถ้าต้องลบ .md ด้วย — กัน data loss
 
 
-## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-07 ปิดเซสชันรอบ 12 [ต่อ 141] · **ที่เดียว**)
+## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-07 ดึก [ต่อ 148] · **ที่เดียว**)
 
 > บล็อก ▶️ ทั้งหมดจนถึง 09-28 (ก้อน 1–11 · config ก้อน 1–4 · reader/voice 08-17→09-22 · ไมค์ 08-24/26)
 > ถูกยก**ทั้งดุ้นไม่แก้**ไปไว้ที่ devlog **[2026-09-28 ต่อ 24]** — ที่นี่เหลือแค่งานเปิด + กติกาที่ยังมีผล
@@ -194,8 +194,15 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → /scrutinize (งาน state/`await`: + `ui-reviewer` ตรวจแผน) → เคาะ → เทสแดง → แก้ → mutation → ชุดเต็ม → deploy → verify prod (ยืนยันว่าเส้นที่แก้ถูกวิ่งจริง)
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
-### 🥇 งานแรกเซสชันหน้า → ① `gh run list` สองรีโป → ② **ดู Dream report คืน 10-08 02:00** ว่ารูปแบบใหม่ทำงานถูก (`phase2_rem.status`/`reason` ใน `dream_reports/` ล่าสุด + บรรทัด `Dream/REM: 0 themes — …` ใน log + `.md` ใน vault มี `**สถานะ:**` · และ `misfire_grace_time` ไม่ทำให้อะไรเพี้ยน) — devlog [ต่อ 141] · ระหว่างทางดู log `[Embed] อุ่นเครื่อง` หลัง PC ตื่นครั้งแรก ([ต่อ 139])
-⏳ **รอปอย ([ต่อ 142]→[145]):** ส่ง URL check Dream (tag `ui`) → ใส่ `DREAM_HEARTBEAT_URL` ใน `.env` บน NAS เท่านั้น ⛔ ห้าม commit → `--force-recreate` · แก้ DSM `chroma-backup` ต่อท้าย ping · กด Test email/Telegram ใน Healthchecks · ปิด alert #1 + เปิด Dependabot · ✅ pip-audit 9→3 (accepted risk) · ✅ Chroma bind 127.0.0.1 + skills แก้แล้ว (devlog [ต่อ 145]–[146]) · 🔴 **เปิด: `skills_db.json` เขียนจริงไม่ได้บน prod** — mount ไฟล์เดี่ยว + `os.replace` = `EBUSY` (ทั้ง `clean_skills_db.py --apply` และ `_save_skills_db()` ของแอป · devlog [ต่อ 146]) ยังไม่แก้ รอปอยเคาะ
+### 🥇 งานเซสชันหน้า (10-08) — ทำตามลำดับ ห้ามสลับ
+① `gh run list` สองรีโป (ต้องเขียว) · `ssh -o ConnectTimeout=10 nas true`
+② **ดู Dream report คืน 10-08 02:00 ให้จบก่อน** ว่ารูปแบบใหม่ทำงานถูก (`phase2_rem.status`/`reason` ใน `dream_reports/` ล่าสุด + บรรทัด `Dream/REM: 0 themes — …` ใน log + `.md` ใน vault มี `**สถานะ:**` · `misfire_grace_time` ไม่ทำให้อะไรเพี้ยน) — devlog [ต่อ 141] · ดู log `[Embed] อุ่นเครื่อง` หลัง PC ตื่นครั้งแรก ([ต่อ 139])
+③ **deploy skills_db → mount โฟลเดอร์** (โค้ดพร้อม: `215fee8` + `fix(config)` · CI เขียว · NAS ยังอยู่ `ed49796`) · **ช่วง 09:00–22:00 เท่านั้น** · ขั้นตอน/ตัวพิสูจน์อยู่ devlog **[ต่อ 148]**:
+   backup `data/skills_db.json` → `data/db_backups/skills_db.json.pre-dirmount-<เวลา>` + sha256 + นับ 22 → push/reset NAS → `compose up -d --force-recreate hybrid-ai` + inode `server.py` →
+   เช็ค `SKILLS_DB_PATH=/app/data/skills_db.json` · ไม่มี `/app/skills_db.json` · `Synced 22 skills` + `skills_collection` 22 · sha = backup →
+   **ตัวพิสูจน์: `clean_skills_db.py --resync --apply` ต้อง exit 0 ไม่มี EBUSY** → JSON = backup · 22 · สิทธิ์บน host อ่านได้ (`stat` = 644) · ไม่มี `.tmp` ค้าง → restart อีกรอบยัง 22 · rollback ใน devlog
+⏳ **รอปอย:** ส่ง URL check Dream (tag `ui`) → ใส่ `DREAM_HEARTBEAT_URL` ใน `.env` บน NAS เท่านั้น ⛔ ห้าม commit → `--force-recreate` · แก้ DSM `chroma-backup` ต่อท้าย ping · กด Test email/Telegram ใน Healthchecks · ปิด alert #1 + เปิด Dependabot ·
+✅ 10-07 เย็น: pip-audit 9→3 (accepted risk) · Chroma bind 127.0.0.1 + skills ชี้ทางใหม่ · ของค้างเล็ก (devlog [ต่อ 143]–[148])
 ✅ รอบ 12 (10-07): ผังทั้งระบบ [`docs/system-map.md`](docs/system-map.md) + เทสยึดสองรีโป · A1 misfire 1 ชม. · start-ai.ps1 · เวลาสำรอง 00:00 · REM บอกสถานะ/เหตุผล (ui `b358c57` · a.ui `ed21948`) · ⏳ รอปอย: step 5 tooltip fallback · DNS สำรองใน DSM
 ✅ รอบ 11 (10-06): overlay ไม่เติมธงเมื่อมี React · `initialCbSkills` (Web Search/Code ไม่จำ · Plan/Reflect จำ · obsidian ค้างถูกกรอง) deploy แล้ว (ui `2781925` · a.ui `dc6fa24` · bundle `index-xgwILWpi.js` · `enhanced.js?v=20261006-832e6c84`) — devlog [ต่อ 138] ·
 อ่าน devlog **[10-07 ต่อ 140]** ก่อน (⛔ เฉลยการพิสูจน์ `ui-reviewer` [126] ห้ามย้ายมาไว้ในไฟล์นี้) ·
