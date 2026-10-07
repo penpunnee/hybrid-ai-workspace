@@ -194,6 +194,7 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานแรกเซสชันหน้า → ① `gh run list` สองรีโป → ② **ดู Dream report คืน 10-08 02:00** ว่ารูปแบบใหม่ทำงานถูก (`phase2_rem.status`/`reason` ใน `dream_reports/` ล่าสุด + บรรทัด `Dream/REM: 0 themes — …` ใน log + `.md` ใน vault มี `**สถานะ:**` · และ `misfire_grace_time` ไม่ทำให้อะไรเพี้ยน) — devlog [ต่อ 141] · ระหว่างทางดู log `[Embed] อุ่นเครื่อง` หลัง PC ตื่นครั้งแรก ([ต่อ 139])
+⏳ **[ต่อ 142] รอปอย:** ส่ง URL check Dream (tag `ui`) → ใส่ `DREAM_HEARTBEAT_URL` ใน `.env` บน NAS เท่านั้น ⛔ ห้าม commit → `--force-recreate` · แก้ DSM `chroma-backup` ต่อท้าย ping · กด Test email/Telegram ใน Healthchecks · ปิด alert #1 + เปิด Dependabot · pip-audit ที่เหลือ 9 ตัว ยังไม่ทำ (devlog [ต่อ 142])
 ✅ รอบ 12 (10-07): ผังทั้งระบบ [`docs/system-map.md`](docs/system-map.md) + เทสยึดสองรีโป · A1 misfire 1 ชม. · start-ai.ps1 · เวลาสำรอง 00:00 · REM บอกสถานะ/เหตุผล (ui `b358c57` · a.ui `ed21948`) · ⏳ รอปอย: step 5 tooltip fallback · DNS สำรองใน DSM
 ✅ รอบ 11 (10-06): overlay ไม่เติมธงเมื่อมี React · `initialCbSkills` (Web Search/Code ไม่จำ · Plan/Reflect จำ · obsidian ค้างถูกกรอง) deploy แล้ว (ui `2781925` · a.ui `dc6fa24` · bundle `index-xgwILWpi.js` · `enhanced.js?v=20261006-832e6c84`) — devlog [ต่อ 138] ·
 อ่าน devlog **[10-07 ต่อ 140]** ก่อน (⛔ เฉลยการพิสูจน์ `ui-reviewer` [126] ห้ามย้ายมาไว้ในไฟล์นี้) ·

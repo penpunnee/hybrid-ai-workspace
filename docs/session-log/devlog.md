@@ -1,5 +1,27 @@
 ---
 
+## [2026-10-07 ต่อ 142] ตรวจความปลอดภัย/การเฝ้าระวัง (อ่านอย่างเดียว) · deps pypdf+PyJWT · heartbeat Dream
+
+**ตรวจอ่านอย่างเดียว (ค่าลับรายงานแค่ host/hash):** `HEARTBEAT_URL` → `hc-ping.com` check "Khim AI db-backup" (`30 3 * * *` · grace 2 ชม. · up · hash URL prod = check `f3aa03ab`) ·
+ช่องทางผูกไว้ email + Telegram แต่ **ปอยแจ้ง: ยังไม่ได้ตั้ง Telegram ให้ตัวเอง** ⇒ "แจ้งเตือนถึงปอยจริง" = ยังไม่ยืนยันทั้งสองช่อง (system-map `d190425`) ·
+รีโป `hybrid-ai-workspace` = **PUBLIC** · a.ui = private · สแกน regex ทั้ง history (ไม่มี gitleaks): Gemini key ใน `9fa69e2` (`start.ps1`/`.env.example` 04-23) อยู่ใน `origin/main` → ทดสอบได้ `API_KEY_INVALID` (ตาย · ไม่ใช่ key prod) · alert #1 ยัง open → **ปอยปิดเองบน GitHub** ·
+pip-audit lock: 11 แพ็กเกจ 59 รายการ · npm audit 17 (dev ล้วน · `--omit=dev` = 0) · ไม่มี Dependabot (ปอยเปิดเอง) ·
+Dashboard 📊 = นับข้อความ/session/ความจำ **ไม่มี token/ค่าใช้จ่าย** (usage อยู่ใน `messages.meta` ตั้งแต่ 10-04 แค่ 7/557) · หน้าดู/แก้/ลบความจำ = **ไม่มี UI** (มีแต่ API · ไม่มี PUT) ·
+⚠️ auto mode ปฏิเสธ PATCH alert บน GitHub (External System Writes) → ส่งให้ปอย
+
+**deps (`1a95b72`):** pypdf 6.14.2→6.19.0 · PyJWT 2.13.0→2.15.1 · pip-audit สองตัวนี้ 30→0 · แกะ PDF จริง 15 ไฟล์ เทียบสองเวอร์ชัน: เหมือน 13 · ต่าง 2 แค่ `\n` เพิ่ม 1 ตัว (ไฟล์พัง 10 ไฟล์พังเหมือนกันทั้งคู่) ·
+deploy `compose build` + `compose up -d` · healthy · ในคอนเทนเนอร์ 6.19.0/2.15.1 · pypdf roundtrip + import mcp/google-auth ผ่าน · ⏳ ที่เหลือใน pip-audit (aiohttp/anyio/urllib3/cryptography/h2/multidict/oauthlib/pyasn1 · chromadb ยังไม่มี fix) ยังไม่ทำ
+
+**heartbeat Dream (`89de3d1`):** env `DREAM_HEARTBEAT_URL` · `ping_check()` ว่าง = ไม่ยิง (กัน `ping(url="")` ถอยไปยืนยัน check ของ backup) · สำเร็จ/ข้ามเพราะไม่มีความจำ = ยิง · ล้ม = `/fail` · `DreamBusy` = ไม่ยิง ·
+แดง 9 ก่อนแก้ · mutation 7/7 · deploy `docker restart` · ในคอนเทนเนอร์ wired แล้ว `DREAM set: False` ⏳ **รอปอยสร้าง check (tag `ui`) แล้วส่ง URL → ใส่ `.env` บน NAS เท่านั้น (ห้าม commit) + `--force-recreate`**
+
+**Chroma DSM task:** อ่านเนื้อสคริปต์ไม่ได้ (task DB ต้อง root · sudo จำกัด docker) · ไม่มีไฟล์ `chroma_backup.sh` บน NAS ⇒ เป็นสคริปต์ inline ใน DSM ·
+หลักฐานว่า stop→tar→start: `chromadb` StartedAt 2026-10-06T17:00:29Z (= 00:00:29) · เสนอให้ปอยต่อท้ายสคริปต์ใน DSM (ดูรายงานในแชท)
+
+📊 10-07 ~13:30 → ~15:30 · Explore 0 · ui-reviewer 0 (backend ล้วน) · investigator 0 · mutation 7/7 · มือ: ปอยปิด alert/Dependabot · สร้าง check
+
+---
+
 ## [2026-10-07 ต่อ 141] ผังทั้งระบบ `docs/system-map.md` + เทสยึด · ปิด 🟡 ด้วยการตรวจ prod · A1/B/C · ทดลอง REM · สถานะ REM
 
 **ผังระบบ (`f2f2597` · `756e8bf`):** Explore 4 ตัวขนาน (infra · backend/DB/งานตั้งเวลา · LLM/Obsidian · React/overlay) → Mermaid + ตาราง + "ถ้า X ล่ม" ·

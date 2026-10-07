@@ -30,7 +30,7 @@
   ⚠️ แต่ REM ได้ themes 0 ทุกคืน (Gemini ตอบ 200 `{"themes":[]}`) ⇒ `long_term_memory` ไม่โต · ส่วน `deep_sleep` ที่ต้อง embed ผ่าน Ollama (PC) ไม่ได้วิ่งเลย — ยังไม่รู้ว่า PC ดับตอนโปรโมตจะเป็นยังไง
 - **ช่องแจ้งเตือน Dream ตายอยู่ (10-07 · จากผังระบบ · ปอยสั่งจดไว้ · ยังไม่ทำ):** ช่องเดียวที่แจ้งเมื่อ Dream ล้ม/ข้ามคือ `utils/notify.py » send_line_notify` (เรียกจาก `core/scheduler.py » _scheduled_dream`) ·
   LINE Notify **ปิดบริการ 31 มี.ค. 2025** (ประกาศทางการ developers.line.biz/en/news/2025/04/01/line-notify/ + notify-bot.line.me) และ prod **ไม่ได้ตั้ง `LINE_NOTIFY_TOKEN`** (ตรวจ env ในคอนเทนเนอร์ 10-07 · โค้ดคืนทันทีเมื่อว่าง) ⇒ Dream ล้มเงียบ เหลือแค่บรรทัดใน `server.log` ·
-  ทางที่มีอยู่แล้ว: `HEARTBEAT_URL` ตั้งแล้วบน prod (Healthchecks · ใช้กับ backup 03:30 อย่างเดียว) — ยังไม่ได้เลือกทาง
+  ✅ โค้ดพร้อมแล้ว [ต่อ 142] `DREAM_HEARTBEAT_URL` (สำเร็จ = ping · ล้ม = /fail) · ⏳ รอปอยสร้าง check + ส่ง URL (ใส่ `.env` NAS เท่านั้น)
 - **สำรองข้อมูล (10-07 · จากผังระบบ `docs/system-map.md` · ปอยสั่งจดไว้ · ยังไม่ทำ):** ✅ ยืนยันแล้ว: DSM task `chroma-backup` รันทุกวัน 00:00 เก็บ 7 ไฟล์ (ปอยเปิด DSM ดู · รอบ 10-07 00:00:01–00:00:30 สถานะ 0) + sqlite 4 ไฟล์ 03:30 ในแอป (`utils/db_backup.py`) · ช่องว่าง:
   ① ไฟล์สำรอง**อยู่บน NAS เครื่องเดียวกัน** ไม่มีชุดนอกเครื่อง (ดิสก์/volume เสีย = หายทั้งข้อมูลจริงและสำรอง) ·
   ② **ยังไม่เคยลองกู้คืน** ทั้งชุด sqlite และ Chroma ·
