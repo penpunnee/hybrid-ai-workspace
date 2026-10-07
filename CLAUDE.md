@@ -139,6 +139,7 @@ overlay แบบ vanilla (ไม่ต้อง build, ทำงานคู่
 | Request flow · Context assembly · Anti-hallucination · LLM routing · Data persistence/backups · Key files · SSE schema · Memory tiers · Dream · Caches · Image gen · Routing/classifier · OCR/สรุปเอกสาร · Fine-tune · Admin unlock · **Known Quirks** | [`docs/reference/architecture.md`](docs/reference/architecture.md) |
 | Environment Variables (บล็อก ```env เต็ม — `tests/test_env_docs_ratchet.py` สแกนไฟล์นี้) | [`docs/reference/env-vars.md`](docs/reference/env-vars.md) |
 | Voice WS · เสียงต้องเป็นคนเดิม (ตารางโมเดล × temperature/seed) · `/api/tts` + โควตา · `AudioLevelMeter` | [`docs/reference/voice-tts.md`](docs/reference/voice-tts.md) |
+| pip-audit ที่ตั้งใจยังไม่ bump (accepted risk + เหตุผล + ทบทวนเมื่อ) | [`docs/reference/security-accepted-risks.md`](docs/reference/security-accepted-risks.md) |
 | Web search (Brave → DDG · CSE ถอดแล้ว 10-01) · บทเรียน 08-31 · พื้นคะแนน web/skills · `rewrite_query()` ตายกับ Qwen | [`docs/reference/web-search.md`](docs/reference/web-search.md) |
 
 **ข้อเท็จจริงที่ใช้บ่อย (ที่มา/รายละเอียดในไฟล์ข้างบน):**
