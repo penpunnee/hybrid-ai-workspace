@@ -678,6 +678,25 @@ def test_memory_detect_chroma_ใช้ค่าจาก_config(monkeypatch):
     assert m._detect_chroma_host() == ("10.0.0.9", 9001)
 
 
+def test_memory_detect_chroma_ไม่เดา_IP_ของ_NAS(monkeypatch):
+    """Chroma bind 127.0.0.1 บน NAS แล้ว (2026-10-07) — `192.168.51.49:8000` ต่อจาก LAN ไม่ได้
+    เดาไปก็เสีย timeout 2 วิฟรีทุกครั้งที่ import (dev) · ตัวเลือกที่เหลือต้องไม่มี IP นั้น"""
+    import socket
+
+    tried = []
+
+    def _refuse(addr, timeout=None):
+        tried.append(addr)
+        raise OSError("refused (test)")
+
+    monkeypatch.setattr(socket, "create_connection", _refuse)
+    m = _reload_with(monkeypatch, "utils.memory", {"CHROMA_HOST": ""})
+    tried.clear()
+    assert m._detect_chroma_host() == ("localhost", 8000)
+    assert tried, "ต้องลองอย่างน้อยหนึ่ง candidate (ไม่งั้นเทสนี้ไม่ได้ตรวจอะไร)"
+    assert all(host != "192.168.51.49" for host, _ in tried), tried
+
+
 @pytest.mark.parametrize("raw,expected", [
     ("http://x:11434/v1", "http://x:11434"), ("http://x:11434", "http://x:11434"),
 ])

@@ -14,12 +14,10 @@ pip install mcp          # อยู่ใน requirements.txt แล้ว (mcp
 #          weather, wikipedia, fs_*)
 claude mcp add hybrid-ai -- python3 /Users/pawin/Desktop/ui/mcp_server.py
 
-# ถ้าอยากให้ memory_recall / skill_search / obsidian_search ทำงาน (ต้องต่อ ChromaDB)
-claude mcp add hybrid-ai \
-  --env CHROMA_HOST=192.168.51.49 \
-  --env CHROMA_PORT=8000 \
-  -- python3 /Users/pawin/Desktop/ui/mcp_server.py
 ```
+⚠️ **memory_recall / skill_search / obsidian_search ใช้จาก Mac ไม่ได้แล้ว** — ChromaDB บน NAS bind
+`127.0.0.1:8000` ตั้งแต่ 2026-10-07 (เข้าจาก LAN ไม่ได้ · ปอยเคาะไม่ทำ tunnel) ⇒ 3 tools นี้ใช้ได้เฉพาะ
+ตอนรันในคอนเทนเนอร์บน NAS (ต่อด้วยชื่อ service `chromadb`)
 ตรวจ: `claude mcp list` → ควรเห็น `hybrid-ai` ; ในเซสชัน Claude Code จะมี tool `hybrid-ai__calculator` ฯลฯ
 
 ### config JSON (IDE อื่น เช่น Cursor / .mcp.json)
@@ -28,8 +26,7 @@ claude mcp add hybrid-ai \
   "mcpServers": {
     "hybrid-ai": {
       "command": "python3",
-      "args": ["/Users/pawin/Desktop/ui/mcp_server.py"],
-      "env": { "CHROMA_HOST": "192.168.51.49", "CHROMA_PORT": "8000" }
+      "args": ["/Users/pawin/Desktop/ui/mcp_server.py"]
     }
   }
 }
@@ -41,7 +38,7 @@ claude mcp add hybrid-ai \
 | `calculator`, `current_time` | — (ไม่ต้อง) |
 | `web_search`, `weather`, `wikipedia` | อินเทอร์เน็ต |
 | `fs_list`, `fs_read`, `fs_write`, `fs_search` | sandbox dir (FS_TOOLS_ROOTS) |
-| `memory_recall`, `skill_search`, `obsidian_search` | ChromaDB (NAS) → ตั้ง `CHROMA_HOST` |
+| `memory_recall`, `skill_search`, `obsidian_search` | ChromaDB — **เฉพาะในคอนเทนเนอร์บน NAS** (`CHROMA_HOST=chromadb`) · จาก Mac/LAN ต่อไม่ได้ |
 | `run_python` | Docker (ไม่งั้น fallback subprocess; ดู `CODE_SANDBOX_ALLOW_LOCAL`) |
 
 ## สถาปัตยกรรม

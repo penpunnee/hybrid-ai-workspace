@@ -23,9 +23,10 @@ def _detect_chroma_host() -> tuple:
     """Auto-detect CHROMA_HOST and PORT"""
     if _CFG_CHROMA_HOST:
         return _CFG_CHROMA_HOST, _CFG_CHROMA_PORT
+    # ไม่มี IP ของ NAS แล้ว — Chroma bind 127.0.0.1:8000 (2026-10-07) ต่อจาก LAN ไม่ได้ เดาไปเสีย timeout เปล่า
+    # (prod ตั้ง CHROMA_HOST=chromadb ใน .env อยู่แล้ว · ตัวกัน: tests/test_env_registry.py)
     candidates = [
         ("chromadb", 8000),
-        ("192.168.51.49", 8000),
         ("chroma.pawinhome.com", 443),
     ]
     for host, port in candidates:

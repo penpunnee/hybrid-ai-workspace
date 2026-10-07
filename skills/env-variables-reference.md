@@ -37,7 +37,7 @@ LMSTUDIO_TIMEOUT=180
 ## Storage & Database
 
 ```env
-CHROMA_HOST=192.168.51.49
+CHROMA_HOST=chromadb   # ชื่อ service ใน docker network · Chroma bind 127.0.0.1:8000 บน NAS (2026-10-07) จาก LAN ต่อไม่ได้
 CHROMA_PORT=8000
 
 DB_PATH=/app/data/chat_history.db  # ⛔ docker-compose ทับ — ตั้งใน .env ไม่มีผลในคอนเทนเนอร์

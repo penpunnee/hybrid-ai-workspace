@@ -11,7 +11,8 @@ wrap `agents.tools.TOOL_REGISTRY` (18 tools) เป็น MCP tools ให้ Cl
     claude mcp add hybrid-ai -- python3 /Users/pawin/Desktop/ui/mcp_server.py
 
 tools ที่ต้องใช้ backend บน NAS (memory_recall / skill_search / obsidian_search)
-ให้ตั้ง env ตอน register เช่น CHROMA_HOST=192.168.51.49 ; run_python ต้องมี Docker
+⚠️ ต่อ ChromaDB จาก Mac ไม่ได้แล้ว — Chroma บน NAS bind 127.0.0.1:8000 (2026-10-07 · ปอยเคาะไม่ทำ tunnel)
+tools ที่แตะ Chroma (memory_recall / skill_search) จึงใช้ได้เฉพาะเมื่อรันในคอนเทนเนอร์บน NAS · run_python ต้องมี Docker
 ดู skills/mcp-server-export.md
 """
 import asyncio
