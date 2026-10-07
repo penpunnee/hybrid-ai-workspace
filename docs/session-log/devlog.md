@@ -1,5 +1,22 @@
 ---
 
+## [2026-10-07 ต่อ 147] ของค้างเล็ก Chroma (memory.py · mcp_server · skills 2 ไฟล์) · แผน skills_db.json → mount โฟลเดอร์ (ยังไม่แตะ prod)
+
+**ของค้างเล็ก (`ed49796`):** `utils/memory.py` `_detect_chroma_host` ถอด `192.168.51.49` (เทสแดงก่อนแก้ · ดัก `socket.create_connection` ไม่มีต่อจริง) · `mcp_server.py` docstring ·
+เจอเพิ่มที่ grep `:8000` รอบก่อนพลาด (IP/พอร์ตคนละบรรทัด): `skills/mcp-server-export.md` (`--env CHROMA_HOST=192.168.51.49` + JSON) · `skills/env-variables-reference.md:40` → แก้ทั้งคู่ ·
+summary ไม่เปลี่ยน (เทียบ `_md_summary`) ⇒ ไม่ต้อง resync · BANNED `CHROMA_HOST\W{0,4}192.168.51.49` (แดงกับเนื้อหาเดิม) · ชุดเต็ม 2885 · NAS: `data/skills` เดิม = git เดิม → cp · grep ในคอนเทนเนอร์ 0 · `server.py` inode เดิม (utils/ เห็นผลเมื่อ restart ครั้งหน้า · prod ตั้ง env อยู่แล้วจึงไม่มีผลต่างจริง)
+
+**แผน skills_db.json → mount โฟลเดอร์ (ปอยเลือกทาง ก · ⏳ รอเคาะแผน · ยังไม่แตะ prod):**
+- ข้อเท็จจริง: ในคอนเทนเนอร์ `/app/skills_db.json` กับ `/app/data/skills_db.json` = **inode เดียวกัน (138937)** — `./data` mount ทั้งโฟลเดอร์ที่ `/app/data` อยู่แล้ว ⇒ ไม่ต้องย้ายข้อมูล แค่ชี้ path ใหม่ + ถอด mount ไฟล์เดี่ยว (แบบเดียวกับ `chat_history.db` 09-29 · `tests/test_db_path_dir_mount.py`) ·
+  NAS `.env` ไม่ตั้ง `NAS_DATA_PATH` ⇒ ในคอนเทนเนอร์ `NAS_DATA_PATH=/app/data` · อิมเมจไม่มี `/app/skills_db.json` ของตัวเอง
+- **พิสูจน์บน Mac (Docker Desktop · อิมเมจ `hybrid-ai:ci` · `_save_skills_db()` ตัวจริง):** mount ไฟล์เดี่ยว → `[Errno 16] Device or resource busy` ข้อความเดียวกับ prod · mount โฟลเดอร์ → เขียนผ่าน host เห็นของใหม่ ·
+  ⚠️ เจอเพิ่ม: ไฟล์ใหม่จาก `mkstemp` = **0600** (host prod ตอนนี้ 777 root:root) ⇒ ต้องคง mode เดิม
+- รายละเอียดแผน (เทส · จุดที่ต้องแก้ · backup · ขั้น prod · ตัวพิสูจน์ · rollback) อยู่ในแชท 10-07 ~21:10 · จะยกลง devlog ตอนลงมือ
+
+📊 10-07 21:00 → 21:10 · subagent 0 · mutation: red/green ด้วย stash + reload
+
+---
+
 ## [2026-10-07 ต่อ 146] skills 2 ไฟล์ชี้ทางใหม่ของ Chroma · HA log สะอาด · 🔴 เจอ `skills_db.json` เขียนไม่ได้ (EBUSY)
 
 **skills (`ba7e0fb`):** `troubleshooting.md` (curl localhost:8000 บน NAS · `docker exec ai-backend-1` ต่อ `chromadb` · ระบุว่า LAN/Mac เข้าไม่ได้ refused ≠ ล่ม) · `project-architecture.md` (ผัง + หมายเหตุ) ·
