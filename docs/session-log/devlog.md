@@ -27,6 +27,10 @@
 
 📊 10-07 21:15 → 22:10 · subagent 0 · /scrutinize 1 (เจอ 1 หนัก) · mutation 7/7 · CI แดง 1 รอบ (กติกาที่จดไว้แล้ว)
 
+**ปิดเซสชัน (ปอยสั่ง · ไม่แตะ prod):** ① กติกาใหม่ใน CLAUDE.md หมวด deploy/infra: ⛔ `git checkout HEAD -- .`/`reset --hard` ตอนมีงานไม่ commit → ใช้ `git worktree` ·
+② `test_obsidian_sync_prune` แดงในอิมเมจ CI บน Mac แต่ CI จริงเขียว → open-work ⏳ · ③ ▶️ เพิ่มขั้นก่อน deploy: เช็คผู้เขียน `data/skills_db.json` ฝั่ง host (สคริปต์ · DSM task · แก้มือ) เพราะหลัง deploy = 0644 root ⇒ pawin เขียนไม่ได้ ·
+CI ของ commit docs ก่อนหน้า: pytest job "not acquired" + rerun HTTP 500 × 4 (GitHub ฝั่งเดียว · commit โค้ด `fix(config)` เขียวแล้ว) → เช็คอีกครั้งตอนเปิดเซสชัน
+
 ---
 
 ## [2026-10-07 ต่อ 147] ของค้างเล็ก Chroma (memory.py · mcp_server · skills 2 ไฟล์) · แผน skills_db.json → mount โฟลเดอร์ (ยังไม่แตะ prod)

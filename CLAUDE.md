@@ -197,7 +197,9 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 ### 🥇 งานเซสชันหน้า (10-08) — ทำตามลำดับ ห้ามสลับ
 ① `gh run list` สองรีโป (ต้องเขียว) · `ssh -o ConnectTimeout=10 nas true`
 ② **ดู Dream report คืน 10-08 02:00 ให้จบก่อน** ว่ารูปแบบใหม่ทำงานถูก (`phase2_rem.status`/`reason` ใน `dream_reports/` ล่าสุด + บรรทัด `Dream/REM: 0 themes — …` ใน log + `.md` ใน vault มี `**สถานะ:**` · `misfire_grace_time` ไม่ทำให้อะไรเพี้ยน) — devlog [ต่อ 141] · ดู log `[Embed] อุ่นเครื่อง` หลัง PC ตื่นครั้งแรก ([ต่อ 139])
-③ **deploy skills_db → mount โฟลเดอร์** (โค้ดพร้อม: `215fee8` + `fix(config)` · CI เขียว · NAS ยังอยู่ `ed49796`) · **ช่วง 09:00–22:00 เท่านั้น** · ขั้นตอน/ตัวพิสูจน์อยู่ devlog **[ต่อ 148]**:
+③ **ก่อน deploy skills_db: เช็คว่ามีอะไรบน host เขียน `data/skills_db.json` ไหม** (สคริปต์บน NAS · DSM Task Scheduler `/usr/syno/etc/synoschedule.d/root/*.task` อ่านได้ · cron · ถามปอยว่าเคยแก้มือไหม) —
+   หลัง deploy ไฟล์จะเป็น **0644 root** ⇒ `pawin` บน host **เขียนไม่ได้** (ตอนนี้ 777 ผ่าน ACL) · เจอ = หยุดรายงานปอยก่อน deploy
+④ **deploy skills_db → mount โฟลเดอร์** (โค้ดพร้อม: `215fee8` + `fix(config)` · CI เขียว · NAS ยังอยู่ `ed49796`) · **ช่วง 09:00–22:00 เท่านั้น** · ขั้นตอน/ตัวพิสูจน์อยู่ devlog **[ต่อ 148]**:
    backup `data/skills_db.json` → `data/db_backups/skills_db.json.pre-dirmount-<เวลา>` + sha256 + นับ 22 → push/reset NAS → `compose up -d --force-recreate hybrid-ai` + inode `server.py` →
    เช็ค `SKILLS_DB_PATH=/app/data/skills_db.json` · ไม่มี `/app/skills_db.json` · `Synced 22 skills` + `skills_collection` 22 · sha = backup →
    **ตัวพิสูจน์: `clean_skills_db.py --resync --apply` ต้อง exit 0 ไม่มี EBUSY** → JSON = backup · 22 · สิทธิ์บน host อ่านได้ (`stat` = 644) · ไม่มี `.tmp` ค้าง → restart อีกรอบยัง 22 · rollback ใน devlog
@@ -306,6 +308,8 @@ seek ต้อง**อ่านค่าก่อนเขียน** (user อ�
 - probe ใน Chrome: ห้ามอ่าน `innerText` ของ node ใหญ่วนซ้ำ · ลูปรอ < 45 วิ · ข้อความทดสอบต้องเก็บกวาด (session + memory)
 
 **deploy / infra**
+- ⛔ **ห้าม `git checkout HEAD -- .` / `git checkout <rev> -- .` / `git reset --hard` ตอนที่ยังมีงานไม่ commit** (ทับงานที่ยังไม่ commit ทิ้งเงียบๆ · พลาดจริง 10-07 [ต่อ 148]) ·
+  จะลองเทสบน commit เก่า → `git worktree add /tmp/ui-<rev> <rev>` โฟลเดอร์แยก แล้ว `git worktree remove` · เช็ค `git status` ก่อนคำสั่ง git ที่แตะ working tree ทุกครั้ง
 - commit ทีละครั้ง เช็คผลของ hook ทุกครั้ง ล้ม = หยุดทันที ⛔ ห้ามต่อ commit ถัดไปด้วย `;` หรือ loop ที่ไม่เช็ค exit code (รวมการต่อท่อเข้า `tail` ที่กลืน exit code)
 - นอก LAN ใช้ `nas-cf` · ค้างทั้งที่ tunnel healthy = Access หมดอายุ → `cloudflared access login https://ssh.pawinhomelab.com`
   · แยก "NAS ดับ" จาก "อยู่นอกวง" ด้วย `curl https://ai.pawinhome.com/api/config` ก่อนสรุป

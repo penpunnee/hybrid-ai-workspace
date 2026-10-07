@@ -4,6 +4,9 @@
 > งานแรกของเซสชัน · ข้อห้าม 🔒/🔑/⛔ ยังอยู่ที่ [`CLAUDE.md`](../../CLAUDE.md) หัวข้อ ▶️ ที่เดียว — ไฟล์นี้ไม่มีกฎ
 
 ### ⏳ รอ user เคาะ
+**ใหม่ 10-07 (ต่อ 148) — เทสต่างสภาพแวดล้อม:** `tests/test_obsidian_sync_prune.py::test_a_file_that_failed_to_embed_is_never_pruned` **แดง**เมื่อรันชุดเต็มในอิมเมจ `hybrid-ai:ci` **บน Mac**
+(`docker run -v "$PWD":/app -w /app … pytest` · แดงที่ `ed49796` ก่อนงาน skills_db ด้วย · รันไฟล์เดี่ยวบางรอบเขียว) แต่ **CI จริงเขียว** — ต้องหาว่าต่างกันตรงไหน
+(mount รีโป Mac ทับ `/app` = มี `data/`/vault/ไฟล์ untracked ของเครื่องติดเข้าไป? ลำดับเทส? เวลา/fs ของ Docker Desktop?) · `assert (0 == 2)` · ยังไม่ได้ไล่ ·
 **ใหม่ 10-07 (ต่อ 141) — step 5:** `auto` ไม่ fallback ไป Gemini (PC ดับ → LM Studio → Ollama → ข้อความ error · `utils/llm.py » _stream_lmstudio_or_ollama` · ตามกติกา "ไม่ redirect") แต่ tooltip จุดสถานะข้างช่องพิมพ์บอก
 `… ล่ม — ระบบ fallback ไป Gemini` (`a.ui/app.tsx` · `title={localOk==null …`) — แก้ข้อความ tooltip หรือเปลี่ยนพฤติกรรม? รอปอยตัดสิน ·
 **ใหม่ 10-05 (ต่อ 120):** เมนู ⋯ รวมปุ่มที่ซ่อนบนมือถือ (ทาง C · 📊 💾 🔗 🧩) — ปอยให้ทำเป็นงานถัดไป · เสนอแผนแล้ว รอเคาะก่อนเริ่ม ·
