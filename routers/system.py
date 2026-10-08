@@ -12,7 +12,7 @@ from core.scheduler import scheduler
 from assistants.config import ASSISTANTS
 import utils.llm as _llm
 from utils.llm import OLLAMA_MODEL, GEMINI_MODEL, check_ollama_health, check_lmstudio_health, _last_failover, stream_response, warm_lmstudio
-from utils.embed import warm_ollama_embed
+from utils.embed import check_embed_health, warm_ollama_embed
 from utils.memory import is_memory_available, get_memory_stats
 from utils.skills import get_skill_count
 from utils.dream import get_latest_report
@@ -135,7 +135,7 @@ def status():
     from concurrent.futures import ThreadPoolExecutor
     import logging
     logger = logging.getLogger(__name__)
-    with ThreadPoolExecutor(max_workers=4) as ex:
+    with ThreadPoolExecutor(max_workers=5) as ex:
         f1 = ex.submit(check_ollama_health)
         f2 = ex.submit(is_memory_available)
         f3 = ex.submit(check_lmstudio_health)
@@ -143,6 +143,7 @@ def status():
         # (2026-08-26: เครดิตหมด ระบบตายทั้งแชทและเสียง แต่ status ขึ้นเขียว)
         # เรียกผ่านโมดูลเพื่อให้เทส patch ตัวเดียวได้ (from-import จะ bind ค่าตายตัว)
         f4 = ex.submit(lambda: _llm.check_gemini_health())
+        f5 = ex.submit(check_embed_health)
         try:
             ollama_ok, ollama_msg = f1.result(timeout=5)
         except Exception as e:
@@ -163,12 +164,29 @@ def status():
         except Exception as e:
             gemini_ok, gemini_msg = False, "Health check error"
             logger.warning(f"Gemini health check failed: {e}")
+        try:
+            embed = f5.result(timeout=5)
+        except Exception as e:
+            embed = None
+            logger.warning(f"Embed health check failed: {e}")
     next_dream = None
     job = scheduler.get_job("dream_nightly")
     if job and job.next_run_time:
         next_dream = job.next_run_time.strftime("%Y-%m-%d %H:%M")
     # local หลัก = LM Studio (DeepSeek R1) ถ้าตั้ง LMSTUDIO_BASE_URL, ไม่งั้น Ollama
     local_provider = "lmstudio" if LMSTUDIO_BASE_URL else "ollama"
+    # 🧠 ค้นความจำ/เอกสาร/Vault (embed ผ่าน Ollama) — `memory` ข้างล่างคือ Chroma บน NAS ไม่ใช่ตัวนี้
+    # LM Studio อยู่ PC เครื่องเดียวกับ Ollama (วัด prod 10-08) ⇒ ต่อไม่ได้ทั้งคู่ = PC ปิด ·
+    # ไม่มี LM Studio ให้เทียบ = บอกว่า PC ปิดไม่ได้ · probe พังเอง = ไม่รู้ (None) ไม่ใช่ "ใช้ไม่ได้"
+    if embed is None:
+        embed_ok, embed_reason = None, "unknown"
+    elif embed["reason"] == "unreachable":
+        embed_ok = False
+        embed_reason = "pc_off" if (LMSTUDIO_BASE_URL and not lmstudio_ok) else "ollama_off"
+    elif embed["reason"] == "error":
+        embed_ok, embed_reason = False, "ollama_off"
+    else:
+        embed_ok, embed_reason = embed["ok"], embed["reason"]
     return {
         "ollama": ollama_ok,
         "ollama_message": ollama_msg,
@@ -186,6 +204,9 @@ def status():
         # **กระทบทั้งโปรเจกต์ (เสียงพังด้วย) หรือแค่โมเดลแชท** (ดู utils/llm.py)
         **{f"gemini_{k}": v for k, v in _llm.gemini_health_detail().items()},
         "memory": mem_ok,
+        "embed_ok": embed_ok,
+        "embed_reason": embed_reason,
+        "embed_message": (embed or {}).get("message", ""),
         "skills": get_skill_count(),
         "failover_active": _last_failover.get("active", False),
         "next_dream_schedule": next_dream,

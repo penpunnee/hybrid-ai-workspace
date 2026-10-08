@@ -1,5 +1,31 @@
 ---
 
+## [2026-10-08 ต่อ 153] "จุดสถานะบอกความจริง" — tooltip ไม่อ้าง fallback ไป Gemini + แถบ 🧠 ตอนค้นความจำ/เอกสาร/Vault ใช้ไม่ได้ · ดึงสถานะใหม่ตอนกลับมาที่หน้าจอ
+
+**ปอยเคาะ:** รวม step 5 + C2 · tooltip แก้ข้อความ ⛔ ห้ามเปลี่ยนพฤติกรรม · แถบที่ iPhone เห็น · ดึงไม่สำเร็จ = คงค่าเดิม · `visibilitychange` ผ่านตัวกันลำดับตัวเดียวกัน + กันซ้ำ 5 วิ · หัวแอป "ออนไลน์" แยกเป็นงานเปิด · ตระกูล 6 ปิดได้ (log WARNING + `hint` ใน JSON พอ ไม่ต้องขึ้นจอ)
+**สืบ (ui-investigator · 132k token · 2.5 นาที · ชี้ถูก):** title จุด = "ล่ม — fallback ไป Gemini" ผิด · `/api/status.memory` = Chroma บน NAS ⇒ true ตอน PC ปิด · React ไม่อ่าน memory/skills/*_message · overlay `syncLocalHealth` มีข้อความผิดเดียวกันแต่ §22 gate ตาย (ไม่แก้) ·
+**วัด prod:** LM Studio · Ollama แชท · Ollama embed = host เดียวกัน (PC .235) · LM Studio ไม่มีโมเดล `paraphrase-multilingual` (มี nomic) ⇒ embed ถอยไป LM Studio ไม่ได้จริง · `LM Studio health check failed` 1 ครั้งใน log ปัจจุบัน / 4 ใน log ก่อนหน้า ·
+`/api/status` ก่อน deploy: cold 0.83 วิ · cache 5–26 ms
+**ui-reviewer ตรวจแผน (132k · 3.5 นาที):** ต้องแก้ 6 รับครบ — ตัวกันลำดับแบบ "ล่าสุดชนะ" อดตายเมื่อทุกคำขอช้า >30 วิ → `seq > lastApplied` · ต้องมีเทสบังคับลำดับ · ข้อความ "Gemini ยังตอบได้" ขัดแถบ cloud ตอน Gemini ล่ม → ต่อท้ายเฉพาะ `gemini_ok === true` ·
+"ความจำ/สกิล/เอกสารใช้ไม่ได้" เกินจริง (`select_skills` lexical ไม่พึ่ง embed) → แคบลง · `pc_off` จาก Ollama อย่างเดียวผิดตอน Ollama ดับแต่ PC เปิด → เทียบ LM Studio · ชื่อ `:latest` → `_strip_latest` ·
+ควรพิจารณา: probe ทุกครั้ง (ตัวพักไม่ตัดสิน) · max_workers 5 · fixture ล้าง global
+**แก้:** backend `utils/embed.py » check_embed_health()` (probe `/api/tags` · cache 30 วิ · ไม่มีผลข้างเคียง) · `routers/system.py » status` max_workers 5 + `embed_ok`/`embed_reason`/`embed_message` (pc_off ต้องต่อ LM Studio ไม่ได้ด้วยและตั้งค่าไว้ · probe พัง = None/unknown) ·
+React `utils/statuspoll.ts` (`createStatusPoller` seq>lastApplied · `refresh` กัน 5 วิ · `installStatusRefresh` · `fetchStatusJson` ไม่ใช่ 2xx/ไม่ใช่ object = reject) · `cloudstatus.ts » localDotTitle/memoryBanner` · `app.tsx` แถบ 🧠 ใน `#hw-chatbox` ถัดแถบ cloud (`data-testid=memory-banner` · break-words) ·
+ui-map แถว ChatBox ตัวยึดใหม่ 7 ตัว · e2e mock `/api/status` ปริยาย + `embed_ok:true`
+**เทสแดงก่อนแก้:** pytest `tests/test_embed_health.py` 18 (ไม่มีฟีเจอร์) · vitest `statuspoll.test.ts`/`cloudstatus.test.ts` (ไม่มีฟังก์ชัน) · e2e บนโค้ดเดิม (git worktree) (57)(58)(60)(61) แดง ทั้ง 440/393 · (59) เขียว = ตัวกันของเดิม ·
+`cloudstatus.test.ts » app.tsx ต้องเอาแถบนี้ขึ้นจอจริง` (อ่านซอร์ส) แดงเพราะย้ายโค้ด → เรียงโค้ดใหม่ให้เทสเดิมผ่านโดยไม่แก้ + เพิ่ม assertion `embed_ok`/`embed_reason` (เพิ่มอย่างเดียว) ·
+e2e (61) dev server มี `React.StrictMode` ⇒ ดึงตอนเปิด 2 ครั้ง → นับจาก base หลังโหลดนิ่ง + `page.clock`
+**mutation:** backend 6/6 · frontend 12/12 + 3/3 (`fetchStatusJson`) — ตัว "แถบ fixed ลอยทับ" รอดรอบแรก (เทสดูแค่ว่าช่องพิมพ์อยู่ในจอ) → เพิ่ม `elementFromPoint` ช่องพิมพ์/ปุ่มส่งใน `expectComposerOnScreen` แล้วตาย · ตัว `style` ซ้ำรอบแรกเป็น mutant ใช้ไม่ได้ (key ซ้ำ ตัวหลังชนะ = ไม่เปลี่ยน)
+**ui-reviewer ตรวจ diff (รอบแรกอ่าน git ไม่ได้ → ส่ง diff เป็นไฟล์ /tmp · 116k · 2.6 นาที):** ต้องแก้ 0 · ควรพิจารณา 3: ① embed ถอย LM Studio → วัดแล้วไม่มีโมเดล = ข้อความถูก ไม่แก้ · ② 401/500 JSON ถูก apply → แก้ `fetchStatusJson` + vitest 5 + mutation 3/3 ·
+③ LM Studio timeout 5 วิ + Ollama ล่ม = ขึ้น pc_off ผิด → log บอกเกิดน้อย (1/4) **จดไว้ ไม่แก้** · จดไว้: `open-work.md` "log ที่ควรดู `[Reader] … ตระกูล 6`" คงไว้ (เป็นการเฝ้า log ไม่ใช่งาน UI)
+**ผล:** pytest 2931 passed · ruff · tsc · vitest 762 · e2e เต็มชุด 83/83 (หลังแก้รอบสุดท้าย) · bundle `index-CX26bFyU.js` (overlay ไม่แตะ)
+**ปิดใน open-work (ยกทั้งดุ้น):** step 5 · C2 · ตระกูล 6 (ปอยเคาะ: ส่วน "UI ไม่แสดง `hint`" ไม่ต้องทำ) · เพิ่มงานเปิด: หัวแอป "ออนไลน์" ตายตัว · งาน backend ล้วนไม่มีผู้ตรวจการปิด open-work
+**ใหม่ 10-07 (ต่อ 141) — step 5 · 🔧 กำลังทำ 10-08 รวมกับ C2 = งาน "จุดสถานะบอกความจริง" (ปอยเคาะ: แก้ข้อความ ห้ามเปลี่ยนพฤติกรรม):** `auto` ไม่ fallback ไป Gemini (PC ดับ → LM Studio → Ollama → ข้อความ error · `utils/llm.py » _stream_lmstudio_or_ollama` · ตามกติกา "ไม่ redirect") แต่ tooltip จุดสถานะข้างช่องพิมพ์บอก
+`… ล่ม — ระบบ fallback ไป Gemini` (`a.ui/app.tsx` · `title={localOk==null …`) — แก้ข้อความ tooltip หรือเปลี่ยนพฤติกรรม? รอปอยตัดสิน ·
+**ใหม่ 10-02 (ต่อ 61) · ⚠️ น่าจะปิดแล้วบางส่วน — รอปอยยืนยัน (กวาด 10-08 [ต่อ 152]):** ส่วน "เตือนใน log" ทำแล้ว [ต่อ 93] `6f3533d` (`routers/reader.py` log WARNING + `scatter_warning`/`hint` ใน JSON) แต่ UI ไม่แสดง `hint` · เดิม: ขาเข้าหนังสือ (`_ingest`) ไม่ซ่อมตระกูล 6 และไม่เตือน — เตือนใน log/UI หรือใส่ pythainlp (62 MB) ·
+- **C2: บอกบนจอว่าความจำ/สกิลไม่พร้อมตอน PC ปิด (10-06 · 🔧 กำลังทำ 10-08 รวมกับ step 5 = งาน "จุดสถานะบอกความจริง"):** ตอนนี้ (เช็ค C1 [ต่อ 134]) มีแค่จุดสถานะข้างช่องพิมพ์เป็น**จุดแดง** — คำอธิบายอยู่ใน `title` (iPhone ไม่มี hover) + ชื่อโมเดล `hidden sm:inline` ·
+  แถบ cloud (`utils/cloudstatus.ts`) พูดถึง local เฉพาะตอน Gemini ล่มด้วย · ไม่มีส่วนไหนบอกว่าความจำ/สกิล/เอกสารใช้ไม่ได้ (แชทยังตอบ แต่ไม่มีบริบทแบบเงียบๆ) · ทางที่เสนอ: แถบข้อความ "ความจำไม่พร้อม (PC ปิด)" จาก `/api/status` `local_ok`/ตัวพัก embed
+
 ## [2026-10-08 ต่อ 152] กวาด `open-work.md` ทั้งไฟล์ (เมนู ⋯ ปิดไปแล้วตั้งแต่ 10-06) · กติกาปิดรายการใน ui-reviewer · งานถัดไป "จุดสถานะบอกความจริง"
 
 **ต้นเรื่อง:** ปอยเคาะให้เริ่มเมนู ⋯ (ต่อ 120) → อ่าน devlog เจอ **[ต่อ 130] deploy แล้ว 10-06** (a.ui `d908dc1` · iPhone 5 ข้อผ่าน · prod bundle `index-xgwILWpi.js` มี "เมนูเพิ่มเติม") แต่ `open-work.md` ยังบอก "รอเคาะก่อนเริ่ม" ⇒ หยุดก่อนเรียก investigator · ปอยสั่งกวาดทั้งไฟล์ + ใส่กติกา

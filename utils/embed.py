@@ -184,6 +184,43 @@ _embed_warm_lock = threading.Lock()
 _embed_warm_state = {"at": -1e9, "running": False}
 
 
+# ── สุขภาพ embed สำหรับจอ (10-08 · /api/status → แถบ 🧠) ─────────────────────────────────────────
+# `/api/status.memory` = ChromaDB บน NAS ⇒ true ตอน PC ปิด ทั้งที่ค้นความจำ/เอกสาร/Vault ใช้ไม่ได้
+# probe `/api/tags` ทุกครั้งที่ cache หมด — ไม่ใช้ตัวพักตัดสิน (ตัวพัก = "เพิ่งล้ม" จาก ConnectTimeout
+# ชั่วคราวก็ได้ ⇒ จอจะบอกว่า PC ปิดผิดๆ) · ไม่มีผลข้างเคียง: ไม่ตั้งตัวพัก ไม่ embed จริง
+_EMBED_HEALTH_TTL = 30.0
+_embed_health_lock = threading.Lock()
+_embed_health_cache: dict = {"ts": -1e9, "res": None}
+
+
+def check_embed_health(force: bool = False) -> dict:
+    """`{ok, reason, message}` · reason: 'ok' · 'unreachable' (ต่อไม่ติด) · 'model_missing' · 'error'
+    (ต่อติดแต่ตอบผิดปกติ) — ผู้เรียก (`routers/system.status`) เทียบกับ LM Studio เองว่า PC ปิดไหม"""
+    with _embed_health_lock:
+        if not force and _embed_health_cache["res"] is not None \
+                and _now() - _embed_health_cache["ts"] < _EMBED_HEALTH_TTL:
+            return dict(_embed_health_cache["res"])
+    root = str(_ollama_client.base_url).rstrip("/")
+    root = root[:-len("/v1")] if root.endswith("/v1") else root
+    try:
+        r = httpx.get(f"{root}/api/tags", timeout=httpx.Timeout(3.0, connect=_EMBED_CONNECT_TIMEOUT))
+        if r.status_code != 200:
+            res = {"ok": False, "reason": "error", "message": f"Ollama ตอบ HTTP {r.status_code}"}
+        else:
+            want = _strip_latest(_EMBED_MODEL)
+            names = [_strip_latest(m.get("name") or m.get("model") or "")
+                     for m in r.json().get("models") or []]
+            res = ({"ok": True, "reason": "ok", "message": ""} if want in names else
+                   {"ok": False, "reason": "model_missing", "message": f"ไม่พบโมเดล {_EMBED_MODEL} บน Ollama"})
+    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+        res = {"ok": False, "reason": "unreachable", "message": f"ต่อ Ollama ไม่ได้ ({type(e).__name__})"}
+    except Exception as e:
+        res = {"ok": False, "reason": "error", "message": f"ถาม Ollama ไม่ได้ ({type(e).__name__})"}
+    with _embed_health_lock:
+        _embed_health_cache.update({"ts": _now(), "res": dict(res)})
+    return res
+
+
 def _ollama_embed_loaded() -> bool:
     """Ollama โหลดโมเดล embed ไว้ใน VRAM อยู่ไหม (`/api/ps`) · ถามไม่ได้ = ถือว่ายังไม่โหลด"""
     root = str(_ollama_client.base_url).rstrip("/")
