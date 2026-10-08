@@ -1,5 +1,25 @@
 ---
 
+## [2026-10-08 ต่อ 149] ✅ deploy skills_db → mount โฟลเดอร์ บน prod · Dream report แบบใหม่ทำงานถูก · ไม่มีใครฝั่ง host เขียน skills_db
+
+**① ก่อนเริ่ม:** CI ui เขียว (`c40ca74`) · a.ui เขียว · `ssh nas` (LAN) timeout = อยู่นอกวง · `nas-cf` ใช้ได้หลังปอยล็อกอิน Access · `ai.pawinhome.com/api/config` 200
+**② Dream 10-08 02:00 (`dream_20261007_190002.json` · ชื่อไฟล์/log เป็น UTC):** ตรงเวลา 2.98 วิ ไม่มี misfire · `phase2_rem.status=no_durable_knowledge` + `reason` ✅ ·
+log `Dream/REM: 0 themes — … · raw='{"themes":[],…}'` ✅ · vault `/vault/2026-10-07-dream.md` มี `**สถานะ:**` ✅ (ชื่อ .md ใช้วันที่ UTC = วันก่อนหน้าตามเวลาไทย — เป็นมาแต่เดิม ไม่ได้แก้) ·
+⏳ `[Embed] อุ่นเครื่อง` ยังไม่มี: หลัง deploy `4ce57a1` มี `/api/warmup` แค่ 2 ครั้ง (02:49 UTC 10-07 ตอน deploy) และไม่มี `/api/chat` เลยทั้งวัน ⇒ ยังไม่เกิดเคส "PC ตื่นครั้งแรก" ให้วัด (ไม่ใช่หลักฐานว่าพัง)
+**③ ผู้เขียน `data/skills_db.json` ฝั่ง host:** ถอด base64 `cmd=` ของ DSM task ครบ 24 ตัว → ไม่มีตัวไหนอ้าง `skills_db` (chown/chmod ที่เจอแตะแค่ `.git`/`.ssh`) ·
+`/etc/crontab` ตั้งเวลาแค่ id 11 (`chroma-backup`) · 2 · 1 · สคริปต์ใน `scripts/` + home ไม่อ้าง · mtime ไฟล์ค้าง 2026-08-03 · ปอยยืนยันไม่เคยแก้มือ ⇒ deploy ได้
+**④ deploy (14:17–14:21 น.):** backup `data/db_backups/skills_db.json.pre-dirmount-20261008-1417` (sha `8bfaec2c…c734` = ต้นฉบับ · 22 แถว) →
+NAS `ed49796`→`c40ca74` · `compose up -d --force-recreate hybrid-ai` → healthy · inode `server.py` host=ctr (287523) ·
+`NAS_DATA_PATH=/app/data` · `SKILLS_DB_PATH=/app/data/skills_db.json` · ไม่มี `/app/skills_db.json` · ไม่มี mount ไฟล์เดี่ยว · probe path ทุกตัวใน `core.config` ก่อน/หลัง diff ต่างแค่ `SKILLS_DB_PATH` ·
+log `Synced 22 skills` · sha ในคอนเทนเนอร์ = backup ·
+**ตัวพิสูจน์:** `clean_skills_db.py --resync` (dry) → `--resync --apply` **exit 0 ไม่มี EBUSY** · ไฟล์ถูกเขียนใหม่จริง (mtime 14:20) sha เท่าเดิม 22 แถว · host `stat` = **644 root** (pawin อ่านได้ `head -c`) · ไม่มี `.tmp` ค้าง · `.lock` อยู่ `data/` ·
+restart อีกรอบ → healthy · `Synced 22` · inode ตรง · public 200
+จดไว้: `.bak-20261008-072001` ที่สคริปต์ทำ (`shutil.copy2`) ได้สิทธิ์ `0111 root` (ลอกจากที่คอนเทนเนอร์เห็น) ⇒ pawin บน host อ่านไม่ได้ — ไม่บล็อก (มี backup อ่านได้ใน `db_backups/`) ตรงกับที่คาดไว้ใน [ต่อ 148]
+
+📊 10-08 ~14:00 → 14:25 · subagent 0 · /scrutinize 0 (แผนผ่านแล้วใน [148]) · deploy 1 รอบไม่ต้อง rollback · มือ: ปอยล็อกอิน Access 1 ครั้ง + ยืนยันไม่เคยแก้มือ
+
+---
+
 ## [2026-10-07 ต่อ 148] skills_db.json → mount โฟลเดอร์ (โค้ด+เทส · CI เขียว · ⏳ prod พรุ่งนี้) · pin NAS_DATA_PATH · ไฟล์ใหม่ 0644
 
 **ปอยเคาะ:** ทาง (ก) + pin `NAS_DATA_PATH` ใน compose `environment:` (ไม่เอาแค่เทส `.env.example`) · คืนนี้ห้ามแตะ prod · prod พรุ่งนี้ 09:00–22:00 หลังดู Dream report
