@@ -1,5 +1,17 @@
 ---
 
+## [2026-10-08 ต่อ 151] ย้ายบรรทัด ✅ เก่าจาก ▶️ ของ CLAUDE.md ลงที่นี่ (งบ 50 KB · เป้า ≤ 47 KB · ปอยสั่ง)
+
+ยก**ทั้งดุ้นไม่แก้**จากหัวข้อ "🥇 งานเซสชันหน้า" (7 บรรทัด) · ไม่แตะกฎ 🔒/⚠️/🔑/⛔ · ของค้างที่ติดมาในบรรทัด "รอบ 12" (`DNS สำรองใน DSM`) ย้ายไปต่อท้ายบรรทัด ⏳ รอปอย ใน ▶️ แล้ว (`step 5 tooltip fallback` มีอยู่ใน `open-work.md` ⏳ อยู่แล้ว)
+
+✅ 10-08 [ต่อ 149]: **skills_db mount โฟลเดอร์ deploy แล้ว** (NAS `c40ca74` · `SKILLS_DB_PATH=/app/data/skills_db.json` · resync `--apply` exit 0 ไม่มี EBUSY · host 644 root ⇒ pawin เขียนไม่ได้ ตั้งใจ) · Dream report แบบใหม่ (`status`/`reason` · `**สถานะ:**`) ทำงานถูก
+✅ 10-07 เย็น: pip-audit 9→3 (accepted risk) · Chroma bind 127.0.0.1 + skills ชี้ทางใหม่ · ของค้างเล็ก (devlog [ต่อ 143]–[148])
+✅ รอบ 12 (10-07): ผังทั้งระบบ [`docs/system-map.md`](docs/system-map.md) + เทสยึดสองรีโป · A1 misfire 1 ชม. · start-ai.ps1 · เวลาสำรอง 00:00 · REM บอกสถานะ/เหตุผล (ui `b358c57` · a.ui `ed21948`) · ⏳ รอปอย: step 5 tooltip fallback · DNS สำรองใน DSM
+✅ รอบ 11 (10-06): overlay ไม่เติมธงเมื่อมี React · `initialCbSkills` (Web Search/Code ไม่จำ · Plan/Reflect จำ · obsidian ค้างถูกกรอง) deploy แล้ว (ui `2781925` · a.ui `dc6fa24` · bundle `index-xgwILWpi.js` · `enhanced.js?v=20261006-832e6c84`) — devlog [ต่อ 138] ·
+✅ รอบ 10 (10-06): CI ที่ค้างจาก Actions ล่ม rerun เขียวครบ · พื้นที่แตะ 🌙 🤖 📌 🗑️ 26×44 deploy แล้ว + iPhone 4 ข้อผ่าน (bundle `index-BIjCvrjS.js` · `enhanced.js?v=20261006-10662033`) ·
+✅ ทางหยุด stream ระหว่าง Debate deploy แล้ว ([ต่อ 132] · ✕/Escape = หยุด+ปิด · ฟ้องที่ส่ง `signal` เอง overlay ไม่แตะ · ข้อจำกัด DB ที่ยอมรับอยู่ใน ui-map) · ✅ Debate ชั่วคราว ([ต่อ 136] · ธง `debate: true` ไม่บันทึก/ไม่เรียนรู้ · overlay ไม่แตะฟ้อง Debate · ลบ `debate_*` 11 แถว · สำรอง `data/db_backups/manual_chat_history_pre-debate-cleanup_20261006_091005.db`) ·
+✅ PC ปิดแล้วแชทไม่ช้า 15–18 วิ ([ต่อ 134] · ตัวพัก Ollama ใช้ร่วมกับ EF ของ chromadb · ปิดทางเฉพาะ ConnectError/ConnectTimeout · documents ไม่ถอยไป MiniLM)
+
 ## [2026-10-08 ต่อ 150] skills_db.json เข้ารอบสำรอง 03:30 (โค้ด+เทส · /scrutinize · `{}` = ล้ม · deploy)
 
 **ปอยสั่ง:** ใส่ `skills_db.json` เข้ารอบสำรอง 03:30 ก่อน แล้วเมนู ⋯ (ต่อ 120) เป็นงานถัดไป · เทสแดงก่อน (อยู่ในซอง + JSON เสียห้ามทับรุ่นดี) · ห้ามทับ backup มือ 10-08 ·
@@ -29,6 +41,7 @@ minor DB หลัก+JSON เสียพร้อมกัน ปัญหา 
 ที่มาของเลข: 22 = จำนวน `skills/*.md` (22 ไฟล์) = `skills_collection` 22 · **ไม่เจอเลข "43 skills" ในรีโป/`docs/`/vault `wiki/`/memory ทั้งสองถัง/`~/appscript.ui/*.md`** (43 ที่เจอคือ e2e 43 ตัว · ruff 43 unused import) ⇒ ยังไม่รู้ว่า 43 มาจากไหน — ไม่เดา ·
 ที่เจอแทน: `data/skills_db.json.bak-20260802` มี **52** รายการ = ก่อนล้างคลังข้อ 18 (`from-memory-status.md` "คลังความรู้เป็นขยะทั้ง 3 ชั้น — ล้างแล้ว" 112 → 52 · แล้ว dry-run 08-03 เหลือ 22 ตรงกับ .md) — ตั้งใจล้าง ไม่ใช่ของหาย ·
 คอลเลกชันอื่นที่อาจถูกเรียกว่า skills: `~/.claude/skills/` 126 โฟลเดอร์ (Claude Code ไม่ใช่ของแอป)
+✅ **ปิดเรื่อง 43 (ปอย 10-08):** เลข 43 มาจากบันทึกเก่าในแชทของปอย ไม่ใช่จากรีโป · ของจริง = 22 ตามที่ตรวจ · ลบคำถามออกจาก ▶️ แล้ว
 **`{}` (ปอยเคาะ 10-08):** ไม่เอาแค่ WARNING — ทำเหมือน JSON เสีย แต่**ยังเก็บเข้าซอง** (อ่านได้จริง) + งดลบรุ่นเก่า + `SkillsDbNotBackedUp` + `/fail` · แก้ใน `_snapshot_json` (เขียนลงซองก่อน แล้วค่อยเช็คว่าง) ·
 เทสแดงก่อนแก้ (`DID NOT RAISE` ×2): `test_json_ว่าง_เก็บเข้าซองได้_แต่ไม่ลบรุ่นเก่า_raise` (`{}` · `" {\n}\n"`) · ปรับ `test_default_paths_เก็บ_reader_db_ด้วย` ให้เขียน dict ที่มีข้อมูล (เดิม `{}` = จะกลายเป็นล้ม) ·
 mutation **7/7** (ถอดเช็คว่าง · เช็คว่างก่อนเขียนลงซอง + 5 ตัวเดิมรันซ้ำ) · ชุดเต็ม **2913 passed** · 17 skipped · จำลอง CI (ไม่มีไฟล์) 66 passed · ruff ผ่าน

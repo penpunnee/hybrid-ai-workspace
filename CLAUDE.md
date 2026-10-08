@@ -176,7 +176,7 @@ overlay แบบ vanilla (ไม่ต้อง build, ทำงานคู่
 - ⚠️ **DELETE `/api/skills/{id}`**: lebt `delete_file` query param (default false). ส่ง `?delete_file=true` ถ้าต้องลบ .md ด้วย — กัน data loss
 
 
-## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-08 [ต่อ 150] · **ที่เดียว**)
+## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-08 [ต่อ 151] · **ที่เดียว**)
 
 > บล็อก ▶️ ทั้งหมดจนถึง 09-28 (ก้อน 1–11 · config ก้อน 1–4 · reader/voice 08-17→09-22 · ไมค์ 08-24/26)
 > ถูกยก**ทั้งดุ้นไม่แก้**ไปไว้ที่ devlog **[2026-09-28 ต่อ 24]** — ที่นี่เหลือแค่งานเปิด + กติกาที่ยังมีผล
@@ -199,18 +199,11 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
    ไฟล์จริง: `tar tzf data/db_backups/db_backup_20261009_*.tar.gz` ต้องมี `skills_db.json` · แตกออกมา sha = `data/skills_db.json` · 22 key · ซองเก่ายังครบ 7 วัน · ⛔ ห้ามสั่งรันสำรองเองบน prod
 ② `gh run list` สองรีโป (ต้องเขียว) · `ssh -o ConnectTimeout=10 nas true` (นอกวง → `nas-cf`)
 ③ ดู log `[Embed] อุ่นเครื่อง … N วิ` หลัง PC ตื่นครั้งแรก ([ต่อ 139] · 10-08 ยังไม่เกิดเคส — ไม่มีแชทเลยหลัง deploy)
-④ งานถัดไป (ปอยเคาะ 10-08): **เมนู ⋯ บนมือถือ (ต่อ 120)** — แผนเสนอแล้วใน open-work ⏳ · ⚠️ ปอยถาม "เอกสารเดิมว่ามี 43 skills" — หาไม่เจอ ([ต่อ 150]) ถามปอยว่าเห็นที่ไหน
-✅ 10-08 [ต่อ 149]: **skills_db mount โฟลเดอร์ deploy แล้ว** (NAS `c40ca74` · `SKILLS_DB_PATH=/app/data/skills_db.json` · resync `--apply` exit 0 ไม่มี EBUSY · host 644 root ⇒ pawin เขียนไม่ได้ ตั้งใจ) · Dream report แบบใหม่ (`status`/`reason` · `**สถานะ:**`) ทำงานถูก
-⏳ **รอปอย:** ส่ง URL check Dream (tag `ui`) → ใส่ `DREAM_HEARTBEAT_URL` ใน `.env` บน NAS เท่านั้น ⛔ ห้าม commit → `--force-recreate` · แก้ DSM `chroma-backup` ต่อท้าย ping · กด Test email/Telegram ใน Healthchecks · ปิด alert #1 + เปิด Dependabot ·
-✅ 10-07 เย็น: pip-audit 9→3 (accepted risk) · Chroma bind 127.0.0.1 + skills ชี้ทางใหม่ · ของค้างเล็ก (devlog [ต่อ 143]–[148])
-✅ รอบ 12 (10-07): ผังทั้งระบบ [`docs/system-map.md`](docs/system-map.md) + เทสยึดสองรีโป · A1 misfire 1 ชม. · start-ai.ps1 · เวลาสำรอง 00:00 · REM บอกสถานะ/เหตุผล (ui `b358c57` · a.ui `ed21948`) · ⏳ รอปอย: step 5 tooltip fallback · DNS สำรองใน DSM
-✅ รอบ 11 (10-06): overlay ไม่เติมธงเมื่อมี React · `initialCbSkills` (Web Search/Code ไม่จำ · Plan/Reflect จำ · obsidian ค้างถูกกรอง) deploy แล้ว (ui `2781925` · a.ui `dc6fa24` · bundle `index-xgwILWpi.js` · `enhanced.js?v=20261006-832e6c84`) — devlog [ต่อ 138] ·
+④ งานถัดไป (ปอยเคาะ 10-08): **เมนู ⋯ บนมือถือ (ต่อ 120)** — แผนเสนอแล้วใน open-work ⏳
+⏳ **รอปอย:** ส่ง URL check Dream (tag `ui`) → ใส่ `DREAM_HEARTBEAT_URL` ใน `.env` บน NAS เท่านั้น ⛔ ห้าม commit → `--force-recreate` · แก้ DSM `chroma-backup` ต่อท้าย ping · กด Test email/Telegram ใน Healthchecks · ปิด alert #1 + เปิด Dependabot · DNS สำรองใน DSM (จากรอบ 12 · [ต่อ 151]) ·
 อ่าน devlog **[10-07 ต่อ 140]** ก่อน (⛔ เฉลยการพิสูจน์ `ui-reviewer` [126] ห้ามย้ายมาไว้ในไฟล์นี้) ·
-✅ รอบ 10 (10-06): CI ที่ค้างจาก Actions ล่ม rerun เขียวครบ · พื้นที่แตะ 🌙 🤖 📌 🗑️ 26×44 deploy แล้ว + iPhone 4 ข้อผ่าน (bundle `index-BIjCvrjS.js` · `enhanced.js?v=20261006-10662033`) ·
 🔑 **ห้ามปุ่มข้างเคียงล้ำเข้าพื้นที่แตะของ 🗑️ ทั้งตอนปกติและ hover** (ปอยเคาะ 10-06 · แทนข้อยอมรับ ⋯ ล้ำ 1–2px เดิม) ⇒ overlay §13 ปิด `scale(1.15)` ของปุ่มแถบหัวใน `@media (hover: none)` · e2e ㊴ ㊺ ㊻ ·
 พื้นที่แตะปุ่มแถบหัวขยายด้วย `::before` ⛔ ห้าม `::after` · e2e ที่วัดหลัง hover ต้องรอ transition จบ (`settleAnim`) ·
-✅ ทางหยุด stream ระหว่าง Debate deploy แล้ว ([ต่อ 132] · ✕/Escape = หยุด+ปิด · ฟ้องที่ส่ง `signal` เอง overlay ไม่แตะ · ข้อจำกัด DB ที่ยอมรับอยู่ใน ui-map) · ✅ Debate ชั่วคราว ([ต่อ 136] · ธง `debate: true` ไม่บันทึก/ไม่เรียนรู้ · overlay ไม่แตะฟ้อง Debate · ลบ `debate_*` 11 แถว · สำรอง `data/db_backups/manual_chat_history_pre-debate-cleanup_20261006_091005.db`) ·
-✅ PC ปิดแล้วแชทไม่ช้า 15–18 วิ ([ต่อ 134] · ตัวพัก Ollama ใช้ร่วมกับ EF ของ chromadb · ปิดทางเฉพาะ ConnectError/ConnectTimeout · documents ไม่ถอยไป MiniLM)
 ถ้า user ส่งภาพหน้าแจ้ง error ของ `AppErrorBoundary` มา → ใช้ชื่อ error บนจอหาจุดพังแล้วแก้ที่ต้นเหตุ
 
 ### ✅ ปิดแล้ว → ก่อนเช็คว่าเรื่องไหนปิดแล้ว/ดูประวัติ → อ่าน [`docs/session-log/devlog.md`](docs/session-log/devlog.md)
