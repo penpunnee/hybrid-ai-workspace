@@ -19,6 +19,12 @@ e2e (61) dev server มี `React.StrictMode` ⇒ ดึงตอนเปิด
 **ui-reviewer ตรวจ diff (รอบแรกอ่าน git ไม่ได้ → ส่ง diff เป็นไฟล์ /tmp · 116k · 2.6 นาที):** ต้องแก้ 0 · ควรพิจารณา 3: ① embed ถอย LM Studio → วัดแล้วไม่มีโมเดล = ข้อความถูก ไม่แก้ · ② 401/500 JSON ถูก apply → แก้ `fetchStatusJson` + vitest 5 + mutation 3/3 ·
 ③ LM Studio timeout 5 วิ + Ollama ล่ม = ขึ้น pc_off ผิด → log บอกเกิดน้อย (1/4) **จดไว้ ไม่แก้** · จดไว้: `open-work.md` "log ที่ควรดู `[Reader] … ตระกูล 6`" คงไว้ (เป็นการเฝ้า log ไม่ใช่งาน UI)
 **ผล:** pytest 2931 passed · ruff · tsc · vitest 762 · e2e เต็มชุด 83/83 (หลังแก้รอบสุดท้าย) · bundle `index-CX26bFyU.js` (overlay ไม่แตะ)
+**deploy (16:38):** ui `1cb4c18` · a.ui `1f025c0` (origin+github) · NAS `--force-recreate` → healthy · inode `server.py` host=ctr (287523) · prod เสิร์ฟ `index-CX26bFyU.js` (มี `memory-banner`) ·
+`/api/status` ตอน PC เปิด: `embed_ok: true` · `embed_reason: ok` · log ไม่มี `Embed health check failed` · CI เขียวทั้งสองรีโป ·
+**เวลาตอบ `/api/status` (5 ครั้ง · ครั้งที่ 4 หลังพัก 31 วิ = cache 30 วิหมด):** ก่อน `[0.831, 0.006, 0.006, 0.026, 0.005]` → หลัง `[0.846, 0.006, 0.006, 0.042, 0.006]` วิ ⇒ เท่าเดิม (+16 ms ตอน cache หมด = probe `/api/tags`) · ตอน PC ปิดยังไม่ได้วัด (connect timeout 1.5 วิ วิ่งขนาน)
+🧪 checklist iPhone 5 ข้อ → `pending-manual-tests.md` รอปอย ⛔ ห้ามติ๊กเอง
+
+📊 10-08 ~15:30 → 16:45 · ui-investigator 1 (132k · 2.5 นาที · ชี้ถูก) · ui-reviewer แผน 1 (132k · 3.5 นาที · ต้องแก้ 6) + diff 2 รอบ (รอบแรกอ่าน git ไม่ได้ · รอบสอง 116k · 2.6 นาที · ต้องแก้ 0) · mutation 21/21 · e2e เต็มชุด 2 รอบ 83/83
 **ปิดใน open-work (ยกทั้งดุ้น):** step 5 · C2 · ตระกูล 6 (ปอยเคาะ: ส่วน "UI ไม่แสดง `hint`" ไม่ต้องทำ) · เพิ่มงานเปิด: หัวแอป "ออนไลน์" ตายตัว · งาน backend ล้วนไม่มีผู้ตรวจการปิด open-work
 **ใหม่ 10-07 (ต่อ 141) — step 5 · 🔧 กำลังทำ 10-08 รวมกับ C2 = งาน "จุดสถานะบอกความจริง" (ปอยเคาะ: แก้ข้อความ ห้ามเปลี่ยนพฤติกรรม):** `auto` ไม่ fallback ไป Gemini (PC ดับ → LM Studio → Ollama → ข้อความ error · `utils/llm.py » _stream_lmstudio_or_ollama` · ตามกติกา "ไม่ redirect") แต่ tooltip จุดสถานะข้างช่องพิมพ์บอก
 `… ล่ม — ระบบ fallback ไป Gemini` (`a.ui/app.tsx` · `title={localOk==null …`) — แก้ข้อความ tooltip หรือเปลี่ยนพฤติกรรม? รอปอยตัดสิน ·
