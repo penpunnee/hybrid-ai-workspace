@@ -1,4 +1,4 @@
-"""สำรอง SQLite databases จากในแอป (APScheduler 03:30 — core/scheduler.py)
+"""สำรอง SQLite databases + skills_db.json จากในแอป (APScheduler 03:30 — core/scheduler.py)
 
 ทำไมต้องมี in-app ทั้งที่มี scripts/db_backup.sh: ตั้ง DSM Task Scheduler
 จาก SSH ไม่ได้ (sudo บน NAS จำกัดแค่ docker) — job ในแอปจบได้เองไม่พึ่ง GUI
@@ -14,6 +14,7 @@ mount กลับ host ผ่าน docker-compose) เก็บ DB_BACKUP_RETA
 backup เปล่ายังผ่านออกไปได้โดยไม่มีใครรู้ ตอนนี้กันด้วย _verify_snapshot()
 """
 import glob
+import json
 import logging
 import os
 import sqlite3
@@ -27,6 +28,7 @@ from core.config import (
     EMBED_CACHE_DB,
     READER_DB_PATH,
     RESPONSE_CACHE_DB,
+    SKILLS_DB_PATH,
 )
 from core.env_registry import env_int, env_str
 
@@ -60,6 +62,14 @@ class BackupUnhealthy(RuntimeError):
     def __init__(self, message: str, archive: str | None = None):
         super().__init__(message)
         self.archive = archive
+
+
+class SkillsDbNotBackedUp(BackupUnhealthy):
+    """sqlite ในซองดี แต่ skills_db.json สำรองไม่ได้ (หาไม่เจอ / parse ไม่ได้ / ไม่ใช่ dict) หรือว่าง `{}`
+
+    แยกคลาสเพื่อให้ scheduler ยิง heartbeat `/fail` เฉพาะเคสนี้ — ชื่อซองไม่ต่อ
+    `_UNHEALTHY` เพราะคนกู้ระบบยังหยิบซองนี้ไปกู้ sqlite ได้
+    """
 
 
 def _snapshot(src_path: str, dst_path: str) -> None:
@@ -135,16 +145,69 @@ def _default_db_paths() -> list[str]:
     return [DB_PATH, READER_DB_PATH, EMBED_CACHE_DB, RESPONSE_CACHE_DB]
 
 
+def _default_json_paths() -> list[str]:
+    """ไฟล์ JSON ที่ job รายคืนสำรองคู่กับ sqlite (อ่านค่าตอนเรียก — เหตุผลเดียวกับ `_default_db_paths`)
+
+    skills_db.json ไม่ใช่ "ใบรอง" แบบ cache — แอปใช้งานจริง และสร้างใหม่จาก .md ได้ไม่ครบ
+    ⇒ หาไม่เจอ/parse ไม่ได้ = รอบนั้นไม่สำเร็จ (devlog 2026-10-08 ต่อ 150)
+    """
+    return [SKILLS_DB_PATH]
+
+
+def _parse_skills_json(data: bytes) -> str | None:
+    """ตรวจไบต์ของ skills_db.json — คืนข้อความปัญหา หรือ None ถ้าใช้ได้"""
+    try:
+        obj = json.loads(data)
+    except ValueError as e:  # JSONDecodeError + UnicodeDecodeError
+        return f"parse ไม่ได้ ({type(e).__name__}: {e})"
+    if not isinstance(obj, dict):
+        return f"ไม่ใช่ dict (ได้ {type(obj).__name__})"
+    return None
+
+
+def _snapshot_json(src_path: str, dst_path: str) -> str | None:
+    """อ่าน **ครั้งเดียว** → ตรวจ → เขียนไบต์ชุดที่ตรวจแล้ว · คืนข้อความปัญหา หรือ None
+
+    ⚠️ ห้ามตรวจแล้วค่อย copy ไฟล์ต้นทางอีกรอบ — คนเขียนที่แทรกระหว่างนั้นทำให้
+    ของในซองเป็นรุ่นที่ไม่เคยผ่านการตรวจ (`_save_skills_db` เขียน atomic ก็จริง แต่
+    คนเขียนทางอื่น เช่นแก้มือ ไม่รับประกัน)
+    """
+    try:
+        with open(src_path, "rb") as f:
+            data = f.read()
+    except FileNotFoundError:
+        return "หาไฟล์ไม่เจอ"
+    except OSError as e:
+        return f"อ่านไม่ได้ ({e})"
+    problem = _parse_skills_json(data)
+    if problem:
+        return problem
+    with open(dst_path, "wb") as f:
+        f.write(data)
+    # {} อ่านได้ จึงเก็บเข้าซองตามจริง — แต่ prod มีสกิลเสมอ ไฟล์ว่าง = ของหาย ไม่ใช่สถานะปกติ
+    # ถ้านับว่าสำเร็จ retention จะกินซองที่มีสกิลจริงจนหมดภายใน 7 วัน ("ว่าง" ต้องไม่หน้าตาเหมือน "ปกติ")
+    if not json.loads(data):
+        return "ว่าง ({}) — เก็บเข้าซองแล้วแต่ไม่นับว่าสำเร็จ"
+    return None
+
+
 def run_db_backup(dest: str | None = None,
                   db_paths: list[str] | None = None,
-                  retain_days: int | None = None) -> str | None:
+                  retain_days: int | None = None,
+                  json_paths: list[str] | None = None) -> str | None:
     """สำรอง DB ทั้งหมดที่มีอยู่จริง → คืน path ของ archive (None ถ้าไม่มีอะไรให้สำรอง)
 
     raise BackupUnhealthy ถ้า archive เขียนสำเร็จแต่เนื้อในใช้กู้ไม่ได้
     (archive ยังถูกเก็บไว้ — ของน่าสงสัยมีค่ากว่าไม่มีอะไรเลย แต่ห้ามนับว่าสำเร็จ)
+    raise SkillsDbNotBackedUp ถ้า sqlite ดีแต่ JSON ใน json_paths สำรองไม่ได้
+
+    json_paths ไม่ส่ง: ถ้าผู้เรียกระบุ db_paths เอง = ไม่สำรอง JSON (ได้แค่ชุดที่ขอ ·
+    กันเทส/สคริปต์ไปหยิบ skills_db ของเครื่องเข้ามาเงียบๆ) · ไม่ระบุอะไรเลย (scheduler) = `_default_json_paths()`
     """
     dest = dest or DB_BACKUP_DEST
     retain = DB_BACKUP_RETAIN_DAYS if retain_days is None else retain_days
+    if json_paths is None:
+        json_paths = [] if db_paths is not None else _default_json_paths()
     paths = db_paths if db_paths is not None else _default_db_paths()
 
     # ชื่อในซองคือ basename → ถ้าซ้ำกัน ตัวหลังทับตัวแรกเงียบๆ = ขอ 2 ใบได้กลับ 1 ใบ
@@ -152,8 +215,8 @@ def run_db_backup(dest: str | None = None,
     # ปฏิเสธไปเลยดีกว่าเงียบ — ยังไม่เคยเกิดบน prod (3 ใบชื่อไม่ซ้ำ) แต่เป็นหลุมที่รออยู่
     # ⚠️ จงใจ *ไม่* เปลี่ยนวิธีตั้งชื่อในซอง — archive 7 วันที่มีอยู่ใช้ basename ล้วน
     #    การเปลี่ยนโครงชื่อจะทำให้ขั้นตอนกู้ที่คนจำไว้ใช้ไม่ได้กับของเก่า
-    dupes = {n for n in (os.path.basename(p) for p in paths)
-             if [os.path.basename(q) for q in paths].count(n) > 1}
+    names = [os.path.basename(p) for p in [*paths, *json_paths]]
+    dupes = {n for n in names if names.count(n) > 1}
     if dupes:
         raise ValueError(
             f"db_paths มีชื่อไฟล์ซ้ำกัน {sorted(dupes)} — ตัวหลังจะทับตัวแรกใน archive")
@@ -182,6 +245,12 @@ def run_db_backup(dest: str | None = None,
             _snapshot(p, os.path.join(work, os.path.basename(p)))
         problem = _verify_snapshot(work, os.path.basename(paths[0]))
 
+        json_problems = []
+        for p in json_paths:
+            why = _snapshot_json(p, os.path.join(work, os.path.basename(p)))
+            if why:
+                json_problems.append(f"{os.path.basename(p)} {why} ({p})")
+
         # ชื่อไฟล์คือสิ่งเดียวที่เดินทางไปกับ archive — ตอนกู้ระบบจริงคนหยิบไฟล์
         # ล่าสุดจากชื่อ ไม่มีใครไล่ log ย้อนหลัง ชื่อจึงต้องบอกความจริงด้วยตัวมันเอง
         # ⚠️ ยังขึ้นต้น db_backup_ เหมือนเดิม เพื่อให้ glob ของ retention เห็น
@@ -196,8 +265,18 @@ def run_db_backup(dest: str | None = None,
     if problem:
         # ⚠️ ไม่แตะ retention เด็ดขาด — รอบนี้ได้ของเสีย การลบของเก่าตามอายุ
         # จะทำลาย backup ที่ยังดีอยู่ทิ้งไปด้วย (พังชั่วคราว → พังถาวร)
+        # ปัญหา JSON ต้องไม่หายเงียบเพราะ DB หลักเสียพร้อมกัน
+        if json_problems:
+            problem += " · สำรอง JSON ไม่ได้ด้วย — " + " · ".join(json_problems)
         logger.error("[db_backup] archive ไม่ผ่านการตรวจ: %s → %s", problem, archive)
         raise BackupUnhealthy(problem, archive=archive)
+
+    if json_problems:
+        # เหตุผลเดียวกับข้างบน: ถ้าไฟล์เสีย/หายต่อเนื่องเกิน retain วัน แล้วยังลบตามอายุ
+        # ซองทุกใบที่มีสกิลดีจะหายหมด · ชื่อซองไม่ติด _UNHEALTHY — sqlite ในซองยังกู้ได้
+        msg = "สำรอง JSON ไม่ได้ — " + " · ".join(json_problems)
+        logger.error("[db_backup] %s → %s (งดลบรุ่นเก่ารอบนี้)", msg, archive)
+        raise SkillsDbNotBackedUp(msg, archive=archive)
 
     cutoff = time.time() - retain * 86400
     for old in glob.glob(os.path.join(dest, "db_backup_*.tar.gz")):
@@ -207,6 +286,6 @@ def run_db_backup(dest: str | None = None,
             except OSError:
                 pass
 
-    logger.info("[db_backup] สำรอง %d db → %s (%.1f KB)",
-                len(existing), archive, os.path.getsize(archive) / 1024)
+    logger.info("[db_backup] สำรอง %d db + %d json → %s (%.1f KB)",
+                len(existing), len(json_paths), archive, os.path.getsize(archive) / 1024)
     return archive

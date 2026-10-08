@@ -176,7 +176,7 @@ overlay แบบ vanilla (ไม่ต้อง build, ทำงานคู่
 - ⚠️ **DELETE `/api/skills/{id}`**: lebt `delete_file` query param (default false). ส่ง `?delete_file=true` ถ้าต้องลบ .md ด้วย — กัน data loss
 
 
-## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-08 [ต่อ 149] · **ที่เดียว**)
+## ▶️ เซสชันหน้าเริ่มตรงนี้ (อัปเดต 2026-10-08 [ต่อ 150] · **ที่เดียว**)
 
 > บล็อก ▶️ ทั้งหมดจนถึง 09-28 (ก้อน 1–11 · config ก้อน 1–4 · reader/voice 08-17→09-22 · ไมค์ 08-24/26)
 > ถูกยก**ทั้งดุ้นไม่แก้**ไปไว้ที่ devlog **[2026-09-28 ต่อ 24]** — ที่นี่เหลือแค่งานเปิด + กติกาที่ยังมีผล
@@ -195,9 +195,11 @@ uvx ruff check . && (cd ~/appscript.ui && npx vitest run utils/ && npx tsc --noE
 → **รอ CI เขียวก่อนเริ่มก้อนถัดไป** → devlog
 
 ### 🥇 งานเซสชันหน้า
-① `gh run list` สองรีโป (ต้องเขียว) · `ssh -o ConnectTimeout=10 nas true` (นอกวง → `nas-cf`)
-② ดู log `[Embed] อุ่นเครื่อง … N วิ` หลัง PC ตื่นครั้งแรก ([ต่อ 139] · 10-08 ยังไม่เกิดเคส — ไม่มีแชทเลยหลัง deploy)
-③ ไม่มีงานบังคับค้าง → เลือกจาก [`open-work.md`](docs/session-log/open-work.md) ⏳ ให้ปอยเคาะ
+① **เช็คซองสำรองคืน 10-09 03:30 ว่ามี `skills_db.json`** ([ต่อ 150]) — log `[db_backup] สำรอง 4 db + 1 json → …` + `[heartbeat] ok` (ไม่มี `/fail`) ·
+   ไฟล์จริง: `tar tzf data/db_backups/db_backup_20261009_*.tar.gz` ต้องมี `skills_db.json` · แตกออกมา sha = `data/skills_db.json` · 22 key · ซองเก่ายังครบ 7 วัน · ⛔ ห้ามสั่งรันสำรองเองบน prod
+② `gh run list` สองรีโป (ต้องเขียว) · `ssh -o ConnectTimeout=10 nas true` (นอกวง → `nas-cf`)
+③ ดู log `[Embed] อุ่นเครื่อง … N วิ` หลัง PC ตื่นครั้งแรก ([ต่อ 139] · 10-08 ยังไม่เกิดเคส — ไม่มีแชทเลยหลัง deploy)
+④ งานถัดไป (ปอยเคาะ 10-08): **เมนู ⋯ บนมือถือ (ต่อ 120)** — แผนเสนอแล้วใน open-work ⏳ · ⚠️ ปอยถาม "เอกสารเดิมว่ามี 43 skills" — หาไม่เจอ ([ต่อ 150]) ถามปอยว่าเห็นที่ไหน
 ✅ 10-08 [ต่อ 149]: **skills_db mount โฟลเดอร์ deploy แล้ว** (NAS `c40ca74` · `SKILLS_DB_PATH=/app/data/skills_db.json` · resync `--apply` exit 0 ไม่มี EBUSY · host 644 root ⇒ pawin เขียนไม่ได้ ตั้งใจ) · Dream report แบบใหม่ (`status`/`reason` · `**สถานะ:**`) ทำงานถูก
 ⏳ **รอปอย:** ส่ง URL check Dream (tag `ui`) → ใส่ `DREAM_HEARTBEAT_URL` ใน `.env` บน NAS เท่านั้น ⛔ ห้าม commit → `--force-recreate` · แก้ DSM `chroma-backup` ต่อท้าย ping · กด Test email/Telegram ใน Healthchecks · ปิด alert #1 + เปิด Dependabot ·
 ✅ 10-07 เย็น: pip-audit 9→3 (accepted risk) · Chroma bind 127.0.0.1 + skills ชี้ทางใหม่ · ของค้างเล็ก (devlog [ต่อ 143]–[148])

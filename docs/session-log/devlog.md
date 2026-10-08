@@ -1,5 +1,42 @@
 ---
 
+## [2026-10-08 ต่อ 150] skills_db.json เข้ารอบสำรอง 03:30 (โค้ด+เทส · /scrutinize · `{}` = ล้ม · deploy)
+
+**ปอยสั่ง:** ใส่ `skills_db.json` เข้ารอบสำรอง 03:30 ก่อน แล้วเมนู ⋯ (ต่อ 120) เป็นงานถัดไป · เทสแดงก่อน (อยู่ในซอง + JSON เสียห้ามทับรุ่นดี) · ห้ามทับ backup มือ 10-08 ·
+ชุดเต็ม + ruff + /scrutinize → deploy (`--force-recreate` + inode) · พรุ่งนี้เช็คหลัง 03:30 เป็นข้อแรกใน ▶️ · จด "สำรองอยู่เครื่องเดียว + ไม่เคยลองกู้" เป็นงานเปิดแยก (ทำแล้วใน `open-work.md`)
+**สืบ `utils/db_backup.py` (212 บรรทัด · เรียกจาก `core/scheduler.py » _scheduled_db_backup` 03:30):**
+- วิธี: sqlite `src.backup(dst)` (online snapshot · WAL-safe) ของแต่ละไฟล์ลง `TemporaryDirectory` → **รวมเป็น tar.gz ใบเดียวต่อคืน** `db_backup_<ts>.tar.gz` ที่ `DB_BACKUP_DEST` (`/app/db_backups` → host `data/db_backups/`) · ชื่อในซอง = basename
+- ตรวจ: `_verify_snapshot` ดูเฉพาะใบแรก (`DB_PATH`) — integrity_check + นับแถว ≠ 0 · ไม่ผ่าน → ชื่อ `_UNHEALTHY` + raise `BackupUnhealthy` + **ไม่แตะ retention** · ใบรองหายจาก mount = log ERROR ไม่ raise
+- รุ่น: `DB_BACKUP_RETAIN` = 7 วัน · ลบด้วย glob `db_backup_*.tar.gz` ตาม mtime **หลังรอบสำเร็จเท่านั้น** ⇒ backup มือ `skills_db.json.pre-dirmount-20261008-1417` ไม่เข้า glob (ไม่ถูกลบ/ทับ)
+- heartbeat (`HEARTBEAT_URL`) ยิงเฉพาะรอบที่คืน archive สำเร็จ · เทส: `test_db_backup{,_job,_health,_reader}.py` · 2 เทส assert ชื่อในซอง**เท่ากับ**ชุดที่ส่งเอง (`test_db_backup_job.py::test_skips_missing_but_backs_up_existing` · `test_db_backup_health.py::test_empty_cache_db_alone_is_not_fatal`)
+- ผู้เขียน `skills_db.json` = `utils/skills.py » _save_skills_db()` mkstemp + `os.replace` (atomic) ⇒ ผู้อ่านเห็นของเก่าหรือของใหม่ทั้งก้อน ไม่มีครึ่งไฟล์ — แต่คนเขียนอื่น (มือ/สคริปต์ในอนาคต) ไม่รับประกัน จึงยังต้องตรวจ parse
+
+**ปอยเคาะ (ข) + ปรับ:** JSON เสีย **และหาไม่เจอ** = ไม่เข้าซอง + งดลบรุ่นเก่า + ไม่ยิงสำเร็จ · `raise SkillsDbNotBackedUp` (สืบ `BackupUnhealthy`) ชื่อซอง**ไม่ต่อ** `_UNHEALTHY` ·
+heartbeat: `utils/heartbeat.py » ping_check(url, fail=True)` มีอยู่แล้ว (Dream ใช้) + prod ตั้ง `HEARTBEAT_URL` แล้ว (ping `ok` ทุกคืน) ⇒ **ใช้ทาง `/fail`** — `core/scheduler.py » _scheduled_db_backup` ดัก `SkillsDbNotBackedUp` ก่อน `BackupUnhealthy` แล้ว `ping_check(HEARTBEAT_URL, fail=True)` · เคส DB หลักเสียคงเดิม (ไม่ยิงอะไร)
+**แก้ (`utils/db_backup.py`):** `_default_json_paths()` = `[SKILLS_DB_PATH]` (อ่านตอนเรียก) · `_snapshot_json` อ่าน**ครั้งเดียว** → `_parse_skills_json` (ต้อง parse ได้ + เป็น dict) → เขียนไบต์ชุดที่ตรวจแล้วลง work → tar ใบเดียวกับ sqlite (กติกา 7 วันเดิม) ·
+`run_db_backup(json_paths=)` — **เปลี่ยนจากแผน:** ผู้เรียกส่ง `db_paths` เองแต่ไม่ส่ง `json_paths` = ไม่สำรอง JSON (ไม่งั้นเทสเดิมเกือบทุกตัวใน CI ที่ไม่มีไฟล์จะได้ `SkillsDbNotBackedUp`) ⇒ ไม่ต้องแก้ 2 เทสข้างบน · ทาง scheduler (ไม่ส่งอะไร) ได้ทั้งคู่ ·
+ตัวกันชื่อซ้ำนับ JSON ด้วย · log สรุป `สำรอง N db + M json → …` (ตัวยืนยันคืนพรุ่งนี้)
+**เทส (แดงก่อนแก้ 12 · เขียว 1 = กลุ่มควบคุม):** `tests/test_db_backup_skills.py` — `test_ทางprod_ไม่ส่งอาร์กิวเมนต์_ซองมี_skills_db_ไบต์ตรงต้นฉบับ` · `test_รายการ_json_default_อ่านค่าตอนเรียก_ไม่ใช่ตอน_import` ·
+`test_ผู้เรียกส่ง_db_paths_เอง_ไม่ดึง_skills_db_จริงเข้ามาเงียบๆ` · `test_json_เสีย_ไม่เข้าซอง_ไม่ลบรุ่นเก่า_raise` (×5: ตัดครึ่ง/ว่าง/list/null/string) · `test_หา_skills_db_ไม่เจอ_ได้ซอง_sqlite_ไม่ลบรุ่นเก่า_raise` ·
+`test_backup_มือของ_skills_db_ไม่โดน_retention` (ตัวกัน — แดงก่อนแก้เพราะ kwarg ใหม่เท่านั้น) · `test_ไฟล์ถูกเขียนทับหลังตรวจ_ซองยังเก็บไบต์ชุดที่ตรวจผ่าน` · `test_scheduler_สกิลสำรองไม่ได้_ยิง_fail_ไม่ยิงสำเร็จ` ·
+`test_scheduler_chat_history_เสีย_พฤติกรรมเดิม_ไม่ยิงอะไรเลย` (กลุ่มควบคุม) · `test_db_หลักเสียพร้อม_json_เสีย_ข้อความบอกทั้งสองเรื่อง` (เพิ่มหลัง /scrutinize) ·
+ปรับ `test_db_backup_reader.py::test_default_paths_เก็บ_reader_db_ด้วย` ให้ชี้ `SKILLS_DB_PATH` ไปไฟล์ชั่วคราว — จำลอง CI (`NAS_DATA_PATH=/tmp/ไม่มี…`) แล้วแดงจริงก่อนปรับ (Mac เขียวเพราะมี `data/skills_db.json`)
+**mutation 5/5 ตาย:** ถอด skills จาก default (2 แดง) · ข้าม parse (5) · retention ก่อน raise (6) · เก็บจากการอ่านรอบสอง `copyfile` (1) · ถอดข้อความ JSON ในเคส DB หลักเสีย (1) · baseline gate เขียวก่อนทุกรอบ · คืนไฟล์ด้วย cp ไม่ใช้ git
+**/scrutinize:** major เอกสารจะบอกผิดหลัง deploy → แก้ `docs/system-map.md` (4 จุด) · `docs/reference/architecture.md` · docstring หัว `db_backup.py` · `open-work.md` ข้อ ③ ·
+minor DB หลัก+JSON เสียพร้อมกัน ปัญหา JSON หายเงียบ → ต่อท้ายข้อความ + เทส · `{}` ผ่านเงียบ (prod 22 สกิล) → ปอยเคาะ: ไม่เอาแค่ WARNING (ดูข้างล่าง) · จดไว้ ไม่ทำ: `scripts/db_backup.sh` (host fallback) ไม่มี skills — prod ไม่ใช้
+**ชุดเต็ม:** 2911 passed · 17 skipped · ruff ผ่าน
+**ก่อน deploy — ปอยให้เช็ค 22 vs 43:** backup มือ `skills_db.json.pre-dirmount-20261008-1417` vs ไฟล์ปัจจุบันบน prod = **22 = 22 · key ตรงกันทุกตัว · เนื้อหาเท่ากัน (`==`)** ⇒ ไม่เข้าเงื่อนไขหยุด ·
+ที่มาของเลข: 22 = จำนวน `skills/*.md` (22 ไฟล์) = `skills_collection` 22 · **ไม่เจอเลข "43 skills" ในรีโป/`docs/`/vault `wiki/`/memory ทั้งสองถัง/`~/appscript.ui/*.md`** (43 ที่เจอคือ e2e 43 ตัว · ruff 43 unused import) ⇒ ยังไม่รู้ว่า 43 มาจากไหน — ไม่เดา ·
+ที่เจอแทน: `data/skills_db.json.bak-20260802` มี **52** รายการ = ก่อนล้างคลังข้อ 18 (`from-memory-status.md` "คลังความรู้เป็นขยะทั้ง 3 ชั้น — ล้างแล้ว" 112 → 52 · แล้ว dry-run 08-03 เหลือ 22 ตรงกับ .md) — ตั้งใจล้าง ไม่ใช่ของหาย ·
+คอลเลกชันอื่นที่อาจถูกเรียกว่า skills: `~/.claude/skills/` 126 โฟลเดอร์ (Claude Code ไม่ใช่ของแอป)
+**`{}` (ปอยเคาะ 10-08):** ไม่เอาแค่ WARNING — ทำเหมือน JSON เสีย แต่**ยังเก็บเข้าซอง** (อ่านได้จริง) + งดลบรุ่นเก่า + `SkillsDbNotBackedUp` + `/fail` · แก้ใน `_snapshot_json` (เขียนลงซองก่อน แล้วค่อยเช็คว่าง) ·
+เทสแดงก่อนแก้ (`DID NOT RAISE` ×2): `test_json_ว่าง_เก็บเข้าซองได้_แต่ไม่ลบรุ่นเก่า_raise` (`{}` · `" {\n}\n"`) · ปรับ `test_default_paths_เก็บ_reader_db_ด้วย` ให้เขียน dict ที่มีข้อมูล (เดิม `{}` = จะกลายเป็นล้ม) ·
+mutation **7/7** (ถอดเช็คว่าง · เช็คว่างก่อนเขียนลงซอง + 5 ตัวเดิมรันซ้ำ) · ชุดเต็ม **2913 passed** · 17 skipped · จำลอง CI (ไม่มีไฟล์) 66 passed · ruff ผ่าน
+
+📊 10-08 ~14:30 → ~15:30 · subagent 0 · /scrutinize 1 (major 1 · minor 1 แก้แล้ว) · mutation 5/5 · ยังไม่ deploy
+
+---
+
 ## [2026-10-08 ต่อ 149] ✅ deploy skills_db → mount โฟลเดอร์ บน prod · Dream report แบบใหม่ทำงานถูก · ไม่มีใครฝั่ง host เขียน skills_db
 
 **① ก่อนเริ่ม:** CI ui เขียว (`c40ca74`) · a.ui เขียว · `ssh nas` (LAN) timeout = อยู่นอกวง · `nas-cf` ใช้ได้หลังปอยล็อกอิน Access · `ai.pawinhome.com/api/config` 200

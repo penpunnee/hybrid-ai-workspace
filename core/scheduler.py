@@ -48,7 +48,8 @@ def _scheduled_db_backup():
     แม้ในรอบที่ backup ออกมาเป็นของเปล่า — ตัวเฝ้าที่โกหกแย่กว่าไม่มีตัวเฝ้า
     เส้นเงียบทุกเส้น (ตายกลางคัน / ของเปล่า / ไม่พบ DB) ต้องไม่ยิง
     """
-    from utils.db_backup import BackupUnhealthy, run_db_backup
+    from utils import heartbeat
+    from utils.db_backup import BackupUnhealthy, SkillsDbNotBackedUp, run_db_backup
     from utils.heartbeat import ping
     try:
         archive = run_db_backup()
@@ -57,6 +58,10 @@ def _scheduled_db_backup():
             ping()
         else:
             logger.error("[Scheduler] DB backup ไม่พบ database ให้สำรอง — ไม่ยิง heartbeat")
+    except SkillsDbNotBackedUp as e:
+        # แอปใช้ไฟล์นี้จริง — /fail ให้ Healthchecks เตือนทันที ไม่ต้องรอ grace หมด
+        logger.error(f"[Scheduler] DB backup: sqlite ครบแต่ {e} (ซอง {e.archive}) — ยิง /fail")
+        heartbeat.ping_check(heartbeat.HEARTBEAT_URL, fail=True)
     except BackupUnhealthy as e:
         logger.error(f"[Scheduler] DB backup ได้ของที่ใช้กู้ไม่ได้: {e} (เก็บไว้ที่ {e.archive})")
     except Exception as e:

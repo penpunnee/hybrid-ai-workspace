@@ -51,6 +51,11 @@ def test_default_paths_เก็บ_reader_db_ด้วย(tmp_path, monkeypatch
     monkeypatch.setattr(m, "READER_DB_PATH", reader)
     monkeypatch.setattr(m, "EMBED_CACHE_DB", str(tmp_path / "data" / "embed_cache.db"))
     monkeypatch.setattr(m, "RESPONSE_CACHE_DB", str(tmp_path / "data" / "response_cache.db"))
+    # ทาง default สำรอง skills_db.json ด้วย (ต่อ 150) — ไม่ชี้ไฟล์ชั่วคราว = ไปหยิบของเครื่อง
+    # (Mac มี · CI ไม่มี → SkillsDbNotBackedUp) เทสนี้เลยเขียว/แดงตามเครื่อง
+    skills = tmp_path / "data" / "skills_db.json"
+    skills.write_text('{"s": {"summary": "x"}}')  # {} = ว่าง ถือว่าล้ม (ต่อ 150)
+    monkeypatch.setattr(m, "SKILLS_DB_PATH", str(skills))
 
     dest = tmp_path / "backups"
     m.run_db_backup(dest=str(dest))

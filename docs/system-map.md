@@ -153,7 +153,7 @@ HTTP `http_limits` `reqparse` · แพ็กเกจอื่น: `core/` `mem
 | `reader.db` | `utils/reader.py` | `books` `reading_progress` | ✅ | `utils/reader.py » class BookStore` |
 | `embed_cache.db` | `utils/embed.py` | cache embedding (sha256+model) | ✅ | `utils/embed.py » def _cache_init` |
 | `response_cache.db` | `utils/response_cache.py` | คำตอบ 👍 + vector | ✅ | `utils/response_cache.py » RESPONSE_CACHE_DB` |
-| `skills_db.json` (+ `.lock`) | `utils/skills.py` (`_db_lock`) | รายการ skill | ❌ (ตัว prod = `data/skills_db.json` → `/app/data/` ผ่าน mount โฟลเดอร์ · ไม่อยู่ใน git) | `utils/skills.py » def save_skill` |
+| `skills_db.json` (+ `.lock`) | `utils/skills.py` (`_db_lock`) | รายการ skill | ✅ ตั้งแต่ 10-08 (ซองเดียวกับ sqlite · หาไม่เจอ/parse ไม่ได้/ไม่ใช่ dict/ว่าง `{}` = งดลบรุ่นเก่า + heartbeat `/fail` · `{}` ยังเก็บเข้าซอง) · ตัว prod = `data/skills_db.json` → `/app/data/` ผ่าน mount โฟลเดอร์ · ไม่อยู่ใน git | `utils/skills.py » def save_skill` |
 | `identity.json` | `utils/rag.py` | ตัวตนพื้นฐานทุกผู้ช่วย | ❌ (อยู่ใน git) | `utils/rag.py » IDENTITY_PATH` |
 | `dream_reports/` | `utils/dream.py` | รายงาน JSON + `.md` ลง vault | ❌ | `utils/dream.py » DREAM_REPORTS_DIR` |
 | ChromaDB (volume `chroma_data`) | ดูข้อ 6.1 | vector ทุกชนิด | ❌ ในแอป · ✅ DSM task `chroma-backup` ทุกวัน **00:00** เก็บ 7 ไฟล์ล่าสุด (ปอยเปิดดูใน DSM 10-07: รอบล่าสุด 2026-10-07 00:00:01–00:00:30 สถานะ 0) · เวลาในคอมเมนต์/เอกสารตรึงด้วย `tests/test_backup_time_docs.py` | ปอยยืนยันจาก DSM (ไม่อยู่ในรีโป) · `core/scheduler.py » DSM task` · `scripts/db_backup.sh » chroma-backup` |
@@ -195,7 +195,7 @@ agent → Gemini · ต้องใช้เน็ต (`needs_internet` · regex
 | งาน | เวลา | ทำอะไร | หลักฐาน |
 |---|---|---|---|
 | `dream_nightly` | 02:00 (Asia/Bangkok) | `run_dream_cycle` — light → REM (LLM: Gemini ถ้ามี key ไม่งั้น Ollama) → decay → deep (`long_term_memory`) → prune → รายงาน + `.md` ลง vault · ล้ม/ข้าม → LINE Notify | `core/scheduler.py » id="dream_nightly"` · `core/scheduler.py » def _scheduled_dream` · `utils/dream.py » def run_dream_cycle` |
-| `db_backup_nightly` | 03:30 | `run_db_backup` 4 ไฟล์ sqlite → `db_backup_<ts>.tar.gz` เก็บ 7 วัน → สำเร็จแล้ว `heartbeat.ping` | `core/scheduler.py » id="db_backup_nightly"` · `utils/db_backup.py » def run_db_backup` · `utils/heartbeat.py » def ping` |
+| `db_backup_nightly` | 03:30 | `run_db_backup` 4 ไฟล์ sqlite + `skills_db.json` → `db_backup_<ts>.tar.gz` เก็บ 7 วัน → สำเร็จแล้ว `heartbeat.ping` · สกิลสำรองไม่ได้หรือว่าง `{}` = `/fail` | `core/scheduler.py » id="db_backup_nightly"` · `utils/db_backup.py » def run_db_backup` · `utils/heartbeat.py » def ping` |
 | `vault_catchup` | ทุก 5 นาที | sync vault ซ้ำเฉพาะเมื่อรอบก่อนค้าง + embedder ต่อได้ | `core/scheduler.py » id="vault_catchup"` · `utils/obsidian_sync.py » def catchup_sync_if_pending` |
 | sync skills ตอนบูต | ครั้งเดียว | skills_db.json → `skills_collection` | `server.py » _startup_sync_skills` |
 | เบื้องหลังต่อแชท | ต่อคำขอ | `_shadow` · `_teach` · `_learn` ผ่าน `spawn_bg` | `core/observability.py » def spawn_bg` |
@@ -248,7 +248,7 @@ hook `post-receive` ของ bare repo `git checkout -f main` ลง `/var/serv
 | **LINE Notify** (ตายแล้ว) | **แจ้งเตือน Dream ล้ม/ข้าม ไม่มีอยู่จริง** — บริการปิด 31 มี.ค. 2025 (ประกาศทางการ developers.line.biz/en/news/2025/04/01/line-notify/ · notify-bot.line.me) และ 🔎 prod ไม่ได้ตั้ง `LINE_NOTIFY_TOKEN` (โค้ดคืนทันทีเมื่อว่าง) ⇒ Dream ล้มเงียบ · งานเปิดใน `open-work.md` | log ใน server.log เท่านั้น | `utils/notify.py » if not LINE_NOTIFY_TOKEN` |
 | **Healthchecks** | — (ฝั่งเราไม่เสียอะไร) · แต่ถ้า Healthchecks ล่มเอง = **ไม่มีแจ้งเตือนเหลือเลย** | ถ้า backup ล้ม = ไม่ ping ⇒ Healthchecks เตือนเอง · 🔎 prod ตั้ง `HEARTBEAT_URL` แล้ว → check "Khim AI db-backup" (`30 3 * * *` Asia/Bangkok · grace 2 ชม. · ping ล่าสุด 10-07 03:30 · hash URL ตรงกับ check) · เฝ้า**แค่ backup 03:30** — Dream 02:00 และ Chroma 00:00 ไม่มี check · ช่องทางที่ผูกไว้: email + Telegram · **แจ้งเตือนถึงปอยจริง = ยังไม่ยืนยันทั้งสองช่องทาง** (ปอยแจ้ง 10-07: ยังไม่ได้ตั้ง Telegram ให้ตัวเอง แม้ช่องจะผูกอยู่) — ยืนยันได้เมื่อปอยกด Test ในหน้า Integrations แล้วได้รับจริง | `utils/heartbeat.py » def ping` |
 | **`chat_history.db` เสีย** | ประวัติแชท · sessions · feedback · share | backup 03:30 ย้อนได้ 7 วัน (ยังไม่เคยซ้อมกู้) | `utils/db_backup.py » DB_BACKUP_RETAIN` |
-| **ดิสก์/volume ของ NAS เสีย** | ข้อมูลทั้งหมด **รวมไฟล์สำรอง** (sqlite 03:30 + Chroma 00:00 อยู่บน NAS เครื่องเดียวกัน · ไม่มีชุดนอกเครื่อง) · `skills_db.json` ไม่มีสำรองเลย | — | ปอยยืนยันจาก DSM 10-07 · `utils/db_backup.py » def _default_db_paths` |
+| **ดิสก์/volume ของ NAS เสีย** | ข้อมูลทั้งหมด **รวมไฟล์สำรอง** (sqlite 03:30 + Chroma 00:00 อยู่บน NAS เครื่องเดียวกัน · ไม่มีชุดนอกเครื่อง) (`skills_db.json` อยู่ในซอง 03:30 ตั้งแต่ 10-08 — แต่ก็อยู่บน NAS เครื่องเดียวกัน) | — | ปอยยืนยันจาก DSM 10-07 · `utils/db_backup.py » def _default_db_paths` · `def _default_json_paths` |
 
 ---
 
@@ -257,7 +257,7 @@ hook `post-receive` ของ bare repo `git checkout -f main` ลง `/var/serv
 1. ✅ `infra-nas.md` ปลายทาง tunnel แก้เป็น `http://ai-backend-1:8000` แล้ว (10-07) · ⏳ `skills/*.md` เขียน path vault 3 แบบ ผิดทั้งหมด (จริง `/var/services/homes/pawin/vault/homepawin`) → งานแยก (แก้แล้วต้อง resync ในคอนเทนเนอร์)
 2. ✅ `start-ai.ps1` แก้เป็น `ai-backend-1` + full path docker แล้ว (10-07 · เทส `test_script_container_names.py`)
 3. LINE Notify ปิดบริการแล้ว + prod ไม่ได้ตั้ง token ⇒ Dream ล้มเงียบ → จดงานเปิดแล้ว
-4. สำรองข้อมูล → งานเปิดใน `session-log/open-work.md` (ไฟล์สำรองอยู่บน NAS เครื่องเดียว · ยังไม่เคยลองกู้ · `skills_db.json` ไม่อยู่ในสำรองตัวไหน) · ✅ เวลาในคอมเมนต์แก้เป็น 00:00 แล้ว (เทส `test_backup_time_docs.py`)
+4. สำรองข้อมูล → งานเปิดใน `session-log/open-work.md` (ไฟล์สำรองอยู่บน NAS เครื่องเดียว · ยังไม่เคยลองกู้ · ✅ `skills_db.json` เข้าซอง 03:30 แล้ว 10-08) · ✅ เวลาในคอมเมนต์แก้เป็น 00:00 แล้ว (เทส `test_backup_time_docs.py`)
 5. ✅ `ui-map.md` (`src/app.tsx` ไม่มีแล้ว) · CLAUDE.md (FAB Claude ถูกตัดแล้ว) แก้แล้ว 10-07
 6. default `EMBEDDING_MODEL` ว่างใน `utils/memory.py` = MiniLM แต่ใน `utils/embed.py` = multilingual (คอมเมนต์ในโค้ดรู้อยู่แล้ว · prod ตั้งค่าไว้จึงไม่เกิด)
 7. watchdog ดูแค่ "ไม่รัน" ไม่ดู healthcheck ⇒ app ค้างแต่โปรเซสยังอยู่ = ไม่มีใครรีสตาร์ต
