@@ -1,5 +1,31 @@
 ---
 
+## [2026-10-09 ต่อ 154] เช็คซองสำรอง 03:30 ✅ · Debate อ่าน `error` ใน SSE + สตรีมจบเงียบติดป้าย · checklist จุดสถานะข้อ 1 ผ่าน
+
+**ซองสำรองคืน 10-09 03:30 (▶️ ①):** log `[db_backup] สำรอง 4 db + 1 json → ./db_backups/db_backup_20261008_203000.tar.gz (21530.8 KB)` (ชื่อซอง = เวลา UTC) · `[heartbeat] ok` · ไม่มี `/fail` ·
+แตกซองในคอนเทนเนอร์: มี `skills_db.json` 13393 B · sha `8bfaec2c…c734` = `data/skills_db.json` · 22 key · ซองครบ 7 ใบ (10-02 → 10-08 UTC) · backup มือ `pre-dirmount` ยังอยู่
+**checklist จุดสถานะ ข้อ 1 ✅** (ภาพ 11:03 + ปอยยืนยันเลื่อนซ้ายขวาไม่ได้ + log) · `GET /api/status` แทรกกลางรอบ 04:02:08 UTC = `visibilitychange` ทำงานบน Safari จริง · ข้อ 2–4 รอตอน PC ปิด
+**Debate `error` (ปอยเคาะแผนฉบับแก้ 10-09):** backend ทุกเส้น error ส่ง `{error, message_id}` แล้ว `return` **ไม่มี done** · `_save_crash` คืน 0 เมื่อ debate (ไม่บันทึก) ⇒ แก้ฝั่ง React อย่างเดียว · HTTP ไม่ใช่ 2xx ถูกจัดการอยู่แล้ว (`sseEvents` → `HttpError`) ·
+`ctrl` สร้างใหม่ต่อผู้ร่วมใน `parts.forEach(async (asst) => { const ctrl = new AbortController()` = แยกต่อคอลัมน์ (ปอยให้ยืนยัน)
+**ui-reviewer ตรวจแผน (104k · 2.5 นาที):** ต้องแก้ 1 — e2e เดิมไม่คุมแถว 3/6/9 (`'error' in obj` · return หลัง error · `{error:""}` จาก `str(e)` ว่าง) → ใช้ harness `startDebateRound`/`debCall` · ควรพิจารณา: `ctrl.abort()` หลัง error (ไม่งั้นสายค้าง) · แถวสตรีมจบไม่มี done/error ·
+`'error' in obj` โยนกับ primitive → helper เช็ค object · จดไว้: แชทหลัก/regenerate มีรู `{error:""}` เดียวกัน · `provider_fallback` ใน Debate (คอลัมน์ Gemini อาจเป็นคำตอบ local)
+**ปอยตัดสิน:** รวมเคสสตรีมจบเงียบ (ป้ายแบบแชทหลัก) · `provider_fallback` = งานถัดไปใน ▶️ สืบก่อน ห้ามแก้ · แชทหลัก `{error:""}` = งานเปิด · เพิ่ม: C ต้องส่งต่อหลัง A error จนจบ · mutation abort ตัวร่วม
+**แก้:** `utils/debate.ts » isDebateErrorEvent` (object + มีคีย์) · `debateErrorText` (ข้อความที่ได้ + ❌ · ว่าง = ข้อความสำรอง) · `app.tsx » startDebate` error → ❌ + `done` + `ctrl.abort()` ของคอลัมน์นั้น + return ·
+finally สตรีมจบไม่มี done/error → `stopped` + `stopReason` = `STREAM_ENDED_EARLY_REASON` (แยกจาก `STREAM_ENDED_EARLY` ใน `utils/streamsettle.ts` — ข้อความเดิมของแชทหลักไม่เปลี่ยน) ·
+ป้ายบนจอ = ไอคอน CSS + "หยุดแล้ว — ไม่ได้รับคำตอบจนจบจาก server" — **ไม่ใช้อักขระ ⏹** ตามกฎ iOS ของ Debate (㊼ ㊽) แม้ปอยบอก "แบบแชทหลัก" (ข้อความตรงกัน ต่างแค่ไอคอน)
+**เทส (แดงก่อนแก้):** vitest `debate.test.ts` +5 · e2e (62) A error กลางทาง + B `{error:""}` + C ตอบต่อจนจบ · aborted = [A, B] เท่านั้น · (63) chunk หลัง error ไม่ขึ้นจอ + ⏹ ตอน B วิ่ง A คง ❌ · (64) สตรีมจบเงียบ → ป้าย + เหตุผล · ไม่มี U+23F9 ·
+(62) รอบแรกเขียนค่าคาด aborted `[true,false,false]` ผิด (B ก็ error) → `[true,true,false]` (C ไม่ถูกตัด = คุณสมบัติหลักคงอยู่)
+**mutation 7/7:** `obj.error` แทนมีคีย์ · ไม่หยุดอ่าน · ไม่ abort · **abort ตัวร่วมทั้ง Debate** · สตรีมจบเงียบไม่ติดป้าย · ไม่เช็ค null · ไม่มีข้อความสำรอง
+**ui-reviewer ตรวจ diff (94k · 1.6 นาที):** ต้องแก้ 0 · ควรพิจารณา 1 — ป้ายยาวในคอลัมน์ ~146px ห่อหลายบรรทัด ไอคอน `items-center` ลอยกลางก้อน · (64) ไม่ได้วัด →
+เพิ่มใน (64) + แท็ก `@layout` (393/440): ป้ายไม่ล้น · อยู่ในคอลัมน์ · ไอคอนทึบ · ไอคอนอยู่บรรทัดแรก → **แดงจริง** ("3.0 บรรทัด" ไอคอนห่างขอบบน 24.9px) → แถวป้าย `items-start leading-4` + ไอคอน `mt-1` → เขียว · ดูภาพจอ 393 แล้ว ·
+จดไว้: บรรทัด 📊 (เติมแล้ว) · `pending-manual-tests.md` ใน commit นี้ = ติ๊กข้อ 1 ของจุดสถานะ (เอกสารล้วน)
+**ผล:** tsc · vitest 767 · e2e เต็มชุด 87/87 · bundle `index-5d4Rw4rD.js` + css `index-CBm034fF.css` (overlay ไม่แตะ)
+
+⚠️ ผิดพลาด: commit a.ui รอบแรกต่อท่อ `git commit … | grep` → commit ไม่เกิดแต่มองไม่เห็น exit code (ผิดกติกา deploy/infra ที่ห้ามต่อท่อกลืน exit code) · เช็ค `git log` เจอ → commit ใหม่ด้วยไฟล์ข้อความ ไม่ต่อท่อ = `2664777`
+📊 10-09 ~11:20 → ~13:00 · ui-reviewer แผน 1 (104k · 2.5 นาที · ต้องแก้ 1) + diff 1 (94k · 1.6 นาที · ต้องแก้ 0 · ควรพิจารณา 1 = จริง แก้แล้ว) · investigator 0 (รู้ที่อยู่แล้ว) · mutation 7/7 · e2e เต็มชุด 2 รอบ
+**ปิดใน open-work (ยกทั้งดุ้น):**
+- **Debate ไม่อ่าน `error` ใน SSE (10-06 · ผู้ตรวจแผน [ต่อ 136] · ปอยเคาะ 10-08 = งานถัดจาก "จุดสถานะบอกความจริง" · ยังเปิด: `startDebate` ยังอ่านแค่ chunk/done):** `app.tsx » startDebate` อ่านแค่ `obj.chunk`/`obj.done` ⇒ provider ล้มกลางทาง (server ส่ง `{error}`) คอลัมน์ว่างแล้วปิดเงียบ
+
 ## [2026-10-08 ต่อ 153] "จุดสถานะบอกความจริง" — tooltip ไม่อ้าง fallback ไป Gemini + แถบ 🧠 ตอนค้นความจำ/เอกสาร/Vault ใช้ไม่ได้ · ดึงสถานะใหม่ตอนกลับมาที่หน้าจอ
 
 **ปอยเคาะ:** รวม step 5 + C2 · tooltip แก้ข้อความ ⛔ ห้ามเปลี่ยนพฤติกรรม · แถบที่ iPhone เห็น · ดึงไม่สำเร็จ = คงค่าเดิม · `visibilitychange` ผ่านตัวกันลำดับตัวเดียวกัน + กันซ้ำ 5 วิ · หัวแอป "ออนไลน์" แยกเป็นงานเปิด · ตระกูล 6 ปิดได้ (log WARNING + `hint` ใน JSON พอ ไม่ต้องขึ้นจอ)
