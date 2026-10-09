@@ -1,5 +1,43 @@
 ---
 
+## [2026-10-09 ต่อ 155] สืบ `provider_fallback` (ยังไม่ครบ · ห้ามแก้โค้ด) · ปิดเซสชัน
+
+**ปอยสั่ง:** สืบทุกเส้นที่ backend สลับ provider เอง · UI รู้/เห็นป้ายไหม · โค้ดเข้ามาก่อน/หลังกฎ · กฎเขียนว่าอะไร มีข้อยกเว้นไหม · log 7 วัน → รายงานตาราง + ทางเลือก · ใช้ ui-investigator · ห้ามแก้โค้ด
+**ประวัติ git:**
+- `3e022f0` 2026-05-12 "fallback chain — Gemini quota หมด → LM Studio + web search" = ต้นทางเส้น Gemini → โมเดลในบ้าน
+- `4002a19` 2026-05-26 ตั้งกฎ "ปุ่มแยกชัด — แต่ละ provider ไปตัวเดียวกันเสมอ (ไม่มี redirect ข้ามตัว)" (เหตุ: ปุ่ม Ollama ถูก redirect ไป LM Studio) **และใน commit เดียวกันเขียนข้อยกเว้นไว้เอง:**
+  "Fallback: Gemini quota exhausted → local model + web search (LM Studio ถ้าตั้ง `LMSTUDIO_BASE_URL`, ไม่งั้น Ollama)" — ข้อความนี้ยังอยู่ `docs/reference/architecture.md` (LLM routing)
+- `1d0fded` 2026-05-27 cascade LM Studio → Ollama เมื่อ connection ล่ม · `5e2426d` 2026-07-13 เพิ่ม SSE `provider_fallback` · `42156dd` 2026-08-02 embed ถอย LM Studio (ชื่อโมเดลเดียวกัน)
+- `95c9efd` 2026-10-04 ⛔ ห้าม redirect อัตโนมัติ เกิดในบริบท **qwen แปลชื่อเฉพาะผิด** (= ห้ามสลับเพราะคำตอบไม่ดี) → `c97f2c0` 2026-10-06 ยกขึ้นหมวด 🔑 backend:
+  "provider ทุกปุ่มไปตัวเดียวกันเสมอ ⛔ ห้าม redirect (คำตอบไม่ดี = ถาม user · ไม่สลับ provider เอง)" — **ไม่อ้างข้อยกเว้น quota ของ 4002a19** ⇒ สองที่อ่านแล้วขัดกัน
+**log prod 7 วัน (server.log.1 + server.log · 10-02 → 10-09 · 44,822 บรรทัด):**
+- Gemini → LM Studio **8 ครั้ง** ทั้งหมด 10-04 (09:15 · 14:42–15:04): `route → gemini_agent (🌐 internet search)` → `Gemini quota exceeded: 429` → `[Chat] Gemini fallback → web search injected` → `[LMStudio] grounded context` · devlog 10-04 รอบ 7: มาจาก **probe อากาศ** (ไม่ใช่ปอยใช้จริง · `X-Test-Request` ไม่ถูก log จึงยืนยันจาก log อย่างเดียวไม่ได้)
+- LM Studio → Ollama **2 ครั้ง** 10-06 12:41 (rid เดียวกัน · Connection error)
+- Gemini รุ่น → รุ่น (`ล่ม (transient) → สลับไป`) 0 · `Auto-route failed` 0 · `vision model unavailable` 0 · API key invalid / stream error 0
+- เส้น Gemini → local **ไม่มีบรรทัด log ของตัวเอง** (นับจาก `Gemini quota exceeded` + `fallback → web search injected` ซึ่งเกิดเฉพาะคำถามต้องค้นเน็ต) ⇒ fallback ที่ไม่ใช่คำถามค้นเน็ตนับจาก log ไม่ได้
+**ตารางเส้นในโค้ด (ui-investigator · 178k · 3.1 นาที · มาถึงก่อนปิด · อ่านโค้ดอย่างเดียว ยังไม่รันอะไร):** ประเภท (1) ข้ามตระกูล cloud↔local · (2) ในตระกูล · (3) auto เลือกตอนต้น
+| # | เส้น | ไฟล์ » ฟังก์ชัน | เงื่อนไข · จาก → ไป | บอก client | UI/ป้าย | ขัดกฎ |
+|---|---|---|---|---|---|---|
+| A1 | แชทหลัก Gemini ล้ม | `routers/chat.py » _generate_inner` (except หลัง `_try_stream`) | `GeminiQuotaExhausted`/`GeminiUnavailable` (รวม key ผิด) + `_provider in (gemini, gemini_agent)` = **รวมผู้ใช้กดปุ่ม Gemini ตรง** · → lmstudio/ollama (`route(exclude_gemini)`) | SSE `provider_fallback` · `done.model/provider` = ตัวสำรอง | ✅ ป้าย 🔄 ใน session (`answermeta.ts » providerFallbackLabel`) | ตีความได้ 2 ทาง (1) |
+| A9 | **Debate** | เส้นเดียวกับ A1 (ไม่เช็ค `debate`) | คอลัมน์ Gemini ล้ม → local (ช้า ~110 วิ ตามคอมเมนต์ `debate.ts`) | ส่ง `provider_fallback` | ❌ `startDebate` ไม่อ่าน · ป้ายคอลัมน์ = โมเดลที่**ขอ** | ตีความได้ 2 ทาง · เสียหายกว่า (1) |
+| A2 | Gemini รุ่น → รุ่น | `utils/llm.py » _stream_gemini` | transient หลัง retry 3 · → `GEMINI_FALLBACK_MODEL` (default ว่าง) | ไม่มี (log) | ไม่มี | ไม่ขัด (2) |
+| A3/A4ก | LM Studio → Ollama | `llm.py » _stream_lmstudio_or_ollama` / `stream_response` auto | connection/timeout · → ollama (`OLLAMA_MODEL`) | **ข้อความแทรกใน `chunk`** "⚠️ LM Studio ต่อไม่ได้ — สลับไป Ollama…" → ลง DB/เรียนรู้ · `done.provider` ยังว่า lmstudio | เห็นในเนื้อคำตอบ | ตีความได้ 2 ทาง (2) · ปัญหาแยก: ปนคำตอบ (A1 แก้แบบนี้ไปแล้ว 07-13) |
+| A4ข | auto ใน `stream_response` | `llm.py » stream_response` `except Exception` กว้าง | error อะไรก็ได้ → ollama เงียบ | ไม่มี | ไม่มี | ตีความได้ 2 ทาง |
+| A5 | รูป / agent_mode บังคับ Gemini | `llm.py » stream_response` | ollama/lmstudio_web+รูป · ทุก provider+agent_mode (ยกเว้น claude/kimi) → gemini | ไม่มี | ไม่มี | ไม่ขัด (architecture.md เขียนไว้) แต่เงียบ (1) |
+| A6 | tool_agent | `chat.py » _generate_inner` | provider ไม่ใช่ gemini/lmstudio/ollama → gemini | ไม่มี · `done` = "agent" | ไม่มี | ตีความได้ 2 ทาง (1) |
+| A7 | `/api/regenerate` | `chat.py » regenerate_response` | ไม่อ่าน `model`/`thinking`/`effort` → default ของ provider · ไม่มี Gemini→local | ไม่มี | React รอรับ `provider_fallback` แต่ไม่เคยถูกส่ง | ไม่ใช่ redirect provider แต่ทิ้งโมเดลที่เลือก |
+| A8/A11 | auto ตอนต้น / Dream | `reasoning/router.py » route` · `utils/dream.py » rem_sleep` | ตัดสินก่อนเรียก | `phase.generating` มี model (React ไม่อ่าน) | ไม่มี | ไม่ขัด (3) |
+| A10 | embed | `utils/embed.py » _create_embeddings` | Ollama → LM Studio ชื่อโมเดลเดียวกัน | — | แถบ 🧠 | ไม่ขัด (เขียนไว้) |
+| A12/A13 | สรุปเอกสาร / OCR | `utils/summarize.py` · `utils/ocr.py` | local ↔ Gemini | ไม่มี | ไม่มี | ไม่ขัดเส้นแชท (OCR ยังไม่ได้อ่านเต็ม) |
+| A14 | `/api/status.failover_active` | `utils/llm.py » _last_failover` | ไม่มีที่ไหนตั้ง True · React เก็บแต่ไม่อ่าน | — | — | ฟิลด์ตาย |
+**กฎขัดกันเอง:** `CLAUDE.md` 🔑 (ไม่มีข้อยกเว้น) ↔ `architecture.md` (Fallback quota → local) · `infra-nas.md` ("ปุ่ม Gemini→Gemini" ติดกับ "Gemini quota หมด → fallback local") · `system-map.md` ("ใน `auto`" ไม่ตรงโค้ด — รวมปุ่ม Gemini ตรง) ·
+`tests/test_gemini_fallback_notice.py` docstring = เจตนาเก็บ fallback + บอกผ่าน event · `infra-nas.md` "PC ปิด → ตกไป Gemini" ไม่ตรงโค้ด
+**แผนที่ไม่ตรงโค้ด:** `docs/ui-map.md` badge โมเดล §15 อ่าน header `X-Model-Used` ที่ `/api/chat` ปกติไม่ได้ตั้ง (ยังไม่ยืนยันในเบราว์เซอร์) · แถว Debate ไม่บอกว่าไม่อ่าน `provider_fallback`
+**ยังตอบไม่ได้/ยังไม่ทำ:** ค่า `GEMINI_FALLBACK_MODEL` บน NAS · DB มีข้อความ "สลับไป Ollama ให้อัตโนมัติ" กี่แถว · OCR fallback เต็มๆ · badge §15 ขึ้นจริงไหม · **รายงานตาราง + ทางเลือกให้ปอยเคาะ (ยังไม่ได้ส่ง)**
+**งานเล็กจดใน open-work:** hook บล็อก `git commit … |` แบบ `pdm-guard` (ตัวอย่าง `~/Desktop/Phrae-Data-Map-dev/.claude/settings.json`)
+
+📊 10-09 ~13:10 → ~13:50 · ui-investigator 1 (178k · 3.1 นาที · จบก่อนปิด) · git/log สืบเอง · ไม่แก้โค้ด
+
 ## [2026-10-09 ต่อ 154] เช็คซองสำรอง 03:30 ✅ · Debate อ่าน `error` ใน SSE + สตรีมจบเงียบติดป้าย · checklist จุดสถานะข้อ 1 ผ่าน
 
 **ซองสำรองคืน 10-09 03:30 (▶️ ①):** log `[db_backup] สำรอง 4 db + 1 json → ./db_backups/db_backup_20261008_203000.tar.gz (21530.8 KB)` (ชื่อซอง = เวลา UTC) · `[heartbeat] ok` · ไม่มี `/fail` ·
